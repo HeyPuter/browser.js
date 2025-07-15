@@ -1,21 +1,4 @@
-import {
-	rewriteUrl,
-	unrewriteUrl,
-	rewriteBlob,
-	unrewriteBlob,
-} from "./rewriters/url";
-import { rewriteCss, unrewriteCss } from "./rewriters/css";
-import { rewriteHtml, rewriteSrcset } from "./rewriters/html";
-import { rewriteJs } from "./rewriters/js";
-import { rewriteHeaders } from "./rewriters/headers";
-import { rewriteWorkers } from "./rewriters/worker";
-import { BareClient, BareMuxConnection } from "@mercuryworkshop/bare-mux";
-import { parseDomain } from "parse-domain";
-import { ScramjetHeaders } from "./headers";
-import { CookieStore } from "./cookie";
-import { htmlRules, unrewriteHtml } from "./rewriters/html";
-import { config } from "../shared";
-import { ScramjetFlags } from "../types";
+import { ScramjetConfig, ScramjetFlags } from "../types";
 
 export let codecEncode: (input: string) => string;
 export let codecDecode: (input: string) => string;
@@ -36,4 +19,10 @@ export function flagEnabled(flag: keyof ScramjetFlags, url: URL): boolean {
 	}
 
 	return value;
+}
+
+export let config: ScramjetConfig;
+export function setConfig(newConfig: ScramjetConfig) {
+	config = newConfig;
+	loadCodecs();
 }

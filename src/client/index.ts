@@ -1,6 +1,6 @@
 // entrypoint for scramjet.client.js
 
-import { loadCodecs } from "../scramjet";
+import { loadCodecs } from "../shared/index";
 import { SCRAMJETCLIENT } from "../symbols";
 import { ScramjetClient } from "./client";
 import { ScramjetContextEvent, UrlChangeEvent } from "./events";

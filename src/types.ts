@@ -1,28 +1,7 @@
-import { ScramjetController } from "./controller/index";
-import {
-	rewriteBlob,
-	rewriteUrl,
-	unrewriteBlob,
-	unrewriteUrl,
-} from "./shared/rewriters/url";
-import { rewriteCss, unrewriteCss } from "./shared/rewriters/css";
-import {
-	htmlRules,
-	rewriteHtml,
-	rewriteSrcset,
-	unrewriteHtml,
-} from "./shared/rewriters/html";
-import { rewriteJs } from "./shared/rewriters/js";
-import { rewriteHeaders } from "./shared/rewriters/headers";
-import { rewriteWorkers } from "./shared/rewriters/worker";
-import { BareClient, BareMuxConnection } from "@mercuryworkshop/bare-mux";
-import { parseDomain } from "parse-domain";
-import { ScramjetHeaders } from "./shared/headers";
-import { CookieStore } from "./shared/cookie";
-import { SCRAMJETCLIENT, SCRAMJETFRAME } from "./symbols";
 import { ScramjetClient } from "./client/client";
+import { ScramjetController } from "./controller";
 import { ScramjetFrame } from "./controller/frame";
-import { Rewriter } from "./shared/rewriters/wasm";
+import { SCRAMJETCLIENT, SCRAMJETFRAME } from "./symbols";
 
 export type ScramjetFlags = {
 	serviceworkers: boolean;
@@ -50,9 +29,7 @@ export interface ScramjetConfig {
 	};
 	files: {
 		wasm: string;
-		shared: string;
-		worker: string;
-		client: string;
+		all: string;
 		sync: string;
 	};
 	flags: ScramjetFlags;

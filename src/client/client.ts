@@ -8,16 +8,18 @@ import { createLocationProxy } from "./location";
 import { nativeGetOwnPropertyDescriptor } from "./natives";
 import {
 	BareClient,
-	CookieStore,
-	config,
-	unrewriteUrl,
-	rewriteUrl,
-} from "../shared";
-import type { BareClient as BareClientType } from "@mercuryworkshop/bare-mux";
+	type BareClient as BareClientType,
+} from "@mercuryworkshop/bare-mux";
 import { createWrapFn } from "./shared/wrap";
 import { NavigateEvent } from "./events";
-import type { URLMeta } from "../shared/rewriters/url";
+import {
+	rewriteUrl,
+	unrewriteUrl,
+	type URLMeta,
+} from "../shared/rewriters/url";
 import { SourceMaps } from "./shared/sourcemaps";
+import { config } from "../shared";
+import { CookieStore } from "../shared/cookie";
 
 type NativeStore = {
 	store: Record<string, any>;

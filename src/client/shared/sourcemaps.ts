@@ -1,4 +1,4 @@
-import { flagEnabled } from "../../scramjet";
+import { flagEnabled } from "../../shared";
 import { SCRAMJETCLIENT, SCRAMJETCLIENTNAME } from "../../symbols";
 import { ProxyCtx, ScramjetClient } from "../client";
 
@@ -141,6 +141,7 @@ function doUnrewrite(ctx: ProxyCtx) {
 
 	if (!rewrites) {
 		console.warn("failed to get rewrites for tag", tag);
+
 		return ctx.return(stringified);
 	}
 

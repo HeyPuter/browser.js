@@ -1,6 +1,6 @@
+import { config, flagEnabled } from "..";
 import { URLMeta } from "./url";
 
-import { $scramjet, flagEnabled } from "../../scramjet";
 import { getRewriter, JsRewriterOutput } from "./wasm";
 
 Error.stackTraceLimit = 50;
@@ -81,7 +81,7 @@ function rewriteJsNaiive(js: string | ArrayBuffer) {
 	}
 
 	return `
-		with (${$scramjet.config.globals.wrapfn}(globalThis)) {
+		with (${config.globals.wrapfn}(globalThis)) {
 
 			${js}
 
