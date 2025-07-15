@@ -67,7 +67,7 @@ export async function handleFetch(
 		}
 		const url = new URL(unrewriteUrl(requestUrl));
 
-		let meta: URLMeta = {
+		const meta: URLMeta = {
 			origin: url,
 			base: url,
 		};

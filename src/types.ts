@@ -73,45 +73,6 @@ export interface ScramjetInitConfig
 }
 declare global {
 	interface Window {
-		$scramjet: {
-			shared: {
-				url: {
-					rewriteUrl: typeof rewriteUrl;
-					unrewriteUrl: typeof unrewriteUrl;
-					rewriteBlob: typeof rewriteBlob;
-					unrewriteBlob: typeof unrewriteBlob;
-				};
-				rewrite: {
-					rewriteUrl: typeof rewriteUrl;
-					rewriteCss: typeof rewriteCss;
-					unrewriteCss: typeof unrewriteCss;
-					rewriteHtml: typeof rewriteHtml;
-					unrewriteHtml: typeof unrewriteHtml;
-					rewriteSrcset: typeof rewriteSrcset;
-					rewriteJs: typeof rewriteJs;
-					rewriteHeaders: typeof rewriteHeaders;
-					rewriteWorkers: typeof rewriteWorkers;
-					htmlRules: typeof htmlRules;
-				};
-				util: {
-					BareClient: typeof BareClient;
-					BareMuxConnection: typeof BareMuxConnection;
-					ScramjetHeaders: typeof ScramjetHeaders;
-					parseDomain: typeof parseDomain;
-				};
-				CookieStore: typeof CookieStore;
-				rewriter?: { rewriter: Rewriter; inUse: boolean }[];
-			};
-			config: ScramjetConfig;
-			codec: {
-				encode: (url: string) => string;
-				decode: (url: string) => string;
-			};
-			version: {
-				version: string;
-				build: string;
-			};
-		};
 		COOKIE: string;
 		WASM: string;
 		REAL_WASM: Uint8Array;

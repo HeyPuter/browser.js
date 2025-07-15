@@ -365,7 +365,6 @@ export class ScramjetClient {
 	}
 
 	hook() {
-		// @ts-ignore
 		const context = import.meta.webpackContext(".", {
 			recursive: true,
 		});
@@ -373,7 +372,7 @@ export class ScramjetClient {
 		const modules: ScramjetModule[] = [];
 
 		for (const key of context.keys()) {
-			const module: ScramjetModule = context(key);
+			const module = context(key) as ScramjetModule;
 			if (!key.endsWith(".ts")) continue;
 			if (
 				(key.startsWith("./dom/") && "window" in this.global) ||
