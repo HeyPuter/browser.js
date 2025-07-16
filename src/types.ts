@@ -53,7 +53,6 @@ declare global {
 		COOKIE: string;
 		WASM: string;
 		REAL_WASM: Uint8Array;
-		ScramjetController: typeof ScramjetController;
 
 		// the scramjet client belonging to a window
 		[SCRAMJETCLIENT]: ScramjetClient;

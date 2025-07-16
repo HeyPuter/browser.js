@@ -158,5 +158,3 @@ export class ScramjetController {
 		await this.#saveConfig();
 	}
 }
-
-window.ScramjetController = ScramjetController;
