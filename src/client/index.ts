@@ -1,6 +1,6 @@
 // entrypoint for scramjet.client.js
 
-import { loadCodecs } from "../shared/index";
+import { loadCodecs, setConfig } from "../shared/index";
 import { SCRAMJETCLIENT } from "../symbols";
 import { ScramjetClient } from "./client";
 import { ScramjetContextEvent, UrlChangeEvent } from "./events";
@@ -21,7 +21,8 @@ function createFrameId() {
 		.join("")}`;
 }
 
-export function clientInitHook() {
+export function clientInitHook(config: ScramjetConfig) {
+	setConfig(config);
 	dbg.log("initializing scramjet client");
 	// if it already exists, that means the handlers have probably already been setup by the parent document
 	if (!(SCRAMJETCLIENT in <Partial<typeof self>>self)) {

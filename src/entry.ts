@@ -1,26 +1,27 @@
 /// <reference types="@rspack/core/module" />
+import "../lib/index.d.ts";
 
-export function $scramjetLoadController() {
+self.$scramjetLoadController = function () {
 	return require("./controller/index");
-}
+};
 
-export function $scramjetLoadClient() {
+self.$scramjetLoadClient = function (config) {
 	const client = require("./client/index");
-	client.clientInitHook();
+	client.clientInitHook(config);
 
 	return client;
-}
-
-export function $scramjetLoadWorker() {
-	return require("./worker/index");
-}
-
-export const $scramjet = {
-	version: {
-		build: COMMITHASH,
-		version: VERSION,
-	},
 };
+
+self.$scramjetLoadWorker = function () {
+	return require("./worker/index");
+};
+
+export const $scramjetVersion = {
+	build: COMMITHASH,
+	version: VERSION,
+};
+
+self.$scramjetVersion = $scramjetVersion;
 
 if ("document" in self && document?.currentScript) {
 	document.currentScript.remove();

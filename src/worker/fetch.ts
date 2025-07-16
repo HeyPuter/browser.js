@@ -289,13 +289,13 @@ export async function handleFetch(
 			message: err.message,
 			url: request.url,
 			destination: request.destination,
-			timestamp: new Date().toISOString(),
 		};
 		if (err.stack) {
 			errorDetails["stack"] = err.stack;
 		}
 
 		console.error("ERROR FROM SERVICE WORKER FETCH: ", errorDetails);
+		console.error(err);
 
 		if (!["document", "iframe"].includes(request.destination))
 			return new Response(undefined, { status: 500 });
@@ -508,7 +508,7 @@ async function rewriteBody(
 				if (js instanceof Uint8Array) {
 					js = new TextDecoder().decode(js);
 				}
-				const sourcemapfn = `${globalThis.$scramjet.config.globals.pushsourcemapfn}([${map.join(",")}], "${tag}");`;
+				const sourcemapfn = `${config.globals.pushsourcemapfn}([${map.join(",")}], "${tag}");`;
 				const strictMode = /^\s*(['"])use strict\1;?/;
 				if (strictMode.test(js)) {
 					js = js.replace(strictMode, `$&\n${sourcemapfn}`);

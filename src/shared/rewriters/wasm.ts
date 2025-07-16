@@ -1,11 +1,14 @@
 // i am a cat. i like to be petted. i like to be fed. i like to be
 import { initSync, Rewriter } from "../../../rewriter/wasm/out/wasm.js";
 import type { JsRewriterOutput } from "../../../rewriter/wasm/out/wasm.js";
-import { config, flagEnabled } from "..";
+import { codecDecode, codecEncode, config, flagEnabled } from "..";
 
 export type { JsRewriterOutput, Rewriter };
 
-import { URLMeta } from "./url";
+import { rewriteUrl, URLMeta } from "./url";
+import { htmlRules } from "../htmlRules";
+import { rewriteCss, unrewriteCss } from "./css";
+import { rewriteJs } from "./js";
 
 let wasm_u8: Uint8Array;
 if (self.WASM)
@@ -47,7 +50,22 @@ export function getRewriter(meta: URLMeta): [Rewriter, () => void] {
 		if (flagEnabled("rewriterLogs", meta.base))
 			console.log(`creating new rewriter, ${len} rewriters made already`);
 
-		let rewriter = new Rewriter({});
+		let rewriter = new Rewriter({
+			config,
+			shared: {
+				rewrite: {
+					htmlRules,
+					rewriteUrl,
+					rewriteCss,
+					rewriteJs,
+				},
+			},
+			flagEnabled,
+			codec: {
+				encode: codecEncode,
+				decode: codecDecode,
+			},
+		});
 		obj = { rewriter, inUse: false };
 		rewriters.push(obj);
 	} else {

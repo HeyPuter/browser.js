@@ -45,10 +45,7 @@ function rewriteJsWasm(
 		let { js, map, scramtag, errors } = out;
 
 		if (flagEnabled("sourcemaps", meta.base) && !globalThis.clients) {
-			globalThis[globalThis.$scramjet.config.globals.pushsourcemapfn](
-				Array.from(map),
-				scramtag
-			);
+			globalThis[config.globals.pushsourcemapfn](Array.from(map), scramtag);
 
 			map = null;
 		}
