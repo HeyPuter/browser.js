@@ -17,7 +17,6 @@ use crate::{
 	rewrite::Rewrite,
 };
 
-
 macro_rules! change {
     ($span:expr, $($ty:tt)*) => {
 		$crate::changes::JsChange::new($span, $crate::changes::JsChangeType::$($ty)*)
@@ -28,37 +27,45 @@ pub(crate) use change;
 #[derive(Debug, PartialEq, Eq)]
 pub enum JsChangeType<'alloc: 'data, 'data> {
 	/// insert `${cfg.wrapfn}(`
-	WrapFnLeft { enclose: bool },
+	WrapFnLeft {
+		enclose: bool,
+	},
 	/// insert `)`
-	WrapFnRight { enclose: bool },
+	WrapFnRight {
+		enclose: bool,
+	},
 
 	WrapGetLeft {
-    	ident: Atom<'data>,
-       	enclose: bool,
+		ident: Atom<'data>,
+		enclose: bool,
 	},
 	WrapGetComputedLeft {
-       	enclose: bool,
-    },
+		enclose: bool,
+	},
 	WrapGetRight {
-        enclose: bool,
-    },
+		enclose: bool,
+	},
 
-    WrapSet {
-       	ident: Atom<'data>,
-        propspan: Span
-    },
-    WrapSetComputed,
+	WrapSet {
+		ident: Atom<'data>,
+		propspan: Span,
+	},
+	WrapSetComputed,
 
 	/// insert `${cfg.setrealmfn}({}).`
 	SetRealmFn,
 	/// insert `$scramerr(ident);`
-	ScramErrFn { ident: Atom<'data> },
+	ScramErrFn {
+		ident: Atom<'data>,
+	},
 	/// insert `$scramitize(`
 	ScramitizeFn,
 	/// insert `eval(${cfg.rewritefn}(`
 	EvalRewriteFn,
 	/// insert `: ${cfg.wrapfn}(ident)`
-	ShorthandObj { ident: Atom<'data> },
+	ShorthandObj {
+		ident: Atom<'data>,
+	},
 	/// insert scramtag
 	SourceTag,
 
@@ -73,10 +80,15 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	},
 
 	/// insert `)`
-	ClosingParen { semi: bool, replace: bool },
+	ClosingParen {
+		semi: bool,
+		replace: bool,
+	},
 
 	/// replace span with text
-	Replace { text: &'alloc str },
+	Replace {
+		text: &'alloc str,
+	},
 	/// replace span with ""
 	Delete,
 }
@@ -105,7 +117,7 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 		(cfg, flags): &Self::ToLowLevelData,
 		offset: i32,
 	) -> TransformLL<'data> {
-	dbg!(&self);
+		dbg!(&self);
 		use JsChangeType as Ty;
 		use TransformLL as LL;
 		match self.ty {
@@ -119,33 +131,25 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 			} else {
 				transforms![")"]
 			}),
-			Ty::WrapGetLeft {
-    			ident,
-        		enclose,
-			} => LL::insert(if enclose {
-			    transforms!["(", &cfg.wrapgetbase, ident, "("]
+			Ty::WrapGetLeft { ident, enclose } => LL::insert(if enclose {
+				transforms!["(", &cfg.wrapgetbase, ident, "("]
 			} else {
-		    	transforms![&cfg.wrapgetbase, ident, "("]
+				transforms![&cfg.wrapgetbase, ident, "("]
 			}),
 			Ty::WrapGetComputedLeft { enclose } => LL::insert(if enclose {
-                transforms!["(", &cfg.wrapcomputedgetfn, "("]
-            } else {
-                transforms![&cfg.wrapcomputedgetfn, "("]
-            }),
+				transforms!["(", &cfg.wrapcomputedgetfn, "("]
+			} else {
+				transforms![&cfg.wrapcomputedgetfn, "("]
+			}),
 			Ty::WrapGetRight { enclose } => LL::replace(if enclose {
 				transforms!["))"]
 			} else {
 				transforms![")"]
 			}),
-			Ty::WrapSet { ident, propspan } => LL::insert(transforms![
-    			&cfg.wrapsetbase,
-    			ident,
-    			"("
-			]),
-			Ty::WrapSetComputed => LL::insert(transforms![
-			    &cfg.wrapcomputedsetfn,
-				"("
-			]),
+			Ty::WrapSet { ident, propspan } => {
+				LL::insert(transforms![&cfg.wrapsetbase, ident, "("])
+			}
+			Ty::WrapSetComputed => LL::insert(transforms![&cfg.wrapcomputedsetfn, "("]),
 			Ty::SetRealmFn => LL::insert(transforms![&cfg.setrealmfn, "({})."]),
 			Ty::ScramErrFn { ident } => LL::insert(transforms!["$scramerr(", ident, ");"]),
 			Ty::ScramitizeFn => LL::insert(transforms![" $scramitize("]),
@@ -226,6 +230,7 @@ impl<'alloc: 'data, 'data> JsChanges<'alloc, 'data> {
 
 	#[inline]
 	pub fn add(&mut self, rewrite: Rewrite<'alloc, 'data>) {
+		dbg!(&rewrite);
 		self.inner.add(rewrite.into_inner());
 	}
 

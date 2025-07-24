@@ -22,12 +22,7 @@ use crate::{
 // js MUST not be able to get a reference to any of these because sbx
 //
 // maybe move this out of this lib?
-const UNSAFE_GLOBALS: &[&str] = &[
-	"parent",
-	"top",
-	"location",
-	"eval"
-];
+const UNSAFE_GLOBALS: &[&str] = &["parent", "top", "location", "eval"];
 
 pub struct Visitor<'alloc, 'data, E>
 where
@@ -52,7 +47,7 @@ where
 			builder.push_str("__URL_REWRITER_ALREADY_ERRORED__");
 		} else if let Err(err) =
 			self.rewriter
-				.rewrite(self.config, &self.flags, &url.value, &mut builder,module)
+				.rewrite(self.config, &self.flags, &url.value, &mut builder, module)
 		{
 			self.error.replace(err);
 			builder.push_str("__URL_REWRITER_ERROR__");
@@ -71,19 +66,17 @@ where
 
 	fn walk_member_expression(&mut self, it: &Expression) -> bool {
 		match it {
-			Expression::Identifier(s) => {
-				false
-			}
+			Expression::Identifier(s) => false,
 			Expression::StaticMemberExpression(s) => {
-    			if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
-    			    // self.jschanges.add(rewrite!(s.span, WrapAccess {
-           //          ident: s.property.name,
-           //          propspan: s.property.span,
-           //      }
-           // ));
-    			}
-			    self.walk_member_expression(&s.object)
-			},
+				if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
+					// self.jschanges.add(rewrite!(s.span, WrapAccess {
+					//          ident: s.property.name,
+					//          propspan: s.property.span,
+					//      }
+					// ));
+				}
+				self.walk_member_expression(&s.object)
+			}
 			Expression::ComputedMemberExpression(s) => self.walk_member_expression(&s.object),
 			_ => false,
 		}
@@ -122,50 +115,54 @@ where
 	}
 
 	fn visit_member_expression(&mut self, it: &MemberExpression<'data>) {
-		match  &it {
-		    MemberExpression::StaticMemberExpression(s) =>{
+		match &it {
+			MemberExpression::StaticMemberExpression(s) => {
 				// TODO
 				// you could break this with ["postMessage"] etc
 				// however this code only exists because of recaptcha whatever
 				// and it would slow down js execution a lot
-    			if s.property.name == "postMessage" {
-    				self.jschanges.add(rewrite!(s.property.span, SetRealmFn));
+				if s.property.name == "postMessage" {
+					self.jschanges.add(rewrite!(s.property.span, SetRealmFn));
 
-    				walk::walk_expression(self, &s.object);
-    				return; // unwise to walk the rest of the tree
-    			}
+					walk::walk_expression(self, &s.object);
+					return; // unwise to walk the rest of the tree
+				}
 
-    			if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
-     			    self.jschanges.add(rewrite!(it.span(), WrapGet {
-                        ident: s.property.name,
-     			        propspan: Span::new(s.property.span.start, s.property.span.end),
-                        enclose: false,
-                    }));
-     			}
+				if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
+					self.jschanges.add(rewrite!(
+						it.span(),
+						WrapGet {
+							ident: s.property.name,
+							propspan: Span::new(s.property.span.start, s.property.span.end),
+							enclose: false,
+						}
+					));
+				}
 			}
 			MemberExpression::ComputedMemberExpression(s) => {
-                self.jschanges.add(rewrite!(it.span(), WrapGetComputed {
-                    leftspan: s.object.span(),
-                    propspan: s.expression.span(),
-                    enclose: false,
-                }));
-            }
-            _=>{}
-			// if !self.flags.strict_rewrites
-			// 	&& !UNSAFE_GLOBALS.contains(&s.property.name.as_str())
-			// 	&& let Expression::Identifier(_) | Expression::ThisExpression(_) = &s.object
-			// {
-			// 	// cull tree - this should be safe
-			// 	return;
-			// }
+				self.jschanges.add(rewrite!(
+					it.span(),
+					WrapGetComputed {
+						leftspan: s.object.span(),
+						propspan: s.expression.span(),
+						enclose: false,
+					}
+				));
+			}
+			_ => {} // if !self.flags.strict_rewrites
+			        // 	&& !UNSAFE_GLOBALS.contains(&s.property.name.as_str())
+			        // 	&& let Expression::Identifier(_) | Expression::ThisExpression(_) = &s.object
+			        // {
+			        // 	// cull tree - this should be safe
+			        // 	return;
+			        // }
 
-			// if self.flags.scramitize
-			// 	&& !matches!(s.object, Expression::MetaProperty(_) | Expression::Super(_))
-			// {
-			// 	self.scramitize(s.object.span());
-			// }
+			        // if self.flags.scramitize
+			        // 	&& !matches!(s.object, Expression::MetaProperty(_) | Expression::Super(_))
+			        // {
+			        // 	self.scramitize(s.object.span());
+			        // }
 		}
-
 
 		walk::walk_member_expression(self, it);
 	}
@@ -184,7 +181,7 @@ where
 				self.jschanges.add(rewrite!(
 					it.span,
 					Eval {
-						inner: Span::new(s.span.end+1, it.span.end-1),
+						inner: Span::new(s.span.end + 1, it.span.end - 1),
 					}
 				));
 
@@ -201,7 +198,7 @@ where
 	}
 
 	fn visit_import_declaration(&mut self, it: &ImportDeclaration<'data>) {
-		self.rewrite_url(&it.source,true);
+		self.rewrite_url(&it.source, true);
 		walk::walk_import_declaration(self, it);
 	}
 	fn visit_import_expression(&mut self, it: &ImportExpression<'data>) {
@@ -213,11 +210,11 @@ where
 	}
 
 	fn visit_export_all_declaration(&mut self, it: &ExportAllDeclaration<'data>) {
-		self.rewrite_url(&it.source,true);
+		self.rewrite_url(&it.source, true);
 	}
 	fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'data>) {
 		if let Some(source) = &it.source {
-			self.rewrite_url(source,true);
+			self.rewrite_url(source, true);
 		}
 		// do not walk further, we don't want to rewrite the identifiers
 	}
@@ -314,27 +311,33 @@ where
 					return;
 				}
 			}
-			AssignmentTarget::StaticMemberExpression(s) =>{
-                if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
-                    self.jschanges.add(rewrite!(it.span, WrapSet {
-                        ident: s.property.name,
-                        propspan: Span::new(s.property.span.start-1, s.property.span.end),
-                        leftspan: s.span(),
-                        rightspan: it.right.span(),
-                    }));
-                }
+			AssignmentTarget::StaticMemberExpression(s) => {
+				if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
+					self.jschanges.add(rewrite!(
+						it.span,
+						WrapSet {
+							ident: s.property.name,
+							propspan: Span::new(s.property.span.start - 1, s.property.span.end),
+							leftspan: s.span(),
+							rightspan: it.right.span(),
+						}
+					));
+				}
 
-                // more to walk
-                walk::walk_expression(self, &s.object);
+				// more to walk
+				walk::walk_expression(self, &s.object);
 			}
-			AssignmentTarget::ComputedMemberExpression(s)=> {
-                self.jschanges.add(rewrite!(it.span, WrapSetComputed {
-                    propspan: s.expression.span(),
-                    leftspan: s.object.span(),
-                    rightspan: it.right.span(),
-                }));
-                walk::walk_expression(self, &s.object);
-                walk::walk_expression(self, &s.expression);
+			AssignmentTarget::ComputedMemberExpression(s) => {
+				self.jschanges.add(rewrite!(
+					it.span,
+					WrapSetComputed {
+						propspan: s.expression.span(),
+						leftspan: s.object.span(),
+						rightspan: it.right.span(),
+					}
+				));
+				walk::walk_expression(self, &s.object);
+				walk::walk_expression(self, &s.expression);
 			}
 			AssignmentTarget::ArrayAssignmentTarget(_) => {
 				// [location] = ["https://example.com"]

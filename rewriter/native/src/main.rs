@@ -110,7 +110,7 @@ fn main() -> Result<()> {
 			let unrewritten = NativeRewriter::unrewrite(&res);
 			// println!(
 			//     "unrewritten:\n{}",
-   //              str::from_utf8(&unrewritten).context("failed to parse unrewritten js")?
+			//              str::from_utf8(&unrewritten).context("failed to parse unrewritten js")?
 			// );
 
 			eprintln!("errors:");
