@@ -115,6 +115,9 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			($span1:ident $span2:ident end) => {
 				Span::new($span1.end, $span2.end)
 			};
+			($span1:ident $span2:ident between) => {
+				Span::new($span1.end, $span2.start)
+			};
 		}
 
 		match self {
@@ -128,12 +131,7 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 				enclose,
 			} => smallvec![
 				change!(span!(start), WrapGetLeft { ident, enclose }),
-				change!(propspan, Delete),
-				change!(Span::new(propspan.start - 1, propspan.start), Delete),
-				change!(
-					Span::new(propspan.end, propspan.end),
-					WrapGetRight { enclose }
-				),
+				change!(propspan.expand_left(1), WrapGetRight { enclose }),
 			],
 			Self::WrapGetComputed {
 				leftspan,
@@ -142,13 +140,10 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			} => smallvec![
 				change!(span!(start), WrapGetComputedLeft { enclose }),
 				// replace the bracket with ,
-				change!(
-					Span::new(leftspan.end, propspan.start),
-					Replace { text: "," }
-				),
+				change!(span!(leftspan propspan between), Replace { text: "," }),
 				// replace the other bracket with )
 				change!(
-					Span::new(propspan.end, propspan.end + 1),
+					propspan.expand_right(1),
 					ClosingParen {
 						semi: false,
 						replace: true
@@ -163,10 +158,7 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			} => smallvec![
 				change!(span!(start), WrapSet { ident, propspan }),
 				change!(propspan, Delete),
-				change!(
-					Span::new(leftspan.end, rightspan.start),
-					Replace { text: "," }
-				),
+				change!(span!(leftspan rightspan between), Replace { text: "," }),
 				change!(
 					span!(end),
 					ClosingParen {
@@ -182,15 +174,9 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			} => smallvec![
 				change!(span!(start), WrapSetComputed),
 				// replace the bracket with ,
-				change!(
-					Span::new(leftspan.end, propspan.start),
-					Replace { text: "," }
-				),
+				change!(span!(leftspan propspan between), Replace { text: "," }),
 				// replace the other bracket with another ,
-				change!(
-					Span::new(propspan.end, rightspan.start),
-					Replace { text: "," }
-				),
+				change!(span!(propspan rightspan between), Replace { text: "," }),
 				change!(
 					span!(end),
 					ClosingParen {

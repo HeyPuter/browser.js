@@ -133,7 +133,7 @@ where
 						it.span(),
 						WrapGet {
 							ident: s.property.name,
-							propspan: Span::new(s.property.span.start, s.property.span.end),
+							propspan: s.property.span,
 							enclose: false,
 						}
 					));

@@ -209,6 +209,8 @@ impl Ord for JsChange<'_, '_> {
 			Ordering::Equal => match (&self.ty, &other.ty) {
 				(Ty::ScramErrFn { .. }, _) => Ordering::Less,
 				(_, Ty::ScramErrFn { .. }) => Ordering::Greater,
+                (Ty::WrapFnRight { .. }, _) => Ordering::Less,
+                (_, Ty::WrapFnRight { .. }) => Ordering::Greater,
 				_ => Ordering::Equal,
 			},
 			x => x,
