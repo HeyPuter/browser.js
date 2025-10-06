@@ -10,32 +10,9 @@ import { Shell } from "./components/Shell";
 import { App } from "./App";
 import { css, type Component } from "dreamland/core";
 
-const { ScramjetController } = $scramjetLoadController();
-import { type ScramjetInitConfig } from "@mercuryworkshop/scramjet";
-
 export const isPuter = !import.meta.env.VITE_LOCAL && puter.env == "app";
 
-const scramjetcfg: Partial<ScramjetInitConfig> = {
-	wisp: "ws://localhost:1337/",
-	files: {
-		wasm: "/scram/scramjet.wasm.wasm",
-		all: "/scram/scramjet.all.js",
-		sync: "/scram/scramjet.sync.js",
-	},
-	flags: {
-		rewriterLogs: false,
-		captureErrors: false,
-		interceptDownloads: true,
-	},
-	siteFlags: {},
-};
-
-export const scramjet = new ScramjetController(scramjetcfg);
-
-export function setWispUrl(wispurl: string) {
-	scramjetcfg.wisp = wispurl;
-	scramjet.modifyConfig(scramjetcfg);
-}
+export function setWispUrl(wispurl: string) {}
 export const LoadInterstitial: Component<{ status: string }, {}> = function () {
 	return (
 		<dialog class="signin">
@@ -158,7 +135,6 @@ async function init() {
 	signin.showModal();
 
 	try {
-		scramjet.init();
 		const registration = await navigator.serviceWorker.register("./sw.js");
 
 		// If already controlled or active, don't block the UI.

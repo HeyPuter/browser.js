@@ -1,6 +1,5 @@
 import { browser } from "../Browser";
 import { bare } from "../IsolatedFrame";
-import { scramjet } from "../main";
 
 export type OmniboxResult = {
 	kind: "search" | "history" | "bookmark" | "direct";

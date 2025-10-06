@@ -7,7 +7,7 @@ import { HistoryState } from "./History";
 import { focusOmnibox } from "./components/UrlInput";
 
 import * as tldts from "tldts";
-import { isPuter, scramjet } from "./main";
+import { isPuter } from "./main";
 import { animateDownloadFly, showDownloadsPopup } from "./components/Omnibox";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
@@ -133,9 +133,9 @@ export class Browser extends StatefulClass {
 
 		setInterval(saveBrowserState, 10000);
 
-		scramjet.addEventListener("download", (e) => {
-			this.startDownload(e.download);
-		});
+		// scramjet.addEventListener("download", (e) => {
+		// 	this.startDownload(e.download);
+		// });
 	}
 
 	async startDownload(download: ScramjetDownload) {

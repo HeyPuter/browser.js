@@ -7,7 +7,7 @@ export const Shell: Component = function (cx) {
 	pushTab.listen((tab) => {
 		// paint the iframes
 		tab.frame.frame.classList.add(cx.id!);
-		tab.devtoolsFrame.frame.classList.add(cx.id!);
+		// tab.devtoolsFrame.frame.classList.add(cx.id!);
 
 		let mouseMoveListen = (e: MouseEvent) => {
 			tab.devtoolsWidth = window.innerWidth - e.clientX;
@@ -49,7 +49,7 @@ export const Shell: Component = function (cx) {
 						class="devtoolsframecontainer"
 						class:unfocus={use(browser.unfocusframes)}
 					>
-						{tab.devtoolsFrame.frame}
+						{/*{tab.devtoolsFrame.frame}*/}
 					</div>
 				</div>
 				<progress value={use(tab.loadProgress)}></progress>

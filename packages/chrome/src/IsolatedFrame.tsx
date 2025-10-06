@@ -64,7 +64,7 @@ const cfg = {
 		cleanErrors: false,
 		scramitize: false,
 		sourcemaps: true,
-		destructureRewrites: true,
+		destructureRewrites: false,
 		interceptDownloads: false,
 		allowInvalidJs: false,
 		allowFailedIntercepts: false,
@@ -131,6 +131,7 @@ function makeController(url: URL): Controller {
 	frame.src = baseurl.href + "controller.html";
 	frame.style.display = "none";
 	document.body.appendChild(frame);
+	console.log("waiting for activation for " + rootdomain + " controller");
 
 	let readyResolve;
 	let ready = new Promise<void>((res) => {
@@ -328,6 +329,7 @@ window.addEventListener("message", async (event) => {
 				transfer
 			);
 		} else if (data.$sandboxsw$type == "confirm") {
+			console.log(controller.rootdomain + " controller activated");
 			controller.readyResolve();
 		}
 	} catch (e) {

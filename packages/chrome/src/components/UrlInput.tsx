@@ -11,7 +11,6 @@ import iconStarFilled from "@ktibow/iconset-ion/star";
 import iconSearch from "@ktibow/iconset-ion/search";
 import iconForwards from "@ktibow/iconset-ion/arrow-forward";
 import { Icon } from "./Icon";
-import { scramjet } from "../main";
 import { OmnibarButton } from "./OmnibarButton";
 import { createMenuCustom, setContextMenu } from "./Menu";
 import { browser } from "../Browser";

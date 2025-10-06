@@ -8,7 +8,7 @@ import { createMenu } from "./components/Menu";
 import { AboutPage } from "./pages/AboutPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { scramjet, serviceWorkerReady } from "./main";
+import { serviceWorkerReady } from "./main";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import {
 	ScramjetHeaders,
@@ -147,7 +147,7 @@ export class Tab extends StatefulClass {
 		// 	}
 		// });
 
-		this.devtoolsFrame = scramjet.createFrame();
+		// this.devtoolsFrame = scramjet.createFrame();
 	}
 
 	serialize(): SerializedTab {

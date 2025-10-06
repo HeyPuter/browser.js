@@ -39,6 +39,14 @@ export default class LibcurlClient implements BareTransport {
 
 	async init() {
 		if (this.transport) libcurl.transport = this.transport;
+		await new Promise((resolve, reject) => {
+			libcurl.onload = () => {
+				console.log("loaded libcurl.js v" + libcurl.version.lib);
+				this.ready = true;
+				resolve(null);
+			};
+		});
+
 		libcurl.set_websocket(this.wisp);
 		this.session = new libcurl.HTTPSession({
 			proxy: this.proxy,
@@ -51,14 +59,6 @@ export default class LibcurlClient implements BareTransport {
 			console.log("running libcurl.js v" + libcurl.version.lib);
 			return;
 		}
-
-		await new Promise((resolve, reject) => {
-			libcurl.onload = () => {
-				console.log("loaded libcurl.js v" + libcurl.version.lib);
-				this.ready = true;
-				resolve(null);
-			};
-		});
 	}
 	ready = false;
 	async meta() {}
