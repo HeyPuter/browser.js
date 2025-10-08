@@ -4,22 +4,12 @@ import { browser } from "./Browser";
 import { History, type SerializedHistory } from "./History";
 import { NewTabPage } from "./pages/NewTabPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
-import { createMenu } from "./components/Menu";
 import { AboutPage } from "./pages/AboutPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { serviceWorkerReady } from "./main";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import {
-	ScramjetHeaders,
-	ScramjetServiceWorker,
-	type ScramjetInitConfig,
-	type ScramjetFetchContext,
-	ScramjetController,
-	type ScramjetFetchResponse,
-	handleFetch,
-	rewriteUrl,
-	config,
 	ScramjetClient,
 	ScramjetFrame,
 } from "@mercuryworkshop/scramjet/bundled";

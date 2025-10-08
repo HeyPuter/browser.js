@@ -3,13 +3,14 @@ import {
 	type ScramjetFetchContext,
 	type ScramjetFetchResponse,
 	CookieJar,
-	handleFetch,
+	ScramjetFetchHandler,
 	rewriteUrl,
 	setConfig,
 	unrewriteUrl,
 	type URLMeta,
-	ScramjetServiceWorker,
+	setInterface,
 } from "@mercuryworkshop/scramjet/bundled";
+
 import { BareClient } from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
 import { type ChildNode, DomHandler, Element, Comment, Node } from "domhandler";
@@ -86,6 +87,12 @@ const cfg = {
 };
 
 setConfig(cfg);
+setInterface({
+	onServerbound: (type, fn) => {},
+	onClientbound: (type, fn) => {},
+	sendClientbound: (type, message) => {},
+	sendServerbound: (type, message) => {},
+});
 export const bare = new BareClient(
 	new LibcurlClient({
 		wisp: cfg.wisp,
@@ -94,7 +101,8 @@ export const bare = new BareClient(
 
 type Controller = {
 	controllerframe: HTMLIFrameElement;
-	cookiestore: CookieJar;
+	cookieJar: CookieJar;
+	fetchHandler: ScramjetFetchHandler;
 	rootdomain: string;
 	baseurl: URL;
 	prefix: URL;
@@ -139,7 +147,33 @@ function makeController(url: URL): Controller {
 	});
 
 	const prefix = new URL(baseurl.protocol + baseurl.host + cfg.prefix);
-	const cookiestore = new CookieJar();
+	const cookieJar = new CookieJar();
+
+	const fetchHandler = new ScramjetFetchHandler({
+		client: bare,
+		cookieJar,
+		prefix: prefix,
+	});
+	fetchHandler.addEventListener("htmlPostRewrite", (e: any) => {
+		const handler = e.handler as DomHandler;
+		function findhead(node: Element): Element | null {
+			if (node.type === ElementType.Tag && node.name === "head") {
+				return node as Element;
+			} else if (node.childNodes) {
+				for (const child of node.childNodes) {
+					const head = findhead(child as Element);
+					if (head) return head;
+				}
+			}
+
+			return null;
+		}
+
+		const head = findhead(handler.root as Node as Element)!;
+
+		// inject after the scramjet scripts and before the rest of the page
+		head.children.splice(3, 0, new Element("script", { src: inject_script }));
+	});
 
 	const controller = {
 		controllerframe: frame,
@@ -149,7 +183,8 @@ function makeController(url: URL): Controller {
 		prefix,
 		ready,
 		readyResolve: readyResolve!,
-		cookiestore,
+		cookieJar,
+		fetchHandler,
 	};
 	controllers.push(controller);
 
@@ -190,7 +225,7 @@ const methods = {
 		controller: Controller
 	): Promise<[ScramjetFetchResponse, Transferable[] | undefined]> {
 		// repopulate fetchcontext fields with the items that weren't cloned over postMessage
-		data.cookieStore = controller.cookiestore;
+		data.cookieStore = controller.cookieJar;
 		data.rawUrl = new URL(data.rawUrl);
 		if (data.rawClientUrl) data.rawClientUrl = new URL(data.rawClientUrl);
 		let headers = new ScramjetHeaders();
@@ -257,36 +292,7 @@ const methods = {
 			}
 		}
 
-		// TODO fix eventtarget jank
-		const tgt = new EventTarget();
-		tgt.addEventListener("htmlPostRewrite", (e: any) => {
-			const handler = e.handler as DomHandler;
-			function findhead(node: Element): Element | null {
-				if (node.type === ElementType.Tag && node.name === "head") {
-					return node as Element;
-				} else if (node.childNodes) {
-					for (const child of node.childNodes) {
-						const head = findhead(child as Element);
-						if (head) return head;
-					}
-				}
-
-				return null;
-			}
-
-			const head = findhead(handler.root as Node as Element)!;
-
-			// inject after the scramjet scripts and before the rest of the page
-			head.children.splice(3, 0, new Element("script", { src: inject_script }));
-		});
-
-		const fetchresponse = await handleFetch.call(
-			tgt as any,
-			data,
-			cfg,
-			bare,
-			controller.prefix
-		);
+		const fetchresponse = await controller.fetchHandler.handleFetch(data);
 
 		let transfer: any[] | undefined = undefined;
 		if (

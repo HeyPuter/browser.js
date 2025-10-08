@@ -18,7 +18,7 @@
 		"@mercuryworkshop/bare-mux-custom": "workspace:*",
 		"@mercuryworkshop/epoxy-transport": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "workspace:*",
-		"@mercuryworkshop/scramjet": "workspace:scramjet",
+		"@mercuryworkshop/scramjet": "workspace:*",
 		"devtools-protocol": "^0.0.1339468",
 		"domhandler": "^5.0.3",
 		"dreamland": "workspace:dreamland",
