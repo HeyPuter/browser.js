@@ -36,7 +36,7 @@ const ISOLATION_ORIGIN = import.meta.env.VITE_ISOLATION_ORIGIN;
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 
 const cfg = {
-	wisp: "ws://localhost:1337/",
+	wisp: import.meta.env.VITE_WISP_URL,
 	prefix: "/scramjet/",
 	globals: {
 		wrapfn: "$scramjet$wrap",

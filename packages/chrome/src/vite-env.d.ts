@@ -4,6 +4,7 @@
 interface ImportMetaEnv {
 	readonly VITE_LOCAL: boolean;
 	readonly VITE_ISOLATION_ORIGIN: string;
+	readonly VITE_WISP_URL: string;
 }
 
 interface ImportMeta {
