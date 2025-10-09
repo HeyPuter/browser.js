@@ -11,6 +11,9 @@ import {
 	setInterface,
 } from "@mercuryworkshop/scramjet/bundled";
 
+import scramjetWASM from "../../scramjet/dist/scramjet.wasm.wasm?url";
+import scramjetAll from "../../scramjet/dist/scramjet.all.js?url";
+import injectScript from "../../inject/dist/inject.js?url";
 import { BareClient } from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
 import { type ChildNode, DomHandler, Element, Comment, Node } from "domhandler";
@@ -172,7 +175,7 @@ function makeController(url: URL): Controller {
 		const head = findhead(handler.root as Node as Element)!;
 
 		// inject after the scramjet scripts and before the rest of the page
-		head.children.splice(3, 0, new Element("script", { src: inject_script }));
+		head.children.splice(3, 0, new Element("script", { src: injectScript }));
 	});
 
 	const controller = {
@@ -217,8 +220,6 @@ export class IsolatedFrame {
 	}
 }
 
-const inject_script = "/inject.js";
-
 const methods = {
 	async fetch(
 		data: ScramjetFetchContext,
@@ -239,9 +240,9 @@ const methods = {
 			return [await makeWasmResponse(), undefined];
 		} else if (data.rawUrl.pathname === cfg.files.all) {
 			return [await makeAllResponse(), undefined];
-		} else if (data.rawUrl.pathname === inject_script) {
+		} else if (data.rawUrl.pathname === "/inject.js") {
 			return [
-				await fetch(inject_script).then(async (x) => {
+				await fetch(injectScript).then(async (x) => {
 					const text = await x.text();
 					return {
 						body: text,
@@ -349,7 +350,7 @@ let allPayload: string | null = null;
 
 async function makeWasmResponse() {
 	if (!wasmPayload) {
-		const resp = await fetch(cfg.files.wasm);
+		const resp = await fetch(scramjetWASM);
 		const buf = await resp.arrayBuffer();
 		const b64 = btoa(
 			new Uint8Array(buf)
@@ -377,7 +378,7 @@ async function makeWasmResponse() {
 
 async function makeAllResponse(): Promise<ScramjetFetchResponse> {
 	if (!allPayload) {
-		const resp = await fetch(cfg.files.all);
+		const resp = await fetch(scramjetAll);
 		allPayload = await resp.text();
 	}
 
