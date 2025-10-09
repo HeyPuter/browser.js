@@ -11,6 +11,7 @@ import type { Tab } from "../Tab";
 // import html2canvas from "html2canvas";
 import { setContextMenu } from "./Menu";
 import { browser, forceScreenshot, pushTab } from "../Browser";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 const isFirefox =
 	navigator.userAgent.includes("Gecko/") &&
@@ -137,7 +138,7 @@ export const DragTab: Component<
 				<div class={use(this.active).map((x) => `main ${x ? "active" : ""}`)}>
 					<img
 						src={use(this.tab.icon)}
-						on:error={() => (this.tab.icon = "/defaultfavicon.png")}
+						on:error={() => (this.tab.icon = defaultFaviconUrl)}
 					/>
 					<span>{use(this.tab.title)}</span>
 					<button

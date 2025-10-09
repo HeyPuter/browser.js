@@ -13,6 +13,7 @@ import type { Tab } from "../Tab";
 import { UrlInput } from "./UrlInput";
 import { browser } from "../Browser";
 import { Icon } from "./Icon";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 import iconNew from "@ktibow/iconset-ion/duplicate-outline";
 import iconTime from "@ktibow/iconset-ion/time-outline";
@@ -141,7 +142,7 @@ export const Omnibox: Component<{
 				[
 					...states.map((s) => ({
 						label: s.title || "New Tab",
-						image: s.favicon || "/defaultfavicon.png",
+						image: s.favicon || defaultFaviconUrl,
 						action: () => {
 							let rel =
 								browser.activetab.history.states.indexOf(s) -

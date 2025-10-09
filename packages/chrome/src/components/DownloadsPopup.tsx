@@ -7,6 +7,7 @@ import iconFolder from "@ktibow/iconset-ion/folder-outline";
 import iconOpen from "@ktibow/iconset-ion/open-outline";
 import iconPause from "@ktibow/iconset-ion/pause-outline";
 import { formatBytes } from "../utils";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 export const DownloadsPopup: Component<{}> = function (cx) {
 	return (
@@ -27,7 +28,7 @@ export const DownloadsPopup: Component<{}> = function (cx) {
 				{use(browser.sessionDownloadHistory).mapEach((b) => (
 					<div class="entry">
 						<div class="iconcontainer">
-							<img src="/defaultfavicon.png"></img>
+							<img src={defaultFaviconUrl}></img>
 						</div>
 						<div class="contents">
 							<span>{b.filename}</span>

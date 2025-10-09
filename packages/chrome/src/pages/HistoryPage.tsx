@@ -1,6 +1,7 @@
 import { css, type Component } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 export const HistoryPage: Component<
 	{
@@ -21,7 +22,7 @@ export const HistoryPage: Component<
 								browser.newTab(entry.url);
 							}}
 						>
-							<img src={entry.favicon || "/defaultfavicon.png"} alt="favicon" />
+							<img src={entry.favicon || defaultFaviconUrl} alt="favicon" />
 							<span class="title">{entry.title || entry.url.href}</span>
 							<span class="url">{entry.url.hostname}</span>
 						</div>

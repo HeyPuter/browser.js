@@ -13,6 +13,7 @@ import iconForwards from "@ktibow/iconset-ion/arrow-forward";
 import { Icon } from "./Icon";
 import { OmnibarButton } from "./OmnibarButton";
 import { createMenuCustom, setContextMenu } from "./Menu";
+import { defaultFaviconUrl } from "../assets/favicon";
 import { browser } from "../Browser";
 import { SiteInformationPopup } from "./SiteInformationPopup";
 import { emToPx, splitUrl } from "../utils";
@@ -183,7 +184,7 @@ export const UrlInput: Component<
 							) : (
 								<img
 									class="favicon"
-									src={item.favicon || "/defaultfavicon.png"}
+									src={item.favicon || defaultFaviconUrl}
 									alt="favicon"
 								/>
 							)}
@@ -207,7 +208,7 @@ export const UrlInput: Component<
 								<img
 									src={
 										this.overflowItems[this.focusindex - 1].favicon ||
-										"/defaultfavicon.png"
+										defaultFaviconUrl
 									}
 								></img>
 							) : (

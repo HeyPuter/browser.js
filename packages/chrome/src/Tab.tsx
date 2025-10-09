@@ -14,6 +14,7 @@ import {
 	ScramjetFrame,
 } from "@mercuryworkshop/scramjet/bundled";
 import { IsolatedFrame } from "./IsolatedFrame";
+import { defaultFaviconUrl } from "./assets/favicon";
 
 const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
 
@@ -64,7 +65,7 @@ export class Tab extends StatefulClass {
 		this.history = new History(this);
 		this.history.push(this.url, undefined);
 
-		this.icon = "/defaultfavicon.png";
+		this.icon = defaultFaviconUrl;
 
 		let resolver: () => void;
 		this.waitForChobitsuInit = new Promise((resolve) => {
@@ -189,17 +190,18 @@ export class Tab extends StatefulClass {
 			// placeholder title until the page fills in
 			this.title = url.href;
 
-			if (!navigator.serviceWorker.controller) {
-				serviceWorkerReady.then(() => {
-					this.frame.go(url);
-				});
-			} else {
-				this.frame.go(url);
-			}
+			// if (!navigator.serviceWorker.controller) {
+			// 	serviceWorkerReady.then(() => {
+			this.frame.go(url);
+			// 	});
+			// } else {
+			// this.frame.go(url);
+			// }
 		}
 	}
 
 	pushNavigate(url: URL) {
+		console.log("pushing");
 		this.history.push(url, undefined, true);
 	}
 	replaceNavigate(url: URL) {

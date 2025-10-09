@@ -6,6 +6,7 @@ import iconClose from "@ktibow/iconset-ion/close-outline";
 import iconFolder from "@ktibow/iconset-ion/folder-outline";
 import { Icon } from "../components/Icon";
 import { formatBytes } from "../utils";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 export const DownloadsPage: Component<
 	{
@@ -21,7 +22,7 @@ export const DownloadsPage: Component<
 					{use(browser.globalDownloadHistory).mapEach((e) => (
 						<div class="entry">
 							<div class="iconcontainer">
-								<img src="/defaultfavicon.png"></img>
+								<img src={defaultFaviconUrl}></img>
 							</div>
 							<div class="content">
 								<a href={e.url}>{e.filename}</a>

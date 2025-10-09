@@ -3,6 +3,7 @@ import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { trimUrl } from "../components/UrlInput";
 import { createMenu } from "../components/Menu";
+import { defaultFaviconUrl } from "../assets/favicon";
 
 export const NewTabPage: Component<
 	{
@@ -44,10 +45,7 @@ export const NewTabPage: Component<
 						>
 							<div class="suggestioninner">
 								<div class="circle">
-									<img
-										src={entry.favicon || "/defaultfavicon.png"}
-										alt="favicon"
-									/>
+									<img src={entry.favicon || defaultFaviconUrl} alt="favicon" />
 								</div>
 								<span class="title">{entry.title || trimUrl(entry.url)}</span>
 							</div>
