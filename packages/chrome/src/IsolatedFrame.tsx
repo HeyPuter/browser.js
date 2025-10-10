@@ -10,6 +10,7 @@ import {
 	type URLMeta,
 	setInterface,
 	type ScramjetInterface,
+	type Serverbound,
 } from "@mercuryworkshop/scramjet/bundled";
 
 import scramjetWASM from "../../scramjet/dist/scramjet.wasm.wasm?url";
@@ -92,6 +93,75 @@ const cfg = {
 
 setConfig(cfg);
 
+// you can get to any frame by window.frames[index][index]...
+// so we can encode a certain frame as a sequence of indices to reach it, and then it will be available from any other frame, even cross-origin
+type FrameSequence = number[];
+
+function findSelfSequence(
+	target: Window,
+	path: FrameSequence = []
+): FrameSequence | null {
+	if (target == self) {
+		return path;
+	} else {
+		for (let i = 0; i < target.frames.length; i++) {
+			const child = target.frames[i];
+			const res = findSelfSequence(child, [...path, i]);
+			if (res) return res;
+		}
+		return null;
+	}
+}
+
+type ServerboundMethods = {
+	[K in keyof Serverbound]: (
+		tab: Tab,
+		arg: Serverbound[K][0]
+	) => Promise<Serverbound[K][1]>;
+};
+const scramjetipcserverbound: ServerboundMethods = {
+	setCookie: async (tab, { cookie, url }) => {
+		console.log("setCookie", cookie, url, tab);
+		return undefined;
+	},
+	blobData: async (tab, { id, data }) => {
+		return undefined;
+	},
+};
+
+addEventListener("message", (e) => {
+	if (!e.data || !("$scramjetipc$type" in e.data)) return;
+	const type = e.data.$scramjetipc$type;
+	if (type === "request") {
+		const method = e.data.$scramjetipc$method;
+		const message = e.data.$scramjetipc$message;
+		const token = e.data.$scramjetipc$token;
+
+		const findTab = (win: Window): Tab | null => {
+			const f = browser.tabs.find((t) => t.frame.frame.contentWindow === win);
+			if (f) return f;
+			const p = findTab(win.parent);
+			if (p) return p;
+			// no need to worry about subframes because it can't be a tab if it's not the top frame
+			return null;
+		};
+
+		const tab = findTab(e.source as Window)!;
+		const fn = (scramjetipcserverbound as any)[method];
+		if (fn) {
+			fn(tab, message).then((response: any) => {
+				e.source!.postMessage({
+					$scramjetipc$type: "response",
+					$scramjetipc$token: token,
+					$scramjetipc$message: response,
+				});
+			});
+		} else {
+			console.error("Unknown scramjet ipc method", method);
+		}
+	}
+});
+
 const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	meta,
 	handler,
@@ -100,17 +170,77 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	script
 ) => {
 	const injected = `
-		$scramjetLoadClient().loadAndHook({
-			interface: {
-				getInjectScripts: ${getInjectScripts.toString()},
-				onClientbound: function() { return undefined; },
-				sendServerbound: async function() {}
-			},
-			config: ${JSON.stringify(config)},
-			cookies: ${JSON.stringify(cookieJar.dump())},
-			transport: null,
-		});
-		document.currentScript.remove();
+		{
+			const top = self.top;
+			const sequence = ${JSON.stringify(findSelfSequence(self)!)};
+			const target = sequence.reduce((win, idx) => win.frames[idx], top);
+			let counter = 0;
+
+			let syncPool = new Map();
+
+			const scramjetipcclientboundmethods = {
+				setCookie: async ({ cookie, url }) => {
+					console.log("[clientbound] setCookie", cookie, url);
+					return undefined;
+				}
+			};
+
+			addEventListener("message", (e) => {
+				if (!e.data || !("$scramjetipc$type" in e.data)) return;
+				const type = e.data.$scramjetipc$type;
+				if (type === "response") {
+					const token = e.data.$scramjetipc$token;
+					const message = e.data.$scramjetipc$message;
+
+					const cb = syncPool.get(token);
+					if (cb) {
+						cb(message);
+						syncPool.delete(token);
+					}
+				} else if (type === "request") {
+					const method = e.data.$scramjetipc$method;
+					const message = e.data.$scramjetipc$message;
+					const token = e.data.$scramjetipc$token;
+
+					const fn = scramjetipcclientboundmethods[method];
+					if (fn) {
+						fn(message).then((response) => {
+							e.source.postMessage({
+								$scramjetipc$type: "response",
+								$scramjetipc$token: token,
+								$scramjetipc$message: response,
+							});
+						});
+					} else {
+						console.error("Unknown scramjet ipc clientbound method", method);
+					}
+				}
+			});
+
+			const client = $scramjetLoadClient().loadAndHook({
+				interface: {
+					getInjectScripts: ${getInjectScripts.toString()},
+					onClientbound: function() { return undefined; },
+					sendServerbound: async function(type, msg) {
+						const token = counter++;
+						target.postMessage({
+							$scramjetipc$type: "request",
+							$scramjetipc$method: type,
+							$scramjetipc$token: token,
+							$scramjetipc$message: msg,
+						}, "*");
+
+						return new Promise((res) => {
+							syncPool.set(token, res);
+						});
+					}
+				},
+				config: ${JSON.stringify(config)},
+				cookies: ${JSON.stringify(cookieJar.dump())},
+				transport: null,
+			});
+			document.currentScript.remove();
+		}
 	`;
 
 	// for compatibility purpose
