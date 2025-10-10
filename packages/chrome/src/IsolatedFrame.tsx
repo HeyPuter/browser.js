@@ -132,6 +132,8 @@ function getRootDomain(url: URL): string {
 	return tldts.getDomain(url.href) || url.hostname;
 }
 
+const virtualInjectUrl = "/inject.js";
+
 function makeController(url: URL): Controller {
 	let originurl = new URL(ISOLATION_ORIGIN);
 	let baseurl = new URL(
@@ -175,7 +177,11 @@ function makeController(url: URL): Controller {
 		const head = findhead(handler.root as Node as Element)!;
 
 		// inject after the scramjet scripts and before the rest of the page
-		head.children.splice(3, 0, new Element("script", { src: injectScript }));
+		head.children.splice(
+			3,
+			0,
+			new Element("script", { src: virtualInjectUrl })
+		);
 	});
 
 	const controller = {
@@ -240,7 +246,7 @@ const methods = {
 			return [await makeWasmResponse(), undefined];
 		} else if (data.rawUrl.pathname === cfg.files.all) {
 			return [await makeAllResponse(), undefined];
-		} else if (data.rawUrl.pathname === "/inject.js") {
+		} else if (data.rawUrl.pathname === virtualInjectUrl) {
 			return [
 				await fetch(injectScript).then(async (x) => {
 					const text = await x.text();
