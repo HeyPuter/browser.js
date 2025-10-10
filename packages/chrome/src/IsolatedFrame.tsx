@@ -257,6 +257,7 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		script(config.files.wasm),
 		script(config.files.all),
 		script("data:application/javascript;base64," + base64Injected),
+		script(virtualInjectUrl),
 	];
 };
 setInterface({
@@ -348,30 +349,6 @@ function makeController(url: URL): Controller {
 		client: bare,
 		cookieJar,
 		prefix: prefix,
-	});
-	fetchHandler.addEventListener("htmlPostRewrite", (e: any) => {
-		const handler = e.handler as DomHandler;
-		function findhead(node: Element): Element | null {
-			if (node.type === ElementType.Tag && node.name === "head") {
-				return node as Element;
-			} else if (node.childNodes) {
-				for (const child of node.childNodes) {
-					const head = findhead(child as Element);
-					if (head) return head;
-				}
-			}
-
-			return null;
-		}
-
-		const head = findhead(handler.root as Node as Element)!;
-
-		// inject after the scramjet scripts and before the rest of the page
-		head.children.splice(
-			3,
-			0,
-			new Element("script", { src: virtualInjectUrl })
-		);
 	});
 
 	const controller = {
