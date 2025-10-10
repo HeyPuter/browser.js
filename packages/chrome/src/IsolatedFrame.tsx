@@ -9,6 +9,7 @@ import {
 	unrewriteUrl,
 	type URLMeta,
 	setInterface,
+	type ScramjetInterface,
 } from "@mercuryworkshop/scramjet/bundled";
 
 import scramjetWASM from "../../scramjet/dist/scramjet.wasm.wasm?url";
@@ -90,11 +91,53 @@ const cfg = {
 };
 
 setConfig(cfg);
+
+const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
+	meta,
+	handler,
+	config,
+	cookieJar,
+	script
+) => {
+	const dump = JSON.stringify(cookieJar.dump());
+	const injected = `
+			self.COOKIE = ${dump};
+			$scramjetLoadClient().loadAndHook({
+				interface: {
+					getInjectScripts: ${getInjectScripts.toString()},
+					onClientbound: function() { return undefined; },
+					sendServerbound: async function() {}
+				},
+				config: ${JSON.stringify(config)},
+				transport: null,
+			});
+			if ("document" in self && document?.currentScript) {
+				document.currentScript.remove();
+			}
+		`;
+
+	// for compatibility purpose
+	const base64Injected = btoa(
+		new Uint8Array(new TextEncoder().encode(injected))
+			.reduce(
+				(data, byte) => (data.push(String.fromCharCode(byte)), data),
+				[] as any
+			)
+			.join("")
+	);
+
+	return [
+		script(config.files.wasm),
+		script(config.files.all),
+		script("data:application/javascript;base64," + base64Injected),
+	];
+};
 setInterface({
-	onServerbound: (type, fn) => {},
-	onClientbound: (type, fn) => {},
-	sendClientbound: (type, message) => {},
-	sendServerbound: (type, message) => {},
+	onServerbound: (type, listener) => {
+		return undefined;
+	},
+	sendClientbound: async (type, msg) => {},
+	getInjectScripts,
 });
 export const bare = new BareClient(
 	new LibcurlClient({
