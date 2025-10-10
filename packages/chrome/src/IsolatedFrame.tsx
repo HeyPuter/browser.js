@@ -99,22 +99,19 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	cookieJar,
 	script
 ) => {
-	const dump = JSON.stringify(cookieJar.dump());
 	const injected = `
-			self.COOKIE = ${dump};
-			$scramjetLoadClient().loadAndHook({
-				interface: {
-					getInjectScripts: ${getInjectScripts.toString()},
-					onClientbound: function() { return undefined; },
-					sendServerbound: async function() {}
-				},
-				config: ${JSON.stringify(config)},
-				transport: null,
-			});
-			if ("document" in self && document?.currentScript) {
-				document.currentScript.remove();
-			}
-		`;
+		$scramjetLoadClient().loadAndHook({
+			interface: {
+				getInjectScripts: ${getInjectScripts.toString()},
+				onClientbound: function() { return undefined; },
+				sendServerbound: async function() {}
+			},
+			config: ${JSON.stringify(config)},
+			cookies: ${JSON.stringify(cookieJar.dump())},
+			transport: null,
+		});
+		document.currentScript.remove();
+	`;
 
 	// for compatibility purpose
 	const base64Injected = btoa(
@@ -138,6 +135,26 @@ setInterface({
 	},
 	sendClientbound: async (type, msg) => {},
 	getInjectScripts,
+	getWorkerInjectScripts: (meta, js, config, type) => {
+		const module = type === "module";
+		let str = "";
+		const script = (script: keyof typeof config.files) => {
+			if (module) {
+				str += `import "${config.files[script]}"\n`;
+			} else {
+				str += `importScripts("${config.files[script]}");\n`;
+			}
+		};
+		script("wasm");
+		script("all");
+		str += `$scramjetLoadClient().loadAndHook({
+			config: ${JSON.stringify(config)},
+			interface: {},
+			transport: null,
+		});`;
+
+		return str;
+	},
 });
 export const bare = new BareClient(
 	new LibcurlClient({
