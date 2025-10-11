@@ -261,7 +261,7 @@ jobs:
   rewritertests:
     name: "Run Rewriter Tests"
     runs-on: ubuntu-latest
-    needs: [build, package-validation]
+    needs: [build]
 
     steps:
       - name: Checkout code
