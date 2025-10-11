@@ -113,23 +113,11 @@ function findSelfSequence(
 	}
 }
 
-type ServerboundMethods = {
-	[K in keyof Serverbound]: (
-		tab: Tab,
-		arg: Serverbound[K][0]
-	) => Promise<Serverbound[K][1]>;
-};
-const scramjetipcserverbound: ServerboundMethods = {
-	setCookie: async (tab, { cookie, url }) => {
-		console.log("setCookie", cookie, url, tab);
-		return undefined;
-	},
-	blobData: async (tab, { id, data }) => {
-		return undefined;
-	},
-};
+let sjIpcListeners = new Map<string, (msg: any) => Promise<any>>();
+const sjIpcSyncPool = new Map<number, (val: any) => void>();
+let sjIpcCounter = 0;
 
-addEventListener("message", (e) => {
+addEventListener("message", async (e) => {
 	if (!e.data || !("$scramjetipc$type" in e.data)) return;
 	const type = e.data.$scramjetipc$type;
 	if (type === "request") {
@@ -146,18 +134,26 @@ addEventListener("message", (e) => {
 			return null;
 		};
 
-		const tab = findTab(e.source as Window)!;
-		const fn = (scramjetipcserverbound as any)[method];
+		// const tab = findTab(e.source as Window)!;
+		const fn = sjIpcListeners.get(method);
 		if (fn) {
-			fn(tab, message).then((response: any) => {
-				e.source!.postMessage({
-					$scramjetipc$type: "response",
-					$scramjetipc$token: token,
-					$scramjetipc$message: response,
-				});
+			const response = await fn(message);
+			e.source!.postMessage({
+				$scramjetipc$type: "response",
+				$scramjetipc$token: token,
+				$scramjetipc$message: response,
 			});
 		} else {
 			console.error("Unknown scramjet ipc method", method);
+		}
+	} else if (type === "response") {
+		const token = e.data.$scramjetipc$token;
+		const message = e.data.$scramjetipc$message;
+
+		const cb = sjIpcSyncPool.get(token);
+		if (cb) {
+			cb(message);
+			sjIpcSyncPool.delete(token);
 		}
 	}
 });
@@ -177,15 +173,9 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 			let counter = 0;
 
 			let syncPool = new Map();
+			let listeners = new Map();
 
-			const scramjetipcclientboundmethods = {
-				setCookie: async ({ cookie, url }) => {
-					console.log("[clientbound] setCookie", cookie, url);
-					return undefined;
-				}
-			};
-
-			addEventListener("message", (e) => {
+			addEventListener("message", async (e) => {
 				if (!e.data || !("$scramjetipc$type" in e.data)) return;
 				const type = e.data.$scramjetipc$type;
 				if (type === "response") {
@@ -202,14 +192,13 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 					const message = e.data.$scramjetipc$message;
 					const token = e.data.$scramjetipc$token;
 
-					const fn = scramjetipcclientboundmethods[method];
+					const fn = listeners.get(method);
 					if (fn) {
-						fn(message).then((response) => {
-							e.source.postMessage({
-								$scramjetipc$type: "response",
-								$scramjetipc$token: token,
-								$scramjetipc$message: response,
-							});
+						const response = await fn(message);
+						e.source.postMessage({
+							$scramjetipc$type: "response",
+							$scramjetipc$token: token,
+							$scramjetipc$message: response,
 						});
 					} else {
 						console.error("Unknown scramjet ipc clientbound method", method);
@@ -220,7 +209,9 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 			const client = $scramjetLoadClient().loadAndHook({
 				interface: {
 					getInjectScripts: ${getInjectScripts.toString()},
-					onClientbound: function() { return undefined; },
+					onClientbound: function(type, callback) {
+						listeners.set(type, callback);
+				 	},
 					sendServerbound: async function(type, msg) {
 						const token = counter++;
 						target.postMessage({
@@ -262,9 +253,33 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 };
 setInterface({
 	onServerbound: (type, listener) => {
+		sjIpcListeners.set(type, listener);
+	},
+	sendClientbound: async (type, msg) => {
+		// TODO: the fetchandler needs an abstracted concept of clients so it can manually decide which one to send to
+		for (let tab of browser.tabs) {
+			if (!tab.frame.frame.contentWindow) continue;
+			const token = sjIpcCounter++;
+
+			const recurseSend = (win: Window) => {
+				win.postMessage(
+					{
+						$scramjetipc$type: "request",
+						$scramjetipc$method: type,
+						$scramjetipc$token: token,
+						$scramjetipc$message: msg,
+					},
+					"*"
+				);
+				for (let i = 0; i < win.frames.length; i++) {
+					recurseSend(win.frames[i]);
+				}
+			};
+
+			recurseSend(tab.frame.frame.contentWindow);
+		}
 		return undefined;
 	},
-	sendClientbound: async (type, msg) => {},
 	getInjectScripts,
 	getWorkerInjectScripts: (meta, js, config, type) => {
 		const module = type === "module";
