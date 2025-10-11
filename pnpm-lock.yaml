@@ -218,7 +218,7 @@ importers:
         specifier: workspace:*
         version: link:../libcurl-transport
       '@mercuryworkshop/scramjet':
-        specifier: workspace:scramjet
+        specifier: workspace:*
         version: link:../scramjet
       devtools-protocol:
         specifier: ^0.0.1339468
@@ -244,6 +244,9 @@ importers:
       tldts:
         specifier: ^7.0.11
         version: 7.0.11
+      vite-plugin-singlefile:
+        specifier: ^2.3.0
+        version: 2.3.0(rollup@4.52.2)(vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1))
       vite-plugin-static-copy:
         specifier: ^3.1.0
         version: 3.1.1(vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1))
@@ -5545,6 +5548,13 @@ packages:
 
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
+
+  vite-plugin-singlefile@2.3.0:
+    resolution: {integrity: sha512-DAcHzYypM0CasNLSz/WG0VdKOCxGHErfrjOoyIPiNxTPTGmO6rRD/te93n1YL/s+miXq66ipF1brMBikf99c6A==}
+    engines: {node: '>18.0.0'}
+    peerDependencies:
+      rollup: ^4.44.1
+      vite: ^5.4.11 || ^6.0.0 || ^7.0.0
 
   vite-plugin-static-copy@3.1.1:
     resolution: {integrity: sha512-oR53SkL5cX4KT1t18E/xU50vJDo0N8oaHza4EMk0Fm+2/u6nQivxavOfrDk3udWj+dizRizB/QnBvJOOQrTTAQ==}
@@ -11640,6 +11650,12 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
+
+  vite-plugin-singlefile@2.3.0(rollup@4.52.2)(vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)):
+    dependencies:
+      micromatch: 4.0.8
+      rollup: 4.52.2
+      vite: 6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
   vite-plugin-static-copy@3.1.1(vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)):
     dependencies:

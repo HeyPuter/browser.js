@@ -83,9 +83,9 @@ jobs:
         id: rewriter-cache
         with:
           path: |
-            rewriter/wasm/out
-            dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('rewriter/**/Cargo.toml', 'rewriter/**/*.rs', 'rewriter/**/src/**/*.toml', 'rewriter/**/src/**/*.json', 'rewriter/**/src/**/*.md', 'rewriter/**/*.sh') }}
+            packages/scramjet/rewriter/wasm/out
+            packages/scramjet/dist/scramjet.wasm.wasm
+          key: rewriter-release-${{ hashFiles('packages/scramjet/rewriter/**/Cargo.toml', 'packages/scramjet/rewriter/**/*.rs', 'packages/scramjet/rewriter/**/src/**/*.toml', 'packages/scramjet/rewriter/**/src/**/*.json', 'packages/scramjet/rewriter/**/src/**/*.md', 'packages/scramjet/rewriter/**/*.sh') }}
           restore-keys: |
             rewriter-release-
 
@@ -113,22 +113,24 @@ jobs:
         run: "cargo install --git https://github.com/r58playz/wasm-snip"
 
       - name: Pack Scramjet
-        run: pnpm pack
+        run: |
+          cd packages/scramjet
+          pnpm pack
 
       - name: Upload Artifact (pnpm pack)
         uses: actions/upload-artifact@v4
         with:
           name: packaged-scramjet
-          path: mercuryworkshop-scramjet-*.tgz
+          path: packages/scramjet/mercuryworkshop-scramjet-*.tgz
 
       - name: Upload Artifact (dist)
         uses: actions/upload-artifact@v4
         with:
           name: scramjet
           path: |
-            dist/*.js
-            dist/*.js.map
-            dist/*.wasm
+            packages/scramjet/dist/*.js
+            packages/scramjet/dist/*.js.map
+            packages/scramjet/dist/*.wasm
   frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
@@ -156,56 +158,46 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: scramjet
-          path: dist
+          path: packages/scramjet/dist
 
       - name: Build Dreamland
         run: |
-          cd dreamlandjs
+          cd external/dreamlandjs
           pnpm build
 
-      - name: Get Chii submodule commit hash
-        id: chii-hash
-        run: echo "hash=$(git submodule status chii | awk '{print $1}')" >> $GITHUB_OUTPUT
+      # - name: Get Chii submodule commit hash
+      #   id: chii-hash
+      #   run: echo "hash=$(git submodule status chii | awk '{print $1}')" >> $GITHUB_OUTPUT
 
-      - name: Cache Chii build output
-        id: chii-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            chii/public
-            chii/front_end/dist
-          key: chii-${{ runner.os }}-${{ steps.chii-hash.outputs.hash }}
+      # - name: Cache Chii build output
+      #   id: chii-cache
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       chii/public
+      #       chii/front_end/dist
+      #     key: chii-${{ runner.os }}-${{ steps.chii-hash.outputs.hash }}
 
-      - name: Install Depot Tools
-        if: steps.chii-cache.outputs.cache-hit != 'true'
-        uses: newkdev/setup-depot-tools@v1.0.1
+      # - name: Install Depot Tools
+      #   if: steps.chii-cache.outputs.cache-hit != 'true'
+      #   uses: newkdev/setup-depot-tools@v1.0.1
 
-      - name: Initialize Chii front_end
-        if: steps.chii-cache.outputs.cache-hit != 'true'
-        run: |
-          cd chii
-          pnpm init:front_end
+      # - name: Initialize Chii front_end
+      #   if: steps.chii-cache.outputs.cache-hit != 'true'
+      #   run: |
+      #     cd chii
+      #     pnpm init:front_end
 
-      - name: Build Chii
-        if: steps.chii-cache.outputs.cache-hit != 'true'
-        run: |
-          cd chii
-          pnpm build
-
-      - name: Build Chobitsu
-        run: |
-          cd chobitsu
-          pnpm webpack build --mode development
-
-      - name: Build page_inject
-        run: |
-          cd page_inject
-          npx rollup -c
+      # - name: Build Chii
+      #   if: steps.chii-cache.outputs.cache-hit != 'true'
+      #   run: |
+      #     cd chii
+      #     pnpm build
 
       - name: Build Frontend
         run: |
-          cd frontend
-          pnpm vite build
+          pnpm build
+          VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
   tests:
     name: Run Scramjet Tests
     runs-on: ubuntu-latest
