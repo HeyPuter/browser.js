@@ -165,6 +165,8 @@ export const UrlInput: Component<
 				activate();
 				e.stopPropagation();
 			}}
+			class:subtle={use(this.subtleinput)}
+			class:active={use(this.active)}
 		>
 			<div class="inactivebar"></div>
 			<div
@@ -413,6 +415,10 @@ UrlInput.style = css`
 		outline: none;
 		border-radius: 4px;
 		margin: 0.25em;
+	}
+
+	:scope.subtle.active .inactivebar {
+		border: 1px solid var(--accent);
 	}
 `;
 
