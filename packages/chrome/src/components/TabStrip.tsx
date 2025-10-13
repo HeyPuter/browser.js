@@ -6,7 +6,7 @@ import iconRefresh from "@ktibow/iconset-ion/refresh-outline";
 import { css, type Component } from "dreamland/core";
 import { Icon } from "./Icon";
 import { memoize } from "../memoize";
-import { OmnibarButton } from "./OmnibarButton";
+import { OmnibarButton } from "./Omnibar/OmnibarButton";
 import type { Tab } from "../Tab";
 // import html2canvas from "html2canvas";
 import { setContextMenu } from "./Menu";

@@ -4,11 +4,14 @@ import { Tab, type SerializedTab } from "./Tab";
 import { createDelegate } from "dreamland/core";
 import type { SerializedHistoryState } from "./History";
 import { HistoryState } from "./History";
-import { focusOmnibox } from "./components/UrlInput";
+import { focusOmnibox } from "./components/Omnibar/UrlInput";
 
 import * as tldts from "tldts";
 import { isPuter } from "./main";
-import { animateDownloadFly, showDownloadsPopup } from "./components/Omnibox";
+import {
+	animateDownloadFly,
+	showDownloadsPopup,
+} from "./components/Omnibar/Omnibox";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -60,7 +63,7 @@ export type GlobalHistoryEntry = {
 export type BookmarkEntry = {
 	url: string;
 	title: string;
-	favicon?: string;
+	favicon: string | null;
 };
 
 export type DownloadEntry = {

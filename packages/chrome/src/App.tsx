@@ -1,5 +1,5 @@
 import type { Component } from "dreamland/core";
-import { Omnibox } from "./components/Omnibox";
+import { Omnibox } from "./components/Omnibar/Omnibox";
 import { Tabs } from "./components/TabStrip";
 import { browser } from "./Browser";
 import type { Tab } from "./Tab";

@@ -1,7 +1,7 @@
 import { css, type Component } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
-import { trimUrl } from "../components/UrlInput";
+import { trimUrl } from "../components/Omnibar/utils";
 import { createMenu } from "../components/Menu";
 import { defaultFaviconUrl } from "../assets/favicon";
 

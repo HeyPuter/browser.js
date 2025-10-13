@@ -5,79 +5,34 @@ import {
 	type Component,
 	type Delegate,
 } from "dreamland/core";
-import iconOptions from "@ktibow/iconset-ion/options-outline";
-import iconStar from "@ktibow/iconset-ion/star-outline";
-import iconStarFilled from "@ktibow/iconset-ion/star";
 import iconSearch from "@ktibow/iconset-ion/search";
 import iconForwards from "@ktibow/iconset-ion/arrow-forward";
 import iconTrendingUp from "@ktibow/iconset-ion/trending-up";
-import { Icon } from "./Icon";
+import { Icon } from "../Icon";
 import { OmnibarButton } from "./OmnibarButton";
-import { createMenuCustom, setContextMenu } from "./Menu";
-import { defaultFaviconUrl } from "../assets/favicon";
-import { browser } from "../Browser";
-import { SiteInformationPopup } from "./SiteInformationPopup";
-import { emToPx, splitUrl } from "../utils";
-import { fetchSuggestions, type OmniboxResult } from "./suggestions";
-import { BookmarkPopup } from "./BookmarkPopup";
-import { bare } from "../IsolatedFrame";
+import { createMenuCustom, setContextMenu } from "../Menu";
+import { defaultFaviconUrl } from "../../assets/favicon";
+import { browser } from "../../Browser";
+import { SiteInformationPopup } from "../SiteInformationPopup";
+import { emToPx, splitUrl } from "../../utils";
+import {
+	fetchGoogleTrending,
+	fetchSuggestions,
+	trendingCached,
+	type OmniboxResult,
+	type TrendingQuery,
+} from "./suggestions";
+import { BookmarkPopup } from "../BookmarkPopup";
+import { trimUrl } from "./utils";
+import { BookmarkButton } from "./BookmarkButton";
+import { SiteOptionsButton } from "./SiteOptionsButton";
+import { Favicon } from "../Favicon";
 
 export const focusOmnibox = createDelegate<void>();
 
-export function trimUrl(v: URL) {
-	return (
-		(v.protocol === "puter:" ? v.protocol : "") +
-		v.host +
-		(v.search ? v.pathname : v.pathname.replace(/\/$/, "")) +
-		v.search
-	);
-}
-export type TrendingQuery = {
-	title: string;
-	traffic?: string;
-	url?: string;
-};
-
-let trendingCached: TrendingQuery[] | null = null;
-export async function fetchGoogleTrending(geo = "US"): Promise<void> {
-	try {
-		if (trendingCached) return;
-
-		const res = await bare.fetch(
-			"https://trends.google.com/_/TrendsUi/data/batchexecute",
-			{
-				method: "POST",
-				body: `f.req=[[["i0OFE","[null, null, \\"${geo}\\", 0, null, 48]"]]]`,
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-					Referer: "https://trends.google.com/trends/explore",
-				},
-			}
-		);
-		if (!res.ok) return;
-
-		const text = await res.text();
-		const json = JSON.parse(text.slice(5));
-		const data = JSON.parse(json[0][2]);
-		const results: TrendingQuery[] = [];
-		for (const item of data[1]) {
-			results.push({
-				title: item[0],
-				traffic: item[1],
-				url: item[2]
-					? `https://www.google.com/search?q=${encodeURIComponent(item[0])}`
-					: undefined,
-			});
-		}
-
-		trendingCached = results;
-	} catch (err) {
-		console.error("fetchGoogleTrending failed", err);
-	}
-}
 export const UrlInput: Component<
 	{
-		tabUrl: URL;
+		url: URL;
 		selectContent: Delegate<void>;
 	},
 	{
@@ -85,10 +40,10 @@ export const UrlInput: Component<
 		active: boolean;
 		justselected: boolean;
 		subtleinput: boolean;
-		input: HTMLInputElement;
 		focusindex: number;
 		overflowItems: OmniboxResult[];
 		trending: TrendingQuery[];
+		input: HTMLInputElement;
 	}
 > = function (cx) {
 	this.focusindex = 0;
@@ -153,10 +108,10 @@ export const UrlInput: Component<
 		document.body.addEventListener("click", handleClickOutside);
 		document.body.addEventListener("auxclick", handleClickOutside);
 
-		if (this.tabUrl.href == "puter://newtab") {
+		if (this.url.href == "puter://newtab") {
 			this.value = "";
 		} else {
-			this.value = trimUrl(this.tabUrl);
+			this.value = trimUrl(this.url);
 		}
 
 		this.input.focus();
@@ -288,171 +243,66 @@ export const UrlInput: Component<
 					</div>
 				))}
 			</div>
-			<div class="realbar">
-				<div class="lefticon">
-					{use(this.active, this.focusindex, this.overflowItems).map(() =>
-						this.active ? (
-							this.focusindex > 0 && this.overflowItems.length > 0 ? (
-								<img
-									src={
-										this.overflowItems[this.focusindex - 1].favicon ||
-										defaultFaviconUrl
-									}
-								></img>
-							) : (
-								<Icon icon={iconSearch}></Icon>
-							)
-						) : (
-							<button
-								class="optionsbutton"
-								on:click={(e: MouseEvent) => {
-									createMenuCustom(
-										{
-											left: (e.target as HTMLElement).getBoundingClientRect()
-												.left,
-											top: emToPx(2.5) + 40,
-										},
-										<SiteInformationPopup
-											tab={browser.activetab}
-										></SiteInformationPopup>
-									);
-									e.preventDefault();
-									e.stopPropagation();
-								}}
-							>
-								<Icon icon={iconOptions}></Icon>
-							</button>
-						)
-					)}
-				</div>
-				{use(this.active).andThen(
-					<input
-						spellcheck="false"
-						this={use(this.input)}
-						value={use(this.value)}
-						on:keydown={(e: KeyboardEvent) => {
-							if (e.key === "ArrowDown") {
-								e.preventDefault();
-								let idx = this.focusindex + 1;
-								if (idx > this.overflowItems.length) {
-									idx = 0;
-								}
-								this.focusindex = idx;
-							}
-							if (e.key === "ArrowUp") {
-								e.preventDefault();
-								let idx = this.focusindex - 1;
-								if (idx < 0) {
-									idx = this.overflowItems.length;
-								}
-								this.focusindex = idx;
-							}
-							if (e.key === "Enter") {
-								e.preventDefault();
-								doSearch();
-							}
-						}}
-						on:keyup={(e: KeyboardEvent) => {
-							if (!this.justselected) return;
 
-							// if the user didn't modify anything
-							if (this.input.value == trimUrl(this.tabUrl)) {
-								// insert the untrimmed version
-								this.input.value = this.tabUrl.href;
-							}
-
-							if (e.key == "ArrowLeft") {
-								// move the cursor to the start
-								if (this.tabUrl.protocol == "puter:") {
-									this.input.setSelectionRange(0, 0);
-								} else {
-									let schemelen = this.tabUrl.protocol.length + 2;
-									this.input.setSelectionRange(schemelen, schemelen);
-								}
-							}
-
-							this.justselected = false;
-						}}
-						on:input={() => {
-							this.value = this.input.value;
-							this.focusindex = 0;
-							this.subtleinput = false;
-						}}
-					></input>
+			<RealBar
+				active={use(this.active)}
+				input={use(this.input)}
+				url={use(this.url)}
+				value={use(this.value)}
+				favicon={use(this.focusindex, this.overflowItems).map(() =>
+					this.focusindex > 0 && this.overflowItems.length > 0
+						? this.overflowItems[this.focusindex - 1].favicon
+						: null
 				)}
-				{use(this.active, this.tabUrl)
-					.map(([active, url]) => !active && url.href != "puter://newtab")
-					.andThen(
-						<span class="inactiveurl">
-							<span class="subdomain">
-								{use(this.tabUrl).map((t) => splitUrl(t)[0])}
-							</span>
-							<span class="domain">
-								{use(this.tabUrl).map((t) => splitUrl(t)[1])}
-							</span>
-							<span class="rest">
-								{use(this.tabUrl).map((t) => splitUrl(t)[2])}
-							</span>
-						</span>
-					)}
-				{use(this.active, this.tabUrl)
-					.map(([active, url]) => !active && url.href == "puter://newtab")
-					.andThen(
-						<span class="placeholder">Search with Google or enter address</span>
-					)}
+				doSearch={doSearch}
+				onkeydown={(e: KeyboardEvent) => {
+					if (e.key === "ArrowDown") {
+						e.preventDefault();
+						let idx = this.focusindex + 1;
+						if (idx > this.overflowItems.length) {
+							idx = 0;
+						}
+						this.focusindex = idx;
+					}
+					if (e.key === "ArrowUp") {
+						e.preventDefault();
+						let idx = this.focusindex - 1;
+						if (idx < 0) {
+							idx = this.overflowItems.length;
+						}
+						this.focusindex = idx;
+					}
+					if (e.key === "Enter") {
+						e.preventDefault();
+						doSearch();
+					}
+				}}
+				onkeyup={(e: KeyboardEvent) => {
+					if (!this.justselected) return;
 
-				{use(this.active)
-					.map((a) => !a)
-					.andThen(
-						<OmnibarButton
-							click={(e) => {
-								e.stopPropagation();
-								e.preventDefault();
-								let bookmark = browser.bookmarks.find(
-									(b) => b.url == this.tabUrl.href
-								);
+					// if the user didn't modify anything
+					if (this.input.value == trimUrl(this.url)) {
+						// insert the untrimmed version
+						this.input.value = this.url.href;
+					}
 
-								let isnew = false;
-								if (!bookmark) {
-									bookmark = createState({
-										url: browser.activetab.url.href,
-										favicon: browser.activetab.icon,
-										title:
-											browser.activetab.title || browser.activetab.url.hostname,
-									});
-									isnew = true;
-								}
+					if (e.key == "ArrowLeft") {
+						// move the cursor to the start
+						if (this.url.protocol == "puter:") {
+							this.input.setSelectionRange(0, 0);
+						} else {
+							let schemelen = this.url.protocol.length + 2;
+							this.input.setSelectionRange(schemelen, schemelen);
+						}
+					}
 
-								createMenuCustom(
-									{
-										right: (e.target as HTMLElement).getBoundingClientRect()
-											.right,
-										top: emToPx(2.5) + 40,
-									},
-									<BookmarkPopup
-										new={isnew}
-										bookmark={bookmark}
-									></BookmarkPopup>
-								);
-							}}
-							icon={use(browser.bookmarks, this.tabUrl).map(() =>
-								browser.bookmarks.some((b) => b.url == this.tabUrl.href)
-									? iconStarFilled
-									: iconStar
-							)}
-						></OmnibarButton>
-					)}
-				{use(this.active).andThen(
-					<OmnibarButton
-						click={(e: MouseEvent) => {
-							doSearch();
-							e.stopPropagation();
-							e.preventDefault();
-						}}
-						icon={iconForwards}
-					></OmnibarButton>
-				)}
-			</div>
+					this.justselected = false;
+				}}
+				oninput={(e: InputEvent) => {
+					this.focusindex = 0;
+					this.subtleinput = false;
+				}}
+			></RealBar>
 		</div>
 	);
 };
@@ -465,19 +315,6 @@ UrlInput.style = css`
 		height: 100%;
 	}
 
-	.lefticon {
-		font-size: 1.15em;
-		color: var(--fg2);
-		display: flex;
-		margin: 0.25em;
-		align-self: stretch;
-		align-items: center;
-	}
-	.lefticon img {
-		width: 16px;
-		height: 16px;
-	}
-
 	.result-icon {
 		align-self: start;
 		margin-top: 0.4em;
@@ -486,27 +323,6 @@ UrlInput.style = css`
 	.favicon {
 		width: 16px;
 		height: 16px;
-	}
-
-	.optionsbutton {
-		width: 100%;
-		cursor: pointer;
-		padding: 0;
-		margin: 0;
-		background: none;
-		outline: none;
-		border: none;
-		color: var(--fg);
-		font-size: 1em;
-		padding: 0.1em;
-		border-radius: 0.2em;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--bg01);
-	}
-	.optionsbutton:hover {
-		background: var(--bg02);
 	}
 
 	.overflow {
@@ -602,6 +418,99 @@ UrlInput.style = css`
 		border-radius: 4px;
 		margin: 0.25em;
 	}
+`;
+
+const RealBar: Component<
+	{
+		active: boolean;
+		favicon: string | null;
+		url: URL;
+		value: string;
+		input: HTMLInputElement;
+
+		onkeydown: (e: KeyboardEvent) => void;
+		onkeyup: (e: KeyboardEvent) => void;
+		oninput: (e: InputEvent) => void;
+		doSearch: () => void;
+	},
+	{}
+> = function (cx) {
+	return (
+		<div>
+			<div class="lefticon">
+				{use(this.active).andThen([
+					use(this.favicon).andThen(<Favicon url={this.favicon}></Favicon>),
+					use(this.favicon)
+						.map((f) => !f)
+						.andThen(<Icon icon={iconSearch}></Icon>),
+				])}
+				{use(this.active)
+					.map((a) => !a)
+					.andThen(<SiteOptionsButton></SiteOptionsButton>)}
+			</div>
+			{use(this.active).andThen(
+				<input
+					spellcheck="false"
+					this={use(this.input)}
+					value={use(this.value)}
+					on:keydown={(e: KeyboardEvent) => {
+						this.onkeydown(e);
+					}}
+					on:keyup={(e: KeyboardEvent) => {
+						this.onkeyup(e);
+					}}
+					on:input={(e: InputEvent) => {
+						this.oninput(e);
+					}}
+				></input>
+			)}
+			{use(this.active, this.url)
+				.map(([active, url]) => !active && url.href != "puter://newtab")
+				.andThen(
+					<span class="inactiveurl">
+						<span class="subdomain">
+							{use(this.url).map((t) => splitUrl(t)[0])}
+						</span>
+						<span class="domain">
+							{use(this.url).map((t) => splitUrl(t)[1])}
+						</span>
+						<span class="rest">{use(this.url).map((t) => splitUrl(t)[2])}</span>
+					</span>
+				)}
+			{use(this.active, this.url)
+				.map(([active, url]) => !active && url.href == "puter://newtab")
+				.andThen(
+					<span class="placeholder">Search with Google or enter address</span>
+				)}
+
+			{use(this.active)
+				.map((a) => !a)
+				.andThen(<BookmarkButton url={use(this.url)}></BookmarkButton>)}
+			{use(this.active).andThen(
+				<OmnibarButton
+					click={(e: MouseEvent) => {
+						this.doSearch();
+						e.stopPropagation();
+						e.preventDefault();
+					}}
+					icon={iconForwards}
+				></OmnibarButton>
+			)}
+		</div>
+	);
+};
+RealBar.style = css`
+	:scope {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		display: flex;
+		z-index: 1;
+		align-items: center;
+		padding-left: 0.25em;
+		padding-right: 0.25em;
+	}
+
 	input,
 	.inactiveurl,
 	.placeholder {
@@ -634,14 +543,12 @@ UrlInput.style = css`
 		align-items: center;
 	}
 
-	.realbar {
-		position: absolute;
-		width: 100%;
-		height: 100%;
+	.lefticon {
+		font-size: 1.15em;
+		color: var(--fg2);
 		display: flex;
-		z-index: 1;
+		margin: 0.25em;
+		align-self: stretch;
 		align-items: center;
-		padding-left: 0.25em;
-		padding-right: 0.25em;
 	}
 `;

@@ -1,11 +1,11 @@
-import { browser } from "../Browser";
-import { bare } from "../IsolatedFrame";
+import { browser } from "../../Browser";
+import { bare } from "../../IsolatedFrame";
 
 export type OmniboxResult = {
 	kind: "search" | "history" | "bookmark" | "direct";
-	title?: string | null;
+	title: string | null;
 	url: URL;
-	favicon?: string | null;
+	favicon: string | null;
 	relevanceScore?: number;
 };
 
@@ -100,6 +100,8 @@ const addDirectUrlResult = (
 			{
 				kind: "direct",
 				url: new URL(query),
+				title: null,
+				favicon: null,
 			},
 			...results,
 		];
@@ -132,6 +134,7 @@ const fetchGoogleSuggestions = async (
 				url: new URL(
 					`https://www.google.com/search?q=${encodeURIComponent(item)}`
 				),
+				favicon: null,
 			});
 		}
 
@@ -173,4 +176,48 @@ export async function fetchSuggestions(
 	// update with the new google results
 	setResults(rankResults(combinedResults, query));
 	cachedGoogleResults = googleResults;
+}
+
+export type TrendingQuery = {
+	title: string;
+	traffic?: string;
+	url?: string;
+};
+
+export let trendingCached: TrendingQuery[] | null = null;
+export async function fetchGoogleTrending(geo = "US"): Promise<void> {
+	try {
+		if (trendingCached) return;
+
+		const res = await bare.fetch(
+			"https://trends.google.com/_/TrendsUi/data/batchexecute",
+			{
+				method: "POST",
+				body: `f.req=[[["i0OFE","[null, null, \\"${geo}\\", 0, null, 48]"]]]`,
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+					Referer: "https://trends.google.com/trends/explore",
+				},
+			}
+		);
+		if (!res.ok) return;
+
+		const text = await res.text();
+		const json = JSON.parse(text.slice(5));
+		const data = JSON.parse(json[0][2]);
+		const results: TrendingQuery[] = [];
+		for (const item of data[1]) {
+			results.push({
+				title: item[0],
+				traffic: item[1],
+				url: item[2]
+					? `https://www.google.com/search?q=${encodeURIComponent(item[0])}`
+					: undefined,
+			});
+		}
+
+		trendingCached = results;
+	} catch (err) {
+		console.error("fetchGoogleTrending failed", err);
+	}
 }

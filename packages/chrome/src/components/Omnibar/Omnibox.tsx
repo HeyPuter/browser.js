@@ -6,22 +6,23 @@ import iconExtension from "@ktibow/iconset-ion/extension-puzzle-outline";
 import iconDownload from "@ktibow/iconset-ion/download-outline";
 import iconMore from "@ktibow/iconset-ion/more";
 import iconExit from "@ktibow/iconset-ion/exit-outline";
-import { createMenu, createMenuCustom } from "./Menu";
+import { createMenu, createMenuCustom } from "../Menu";
 import { OmnibarButton } from "./OmnibarButton";
 import { createDelegate } from "dreamland/core";
-import type { Tab } from "../Tab";
+import type { Tab } from "../../Tab";
 import { UrlInput } from "./UrlInput";
-import { browser } from "../Browser";
-import { Icon } from "./Icon";
-import { defaultFaviconUrl } from "../assets/favicon";
+import { browser } from "../../Browser";
+import { Icon } from "../Icon";
+import { defaultFaviconUrl } from "../../assets/favicon";
 
 import iconNew from "@ktibow/iconset-ion/duplicate-outline";
 import iconTime from "@ktibow/iconset-ion/time-outline";
 import iconInfo from "@ktibow/iconset-ion/information-circle-outline";
 import iconSettings from "@ktibow/iconset-ion/settings-outline";
-import type { HistoryState } from "../History";
-import { isPuter } from "../main";
-import { DownloadsPopup } from "./DownloadsPopup";
+import type { HistoryState } from "../../History";
+import { isPuter } from "../../main";
+import { DownloadsPopup } from "../DownloadsPopup";
+import { CircularProgress } from "./CircularProgress";
 
 export const animateDownloadFly = createDelegate<void>();
 export const showDownloadsPopup = createDelegate<void>();
@@ -32,86 +33,6 @@ export const Spacer: Component = function (cx) {
 Spacer.style = css`
 	:scope {
 		width: 2em;
-	}
-`;
-
-export const CircularProgress: Component<{
-	progress: number;
-	size?: string;
-	strokeWidth?: string;
-	color?: string;
-}> = function (cx) {
-	const radius = 100;
-	const circumference = 2 * Math.PI * radius;
-
-	use(this.progress).listen((p) => {
-		if (p == 0) {
-			cx.root.classList.remove("visible");
-		} else {
-			cx.root.classList.add("visible");
-
-			cx.root
-				.querySelector("circle.moving")!
-				.setAttribute("stroke-dashoffset", circumference * (1 - p) + "px");
-		}
-	});
-
-	return (
-		<svg
-			width="200"
-			height="200"
-			viewBox="0 0 200 200"
-			version="1.1"
-			xmlns="http://www.w3.org/2000/svg"
-			style="transform:rotate(-90deg)"
-		>
-			<circle
-				r="90"
-				cx="100"
-				cy="100"
-				class="inactive"
-				stroke-width="16px"
-				stroke-linecap="round"
-				stroke-dashoffset="0px"
-				fill="transparent"
-				stroke-dasharray="565.48px"
-			></circle>
-			<circle
-				r="90"
-				cx="100"
-				cy="100"
-				class="moving"
-				stroke-width="16px"
-				stroke-linecap="round"
-				stroke-dashoffset="118.692px"
-				fill="transparent"
-				stroke-dasharray="565.48px"
-			></circle>
-		</svg>
-	);
-};
-CircularProgress.style = css`
-	:scope {
-		pointer-events: none;
-		position: absolute;
-		top: 2px;
-		left: 0;
-		width: 100%;
-		height: 100%;
-		opacity: 0;
-		transition: opacity 0.2s ease;
-		transform: rotate(-90deg);
-	}
-	:scope.visible {
-		opacity: 1;
-	}
-	circle {
-		fill: transparent;
-		stroke: var(--accent);
-		/*transition: stroke-dashoffset 0.2s ease;*/
-	}
-	circle.inactive {
-		stroke: var(--bg20);
 	}
 `;
 
@@ -223,7 +144,7 @@ export const Omnibox: Component<{
 			<Spacer></Spacer>
 			<UrlInput
 				selectContent={selectContent}
-				tabUrl={use(this.tab.url)}
+				url={use(this.tab.url)}
 			></UrlInput>
 			<Spacer></Spacer>
 			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
