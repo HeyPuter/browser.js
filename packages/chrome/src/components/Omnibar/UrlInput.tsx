@@ -144,10 +144,10 @@ export const UrlInput: Component<
 		if (title.toLowerCase().startsWith(inputValue.toLowerCase())) {
 			return (
 				<>
+					<span>{title.substring(0, inputValue.length)}</span>
 					<span style="font-weight: normal; opacity: 0.7;">
-						{title.substring(0, inputValue.length)}
+						{title.substring(inputValue.length)}
 					</span>
-					<span>{title.substring(inputValue.length)}</span>
 				</>
 			);
 		}
@@ -200,7 +200,18 @@ export const UrlInput: Component<
 								/>
 							)}
 						</div>
-						<div class="result-content">
+						<div
+							class="result-content"
+							class:single={
+								// TODO: remove this when non pointed class: works
+								use(this.url).map(
+									() =>
+										item.title == null ||
+										item.title === "" ||
+										item.title === trimUrl(item.url)
+								)
+							}
+						>
 							{(item.title && (
 								<span class="description">
 									{renderResultHighlight(item.title, this.input.value)}
@@ -354,15 +365,25 @@ UrlInput.style = css`
 	.overflowitem {
 		display: flex;
 		align-items: center;
-		height: 2.5em;
+		/*height: 2.5em;*/
 		cursor: pointer;
-		gap: 0.5em;
+		gap: 1em;
+
+		margin-left: 0.5em;
 		padding-left: 0.5em;
-		padding-right: 0.5em;
+
+		margin-right: 0.5em;
+
+		margin-top: 0.25em;
+		padding-top: 0.25em;
+		margin-bottom: 0.25em;
+		padding-bottom: 0.25em;
+
 		white-space: nowrap;
 		color: var(--fg);
-		width: 100%;
 		overflow: hidden;
+
+		border-radius: var(--radius);
 	}
 
 	.result-content {
@@ -370,8 +391,10 @@ UrlInput.style = css`
 		flex-direction: column;
 		flex: 1;
 		min-width: 0;
-		overflow: hidden;
 		gap: 2px;
+	}
+	.result-content.single {
+		display: block;
 	}
 
 	.overflowitem .url,
@@ -380,6 +403,7 @@ UrlInput.style = css`
 		text-wrap: nowrap;
 		word-wrap: nowrap;
 		overflow: hidden;
+		line-height: 1.2;
 	}
 
 	.overflowitem .description {
@@ -397,7 +421,11 @@ UrlInput.style = css`
 		text-overflow: ellipsis;
 		overflow: hidden;
 	}
-	.overflowitem.focused {
+	.overflowitem.focused,
+	.overflowitem.focused:hover {
+		background: var(--bg20);
+	}
+	.overflowitem:hover {
 		background: var(--bg04);
 	}
 

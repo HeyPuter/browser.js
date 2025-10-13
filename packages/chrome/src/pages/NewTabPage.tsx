@@ -4,6 +4,8 @@ import { browser } from "../Browser";
 import { trimUrl } from "../components/Omnibar/utils";
 import { createMenu } from "../components/Menu";
 import { defaultFaviconUrl } from "../assets/favicon";
+import { Icon } from "../components/Icon";
+import { iconSearch } from "../icons";
 
 export const NewTabPage: Component<
 	{
@@ -13,16 +15,32 @@ export const NewTabPage: Component<
 > = function () {
 	return (
 		<div>
+			<div class="topbar">
+				{/*<div class="logo"></div>*/}
+				<div class="inputcontainercontainer">
+					<div class="inputcontainer">
+						<div class="icon">
+							<Icon icon={iconSearch}></Icon>
+						</div>
+						<input
+							on:keydown={(e: KeyboardEvent) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									browser.searchNavigate((e.target as HTMLInputElement).value);
+								}
+							}}
+							placeholder="Search Google or type A URL"
+						></input>
+					</div>
+				</div>
+				{/*<div class="clock">
+					{new Date().toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})}
+				</div>*/}
+			</div>
 			<div class="main">
-				<input
-					on:keydown={(e: KeyboardEvent) => {
-						if (e.key === "Enter") {
-							e.preventDefault();
-							browser.searchNavigate((e.target as HTMLInputElement).value);
-						}
-					}}
-					placeholder="Search Google or type A URL"
-				></input>
 				<div class="suggestions">
 					{browser.globalhistory.slice(0, 5).map((entry) => (
 						<div
@@ -61,9 +79,68 @@ NewTabPage.style = css`
 		width: 100%;
 		height: 100%;
 		display: flex;
-		justify-content: center;
+		flex-direction: column;
+		align-items: center;
 		font-family: var(--font);
 		background: var(--bg01);
+		color: var(--fg);
+
+		padding: 5em;
+	}
+
+	.topbar {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 3em;
+	}
+	.logo {
+		width: 3em;
+		height: 3em;
+	}
+	.clock {
+		font-size: 1.5em;
+		font-weight: bold;
+		min-width: 4em;
+		text-align: center;
+	}
+
+	.inputcontainercontainer {
+		flex: 1;
+		display: flex;
+		justify-content: center;
+	}
+	.inputcontainer {
+		flex: 1;
+		max-width: 40em;
+		box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
+		background: var(--bg20);
+		border-radius: var(--radius);
+		display: flex;
+		align-items: center;
+	}
+
+	.icon {
+		font-size: 1.5em;
+		padding-left: 0.5em;
+		color: var(--fg3);
+	}
+
+	.inputcontainer:focus-within {
+		box-shadow: 0 0 2px var(--accent);
+		outline: 1px solid var(--accent);
+	}
+	input {
+		font-size: 1.25em;
+		outline: none;
+		padding: 1em;
+		padding-top: 0.75em;
+		padding-bottom: 0.75em;
+		flex: 1;
+		height: 100%;
+		background: none;
+		border: none;
 		color: var(--fg);
 	}
 
@@ -108,6 +185,7 @@ NewTabPage.style = css`
 		text-overflow: ellipsis;
 		text-align: center;
 		white-space: nowrap;
+		line-height: 1.2;
 	}
 	.suggestion img {
 		width: 32px;
@@ -115,6 +193,7 @@ NewTabPage.style = css`
 	}
 
 	.main {
+		margin-top: 2.5em;
 		width: 70%;
 		display: flex;
 		flex-direction: column;
@@ -122,20 +201,7 @@ NewTabPage.style = css`
 		gap: 1em;
 	}
 
-	input {
-		width: 100%;
-		height: 2em;
-		font-size: 1.5em;
-		border: 2px solid var(--bg20);
-		outline: none;
-		border-radius: 1em;
-		padding: 1em;
-		background: var(--bg);
-		color: var(--fg);
-	}
-
 	.main {
 		position: relative;
-		top: 10em;
 	}
 `;

@@ -48,6 +48,7 @@ export const App: Component = function (cx) {
 			{use(browser.activetab.url, browser.settings.bookmarksPinned)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
 				.andThen(<BookmarksStrip />)}
+			<div style="border-bottom: 1px solid var(--bg20)"></div>
 			{cx.children}
 		</div>
 	);
