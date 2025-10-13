@@ -57,5 +57,11 @@ export type Framebound = {
 			url: string;
 		},
 	];
-	history_go: [{ delta: number }, void];
+	popstate: [
+		{
+			state: any;
+			url: string;
+			title: string;
+		},
+	];
 };

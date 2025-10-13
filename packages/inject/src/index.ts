@@ -7,12 +7,16 @@ import { sendChrome } from "./ipc";
 export const client = self[SCRAMJETCLIENT];
 export const chromeframe = top!;
 
+const history_replaceState = History.prototype.replaceState;
+
 export const methods: FrameboundMethods = {
 	async navigate({ url }) {
 		window.location.href = url;
 	},
-	async history_go({ delta }) {
-		client.natives.call("History.prototype.go", history, delta);
+	async popstate({ url, state, title }) {
+		history_replaceState.call(history, state, title, url);
+		const popStateEvent = new PopStateEvent("popstate", { state });
+		window.dispatchEvent(popStateEvent);
 	},
 };
 
@@ -114,7 +118,7 @@ function setupHistoryEmulation() {
 			sendChrome("history_pushState", {
 				state: ctx.args[0],
 				title: ctx.args[1],
-				url: ctx.args[2],
+				url: new URL(ctx.args[2], client.url).href,
 			});
 
 			ctx.return(undefined);
@@ -126,7 +130,7 @@ function setupHistoryEmulation() {
 			sendChrome("history_replaceState", {
 				state: ctx.args[0],
 				title: ctx.args[1],
-				url: ctx.args[2],
+				url: new URL(ctx.args[2], client.url).href,
 			});
 
 			ctx.return(undefined);

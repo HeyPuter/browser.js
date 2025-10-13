@@ -819,4 +819,20 @@ const chromemethods: ChromeboundMethods = {
 			tab.history.push(new URL(url), undefined, false);
 		}
 	},
+
+	history_go: async (tab, { delta }) => {
+		if (tab) {
+			tab.history.go(delta);
+		}
+	},
+	history_pushState: async (tab, { url, title }) => {
+		if (tab) {
+			tab.history.push(new URL(url), title, true);
+		}
+	},
+	history_replaceState: async (tab, { url, title }) => {
+		if (tab) {
+			tab.history.replace(new URL(url), title);
+		}
+	},
 };

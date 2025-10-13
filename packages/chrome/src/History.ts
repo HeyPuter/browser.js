@@ -80,11 +80,18 @@ export class History {
 		return this.states[this.index];
 	}
 
-	push(url: URL, state: any = null, navigate: boolean = true): HistoryState {
+	push(
+		url: URL,
+		state: any = null,
+		navigate: boolean = true,
+		virtual: boolean = false
+	): HistoryState {
 		if (this.index + 1 < this.states.length)
 			// "fork" history tree, creating a new timeline
 			this.states.splice(this.index, this.states.length - this.index);
 		const hstate = new HistoryState({ url, state });
+		if (virtual) hstate.virtual = true;
+
 		if (url.href != "puter://newtab") browser.globalhistory.push(hstate);
 		this.states.push(hstate);
 		this.index++;
@@ -130,8 +137,10 @@ export class History {
 		let newstate = this.states[this.index];
 
 		if (newstate.virtual) {
-			sendFrame(this.tab, "history_go", {
-				delta,
+			sendFrame(this.tab, "popstate", {
+				state: newstate.state,
+				url: newstate.url.href,
+				title: newstate.title || "",
 			});
 		} else if (navigate) {
 			this.justTriggeredNavigation = true;

@@ -113,7 +113,7 @@ NewTabPage.style = css`
 	}
 	.inputcontainer {
 		flex: 1;
-		max-width: 40em;
+		max-width: 60em;
 		box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
 		background: var(--bg20);
 		border-radius: var(--radius);
