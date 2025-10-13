@@ -68,7 +68,7 @@ const cfg = {
 		syncxhr: false,
 		strictRewrites: true,
 		rewriterLogs: false,
-		captureErrors: true,
+		captureErrors: false,
 		cleanErrors: false,
 		scramitize: false,
 		sourcemaps: true,
@@ -822,17 +822,19 @@ const chromemethods: ChromeboundMethods = {
 
 	history_go: async (tab, { delta }) => {
 		if (tab) {
+			console.error("hist go" + delta);
 			tab.history.go(delta);
 		}
 	},
-	history_pushState: async (tab, { url, title }) => {
+	history_pushState: async (tab, { url, title, state }) => {
 		if (tab) {
-			tab.history.push(new URL(url), title, true);
+			console.error("hist push", url);
+			tab.history.push(new URL(url), title, state, false, true);
 		}
 	},
-	history_replaceState: async (tab, { url, title }) => {
+	history_replaceState: async (tab, { url, title, state }) => {
 		if (tab) {
-			tab.history.replace(new URL(url), title);
+			tab.history.replace(new URL(url), title, state, false);
 		}
 	},
 };
