@@ -10,6 +10,7 @@ import iconStar from "@ktibow/iconset-ion/star-outline";
 import iconStarFilled from "@ktibow/iconset-ion/star";
 import iconSearch from "@ktibow/iconset-ion/search";
 import iconForwards from "@ktibow/iconset-ion/arrow-forward";
+import iconTrendingUp from "@ktibow/iconset-ion/trending-up";
 import { Icon } from "./Icon";
 import { OmnibarButton } from "./OmnibarButton";
 import { createMenuCustom, setContextMenu } from "./Menu";
@@ -19,6 +20,7 @@ import { SiteInformationPopup } from "./SiteInformationPopup";
 import { emToPx, splitUrl } from "../utils";
 import { fetchSuggestions, type OmniboxResult } from "./suggestions";
 import { BookmarkPopup } from "./BookmarkPopup";
+import { bare } from "../IsolatedFrame";
 
 export const focusOmnibox = createDelegate<void>();
 
@@ -30,7 +32,49 @@ export function trimUrl(v: URL) {
 		v.search
 	);
 }
+export type TrendingQuery = {
+	title: string;
+	traffic?: string;
+	url?: string;
+};
 
+let trendingCached: TrendingQuery[] | null = null;
+export async function fetchGoogleTrending(geo = "US"): Promise<void> {
+	try {
+		if (trendingCached) return;
+
+		const res = await bare.fetch(
+			"https://trends.google.com/_/TrendsUi/data/batchexecute",
+			{
+				method: "POST",
+				body: `f.req=[[["i0OFE","[null, null, \\"${geo}\\", 0, null, 48]"]]]`,
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+					Referer: "https://trends.google.com/trends/explore",
+				},
+			}
+		);
+		if (!res.ok) return;
+
+		const text = await res.text();
+		const json = JSON.parse(text.slice(5));
+		const data = JSON.parse(json[0][2]);
+		const results: TrendingQuery[] = [];
+		for (const item of data[1]) {
+			results.push({
+				title: item[0],
+				traffic: item[1],
+				url: item[2]
+					? `https://www.google.com/search?q=${encodeURIComponent(item[0])}`
+					: undefined,
+			});
+		}
+
+		trendingCached = results;
+	} catch (err) {
+		console.error("fetchGoogleTrending failed", err);
+	}
+}
 export const UrlInput: Component<
 	{
 		tabUrl: URL;
@@ -44,11 +88,13 @@ export const UrlInput: Component<
 		input: HTMLInputElement;
 		focusindex: number;
 		overflowItems: OmniboxResult[];
+		trending: TrendingQuery[];
 	}
 > = function (cx) {
 	this.focusindex = 0;
 	this.overflowItems = [];
 	this.value = "";
+	this.trending = [];
 
 	cx.mount = () => {
 		setContextMenu(cx.root, [
@@ -59,6 +105,11 @@ export const UrlInput: Component<
 				},
 			},
 		]);
+
+		fetchGoogleTrending();
+		setTimeout(() => {
+			fetchGoogleTrending();
+		}, 1000);
 	};
 
 	focusOmnibox.listen(() => {
@@ -112,6 +163,13 @@ export const UrlInput: Component<
 		this.input.select();
 		this.justselected = true;
 		this.input.scrollLeft = 0;
+
+		fetchGoogleTrending().then(() => {
+			// pick a random 3 from the cache
+			this.trending = trendingCached!
+				.sort(() => 0.5 - Math.random())
+				.slice(0, 3);
+		});
 	};
 
 	const doSearch = () => {
@@ -199,6 +257,36 @@ export const UrlInput: Component<
 						</div>
 					</div>
 				))}
+				<div class="spacertext">Trending Searches</div>
+				{use(this.trending).mapEach((item) => (
+					<div
+						class="overflowitem"
+						on:click={() => {
+							if (item.url) {
+								this.active = false;
+								this.input.blur();
+								browser.activetab.pushNavigate(new URL(item.url));
+							} else {
+								this.value = item.title;
+								this.focusindex = 0;
+							}
+						}}
+						class:focused={false}
+						title={item.url || item.title}
+					>
+						<div class="result-icon">
+							<Icon icon={iconTrendingUp}></Icon>
+						</div>
+						<div class="result-content">
+							<span class="description">
+								{renderResultHighlight(item.title, this.input.value)}
+							</span>
+							{item.traffic && (
+								<span class="url">{item.traffic} searches today</span>
+							)}
+						</div>
+					</div>
+				))}
 			</div>
 			<div class="realbar">
 				<div class="lefticon">
@@ -245,17 +333,19 @@ export const UrlInput: Component<
 						on:keydown={(e: KeyboardEvent) => {
 							if (e.key === "ArrowDown") {
 								e.preventDefault();
-								this.focusindex++;
-								if (this.focusindex > this.overflowItems.length) {
-									this.focusindex = 0;
+								let idx = this.focusindex + 1;
+								if (idx > this.overflowItems.length) {
+									idx = 0;
 								}
+								this.focusindex = idx;
 							}
 							if (e.key === "ArrowUp") {
 								e.preventDefault();
-								this.focusindex--;
-								if (this.focusindex < 0) {
-									this.focusindex = this.overflowItems.length;
+								let idx = this.focusindex - 1;
+								if (idx < 0) {
+									idx = this.overflowItems.length;
 								}
+								this.focusindex = idx;
 							}
 							if (e.key === "Enter") {
 								e.preventDefault();
@@ -437,6 +527,16 @@ UrlInput.style = css`
 
 		border-bottom: 1px solid var(--fg5);
 	}
+
+	.spacertext {
+		display: block;
+		height: 2em;
+		line-height: 2.5em;
+		padding-left: 1.5em;
+		color: var(--fg3);
+		font-size: 0.9em;
+	}
+
 	.overflowitem {
 		display: flex;
 		align-items: center;
