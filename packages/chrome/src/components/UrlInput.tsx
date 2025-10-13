@@ -376,16 +376,16 @@ UrlInput.style = css`
 	}
 
 	.lefticon {
-		font-size: 1.25em;
-		color: var(--fg);
+		font-size: 1.15em;
+		color: var(--fg2);
 		display: flex;
 		margin: 0.25em;
 		align-self: stretch;
 		align-items: center;
 	}
 	.lefticon img {
-		width: 20px;
-		height: 20px;
+		width: 16px;
+		height: 16px;
 	}
 
 	.result-icon {
@@ -422,7 +422,7 @@ UrlInput.style = css`
 	.overflow {
 		position: absolute;
 		display: none;
-		background: var(--bg);
+		background: var(--bg02);
 		width: 100%;
 		border-radius: 4px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -431,6 +431,11 @@ UrlInput.style = css`
 	.overflow .spacer {
 		display: block;
 		height: 2.5em;
+
+		width: 98%;
+		margin: 0 auto;
+
+		border-bottom: 1px solid var(--fg5);
 	}
 	.overflowitem {
 		display: flex;
@@ -510,6 +515,7 @@ UrlInput.style = css`
 		overflow: hidden;
 		font-family: var(--font);
 		color: var(--fg);
+		cursor: text;
 	}
 	.inactiveurl {
 		display: flex;

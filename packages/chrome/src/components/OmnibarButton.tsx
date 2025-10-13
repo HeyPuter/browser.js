@@ -31,14 +31,14 @@ OmnibarButton.style = css`
 		justify-content: center;
 		padding: 0.25em;
 
-		font-size: 1.25em;
-		color: var(--fg4);
+		font-size: 1.15em;
+		color: var(--fg5);
 		border-radius: 0.2em;
 	}
 	:scope.active:hover {
 		background: var(--bg20);
 	}
 	:scope.active {
-		color: var(--fg);
+		color: var(--fg2);
 	}
 `;
