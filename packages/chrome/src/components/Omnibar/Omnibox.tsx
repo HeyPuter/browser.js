@@ -1,11 +1,17 @@
 import { css, type Component } from "dreamland/core";
-import iconBack from "@ktibow/iconset-ion/arrow-back";
-import iconForwards from "@ktibow/iconset-ion/arrow-forward";
-import iconRefresh from "@ktibow/iconset-ion/refresh";
-import iconExtension from "@ktibow/iconset-ion/extension-puzzle-outline";
-import iconDownload from "@ktibow/iconset-ion/download-outline";
-import iconMore from "@ktibow/iconset-ion/more";
-import iconExit from "@ktibow/iconset-ion/exit-outline";
+import {
+	iconBack,
+	iconForwards,
+	iconRefresh,
+	iconExtension,
+	iconDownload,
+	iconMore,
+	iconExit,
+	iconNew,
+	iconTime,
+	iconInfo,
+	iconSettings,
+} from "../../icons";
 import { createMenu, createMenuCustom } from "../Menu";
 import { OmnibarButton } from "./OmnibarButton";
 import { createDelegate } from "dreamland/core";
@@ -15,10 +21,6 @@ import { browser } from "../../Browser";
 import { Icon } from "../Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";
 
-import iconNew from "@ktibow/iconset-ion/duplicate-outline";
-import iconTime from "@ktibow/iconset-ion/time-outline";
-import iconInfo from "@ktibow/iconset-ion/information-circle-outline";
-import iconSettings from "@ktibow/iconset-ion/settings-outline";
 import type { HistoryState } from "../../History";
 import { isPuter } from "../../main";
 import { DownloadsPopup } from "../DownloadsPopup";

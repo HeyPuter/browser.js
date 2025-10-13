@@ -5,15 +5,12 @@ import {
 	type Component,
 	type Delegate,
 } from "dreamland/core";
-import iconSearch from "@ktibow/iconset-ion/search";
-import iconForwards from "@ktibow/iconset-ion/arrow-forward";
-import iconTrendingUp from "@ktibow/iconset-ion/trending-up";
+import { iconSearch, iconForwards, iconTrendingUp } from "../../icons";
 import { Icon } from "../Icon";
 import { OmnibarButton } from "./OmnibarButton";
-import { createMenuCustom, setContextMenu } from "../Menu";
+import { setContextMenu } from "../Menu";
 import { defaultFaviconUrl } from "../../assets/favicon";
 import { browser } from "../../Browser";
-import { SiteInformationPopup } from "../SiteInformationPopup";
 import { emToPx, splitUrl } from "../../utils";
 import {
 	fetchGoogleTrending,
@@ -22,7 +19,6 @@ import {
 	type OmniboxResult,
 	type TrendingQuery,
 } from "./suggestions";
-import { BookmarkPopup } from "../BookmarkPopup";
 import { trimUrl } from "./utils";
 import { BookmarkButton } from "./BookmarkButton";
 import { SiteOptionsButton } from "./SiteOptionsButton";

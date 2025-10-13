@@ -2,10 +2,7 @@ import { css, type Component } from "dreamland/core";
 import { browser } from "../Browser";
 import { Icon } from "./Icon";
 import { closeMenu, createMenuCustom } from "./Menu";
-import iconClose from "@ktibow/iconset-ion/close";
-import iconFolder from "@ktibow/iconset-ion/folder-outline";
-import iconOpen from "@ktibow/iconset-ion/open-outline";
-import iconPause from "@ktibow/iconset-ion/pause-outline";
+import { iconClose, iconFolder, iconOpen, iconPause } from "../icons";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
 

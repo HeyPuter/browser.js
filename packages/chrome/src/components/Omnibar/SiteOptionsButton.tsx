@@ -4,7 +4,7 @@ import { SiteInformationPopup } from "../SiteInformationPopup";
 import { browser } from "../../Browser";
 import { Icon } from "../Icon";
 import { emToPx } from "../../utils";
-import iconOptions from "@ktibow/iconset-ion/options-outline";
+import { iconOptions } from "../../icons";
 
 export const SiteOptionsButton: Component<{}> = function () {
 	return (

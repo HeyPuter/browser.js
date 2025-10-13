@@ -1,8 +1,10 @@
-import iconClose from "@ktibow/iconset-ion/close";
-import iconAdd from "@ktibow/iconset-ion/add";
-import iconNew from "@ktibow/iconset-ion/duplicate-outline";
-import iconDuplicate from "@ktibow/iconset-ion/copy-outline";
-import iconRefresh from "@ktibow/iconset-ion/refresh-outline";
+import {
+	iconClose,
+	iconAdd,
+	iconNew,
+	iconDuplicate,
+	iconRefresh,
+} from "../icons";
 import { css, type Component } from "dreamland/core";
 import { Icon } from "./Icon";
 import { memoize } from "../memoize";

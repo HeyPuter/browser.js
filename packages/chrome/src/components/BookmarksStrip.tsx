@@ -1,10 +1,6 @@
 import { createState, css, type Component } from "dreamland/core";
 import { Icon } from "./Icon";
-import iconAdd from "@ktibow/iconset-ion/add";
-import iconOpen from "@ktibow/iconset-ion/open-outline";
-import iconLink from "@ktibow/iconset-ion/link-outline";
-import iconBrush from "@ktibow/iconset-ion/brush-outline";
-import iconTrash from "@ktibow/iconset-ion/trash-outline";
+import { iconAdd, iconOpen, iconLink, iconBrush, iconTrash } from "../icons";
 import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";

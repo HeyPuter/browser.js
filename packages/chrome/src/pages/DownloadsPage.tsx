@@ -1,9 +1,7 @@
 import { css, type Component } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
-import iconLink from "@ktibow/iconset-ion/link-outline";
-import iconClose from "@ktibow/iconset-ion/close-outline";
-import iconFolder from "@ktibow/iconset-ion/folder-outline";
+import { iconLink, iconClose, iconFolder } from "../icons";
 import { Icon } from "../components/Icon";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";

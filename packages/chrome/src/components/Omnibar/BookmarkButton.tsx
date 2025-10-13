@@ -5,8 +5,7 @@ import { createMenuCustom } from "../Menu";
 import { BookmarkPopup } from "../BookmarkPopup";
 import { emToPx } from "../../utils";
 
-import iconStar from "@ktibow/iconset-ion/star-outline";
-import iconStarFilled from "@ktibow/iconset-ion/star";
+import { iconStar, iconStarFilled } from "../../icons";
 
 export const BookmarkButton: Component<{
 	url: URL;

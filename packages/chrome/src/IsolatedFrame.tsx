@@ -21,15 +21,17 @@ import { ElementType, type Handler, Parser } from "htmlparser2";
 import { type ChildNode, DomHandler, Element, Comment, Node } from "domhandler";
 import * as tldts from "tldts";
 
-import iconBack from "@ktibow/iconset-ion/arrow-back";
-import iconForwards from "@ktibow/iconset-ion/arrow-forward";
-import iconRefresh from "@ktibow/iconset-ion/refresh";
-import iconBookmark from "@ktibow/iconset-ion/bookmark-outline";
-import iconCode from "@ktibow/iconset-ion/code-outline";
-import iconLink from "@ktibow/iconset-ion/link-outline";
-import iconAdd from "@ktibow/iconset-ion/duplicate-outline";
-import iconCopy from "@ktibow/iconset-ion/copy-outline";
-import iconSave from "@ktibow/iconset-ion/save-outline";
+import {
+	iconBack,
+	iconForwards,
+	iconRefresh,
+	iconBookmark,
+	iconCode,
+	iconLink,
+	iconAdd,
+	iconCopy,
+	iconSave,
+} from "./icons";
 
 import type { Chromebound, Framebound } from "../../inject/src/types";
 import type { Tab } from "./Tab";

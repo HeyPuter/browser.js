@@ -2,12 +2,10 @@ import { css, type Component } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { splitUrl } from "../utils";
 
-import iconClose from "@ktibow/iconset-ion/close";
+import { iconClose, iconTrash, iconSettings } from "../icons";
 import { Icon } from "./Icon";
 import { SmallIconButton } from "./SmallIconButton";
 
-import iconTrash from "@ktibow/iconset-ion/trash-outline";
-import iconSettings from "@ktibow/iconset-ion/settings-outline";
 import { closeMenu } from "./Menu";
 
 export const SiteInformationPopup: Component<{

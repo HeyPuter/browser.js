@@ -4,11 +4,13 @@ import type { IconifyIcon } from "@iconify/types";
 import { Icon } from "../components/Icon";
 import { browser } from "../Browser";
 
-import iconSettings from "@ktibow/iconset-ion/settings-outline";
-import iconSearch from "@ktibow/iconset-ion/search-outline";
-import iconExtension from "@ktibow/iconset-ion/extension-puzzle-outline";
-import iconPrivacy from "@ktibow/iconset-ion/shield-checkmark-outline";
-import iconAbout from "@ktibow/iconset-ion/information-circle-outline";
+import {
+	iconSettings,
+	iconSearchOutline as iconSearch,
+	iconExtension,
+	iconPrivacy,
+	iconAbout,
+} from "../icons";
 
 export const SettingsPage: Component<
 	{
