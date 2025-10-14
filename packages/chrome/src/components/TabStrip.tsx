@@ -138,10 +138,7 @@ export const DragTab: Component<
 				}}
 			>
 				<div class={use(this.active).map((x) => `main ${x ? "active" : ""}`)}>
-					<img
-						src={use(this.tab.icon)}
-						on:error={() => (this.tab.icon = defaultFaviconUrl)}
-					/>
+					{use(this.tab.icon).andThen(<img src={use(this.tab.icon)} />)}
 					<span>{use(this.tab.title)}</span>
 					<button
 						class="close"
