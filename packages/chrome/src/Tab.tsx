@@ -9,10 +9,6 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { serviceWorkerReady } from "./main";
 import { DownloadsPage } from "./pages/DownloadsPage";
-import {
-	ScramjetClient,
-	ScramjetFrame,
-} from "@mercuryworkshop/scramjet/bundled";
 import { IsolatedFrame } from "./IsolatedFrame";
 import { defaultFaviconUrl } from "./assets/favicon";
 
@@ -29,7 +25,7 @@ export class Tab extends StatefulClass {
 	id: number;
 	title: string | null;
 	frame: IsolatedFrame;
-	devtoolsFrame: ScramjetFrame;
+	devtoolsFrame: any;
 	screenshot: string | null = null;
 
 	icon: string | null;

@@ -1,4 +1,5 @@
-import { chromeframe, methods } from ".";
+import { methods } from ".";
+import { chromeframe } from "./scramjet";
 import { Chromebound } from "./types";
 
 let synctoken = 0;

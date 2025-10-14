@@ -2,6 +2,8 @@ export type FrameboundMethods = {
 	[K in keyof Framebound]: (arg: Framebound[K][0]) => Promise<Framebound[K][1]>;
 };
 
+export type FrameSequence = number[];
+
 export type Chromebound = {
 	contextmenu: [
 		{
@@ -64,4 +66,12 @@ export type Framebound = {
 			title: string;
 		},
 	];
+};
+
+export type InjectScramjetInit = {
+	sequence: FrameSequence;
+	config: any;
+	cookies: string;
+	getInjectScripts: ScramjetInterface["getInjectScripts"];
+	wisp: string;
 };

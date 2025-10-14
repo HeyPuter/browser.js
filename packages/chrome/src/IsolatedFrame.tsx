@@ -14,7 +14,7 @@ import {
 } from "@mercuryworkshop/scramjet/bundled";
 
 import scramjetWASM from "../../scramjet/dist/scramjet.wasm.wasm?url";
-import scramjetAll from "../../scramjet/dist/scramjet.all.js?url";
+import scramjetAll from "../../scramjet/dist/scramjet.js?url";
 import injectScript from "../../inject/dist/inject.js?url";
 import { BareClient } from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
@@ -34,7 +34,11 @@ import {
 	iconSearch,
 } from "./icons";
 
-import type { Chromebound, Framebound } from "../../inject/src/types";
+import type {
+	Chromebound,
+	Framebound,
+	FrameSequence,
+} from "../../inject/src/types";
 import type { Tab } from "./Tab";
 import { browser } from "./Browser";
 import { createMenu } from "./components/Menu";
@@ -59,11 +63,6 @@ const cfg = {
 		trysetfn: "$scramjet$tryset",
 		templocid: "$scramjet$temploc",
 		tempunusedid: "$scramjet$tempunused",
-	},
-	files: {
-		wasm: "/scram/scramjet.wasm.wasm",
-		all: "/scram/scramjet.all.js",
-		sync: "/scram/scramjet.sync.js",
 	},
 	flags: {
 		syncxhr: false,
@@ -92,13 +91,13 @@ const cfg = {
 						return decodeURIComponent(url);
 					}`,
 	},
+	maskedfiles: ["inject.js", "scramjet.wasm.js"],
 };
 
 setConfig(cfg);
 
 // you can get to any frame by window.frames[index][index]...
 // so we can encode a certain frame as a sequence of indices to reach it, and then it will be available from any other frame, even cross-origin
-type FrameSequence = number[];
 
 function findSelfSequence(
 	target: Window,
@@ -161,6 +160,9 @@ addEventListener("message", async (e) => {
 	}
 });
 
+const virtualWasmPath = "/scramjet.wasm.js";
+const virtualInjectPath = "/inject.js";
+
 const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	meta,
 	handler,
@@ -169,72 +171,13 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	script
 ) => {
 	const injected = `
-		{
-			const top = self.top;
-			const sequence = ${JSON.stringify(findSelfSequence(self)!)};
-			const target = sequence.reduce((win, idx) => win.frames[idx], top);
-			let counter = 0;
-
-			let syncPool = new Map();
-			let listeners = new Map();
-
-			addEventListener("message", async (e) => {
-				if (!e.data || !("$scramjetipc$type" in e.data)) return;
-				const type = e.data.$scramjetipc$type;
-				if (type === "response") {
-					const token = e.data.$scramjetipc$token;
-					const message = e.data.$scramjetipc$message;
-
-					const cb = syncPool.get(token);
-					if (cb) {
-						cb(message);
-						syncPool.delete(token);
-					}
-				} else if (type === "request") {
-					const method = e.data.$scramjetipc$method;
-					const message = e.data.$scramjetipc$message;
-					const token = e.data.$scramjetipc$token;
-
-					const fn = listeners.get(method);
-					if (fn) {
-						const response = await fn(message);
-						e.source.postMessage({
-							$scramjetipc$type: "response",
-							$scramjetipc$token: token,
-							$scramjetipc$message: response,
-						});
-					} else {
-						console.error("Unknown scramjet ipc clientbound method", method);
-					}
-				}
-			});
-
-			const client = $scramjetLoadClient().loadAndHook({
-				interface: {
-					getInjectScripts: ${getInjectScripts.toString()},
-					onClientbound: function(type, callback) {
-						listeners.set(type, callback);
-				 	},
-					sendServerbound: async function(type, msg) {
-						const token = counter++;
-						target.postMessage({
-							$scramjetipc$type: "request",
-							$scramjetipc$method: type,
-							$scramjetipc$token: token,
-							$scramjetipc$message: msg,
-						}, "*");
-
-						return new Promise((res) => {
-							syncPool.set(token, res);
-						});
-					}
-				},
-				config: ${JSON.stringify(config)},
-				cookies: ${JSON.stringify(cookieJar.dump())},
-				transport: null,
-			});
-			document.currentScript.remove();
-		}
+		$injectLoad({
+			sequence: ${JSON.stringify(findSelfSequence(self)!)},
+			config: ${JSON.stringify(config)},
+			cookies: ${JSON.stringify(cookieJar.dump())},
+			wisp: ${JSON.stringify(cfg.wisp)},
+		});
+		document.currentScript.remove();
 	`;
 
 	// for compatibility purpose
@@ -248,10 +191,9 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	);
 
 	return [
-		script(config.files.wasm),
-		script(config.files.all),
+		script(virtualWasmPath),
+		script(virtualInjectPath),
 		script("data:application/javascript;base64," + base64Injected),
-		script(virtualInjectUrl),
 	];
 };
 setInterface({
@@ -287,20 +229,21 @@ setInterface({
 	getWorkerInjectScripts: (meta, js, config, type) => {
 		const module = type === "module";
 		let str = "";
-		const script = (script: keyof typeof config.files) => {
+		const script = (script: string) => {
 			if (module) {
-				str += `import "${config.files[script]}"\n`;
+				str += `import "${script}"\n`;
 			} else {
-				str += `importScripts("${config.files[script]}");\n`;
+				str += `importScripts("${script}");\n`;
 			}
 		};
-		script("wasm");
-		script("all");
-		str += `$scramjetLoadClient().loadAndHook({
-			config: ${JSON.stringify(config)},
-			interface: {},
-			transport: null,
-		});`;
+		script(virtualWasmPath);
+		// TODO
+		// script();
+		// str += `$scramjetLoadClient().loadAndHook({
+		// 	config: ${JSON.stringify(config)},
+		// 	interface: {},
+		// 	transport: null,
+		// });`;
 
 		return str;
 	},
@@ -340,8 +283,6 @@ const controllers: Controller[] = [];
 function getRootDomain(url: URL): string {
 	return tldts.getDomain(url.href) || url.hostname;
 }
-
-const virtualInjectUrl = "/inject.js";
 
 function makeController(url: URL): Controller {
 	let originurl = new URL(ISOLATION_ORIGIN);
@@ -427,11 +368,9 @@ const methods = {
 		data.initialHeaders = headers;
 
 		// handle scramjet.all.js and scramjet.wasm.js requests
-		if (data.rawUrl.pathname === cfg.files.wasm) {
+		if (data.rawUrl.pathname === virtualWasmPath) {
 			return [await makeWasmResponse(), undefined];
-		} else if (data.rawUrl.pathname === cfg.files.all) {
-			return [await makeAllResponse(), undefined];
-		} else if (data.rawUrl.pathname === virtualInjectUrl) {
+		} else if (data.rawUrl.pathname === virtualInjectPath) {
 			return [
 				await fetch(injectScript).then(async (x) => {
 					const text = await x.text();
@@ -537,7 +476,6 @@ window.addEventListener("message", async (event) => {
 });
 
 let wasmPayload: string | null = null;
-let allPayload: string | null = null;
 
 async function makeWasmResponse() {
 	if (!wasmPayload) {
@@ -561,20 +499,6 @@ async function makeWasmResponse() {
 
 	return {
 		body: wasmPayload,
-		headers: { "Content-Type": "application/javascript" },
-		status: 200,
-		statusText: "OK",
-	};
-}
-
-async function makeAllResponse(): Promise<ScramjetFetchResponse> {
-	if (!allPayload) {
-		const resp = await fetch(scramjetAll);
-		allPayload = await resp.text();
-	}
-
-	return {
-		body: allPayload,
 		headers: { "Content-Type": "application/javascript" },
 		status: 200,
 		statusText: "OK",
