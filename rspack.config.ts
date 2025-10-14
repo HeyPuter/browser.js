@@ -138,17 +138,19 @@ const createScramjetConfig = (options) => {
 	});
 };
 
-// Configuration for standard IIFE builds
+// IIFE build that does NOT bundle the wasm, exposes global $scramjet
 const iifeConfig = createScramjetConfig({
 	entry: {
-		all: join(scramjetdir, "src/entry.ts"),
-		sync: join(scramjetdir, "src/sync.ts"),
+		main: join(scramjetdir, "src/index.ts"),
 	},
 	output: {
-		filename: "scramjet.[name].js",
+		filename: "scramjet.js",
 		path: join(scramjetdir, "dist"),
-		libraryTarget: "es2022",
 		iife: true,
+		library: {
+			type: "var",
+			name: "$scramjet",
+		},
 	},
 	rewriterWasm: "undefined",
 	extraConfig: {
@@ -158,18 +160,61 @@ const iifeConfig = createScramjetConfig({
 	},
 });
 
-// Configuration for ES module build
-const moduleConfig = createScramjetConfig({
+// IIFE build that BUNDLES the wasm and exposes global $scramjet
+const iifeBundledConfig = createScramjetConfig({
+	entry: {
+		bundled: join(scramjetdir, "src/index.ts"),
+	},
+	output: {
+		filename: "scramjet_bundled.js",
+		path: join(scramjetdir, "dist"),
+		iife: true,
+		library: {
+			type: "var",
+			name: "$scramjet",
+		},
+	},
+	rewriterWasm: JSON.stringify(wasmB64),
+	extraConfig: {
+		performance: {
+			hints: false,
+		},
+	},
+});
+
+// wasm bundled, esmodule
+const moduleBundledConfig = createScramjetConfig({
 	entry: {
 		bundle: join(scramjetdir, "src/index.ts"),
 	},
 	output: {
-		filename: "scramjet.[name].js",
+		filename: "scramjet_bundled.mjs",
 		path: join(scramjetdir, "dist"),
 		libraryTarget: "module",
 		iife: false,
 	},
 	rewriterWasm: JSON.stringify(wasmB64),
+	performance: {
+		hints: false,
+	},
+	experiments: {
+		outputModule: true,
+	},
+});
+
+// no wasm bundled, esmodule
+const moduleConfig = createScramjetConfig({
+	entry: {
+		bundle: join(scramjetdir, "src/index.ts"),
+	},
+	output: {
+		filename: "scramjet.mjs",
+		path: join(scramjetdir, "dist"),
+		libraryTarget: "module",
+		iife: false,
+	},
+	// do not embed the wasm in this build
+	rewriterWasm: "undefined",
 	performance: {
 		hints: false,
 	},
@@ -234,4 +279,11 @@ const injectConfig = defineConfig({
 	},
 });
 
-export default [iifeConfig, moduleConfig, cdpConfig, injectConfig];
+export default [
+	iifeConfig,
+	iifeBundledConfig,
+	moduleConfig,
+	moduleBundledConfig,
+	cdpConfig,
+	injectConfig,
+];
