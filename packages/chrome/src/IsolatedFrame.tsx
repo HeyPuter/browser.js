@@ -31,6 +31,7 @@ import {
 	iconAdd,
 	iconCopy,
 	iconSave,
+	iconSearch,
 } from "./icons";
 
 import type { Chromebound, Framebound } from "../../inject/src/types";
@@ -656,6 +657,7 @@ function pageContextItems(
 		return [
 			{
 				label: "Search",
+				icon: iconSearch,
 				action: () => {
 					const query = selection.toString();
 					if (query) {
@@ -669,6 +671,7 @@ function pageContextItems(
 			},
 			{
 				label: "Copy",
+				icon: iconCopy,
 				action: () => {
 					navigator.clipboard.writeText(selection.toString());
 				},
