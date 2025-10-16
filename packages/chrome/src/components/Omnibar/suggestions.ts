@@ -2,7 +2,7 @@ import { browser } from "../../Browser";
 import { bare } from "../../IsolatedFrame";
 
 export type OmniboxResult = {
-	kind: "search" | "history" | "bookmark" | "direct";
+	kind: "search" | "history" | "bookmark" | "direct" | "trending";
 	title: string | null;
 	url: URL;
 	favicon: string | null;

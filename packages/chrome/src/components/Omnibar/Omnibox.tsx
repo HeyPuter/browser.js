@@ -1,275 +1,355 @@
-import { css, type Component } from "dreamland/core";
 import {
-	iconBack,
-	iconForwards,
-	iconRefresh,
-	iconExtension,
-	iconDownload,
-	iconMore,
-	iconExit,
-	iconNew,
-	iconTime,
-	iconInfo,
-	iconSettings,
-} from "../../icons";
-import { createMenu, createMenuCustom } from "../Menu";
-import { OmnibarButton } from "./OmnibarButton";
-import { createDelegate } from "dreamland/core";
-import type { Tab } from "../../Tab";
-import { UrlInput } from "./UrlInput";
-import { browser } from "../../Browser";
+	createDelegate,
+	createState,
+	css,
+	type Component,
+	type Delegate,
+} from "dreamland/core";
+import { iconSearch, iconForwards, iconTrendingUp } from "../../icons";
 import { Icon } from "../Icon";
+import { OmnibarButton } from "./OmnibarButton";
+import { setContextMenu } from "../Menu";
 import { defaultFaviconUrl } from "../../assets/favicon";
+import { browser } from "../../Browser";
+import { emToPx, splitUrl } from "../../utils";
+import {
+	fetchGoogleTrending,
+	fetchSuggestions,
+	trendingCached,
+	type OmniboxResult,
+	type TrendingQuery,
+} from "./suggestions";
+import { trimUrl } from "./utils";
+import { BookmarkButton } from "./BookmarkButton";
+import { SiteOptionsButton } from "./SiteOptionsButton";
+import { Favicon } from "../Favicon";
+import { UrlInput } from "./UrlInput";
+import { Suggestion } from "./Suggestion";
 
-import type { HistoryState } from "../../History";
-import { isPuter } from "../../main";
-import { DownloadsPopup } from "../DownloadsPopup";
-import { CircularProgress } from "./CircularProgress";
+export const focusOmnibox = createDelegate<void>();
 
-export const animateDownloadFly = createDelegate<void>();
-export const showDownloadsPopup = createDelegate<void>();
-
-export const Spacer: Component = function (cx) {
-	return <div></div>;
+const InactiveBar: Component<{
+	subtle: boolean;
+	active: boolean;
+}> = function () {
+	return (
+		<div class:subtle={use(this.subtle)} class:active={use(this.active)}></div>
+	);
 };
-Spacer.style = css`
+InactiveBar.style = css`
 	:scope {
-		width: 2em;
+		background: var(--bg);
+		width: 100%;
+		border: none;
+		outline: none;
+		border-radius: 4px;
+		margin: 0.25em;
+	}
+
+	:scope.subtle.active {
+		border: 1px solid var(--accent);
 	}
 `;
 
-export const Omnibox: Component<{
-	tab: Tab;
-}> = function (cx) {
-	const selectContent = createDelegate<void>();
+export const Omnibox: Component<
+	{
+		url: URL;
+		selectContent: Delegate<void>;
+	},
+	{
+		value: string;
+		active: boolean;
+		justselected: boolean;
+		subtleinput: boolean;
+		focusindex: number;
+		searchSuggestions: OmniboxResult[];
+		trendingSuggestions: OmniboxResult[];
+		input: HTMLInputElement;
+	}
+> = function (cx) {
+	this.focusindex = 0;
+	this.searchSuggestions = [];
+	this.value = "";
+	this.trendingSuggestions = [];
 
-	animateDownloadFly.listen(async () => {
-		await new Promise((r) => setTimeout(r, 10));
-		let fly: HTMLElement = cx.root.querySelector(".downloadfly")!;
-		fly.addEventListener(
-			"transitionend",
-			() => {
-				fly.style.opacity = "0";
-				fly.classList.add("down");
+	cx.mount = () => {
+		setContextMenu(cx.root, [
+			{
+				label: "Select All",
+				action: () => {
+					this.selectContent();
+				},
 			},
-			{ once: true }
-		);
-		fly.style.opacity = "1";
-		fly.classList.remove("down");
-	});
+		]);
 
-	const historyMenu = (e: MouseEvent, states: HistoryState[]) => {
-		if (states.length > 0) {
-			createMenu(
-				{ left: e.clientX, top: cx.root.clientTop + cx.root.clientHeight * 2 },
-				[
-					...states.map((s) => ({
-						label: s.title || "New Tab",
-						image: s.favicon || defaultFaviconUrl,
-						action: () => {
-							let rel =
-								browser.activetab.history.states.indexOf(s) -
-								browser.activetab.history.index;
-							browser.activetab.history.go(rel);
-						},
-					})),
-					"-",
-					{
-						icon: iconTime,
-						label: "Show Full History",
-						action: () => {
-							browser.newTab(new URL("puter://history"));
-						},
-					},
-				]
-			);
-		}
-		e.preventDefault();
-		e.stopPropagation();
+		fetchGoogleTrending();
+		setTimeout(() => {
+			fetchGoogleTrending();
+		}, 1000);
 	};
 
-	const downloadsButton = (
-		<OmnibarButton
-			click={() => {
-				showDownloadsPopup();
-			}}
-			icon={iconDownload}
-		></OmnibarButton>
-	);
-	showDownloadsPopup.listen(() => {
-		const { right } = downloadsButton.getBoundingClientRect();
-		createMenuCustom(
-			{
-				top: cx.root.clientTop + cx.root.clientHeight * 2,
-				right,
-			},
-			<DownloadsPopup></DownloadsPopup>
+	focusOmnibox.listen(() => {
+		setTimeout(() => {
+			activate();
+			this.subtleinput = true;
+		}, 10);
+	});
+
+	let timeout: number | null = null;
+	use(this.value).listen(() => {
+		if (!this.value) {
+			this.searchSuggestions = [];
+			return;
+		}
+
+		// if the user is actually trying to search something we can kill the trending suggestions
+		this.trendingSuggestions = [];
+
+		if (timeout) clearTimeout(timeout);
+		timeout = setTimeout(
+			() =>
+				fetchSuggestions(this.value, (results) => {
+					this.searchSuggestions = results;
+				}),
+			100
 		);
 	});
 
+	const activate = () => {
+		this.subtleinput = false;
+		this.active = true;
+		browser.unfocusframes = true;
+
+		const handleClickOutside = (e: MouseEvent) => {
+			this.active = false;
+			browser.unfocusframes = false;
+			e.preventDefault();
+
+			document.body.removeEventListener("click", handleClickOutside);
+			document.body.removeEventListener("auxclick", handleClickOutside);
+		};
+
+		document.body.addEventListener("click", handleClickOutside);
+		document.body.addEventListener("auxclick", handleClickOutside);
+
+		if (this.url.href == "puter://newtab") {
+			this.value = "";
+		} else {
+			this.value = trimUrl(this.url);
+		}
+
+		this.input.focus();
+		this.input.select();
+		this.justselected = true;
+		this.input.scrollLeft = 0;
+
+		fetchGoogleTrending().then(() => {
+			// pick a random 3 from the cache
+			this.trendingSuggestions = trendingCached!
+				.sort(() => 0.5 - Math.random())
+				.slice(0, 3)
+				.map((t) => ({
+					kind: "trending",
+					title: t.title,
+					url: new URL(
+						`https://www.google.com/search?q=${encodeURIComponent(t.title)}`
+					),
+					favicon: "https://www.google.com/favicon.ico",
+				}));
+		});
+	};
+
+	const navTo = (url: URL) => {
+		browser.activetab.pushNavigate(url);
+		this.active = false;
+		this.input.blur();
+	};
+
+	const doSearch = () => {
+		const selected =
+			this.focusindex < this.searchSuggestions.length
+				? this.searchSuggestions[this.focusindex]
+				: this.trendingSuggestions[
+						this.focusindex - this.searchSuggestions.length
+					];
+		navTo(selected.url);
+	};
+
+	this.selectContent.listen(() => {
+		activate();
+	});
+
+	const overflowlength = () =>
+		this.searchSuggestions.length + this.trendingSuggestions.length;
+
 	return (
-		<div>
-			<OmnibarButton
-				tooltip="Go back one page (Alt+Left Arrow)"
-				active={use(this.tab.canGoBack)}
-				click={() => this.tab.back()}
-				icon={iconBack}
-				rightclick={(e: MouseEvent) =>
-					historyMenu(
-						e,
-						browser.activetab.history.states
-							.slice(0, browser.activetab.history.index)
-							.reverse()
-					)
-				}
-			></OmnibarButton>
-			<OmnibarButton
-				tooltip="Go forward one page (Alt+Right Arrow)"
-				active={use(this.tab.canGoForward)}
-				click={() => this.tab.forward()}
-				icon={iconForwards}
-				rightclick={(e: MouseEvent) =>
-					historyMenu(
-						e,
-						browser.activetab.history.states.slice(
-							browser.activetab.history.index + 1,
-							browser.activetab.history.states.length
-						)
-					)
-				}
-			></OmnibarButton>
-			<OmnibarButton
-				tooltip="Refresh current page (Ctrl+R)"
-				click={() => this.tab.reload()}
-				icon={iconRefresh}
-			></OmnibarButton>
-			<Spacer></Spacer>
-			<UrlInput
-				selectContent={selectContent}
-				url={use(this.tab.url)}
-			></UrlInput>
-			<Spacer></Spacer>
-			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
-			{use(browser.sessionDownloadHistory)
-				.map((s) => s.length > 0)
-				.andThen(
-					<div style="position: relative">
-						{downloadsButton}
-
-						<div class="downloadfly down">
-							<Icon icon={iconDownload}></Icon>
-						</div>
-						<CircularProgress
-							progress={use(browser.downloadProgress)}
-						></CircularProgress>
-					</div>
-				)}
-
-			<OmnibarButton
-				tooltip="More Options"
-				icon={iconMore}
-				click={(e: MouseEvent) => {
-					createMenu(
-						{ left: e.x, top: cx.root.clientTop + cx.root.clientHeight * 2 },
-						[
-							{
-								label: "New Tab",
-								action: () => {
-									browser.newTab(new URL("puter://newtab"), true);
-								},
-								icon: iconNew,
-							},
-							"-",
-							{
-								label: "History",
-								action: () => {
-									browser.newTab(new URL("puter://history"));
-								},
-								icon: iconTime,
-							},
-							{
-								label: "Downloads",
-								action: () => {
-									browser.newTab(new URL("puter://downloads"));
-								},
-								icon: iconDownload,
-							},
-							"-",
-							{
-								label: "About",
-								action: () => {
-									browser.newTab(new URL("puter://version"));
-								},
-								icon: iconInfo,
-							},
-							{
-								label: "Settings",
-								action: () => {
-									browser.newTab(new URL("puter://settings"));
-								},
-								icon: iconSettings,
-							},
-							...(isPuter
-								? [
-										{
-											label: "Exit",
-											action: () => {
-												puter.exit();
-											},
-											icon: iconExit,
-										},
-									]
-								: []),
-						]
-					);
+		<div
+			on:click={(e: MouseEvent) => {
+				if (this.active) {
+					e.preventDefault();
 					e.stopPropagation();
+					return;
+				}
+				activate();
+				e.stopPropagation();
+			}}
+			class:subtle={use(this.subtleinput)}
+			class:active={use(this.active)}
+		>
+			<InactiveBar
+				subtle={use(this.subtleinput)}
+				active={use(this.active)}
+			></InactiveBar>
+			<div
+				class="overflow"
+				class:active={use(this.active, this.subtleinput).map(
+					([a, s]) => a && !s
+				)}
+			>
+				<div class="spacer"></div>
+				{use(this.searchSuggestions).mapEach((item) => (
+					<Suggestion
+						onClick={() => navTo(item.url)}
+						input={this.input}
+						item={item}
+						focused={use(this.focusindex).map(
+							(i) => i === this.searchSuggestions.indexOf(item)
+						)}
+					></Suggestion>
+				))}
+				{use(this.trendingSuggestions)
+					.map((s) => s.length > 0)
+					.andThen(<div class="spacertext">Trending Searches</div>)}
+				{use(this.trendingSuggestions).mapEach((item) => (
+					<Suggestion
+						item={item}
+						input={this.input}
+						onClick={() => navTo(item.url)}
+						focused={use(this.focusindex).map(
+							(i) =>
+								i ===
+								this.searchSuggestions.length +
+									this.trendingSuggestions.indexOf(item)
+						)}
+					></Suggestion>
+				))}
+			</div>
+
+			<UrlInput
+				active={use(this.active)}
+				input={use(this.input)}
+				url={use(this.url)}
+				value={use(this.value)}
+				favicon={use(this.focusindex, this.searchSuggestions).map(() =>
+					this.focusindex > 0 &&
+					this.searchSuggestions.length > 0 &&
+					this.focusindex < this.searchSuggestions.length
+						? this.searchSuggestions[this.focusindex].favicon
+						: null
+				)}
+				doSearch={doSearch}
+				onkeydown={(e: KeyboardEvent) => {
+					if (e.key === "ArrowDown") {
+						e.preventDefault();
+						let idx = this.focusindex + 1;
+						if (idx >= overflowlength()) {
+							idx = 0;
+						}
+						this.focusindex = idx;
+					}
+					if (e.key === "ArrowUp") {
+						e.preventDefault();
+						let idx = this.focusindex - 1;
+						if (idx < 0) {
+							idx = overflowlength() - 1;
+						}
+						this.focusindex = idx;
+					}
+					if (e.key === "Enter") {
+						e.preventDefault();
+						doSearch();
+					}
 				}}
-			></OmnibarButton>
+				onkeyup={(e: KeyboardEvent) => {
+					if (!this.justselected) return;
+
+					// if the user didn't modify anything
+					if (this.input.value == trimUrl(this.url)) {
+						// insert the untrimmed version
+						this.input.value = this.url.href;
+					}
+
+					if (e.key == "ArrowLeft") {
+						// move the cursor to the start
+						if (this.url.protocol == "puter:") {
+							this.input.setSelectionRange(0, 0);
+						} else {
+							let schemelen = this.url.protocol.length + 2;
+							this.input.setSelectionRange(schemelen, schemelen);
+						}
+					}
+
+					this.justselected = false;
+				}}
+				oninput={(e: InputEvent) => {
+					this.focusindex = 0;
+					this.subtleinput = false;
+				}}
+			></UrlInput>
 		</div>
 	);
 };
+
 Omnibox.style = css`
 	:scope {
-		z-index: 1;
-		background: var(--bg01);
-		display: flex;
-		padding: 0 7px 0 7px;
-		height: 2.5em;
-		align-items: center;
 		position: relative;
-		gap: 0.2em;
-	}
-
-	.downloadfly {
-		position: absolute;
-		top: 0;
-		box-sizing: border-box;
-		aspect-ratio: 1/1;
-		align-items: center;
-		justify-content: center;
-		width: 100%;
-
+		flex: 1;
 		display: flex;
-		outline: none;
-		border: none;
-		font-size: 1.25em;
-		background: none;
-		color: var(--fg);
-		border-radius: 0.2em;
+		height: 100%;
+	}
 
-		transition: top 0.5s ease;
+	.result-icon {
+		align-self: start;
+		margin-top: 0.4em;
 	}
-	.downloadfly.down {
-		top: 100vh;
+
+	.favicon {
+		width: 16px;
+		height: 16px;
 	}
-	.downloadfly::before {
+
+	.overflow {
 		position: absolute;
-		content: "";
-		z-index: -1;
-		height: 2em;
-		width: 2em;
-		border-radius: 50%;
-		opacity: 0.5;
-		background: var(--bg20);
+		display: none;
+		background: var(--bg02);
+		width: 100%;
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+		border: 1px solid var(--fg5);
+		padding-bottom: 0.5em;
 	}
+	.overflow .spacer {
+		display: block;
+		height: 2.5em;
+
+		width: 98%;
+		margin: 0 auto;
+
+		border-bottom: 1px solid var(--fg5);
+	}
+
+	.spacertext {
+		display: block;
+		height: 2em;
+		line-height: 2.5em;
+		padding-left: 1.5em;
+		color: var(--fg3);
+		font-size: 0.9em;
+	}
+
+
+	.overflow.active {
+		display: block;
+	}
+}
 `;

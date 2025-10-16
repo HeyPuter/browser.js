@@ -1,9 +1,9 @@
 import type { Component } from "dreamland/core";
-import { Omnibox } from "./components/Omnibar/Omnibox";
 import { Tabs } from "./components/TabStrip";
 import { browser } from "./Browser";
 import type { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
+import { Omnibar } from "./components/Omnibar/Omnibar";
 
 export const App: Component = function (cx) {
 	const applyTheme = () => {
@@ -44,7 +44,7 @@ export const App: Component = function (cx) {
 					browser.destroyTab(tab);
 				}}
 			/>
-			<Omnibox tab={use(browser.activetab)} />
+			<Omnibar tab={use(browser.activetab)} />
 			{use(browser.activetab.url, browser.settings.bookmarksPinned)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
 				.andThen(<BookmarksStrip />)}
