@@ -54,5 +54,8 @@
 		"**/Makefile": false,
 		"**/*.sh": false,
 		"**/dist": false
+	},
+	"[typescriptreact]": {
+		"editor.defaultFormatter": "vscode.typescript-language-features"
 	}
 }

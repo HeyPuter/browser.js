@@ -218,7 +218,7 @@ DragTab.style = css`
 		color: var(--fg);
 
 		border-radius: 4px;
-		padding: 7px 8px 5px 8px;
+		padding: 7px 8px;
 
 		display: flex;
 		align-items: center;
@@ -230,11 +230,13 @@ DragTab.style = css`
 	}
 	.main span {
 		flex: 1;
-		font-size: 13px;
-
+		font-size: 12px;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+		height: 100%;
+		vertical-align: center;
+		line-height: 100%;
 	}
 	.main .close > * {
 		width: 14px;

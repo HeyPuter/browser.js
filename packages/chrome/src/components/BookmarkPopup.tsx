@@ -3,6 +3,7 @@ import { Icon } from "./Icon";
 import { browser, type BookmarkEntry } from "../Browser";
 import { Input } from "./Input";
 import { closeMenu } from "./Menu";
+import { Button } from "./Button";
 
 export const BookmarkPopup: Component<{
 	bookmark: Stateful<BookmarkEntry>;
@@ -16,7 +17,7 @@ export const BookmarkPopup: Component<{
 				<Input
 					label="Title"
 					value={this.bookmark.title}
-					onInput={(e) =>
+					on:input={(e) =>
 						(this.bookmark.title = (e.target as HTMLInputElement).value)
 					}
 				/>
@@ -25,13 +26,13 @@ export const BookmarkPopup: Component<{
 				<Input
 					label="URL"
 					value={this.bookmark.url}
-					onInput={(e) =>
+					on:input={(e) =>
 						(this.bookmark.url = (e.target as HTMLInputElement).value)
 					}
 				/>
 			</div>
 			<div class="actions">
-				<button
+				<Button
 					on:click={() => {
 						if (!this.new) {
 							browser.bookmarks = browser.bookmarks.filter(
@@ -42,9 +43,9 @@ export const BookmarkPopup: Component<{
 					}}
 				>
 					{this.new ? "Cancel" : "Delete"}
-				</button>
-				<button
-					class="accent"
+				</Button>
+				<Button
+					variant="primary"
 					on:click={() => {
 						if (this.new) {
 							browser.bookmarks = [this.bookmark, ...browser.bookmarks];
@@ -54,7 +55,7 @@ export const BookmarkPopup: Component<{
 					}}
 				>
 					{this.new ? "Add" : "Save"}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

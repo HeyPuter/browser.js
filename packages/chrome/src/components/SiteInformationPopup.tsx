@@ -4,7 +4,7 @@ import { splitUrl } from "../utils";
 
 import { iconClose, iconTrash, iconSettings } from "../icons";
 import { Icon } from "./Icon";
-import { SmallIconButton } from "./SmallIconButton";
+import { Button } from "./Button";
 
 import { closeMenu } from "./Menu";
 
@@ -18,12 +18,14 @@ export const SiteInformationPopup: Component<{
 					{use(this.tab.url).map((u) => splitUrl(u)[0] + splitUrl(u)[1])}
 				</span>
 				<div class="buttoniconscontainer">
-					<SmallIconButton
-						click={() => {
+					<Button
+						variant="icon"
+						on:click={() => {
 							closeMenu();
 						}}
-						icon={iconClose}
-					></SmallIconButton>
+					>
+						<Icon icon={iconClose}></Icon>
+					</Button>
 				</div>
 			</div>
 			<div class="content">

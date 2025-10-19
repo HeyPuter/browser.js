@@ -9,23 +9,23 @@ export const Input: Component<{
 	required?: boolean;
 	disabled?: boolean;
 	autofocus?: boolean;
-	className?: string;
-	onInput?: (e: Event) => void;
-	onFocus?: (e: FocusEvent) => void;
-	onBlur?: (e: FocusEvent) => void;
-	onKeyDown?: (e: KeyboardEvent) => void;
-	onKeyUp?: (e: KeyboardEvent) => void;
+	class?: string;
+	"on:input"?: (e: Event) => void;
+	"on:focus"?: (e: FocusEvent) => void;
+	"on:blur"?: (e: FocusEvent) => void;
+	"on:keydown"?: (e: KeyboardEvent) => void;
+	"on:keyup"?: (e: KeyboardEvent) => void;
 }> = function (cx) {
 	const handleInput = (e: Event) => {
 		this.value = (e.target as HTMLInputElement).value;
 
-		if (this.onInput) {
-			this.onInput(e);
+		if (this["on:input"]) {
+			this["on:input"](e);
 		}
 	};
 
 	return (
-		<div class={`input-container ${this.className || ""}`}>
+		<div class={`input-container ${this.class || ""}`}>
 			{this.label && <label>{this.label}</label>}
 			<input
 				type={this.type || "text"}
@@ -36,10 +36,10 @@ export const Input: Component<{
 				disabled={this.disabled}
 				autofocus={this.autofocus}
 				on:input={handleInput}
-				on:focus={this.onFocus as any}
-				on:blur={this.onBlur as any}
-				on:keydown={this.onKeyDown as any}
-				on:keyup={this.onKeyUp as any}
+				on:focus={this["on:focus"] as any}
+				on:blur={this["on:blur"] as any}
+				on:keydown={this["on:keydown"] as any}
+				on:keyup={this["on:keyup"] as any}
 			/>
 		</div>
 	);
