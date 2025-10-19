@@ -11,23 +11,27 @@ export const HistoryPage: Component<
 > = function () {
 	return (
 		<div>
-			<h1>History</h1>
-			<div class="entries">
+			<nav>
+				<h1>History</h1>
+			</nav>
+			<ul class="entries">
 				{browser.globalhistory
 					.sort((a, b) => b.timestamp - a.timestamp)
 					.map((entry) => (
-						<div
+						<li
 							class="entry"
 							on:click={() => {
 								browser.newTab(entry.url);
 							}}
 						>
-							<img src={entry.favicon || defaultFaviconUrl} alt="favicon" />
-							<span class="title">{entry.title || entry.url.href}</span>
-							<span class="url">{entry.url.hostname}</span>
-						</div>
+							<span class="inner">
+								<img src={entry.favicon || defaultFaviconUrl} alt="favicon" />
+								<span class="title">{entry.title || entry.url.href}</span>
+								<span class="url">{entry.url.hostname}</span>
+							</span>
+						</li>
 					))}
-			</div>
+			</ul>
 		</div>
 	);
 };
@@ -37,24 +41,43 @@ HistoryPage.style = css`
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		font-family: sans-serif;
-
+		align-items: flex-start;
 		background: var(--bg01);
 		color: var(--fg);
 	}
+	nav {
+		width: 100%;
+		padding: 1.5em;
+		background: var(--bg02);
+	}
+	h1 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		margin-left: 0;
+	}
 	.entries {
-		display: flex;
-		flex-direction: column;
-		gap: 1em;
-		width: 70%;
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		width: 100%;
+		padding-right: 1.75em;
 	}
 	.entry {
+		width: 100%;
+		transition: background 0.1s;
+	}
+	.inner {
 		display: flex;
 		align-items: center;
-		/*border-bottom: 1px solid #ccc;*/
 		cursor: pointer;
 		gap: 0.5em;
+		padding-block: 0.75em;
+		padding-left: 0.5em;
+		margin-left: 1.75em;
+		border-bottom: 1px solid var(--bg08);
+	}
+	.entry:hover {
+		background: var(--bg08);
 	}
 	.entry img {
 		width: 16px;
@@ -62,5 +85,11 @@ HistoryPage.style = css`
 	}
 	.entry .title {
 		font-weight: bold;
+	}
+	.inner span {
+		white-space: nowrap;
+		overflow: hidden;
+		padding: 0.085em;
+		text-overflow: ellipsis;
 	}
 `;

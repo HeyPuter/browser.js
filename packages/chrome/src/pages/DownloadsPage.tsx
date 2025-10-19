@@ -14,31 +14,39 @@ export const DownloadsPage: Component<
 > = function () {
 	return (
 		<div>
-			<div class="main">
+			<nav>
 				<h1>Downloads</h1>
-				<div class="entries">
-					{use(browser.globalDownloadHistory).mapEach((e) => (
-						<div class="entry">
-							<div class="iconcontainer">
-								<img src={defaultFaviconUrl}></img>
-							</div>
-							<div class="content">
-								<a href={e.url}>{e.filename}</a>
-								<span>
-									<span>{formatBytes(e.size)}</span>
-									<span>{new URL(e.url).hostname}</span>
-									<span>{new Date(e.timestamp).toDateString()}</span>
-								</span>
-							</div>
-							<div class="icons">
-								<Icon icon={iconFolder}></Icon>
-								<Icon icon={iconLink}></Icon>
-								<Icon icon={iconClose}></Icon>
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
+			</nav>
+			<ul class="entries">
+				{use(browser.globalDownloadHistory).mapEach((entry) => {
+					const url = new URL(entry.url);
+					return (
+						<li
+							class="entry"
+							on:click={() => {
+								browser.newTab(url);
+							}}
+						>
+							<span class="inner">
+								<img src={defaultFaviconUrl} alt="favicon" />
+								<div class="text">
+									<span class="title">{entry.filename}</span>
+									<span class="url">{url.hostname}</span>
+									<div class="details">
+										<span>{formatBytes(entry.size)}</span>
+										<span>{new Date(entry.timestamp).toDateString()}</span>
+									</div>
+								</div>
+								<div class="icons">
+									<Icon icon={iconFolder}></Icon>
+									<Icon icon={iconLink}></Icon>
+									<Icon icon={iconClose}></Icon>
+								</div>
+							</span>
+						</li>
+					);
+				})}
+			</ul>
 		</div>
 	);
 };
@@ -48,43 +56,43 @@ DownloadsPage.style = css`
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		font-family: sans-serif;
-
+		align-items: flex-start;
 		background: var(--bg01);
 		color: var(--fg);
-		overflow-y: scroll;
 	}
-
-	a {
-		color: color-mix(in oklab, var(--fg) 50%, var(--accent));
+	nav {
+		width: 100%;
+		padding: 1.5em;
+		background: var(--bg02);
 	}
-
-	.main {
-		display: flex;
-		flex-direction: column;
-		gap: 1em;
-		justify-content: center;
+	h1 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		margin-left: 0;
 	}
 	.entries {
-		display: flex;
-		flex-direction: column;
-		gap: 1em;
+		list-style: none;
+		padding: 0;
+		margin: 0;
 		width: 100%;
+		padding-right: 1.75em;
 	}
 	.entry {
-		display: flex;
-		/*border-bottom: 1px solid #ccc;*/
-		cursor: pointer;
-		gap: 3em;
-
 		width: 100%;
-		background: var(--bg04);
-		/*height: 10em;*/
-
-		border-radius: var(--radius);
-		padding: 2em;
-		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+		transition: background 0.1s;
+	}
+	.inner {
+		display: flex;
+		align-items: center;
+		gap: 0.5em;
+		cursor: pointer;
+		padding-block: 0.75em;
+		padding-left: 0.5em;
+		margin-left: 1.75em;
+		border-bottom: 1px solid var(--bg08);
+	}
+	.entry:hover {
+		background: var(--bg08);
 	}
 	.entry img {
 		width: 16px;
@@ -92,36 +100,39 @@ DownloadsPage.style = css`
 	}
 	.entry .title {
 		font-weight: bold;
+		color: inherit;
+		text-decoration: none;
 	}
-
-	.iconcontainer {
-		width: 2em;
-		height: 100%;
-		justify-content: center;
+	.entry .title:hover {
+		color: var(--accent);
+		text-decoration: underline;
 	}
-	.iconcontainer img {
-		width: 100%;
-		height: auto;
+	.inner span {
+		white-space: nowrap;
+		overflow: hidden;
+		padding: 0.085em;
+		text-overflow: ellipsis;
 	}
-
-	.icons {
-		flex: 1;
-		display: flex;
-		justify-content: right;
-		gap: 0.5em;
-
-		font-size: 1.5em;
-	}
-
-	.content {
+	.text {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5em;
+		gap: 0.25em;
+		flex: 1;
+		min-width: 0;
 	}
-
-	.content > span {
+	.details {
 		display: flex;
 		gap: 1em;
+		color: var(--fg2);
+	}
+	.icons {
+		display: flex;
+		gap: 0.5em;
+		margin-left: 0.75em;
+	}
+	.icons :global(svg) {
+		width: 1em;
+		height: 1em;
 		color: var(--fg2);
 	}
 `;
