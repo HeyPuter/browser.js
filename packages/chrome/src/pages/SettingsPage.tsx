@@ -3,6 +3,9 @@ import type { Tab } from "../Tab";
 import type { IconifyIcon } from "@iconify/types";
 import { Icon } from "../components/Icon";
 import { browser } from "../Browser";
+import { Checkbox } from "../components/Checkbox";
+import { Button } from "../components/Button";
+import { Input } from "../components/Input";
 
 import {
 	iconSettings,
@@ -57,33 +60,17 @@ export const SettingsPage: Component<
 			</div>
 			<div class="content">
 				<div class="search-container">
-					<div class="search-input">
-						<Icon icon={iconSearch} />
-						<input
-							type="text"
-							placeholder="Search settings..."
-							value={this.searchQuery}
-							on:input={handleSearch}
-						/>
-						{this.searchQuery && (
-							<button
-								class="clear-search"
-								on:click={() => {
-									this.searchQuery = "";
-								}}
-							>
-								×
-							</button>
-						)}
-					</div>
+					<Input
+						placeholder="Search settings..."
+						value={this.searchQuery}
+						on:input={handleSearch}
+					/>
 				</div>
 				<div class="settings-content">
 					{/* General Tab */}
 					{use(this.selected).map((selected) =>
 						selected === "general" ? (
 							<div class="settings-tab">
-								<h2>General Settings</h2>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Appearance</h3>
@@ -181,45 +168,15 @@ export const SettingsPage: Component<
 
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Default Zoom</h3>
-									</div>
-									<div class="section-content">
-										<div class="setting-group">
-											<div class="zoom-control">
-												<span class="zoom-value">
-													{browser.settings.defaultZoom}%
-												</span>
-												<input
-													type="range"
-													min="50"
-													max="200"
-													step="10"
-													value={browser.settings.defaultZoom}
-													on:input={(e: Event) => {
-														browser.settings.defaultZoom = parseInt(
-															(e.target as HTMLInputElement).value
-														);
-													}}
-												/>
-											</div>
-										</div>
-									</div>
-								</section>
-
-								<section class="setting-section">
-									<div class="section-header">
 										<h3>Bookmarks</h3>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="show-bookmarks-bar"
-													checked={browser.settings.showBookmarksBar}
-													on:change={() => {
-														browser.settings.showBookmarksBar =
-															!browser.settings.showBookmarksBar;
+												<Checkbox
+													value={use(browser.settings.showBookmarksBar)}
+													on:change={(checked) => {
+														browser.settings.showBookmarksBar = checked;
 													}}
 												/>
 												<label for="show-bookmarks-bar">
@@ -237,8 +194,6 @@ export const SettingsPage: Component<
 					{use(this.selected).map((selected) =>
 						selected === "search" ? (
 							<div class="settings-tab">
-								<h2>Search Settings</h2>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Default Search Engine</h3>
@@ -276,13 +231,10 @@ export const SettingsPage: Component<
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="search-suggestions"
-													checked={browser.settings.searchSuggestionsEnabled}
-													on:change={() => {
-														browser.settings.searchSuggestionsEnabled =
-															!browser.settings.searchSuggestionsEnabled;
+												<Checkbox
+													value={use(browser.settings.searchSuggestionsEnabled)}
+													on:change={(checked) => {
+														browser.settings.searchSuggestionsEnabled = checked;
 													}}
 												/>
 												<label for="search-suggestions">
@@ -300,8 +252,6 @@ export const SettingsPage: Component<
 					{use(this.selected).map((selected) =>
 						selected === "privacy" ? (
 							<div class="settings-tab">
-								<h2>Privacy & Security</h2>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Trackers & Site Data</h3>
@@ -312,13 +262,10 @@ export const SettingsPage: Component<
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="block-trackers"
-													checked={browser.settings.blockTrackers}
-													on:change={() => {
-														browser.settings.blockTrackers =
-															!browser.settings.blockTrackers;
+												<Checkbox
+													value={use(browser.settings.blockTrackers)}
+													on:change={(value) => {
+														browser.settings.blockTrackers = value;
 													}}
 												/>
 												<label for="block-trackers">
@@ -327,13 +274,10 @@ export const SettingsPage: Component<
 											</div>
 
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="do-not-track"
-													checked={browser.settings.doNotTrack}
-													on:change={() => {
-														browser.settings.doNotTrack =
-															!browser.settings.doNotTrack;
+												<Checkbox
+													value={use(browser.settings.doNotTrack)}
+													on:change={(checked) => {
+														browser.settings.doNotTrack = checked;
 													}}
 												/>
 												<label for="do-not-track">
@@ -343,7 +287,6 @@ export const SettingsPage: Component<
 										</div>
 									</div>
 								</section>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Browsing History</h3>
@@ -354,23 +297,18 @@ export const SettingsPage: Component<
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="clear-history"
-													checked={browser.settings.clearHistoryOnExit}
-													on:change={() => {
-														browser.settings.clearHistoryOnExit =
-															!browser.settings.clearHistoryOnExit;
+												<Checkbox
+													value={use(browser.settings.clearHistoryOnExit)}
+													on:change={(checked) => {
+														browser.settings.clearHistoryOnExit = checked;
 													}}
 												/>
 												<label for="clear-history">
 													Clear history when browser closes
 												</label>
 											</div>
-
-											<button class="action-button">
-												Clear Browsing Data...
-											</button>
+											<br />
+											<Button variant="primary">Clear Browsing Data...</Button>
 										</div>
 									</div>
 								</section>
@@ -382,8 +320,6 @@ export const SettingsPage: Component<
 					{use(this.selected).map((selected) =>
 						selected === "extensions" ? (
 							<div class="settings-tab">
-								<h2>Extensions</h2>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Installed Extensions</h3>
@@ -393,7 +329,9 @@ export const SettingsPage: Component<
 										<div class="extensions-list">
 											<div class="extension-item">
 												<div class="extension-info">
-													<div class="extension-icon placeholder"></div>
+													<div class="extension-icon">
+														<Icon icon={iconExtension} />
+													</div>
 													<div class="extension-details">
 														<h4>No extensions installed</h4>
 														<p>Extensions will appear here once installed</p>
@@ -411,13 +349,10 @@ export const SettingsPage: Component<
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<input
-													type="checkbox"
-													id="dev-mode"
-													checked={browser.settings.extensionsDevMode}
-													on:change={() => {
-														browser.settings.extensionsDevMode =
-															!browser.settings.extensionsDevMode;
+												<Checkbox
+													value={use(browser.settings.extensionsDevMode)}
+													on:change={(checked) => {
+														browser.settings.extensionsDevMode = checked;
 													}}
 												/>
 												<label for="dev-mode">Enable developer mode</label>
@@ -425,8 +360,8 @@ export const SettingsPage: Component<
 
 											{browser.settings.extensionsDevMode && (
 												<div class="dev-buttons">
-													<button class="action-button">Load Unpacked</button>
-													<button class="action-button">Pack Extension</button>
+													<Button>Load Unpacked</Button>
+													<Button>Pack Extension</Button>
 												</div>
 											)}
 										</div>
@@ -440,19 +375,20 @@ export const SettingsPage: Component<
 					{use(this.selected).map((selected) =>
 						selected === "about" ? (
 							<div class="settings-tab">
-								<h2>About</h2>
-
+								<h3>About</h3>
 								<section class="setting-section">
-									<div class="section-header">
-										<h3>Browser Information</h3>
-									</div>
+									<div class="section-header"></div>
 									<div class="section-content">
 										<div class="about-info">
-											<div class="browser-logo placeholder"></div>
+											<img
+												class="browser-logo"
+												src="/icon.png"
+												alt="Browser.js Logo"
+											/>
 											<div class="browser-info">
 												<h3>Browser.js</h3>
-												<p>Version 1.0.0</p>
-												<p>© 2023 Browser.js Team</p>
+												{/* <p>Scramjet Version: {$scramjetVersion.build} {$scramjetVersion.version}</p> */}
+												<p>© 2025 Puter Technologies</p>
 											</div>
 										</div>
 									</div>
@@ -464,11 +400,11 @@ export const SettingsPage: Component<
 									</div>
 									<div class="section-content">
 										<p>
-											This browser is built with open source software. View the
-											source code on GitHub.
+											Browser.js is open source software. View the source code
+											on GitHub.
 										</p>
 										<a
-											href="https://github.com/browserjs/browser.js"
+											href="https://github.com/HeyPuter/browser.js"
 											class="link"
 										>
 											GitHub Repository
@@ -548,9 +484,9 @@ SettingsPage.style = css`
 	}
 
 	.sidebar {
-		width: 250px;
+		width: max(20rem, 250px);
 		padding: 2rem;
-		background: var(--bg01);
+		background: var(--bg02);
 		border-right: 1px solid var(--bg10);
 		display: flex;
 		flex-direction: column;
@@ -597,7 +533,11 @@ SettingsPage.style = css`
 		border-bottom: 1px solid var(--bg10);
 	}
 
-	.search-input {
+	input {
+		font-family: inherit;
+	}
+
+	.search-container {
 		position: relative;
 		width: 100%;
 		max-width: 24rem;
@@ -665,7 +605,7 @@ SettingsPage.style = css`
 	.setting-section {
 		margin-bottom: 2rem;
 		padding-bottom: 2rem;
-		border-bottom: 1px solid var(--bg10);
+		border-bottom: 1px solid var(--bg16);
 	}
 
 	.setting-section:last-child {
@@ -743,6 +683,10 @@ SettingsPage.style = css`
 		accent-color: var(--accent);
 	}
 
+	select {
+		font-family: inherit;
+	}
+
 	.select-input {
 		padding: 0.5rem;
 		border-radius: 4px;
@@ -803,8 +747,10 @@ SettingsPage.style = css`
 	.extension-icon {
 		width: 2.5rem;
 		height: 2.5rem;
+		font-size: 2.25rem;
 		border-radius: 6px;
 		background: var(--bg10);
+		color: var(--fg3);
 	}
 
 	.extension-details h4 {
@@ -826,8 +772,6 @@ SettingsPage.style = css`
 	.browser-logo {
 		width: 5rem;
 		height: 5rem;
-		border-radius: 8px;
-		background: var(--accent);
 	}
 
 	.browser-info h3 {

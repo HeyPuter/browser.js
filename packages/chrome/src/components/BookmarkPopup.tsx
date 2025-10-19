@@ -3,6 +3,7 @@ import { Icon } from "./Icon";
 import { browser, type BookmarkEntry } from "../Browser";
 import { Input } from "./Input";
 import { closeMenu } from "./Menu";
+import { Button } from "./Button";
 
 export function BookmarkPopup(s: {
 	bookmark: Stateful<BookmarkEntry>;
@@ -31,7 +32,7 @@ export function BookmarkPopup(s: {
 				/>
 			</div>
 			<div class="actions">
-				<button
+				<Button
 					on:click={() => {
 						if (!s.new) {
 							browser.bookmarks = browser.bookmarks.filter(
@@ -42,9 +43,9 @@ export function BookmarkPopup(s: {
 					}}
 				>
 					{s.new ? "Cancel" : "Delete"}
-				</button>
-				<button
-					class="accent"
+				</Button>
+				<Button
+					variant="primary"
 					on:click={() => {
 						if (s.new) {
 							browser.bookmarks = [s.bookmark, ...browser.bookmarks];
@@ -54,7 +55,7 @@ export function BookmarkPopup(s: {
 					}}
 				>
 					{s.new ? "Add" : "Save"}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

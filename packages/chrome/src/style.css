@@ -46,6 +46,8 @@ body {
 	font-family: var(--font);
 	color: var(--fg);
 	background: var(--bg);
+	accent-color: var(--accent);
+	color-scheme: dark;
 }
 
 body.light-mode {
@@ -73,10 +75,11 @@ body.light-mode {
 	--fg3: #808080;
 	--fg4: #a0a0a0;
 	--accent: #1a73e8;
+	color-scheme: light;
 }
 
 :root {
-	font-family: serif;
+	font-family: "Inter", system-ui, sans-serif;
 }
 
 * {
