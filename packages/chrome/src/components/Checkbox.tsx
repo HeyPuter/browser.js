@@ -1,12 +1,12 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 
-export const Checkbox: Component<{ value: boolean }> = function () {
+export function Checkbox(s: { value: boolean }) {
 	return (
 		<label>
-			<input type="checkbox" checked={use(this.value)}></input>
+			<input type="checkbox" checked={use(s.value)}></input>
 		</label>
 	);
-};
+}
 Checkbox.style = css`
 	:scope {
 		width: 1em;

@@ -1,12 +1,7 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { Tab } from "../Tab";
 
-export const AboutPage: Component<
-	{
-		tab: Tab;
-	},
-	{}
-> = function () {
+export function AboutPage(s: { tab: Tab }) {
 	return (
 		<div>
 			<div class="main">
@@ -15,7 +10,7 @@ export const AboutPage: Component<
 			</div>
 		</div>
 	);
-};
+}
 AboutPage.style = css`
 	:scope {
 		width: 100%;

@@ -1,12 +1,12 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import { browser } from "../Browser";
 import { Icon } from "./Icon";
-import { closeMenu, createMenuCustom } from "./Menu";
+import { closeMenu } from "./Menu";
 import { iconClose, iconFolder, iconOpen, iconPause } from "../icons";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export const DownloadsPopup: Component<{}> = function (cx) {
+export function DownloadsPopup() {
 	return (
 		<div>
 			<div class="title">
@@ -93,7 +93,7 @@ export const DownloadsPopup: Component<{}> = function (cx) {
 			</div>
 		</div>
 	);
-};
+}
 DownloadsPopup.style = css`
 	:scope {
 		width: 20em;
@@ -197,33 +197,5 @@ DownloadsPopup.style = css`
 		cursor: pointer;
 		display: flex;
 		align-items: center;
-	}
-	.footer:hover {
-		background: var(--bg20);
-	}
-
-	.buttoniconcontainer {
-		flex: 1;
-		display: flex;
-		justify-content: right;
-	}
-
-	progress {
-		z-index: 1;
-		position: absolute;
-		bottom: -0.25em;
-		left: 2em;
-		margin: 0.5em;
-		width: calc(100% - 4em);
-		height: 0.25em;
-		border: none;
-	}
-	progress::-webkit-progress-bar {
-		background-color: var(--fg4);
-		border-radius: var(--radius);
-	}
-	progress::-webkit-progress-value {
-		background-color: var(--accent);
-		border-radius: var(--radius);
 	}
 `;

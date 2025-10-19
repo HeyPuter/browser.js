@@ -2,7 +2,7 @@ import {
 	createDelegate,
 	css,
 	Pointer,
-	type Component,
+	type ComponentContext,
 	type DLElement,
 } from "dreamland/core";
 import { browser } from "../Browser";
@@ -21,18 +21,19 @@ export type PositionConstraints = {
 	bottom?: number;
 };
 
-export const Menu: Component<
-	{
+export function Menu(
+	this: {
+		closing: boolean;
+		x: number;
+		y: number;
+	},
+	s: {
 		position: PositionConstraints;
 		items?: MenuItem[];
 		custom?: HTMLElement;
 	},
-	{
-		closing: boolean;
-		x: number;
-		y: number;
-	}
-> = function (cx) {
+	cx: ComponentContext
+) {
 	this.closing = true;
 	requestAnimationFrame(() => {
 		this.closing = false;
@@ -72,16 +73,16 @@ export const Menu: Component<
 		const docHeight = document.documentElement.clientHeight;
 		const padding = emToPx(1);
 
-		if (this.position.left !== undefined) {
-			this.x = this.position.left;
-		} else if (this.position.right !== undefined) {
-			this.x = this.position.right - width;
+		if (s.position.left !== undefined) {
+			this.x = s.position.left;
+		} else if (s.position.right !== undefined) {
+			this.x = s.position.right - width;
 		}
 
-		if (this.position.top !== undefined) {
-			this.y = this.position.top;
-		} else if (this.position.bottom !== undefined) {
-			this.y = this.position.bottom - height;
+		if (s.position.top !== undefined) {
+			this.y = s.position.top;
+		} else if (s.position.bottom !== undefined) {
+			this.y = s.position.bottom - height;
 		}
 
 		const maxX = docWidth - width - padding;
@@ -105,8 +106,8 @@ export const Menu: Component<
 			style={use`--x: ${this.x}px; --y: ${this.y}px;`}
 			class:closing={use(this.closing)}
 		>
-			{this.items
-				? use(this.items).mapEach((item) =>
+			{s.items
+				? use(s.items).mapEach((item) =>
 						item == "-" ? (
 							<div class="separator" />
 						) : item.checkbox ? (
@@ -143,10 +144,10 @@ export const Menu: Component<
 							</button>
 						)
 					)
-				: this.custom}
+				: s.custom}
 		</div>
 	);
-};
+}
 Menu.style = css`
 	:scope {
 		position: absolute;

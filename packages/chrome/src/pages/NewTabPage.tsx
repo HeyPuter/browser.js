@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { trimUrl } from "../components/Omnibar/utils";
@@ -7,12 +7,7 @@ import { defaultFaviconUrl } from "../assets/favicon";
 import { Icon } from "../components/Icon";
 import { iconSearch } from "../icons";
 
-export const NewTabPage: Component<
-	{
-		tab: Tab;
-	},
-	{}
-> = function () {
+export function NewTabPage(s: { tab: Tab }) {
 	return (
 		<div>
 			<div class="topbar">
@@ -73,7 +68,7 @@ export const NewTabPage: Component<
 			</div>
 		</div>
 	);
-};
+}
 NewTabPage.style = css`
 	:scope {
 		width: 100%;
@@ -118,90 +113,67 @@ NewTabPage.style = css`
 		background: var(--bg20);
 		border-radius: var(--radius);
 		display: flex;
+		gap: 1em;
 		align-items: center;
+		padding: 0.6em 1em;
 	}
-
-	.icon {
-		font-size: 1.5em;
-		padding-left: 0.5em;
-		color: var(--fg3);
-	}
-
-	.inputcontainer:focus-within {
-		box-shadow: 0 0 2px var(--accent);
-		outline: 1px solid var(--accent);
-	}
-	input {
-		font-size: 1.25em;
-		outline: none;
-		padding: 1em;
-		padding-top: 0.75em;
-		padding-bottom: 0.75em;
-		flex: 1;
-		height: 100%;
-		background: none;
-		border: none;
-		color: var(--fg);
-	}
-
-	.suggestions {
-		width: 100%;
-
-		grid-template-columns: repeat(5, 1fr);
-		grid-template-rows: repeat(2, 1fr);
-		display: grid;
-	}
-
-	.suggestion {
-		cursor: pointer;
-		aspect-ratio: 1/1;
+	.inputcontainer .icon {
+		width: 1.5em;
+		height: 1.5em;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 2em;
+		color: var(--fg2);
+	}
+	.inputcontainer input {
+		background: none;
+		border: none;
+		outline: none;
+		flex: 1;
+		font-size: 1em;
+		color: var(--fg);
+		font-family: var(--font);
+	}
+
+	.main {
+		flex: 1;
+		width: 100%;
+		max-width: 90em;
+		margin-top: 2em;
+	}
+
+	.suggestions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75em;
+	}
+
+	.suggestion {
+		background: var(--bg02);
+		border-radius: var(--radius);
+		padding: 0.75em;
+		cursor: pointer;
+		transition: background 0.15s ease;
 	}
 	.suggestion:hover {
 		background: var(--bg03);
 	}
 	.suggestioninner {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5em;
-	}
-	.circle {
-		width: 64px;
-		height: 64px;
-
-		border-radius: 50%;
-		background-color: var(--bg02);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-	.title {
-		width: 6em;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		text-align: center;
-		white-space: nowrap;
-		line-height: 1.2;
-	}
-	.suggestion img {
-		width: 32px;
-		height: 32px;
-	}
-
-	.main {
-		margin-top: 2.5em;
-		width: 70%;
-		display: flex;
-		flex-direction: column;
 		align-items: center;
 		gap: 1em;
 	}
-
-	.main {
-		position: relative;
+	.circle {
+		width: 2em;
+		height: 2em;
+		border-radius: 50%;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg);
+	}
+	.title {
+		font-weight: 600;
 	}
 `;

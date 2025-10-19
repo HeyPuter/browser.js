@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { iconLink, iconClose, iconFolder } from "../icons";
@@ -6,12 +6,7 @@ import { Icon } from "../components/Icon";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export const DownloadsPage: Component<
-	{
-		tab: Tab;
-	},
-	{}
-> = function () {
+export function DownloadsPage(s: { tab: Tab }) {
 	return (
 		<div>
 			<div class="main">
@@ -41,7 +36,7 @@ export const DownloadsPage: Component<
 			</div>
 		</div>
 	);
-};
+}
 DownloadsPage.style = css`
 	:scope {
 		width: 100%;

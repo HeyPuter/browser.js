@@ -1,11 +1,11 @@
-import type { Component } from "dreamland/core";
+import type { ComponentContext } from "dreamland/core";
 import { Tabs } from "./components/TabStrip";
 import { browser } from "./Browser";
 import type { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
 import { Omnibar } from "./components/Omnibar/Omnibar";
 
-export const App: Component = function (cx) {
+export function App(cx: ComponentContext) {
 	const applyTheme = () => {
 		let theme = browser.settings.theme;
 
@@ -52,4 +52,4 @@ export const App: Component = function (cx) {
 			{cx.children}
 		</div>
 	);
-};
+}

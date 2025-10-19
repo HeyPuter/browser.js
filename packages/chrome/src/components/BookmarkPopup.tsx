@@ -1,64 +1,64 @@
-import { css, type Component, type Stateful } from "dreamland/core";
+import { css, type Stateful } from "dreamland/core";
 import { Icon } from "./Icon";
 import { browser, type BookmarkEntry } from "../Browser";
 import { Input } from "./Input";
 import { closeMenu } from "./Menu";
 
-export const BookmarkPopup: Component<{
+export function BookmarkPopup(s: {
 	bookmark: Stateful<BookmarkEntry>;
 	new: boolean;
-}> = function (cx) {
+}) {
 	return (
 		<div>
-			<div class="title">{this.new ? "Add Bookmark" : "Edit Bookmark"}</div>
+			<div class="title">{s.new ? "Add Bookmark" : "Edit Bookmark"}</div>
 
 			<div class="field">
 				<Input
 					label="Title"
-					value={this.bookmark.title}
+					value={s.bookmark.title}
 					onInput={(e) =>
-						(this.bookmark.title = (e.target as HTMLInputElement).value)
+						(s.bookmark.title = (e.target as HTMLInputElement).value)
 					}
 				/>
 			</div>
 			<div class="field">
 				<Input
 					label="URL"
-					value={this.bookmark.url}
+					value={s.bookmark.url}
 					onInput={(e) =>
-						(this.bookmark.url = (e.target as HTMLInputElement).value)
+						(s.bookmark.url = (e.target as HTMLInputElement).value)
 					}
 				/>
 			</div>
 			<div class="actions">
 				<button
 					on:click={() => {
-						if (!this.new) {
+						if (!s.new) {
 							browser.bookmarks = browser.bookmarks.filter(
-								(b) => b !== this.bookmark
+								(b) => b !== s.bookmark
 							);
 						}
 						closeMenu();
 					}}
 				>
-					{this.new ? "Cancel" : "Delete"}
+					{s.new ? "Cancel" : "Delete"}
 				</button>
 				<button
 					class="accent"
 					on:click={() => {
-						if (this.new) {
-							browser.bookmarks = [this.bookmark, ...browser.bookmarks];
+						if (s.new) {
+							browser.bookmarks = [s.bookmark, ...browser.bookmarks];
 						}
 
 						closeMenu();
 					}}
 				>
-					{this.new ? "Add" : "Save"}
+					{s.new ? "Add" : "Save"}
 				</button>
 			</div>
 		</div>
 	);
-};
+}
 BookmarkPopup.style = css`
 	:scope {
 		display: flex;

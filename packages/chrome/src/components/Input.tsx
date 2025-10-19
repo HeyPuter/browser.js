@@ -1,6 +1,6 @@
-import { css, type Component, type Pointer } from "dreamland/core";
+import { css, type Pointer } from "dreamland/core";
 
-export const Input: Component<{
+export function Input(s: {
 	value: Pointer<string> | string;
 	label?: string;
 	placeholder?: string;
@@ -15,35 +15,36 @@ export const Input: Component<{
 	onBlur?: (e: FocusEvent) => void;
 	onKeyDown?: (e: KeyboardEvent) => void;
 	onKeyUp?: (e: KeyboardEvent) => void;
-}> = function (cx) {
+}) {
 	const handleInput = (e: Event) => {
-		this.value = (e.target as HTMLInputElement).value;
+		// keep the original behavior: assign into the passed `value` (may be a Pointer)
+		(s.value as any) = (e.target as HTMLInputElement).value;
 
-		if (this.onInput) {
-			this.onInput(e);
+		if (s.onInput) {
+			s.onInput(e);
 		}
 	};
 
 	return (
-		<div class={`input-container ${this.className || ""}`}>
-			{this.label && <label>{this.label}</label>}
+		<div class={`input-container ${s.className || ""}`}>
+			{(s.label as any) && <label>{s.label}</label>}
 			<input
-				type={this.type || "text"}
-				value={typeof this.value === "object" ? use(this.value) : this.value}
-				placeholder={this.placeholder}
-				autocomplete={this.autocomplete}
-				required={this.required}
-				disabled={this.disabled}
-				autofocus={this.autofocus}
+				type={s.type || "text"}
+				value={typeof s.value === "object" ? use(s.value) : s.value}
+				placeholder={s.placeholder}
+				autocomplete={s.autocomplete}
+				required={s.required}
+				disabled={s.disabled}
+				autofocus={s.autofocus}
 				on:input={handleInput}
-				on:focus={this.onFocus as any}
-				on:blur={this.onBlur as any}
-				on:keydown={this.onKeyDown as any}
-				on:keyup={this.onKeyUp as any}
+				on:focus={s.onFocus as any}
+				on:blur={s.onBlur as any}
+				on:keydown={s.onKeyDown as any}
+				on:keyup={s.onKeyUp as any}
 			/>
 		</div>
 	);
-};
+}
 
 Input.style = css`
 	:scope {

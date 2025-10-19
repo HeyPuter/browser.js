@@ -1,27 +1,27 @@
 import type { IconifyIcon } from "@iconify/types";
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import { Icon } from "../Icon";
 
-export const OmnibarButton: Component<{
+export function OmnibarButton(s: {
 	icon: IconifyIcon;
 	click?: (e: MouseEvent) => void;
 	rightclick?: (e: MouseEvent) => void;
 	active?: boolean;
 	tooltip?: string;
-}> = function (cx) {
-	this.active ??= true;
+}) {
+	s.active ??= true;
 	return (
 		<button
-			disabled={use(this.active).map((x) => (x ? undefined : true))}
-			class:active={use(this.active)}
-			on:click={(e: MouseEvent) => this.click?.(e)}
-			on:contextmenu={(e: MouseEvent) => this.rightclick?.(e)}
-			title={this.tooltip}
+			disabled={use(s.active).map((x) => (x ? undefined : true))}
+			class:active={use(s.active)}
+			on:click={(e: MouseEvent) => s.click?.(e)}
+			on:contextmenu={(e: MouseEvent) => s.rightclick?.(e)}
+			title={s.tooltip}
 		>
-			<Icon icon={use(this.icon)} />
+			<Icon icon={use(s.icon)} />
 		</button>
 	);
-};
+}
 OmnibarButton.style = css`
 	:scope {
 		box-sizing: border-box;

@@ -1,11 +1,11 @@
-import { createState, css, type Component } from "dreamland/core";
+import { createState, css, type ComponentContext } from "dreamland/core";
 import { Icon } from "./Icon";
 import { iconAdd, iconOpen, iconLink, iconBrush, iconTrash } from "../icons";
 import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";
 
-export const BookmarksStrip: Component = function (cx) {
+export function BookmarksStrip(cx: ComponentContext) {
 	cx.mount = () => {
 		setContextMenu(cx.root, [
 			{
@@ -95,7 +95,7 @@ export const BookmarksStrip: Component = function (cx) {
 			))}
 		</div>
 	);
-};
+}
 BookmarksStrip.style = css`
 	:scope {
 		padding: 0.25em;

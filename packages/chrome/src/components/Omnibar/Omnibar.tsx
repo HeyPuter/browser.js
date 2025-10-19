@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css, createDelegate, type ComponentContext } from "dreamland/core";
 import {
 	iconBack,
 	iconForwards,
@@ -14,9 +14,8 @@ import {
 } from "../../icons";
 import { createMenu, createMenuCustom } from "../Menu";
 import { OmnibarButton } from "./OmnibarButton";
-import { createDelegate } from "dreamland/core";
 import type { Tab } from "../../Tab";
-import { Omnibox } from "./Omnibox";
+import { Omnibox } from "./Omnibar/Omnibox";
 import { browser } from "../../Browser";
 import { Icon } from "../Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";
@@ -29,18 +28,16 @@ import { CircularProgress } from "./CircularProgress";
 export const animateDownloadFly = createDelegate<void>();
 export const showDownloadsPopup = createDelegate<void>();
 
-export const Spacer: Component = function (cx) {
+export function Spacer() {
 	return <div></div>;
-};
+}
 Spacer.style = css`
 	:scope {
 		width: 2em;
 	}
 `;
 
-export const Omnibar: Component<{
-	tab: Tab;
-}> = function (cx) {
+export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 	const selectContent = createDelegate<void>();
 
 	animateDownloadFly.listen(async () => {
@@ -63,12 +60,12 @@ export const Omnibar: Component<{
 			createMenu(
 				{ left: e.clientX, top: cx.root.clientTop + cx.root.clientHeight * 2 },
 				[
-					...states.map((s) => ({
-						label: s.title || "New Tab",
-						image: s.favicon || defaultFaviconUrl,
+					...states.map((st) => ({
+						label: st.title || "New Tab",
+						image: st.favicon || defaultFaviconUrl,
 						action: () => {
 							let rel =
-								browser.activetab.history.states.indexOf(s) -
+								browser.activetab.history.states.indexOf(st) -
 								browser.activetab.history.index;
 							browser.activetab.history.go(rel);
 						},
@@ -111,8 +108,8 @@ export const Omnibar: Component<{
 		<div>
 			<OmnibarButton
 				tooltip="Go back one page (Alt+Left Arrow)"
-				active={use(this.tab.canGoBack)}
-				click={() => this.tab.back()}
+				active={use(s.tab.canGoBack)}
+				click={() => s.tab.back()}
 				icon={iconBack}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -125,8 +122,8 @@ export const Omnibar: Component<{
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Go forward one page (Alt+Right Arrow)"
-				active={use(this.tab.canGoForward)}
-				click={() => this.tab.forward()}
+				active={use(s.tab.canGoForward)}
+				click={() => s.tab.forward()}
 				icon={iconForwards}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -140,15 +137,15 @@ export const Omnibar: Component<{
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Refresh current page (Ctrl+R)"
-				click={() => this.tab.reload()}
+				click={() => s.tab.reload()}
 				icon={iconRefresh}
 			></OmnibarButton>
 			<Spacer></Spacer>
-			<Omnibox selectContent={selectContent} url={use(this.tab.url)}></Omnibox>
+			<Omnibox selectContent={selectContent} url={use(s.tab.url)}></Omnibox>
 			<Spacer></Spacer>
 			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
 			{use(browser.sessionDownloadHistory)
-				.map((s) => s.length > 0)
+				.map((arr) => arr.length > 0)
 				.andThen(
 					<div style="position: relative">
 						{downloadsButton}
@@ -224,7 +221,7 @@ export const Omnibar: Component<{
 			></OmnibarButton>
 		</div>
 	);
-};
+}
 Omnibar.style = css`
 	:scope {
 		z-index: 1;

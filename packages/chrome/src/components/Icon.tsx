@@ -1,30 +1,30 @@
 import type { IconifyIcon } from "@iconify/types";
-import type { Component } from "dreamland/core";
+import type { ComponentContext } from "dreamland/core";
 
-export const Icon: Component<
-	{
+export function Icon(
+	s: {
 		icon: IconifyIcon;
 		width?: string | undefined;
 		height?: string | undefined;
 		class?: string | undefined;
 	},
-	{}
-> = function (cx) {
+	cx: ComponentContext
+) {
 	cx.mount = () => {
 		const update = (icon: IconifyIcon) => {
 			cx.root.innerHTML = icon.body;
 		};
-		use(this.icon).listen(update);
-		update(this.icon);
+		use(s.icon).listen(update);
+		update(s.icon);
 	};
 
 	return (
 		<svg
-			width={use(this.width).map((x) => x || "1em")}
-			height={use(this.height).map((x) => x || "1em")}
-			viewBox={use`0 0 ${this.icon.width} ${this.icon.height}`}
+			width={use(s.width).map((x) => x || "1em")}
+			height={use(s.height).map((x) => x || "1em")}
+			viewBox={use(s.icon).map((icon) => `0 0 ${icon.width} ${icon.height}`)}
 			xmlns="http://www.w3.org/2000/svg"
-			{...(this.class ? { class: this.class } : {})}
+			{...(s.class ? { class: s.class } : {})}
 		></svg>
 	);
-};
+}

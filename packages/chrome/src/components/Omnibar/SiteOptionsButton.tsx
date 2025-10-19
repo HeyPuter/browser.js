@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import { createMenuCustom } from "../Menu";
 import { SiteInformationPopup } from "../SiteInformationPopup";
 import { browser } from "../../Browser";
@@ -6,7 +6,7 @@ import { Icon } from "../Icon";
 import { emToPx } from "../../utils";
 import { iconOptions } from "../../icons";
 
-export const SiteOptionsButton: Component<{}> = function () {
+export function SiteOptionsButton() {
 	return (
 		<button
 			class="optionsbutton"
@@ -25,7 +25,7 @@ export const SiteOptionsButton: Component<{}> = function () {
 			<Icon icon={iconOptions}></Icon>
 		</button>
 	);
-};
+}
 SiteOptionsButton.style = css`
 	.optionsbutton {
 		width: 100%;

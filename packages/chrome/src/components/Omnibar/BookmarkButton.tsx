@@ -1,4 +1,4 @@
-import { createState, type Component } from "dreamland/core";
+import { createState } from "dreamland/core";
 import { OmnibarButton } from "./OmnibarButton";
 import { browser } from "../../Browser";
 import { createMenuCustom } from "../Menu";
@@ -7,15 +7,13 @@ import { emToPx } from "../../utils";
 
 import { iconStar, iconStarFilled } from "../../icons";
 
-export const BookmarkButton: Component<{
-	url: URL;
-}> = function () {
+export function BookmarkButton(s: { url: URL }) {
 	return (
 		<OmnibarButton
 			click={(e) => {
 				e.stopPropagation();
 				e.preventDefault();
-				let bookmark = browser.bookmarks.find((b) => b.url == this.url.href);
+				let bookmark = browser.bookmarks.find((b) => b.url == s.url.href);
 
 				let isnew = false;
 				if (!bookmark) {
@@ -35,11 +33,11 @@ export const BookmarkButton: Component<{
 					<BookmarkPopup new={isnew} bookmark={bookmark}></BookmarkPopup>
 				);
 			}}
-			icon={use(browser.bookmarks, this.url).map(() =>
-				browser.bookmarks.some((b) => b.url == this.url.href)
+			icon={use(browser.bookmarks, s.url).map(() =>
+				browser.bookmarks.some((b) => b.url == s.url.href)
 					? iconStarFilled
 					: iconStar
 			)}
 		></OmnibarButton>
 	);
-};
+}

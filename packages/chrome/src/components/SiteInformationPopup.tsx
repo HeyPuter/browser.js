@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { splitUrl } from "../utils";
 
@@ -8,14 +8,12 @@ import { SmallIconButton } from "./SmallIconButton";
 
 import { closeMenu } from "./Menu";
 
-export const SiteInformationPopup: Component<{
-	tab: Tab;
-}> = function (cx) {
+export function SiteInformationPopup(s: { tab: Tab }) {
 	return (
 		<div>
 			<div class="header">
 				<span>
-					{use(this.tab.url).map((u) => splitUrl(u)[0] + splitUrl(u)[1])}
+					{use(s.tab.url).map((u) => splitUrl(u)[0] + splitUrl(u)[1])}
 				</span>
 				<div class="buttoniconscontainer">
 					<SmallIconButton
@@ -43,7 +41,7 @@ export const SiteInformationPopup: Component<{
 			</div>
 		</div>
 	);
-};
+}
 SiteInformationPopup.style = css`
 	:scope {
 		display: flex;

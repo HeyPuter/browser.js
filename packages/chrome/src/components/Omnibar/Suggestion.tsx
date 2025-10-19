@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { OmniboxResult } from "./suggestions";
 import { iconSearch, iconTrendingUp } from "../../icons";
 import { Icon } from "../Icon";
@@ -19,20 +19,20 @@ const renderResultHighlight = (title: string, inputValue: string) => {
 	return <span style="font-weight: normal; opacity: 0.7;">{title}</span>;
 };
 
-export const Suggestion: Component<{
+export function Suggestion(s: {
 	item: OmniboxResult;
 	input: HTMLInputElement;
 	focused: boolean;
 
 	onClick: (e: MouseEvent) => void;
-}> = function () {
-	let item = this.item;
+}) {
+	let item = s.item;
 
 	return (
 		<div
 			class="overflowitem"
-			on:click={this.onClick}
-			class:focused={use(this.focused)}
+			on:click={s.onClick}
+			class:focused={use(s.focused)}
 			title={item.url.href}
 		>
 			<div class="result-icon">
@@ -54,7 +54,7 @@ export const Suggestion: Component<{
 			>
 				{(item.title && (
 					<span class="description">
-						{renderResultHighlight(item.title, this.input.value)}
+						{renderResultHighlight(item.title, s.input.value)}
 					</span>
 				)) || <span class="description">{trimUrl(item.url)}</span>}
 				{item.kind != "search" && item.kind != "trending" && item.title ? (
@@ -63,7 +63,7 @@ export const Suggestion: Component<{
 			</div>
 		</div>
 	);
-};
+}
 Suggestion.style = css`
 	:scope {
 		display: flex;

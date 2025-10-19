@@ -1,9 +1,9 @@
-import { css, type Component } from "dreamland/core";
+import { css, type ComponentContext } from "dreamland/core";
 import { browser } from "../Browser";
 import { forceScreenshot, popTab, pushTab } from "../Browser";
 import { takeScreenshotGDM } from "../screenshot";
 
-export const Shell: Component = function (cx) {
+export function Shell(cx: ComponentContext) {
 	pushTab.listen((tab) => {
 		// paint the iframes
 		tab.frame.frame.classList.add(cx.id!);
@@ -75,7 +75,7 @@ export const Shell: Component = function (cx) {
 	});
 
 	return <div></div>;
-};
+}
 
 Shell.style = css`
 	:scope {

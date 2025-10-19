@@ -1,17 +1,17 @@
 import type { IconifyIcon } from "@iconify/types";
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import { Icon } from "./Icon";
 
-export const SmallIconButton: Component<{
+export function SmallIconButton(s: {
 	click: (e: MouseEvent) => void;
 	icon: IconifyIcon;
-}> = function () {
+}) {
 	return (
-		<button on:click={this.click}>
-			<Icon icon={this.icon}></Icon>
+		<button on:click={s.click}>
+			<Icon icon={s.icon}></Icon>
 		</button>
 	);
-};
+}
 SmallIconButton.style = css`
 	:scope {
 		display: flex;

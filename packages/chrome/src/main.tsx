@@ -8,19 +8,19 @@ import { initBrowser } from "./Browser";
 let app = document.getElementById("app")!;
 import { Shell } from "./components/Shell";
 import { App } from "./App";
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 
 export const isPuter = !import.meta.env.VITE_LOCAL && puter.env == "app";
 
 export function setWispUrl(wispurl: string) {}
-export const LoadInterstitial: Component<{ status: string }, {}> = function () {
+export function LoadInterstitial(s: { status: string }) {
 	return (
 		<dialog class="signin">
 			<h1>Loading</h1>
-			<p>{use(this.status)}</p>
+			<p>{use(s.status)}</p>
 		</dialog>
 	);
-};
+}
 LoadInterstitial.style = css`
 	:scope {
 		transition: opacity 0.4s ease;
@@ -49,7 +49,7 @@ export const serviceWorkerReady = new Promise<void>(
 	(resolve) => (swReadyResolve = resolve)
 );
 
-async function mount() {
+export async function mount(): Promise<HTMLElement> {
 	try {
 		let shell = <Shell></Shell>;
 		await initBrowser();
@@ -70,30 +70,7 @@ async function mount() {
 			setWispUrl(wisp);
 			console.log(wisp);
 		}
-
-		// let playwrightWindow = window.open(
-		// 	"http://localhost:5013",
-		// 	"playwright",
-		// 	"width=400,height=300,left=100,top=100,resizable=yes,scrollbars=no,menubar=no,toolbar=no,location=no,status=no"
-		// )!;
-		// let server = startCDP((message: string) => {
-		// 	playwrightWindow.postMessage(
-		// 		{
-		// 			type: "scramjet$playwrightcdp",
-		// 			message: message,
-		// 		},
-		// 		"*"
-		// 	);
-		// });
-		// window.addEventListener("message", (event: MessageEvent) => {
-		// 	if (!event.data || !event.data.type) return;
-		// 	if (event.data.type != "scramjet$playwrightcdp") return;
-
-		// 	server.message(event.data.message);
-		// });
-		// window.addEventListener("beforeunload", () => {
-		// 	playwrightWindow.close();
-		// });
+		return built;
 	} catch (e) {
 		let err = e as any;
 		app.replaceWith(
@@ -102,6 +79,7 @@ async function mount() {
 			)
 		);
 		console.error(err);
+		throw e;
 	}
 }
 
@@ -126,9 +104,9 @@ async function waitForControllerOrReady(timeoutMs = 10000): Promise<void> {
 	await Promise.race([ready, controllerChanged, timeout]);
 }
 
-mount();
+// mount();
 
-init();
+// init();
 async function init() {
 	const signin: any = <LoadInterstitial status={"Loading"}></LoadInterstitial>;
 	document.body.append(signin);

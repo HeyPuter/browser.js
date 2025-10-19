@@ -1,15 +1,18 @@
-import { css, type Component } from "dreamland/core";
+import { css, type ComponentContext } from "dreamland/core";
 
-export const CircularProgress: Component<{
-	progress: number;
-	size?: string;
-	strokeWidth?: string;
-	color?: string;
-}> = function (cx) {
+export function CircularProgress(
+	s: {
+		progress: number;
+		size?: string;
+		strokeWidth?: string;
+		color?: string;
+	},
+	cx: ComponentContext
+) {
 	const radius = 100;
 	const circumference = 2 * Math.PI * radius;
 
-	use(this.progress).listen((p) => {
+	use(s.progress).listen((p) => {
 		if (p == 0) {
 			cx.root.classList.remove("visible");
 		} else {
@@ -54,7 +57,7 @@ export const CircularProgress: Component<{
 			></circle>
 		</svg>
 	);
-};
+}
 CircularProgress.style = css`
 	:scope {
 		pointer-events: none;

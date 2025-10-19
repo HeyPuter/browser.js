@@ -1,14 +1,9 @@
-import { css, type Component } from "dreamland/core";
+import { css } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export const HistoryPage: Component<
-	{
-		tab: Tab;
-	},
-	{}
-> = function () {
+export function HistoryPage(s: { tab: Tab }) {
 	return (
 		<div>
 			<h1>History</h1>
@@ -30,7 +25,7 @@ export const HistoryPage: Component<
 			</div>
 		</div>
 	);
-};
+}
 HistoryPage.style = css`
 	:scope {
 		width: 100%;

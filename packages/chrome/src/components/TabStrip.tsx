@@ -1,3 +1,4 @@
+browser.js / packages / chrome / src / components / TabStrip.tsx;
 import {
 	iconClose,
 	iconAdd,
@@ -5,7 +6,7 @@ import {
 	iconDuplicate,
 	iconRefresh,
 } from "../icons";
-import { css, type Component } from "dreamland/core";
+import { css, type ComponentContext } from "dreamland/core";
 import { Icon } from "./Icon";
 import { memoize } from "../memoize";
 import { OmnibarButton } from "./Omnibar/OmnibarButton";
@@ -19,8 +20,9 @@ const isFirefox =
 	navigator.userAgent.includes("Gecko/") &&
 	!navigator.userAgent.includes("Chrome");
 
-export const DragTab: Component<
-	{
+export function DragTab(
+	this: { tooltipActive: boolean },
+	s: {
 		active: boolean;
 		id: number;
 		tab: Tab;
@@ -28,10 +30,8 @@ export const DragTab: Component<
 		destroy: () => void;
 		transitionend: () => void;
 	},
-	{
-		tooltipActive: boolean;
-	}
-> = function (cx) {
+	cx: ComponentContext
+) {
 	this.tooltipActive = false;
 	cx.mount = () => {
 		setContextMenu(cx.root, [
@@ -39,28 +39,28 @@ export const DragTab: Component<
 				label: "New tab to the right",
 				icon: iconNew,
 				action: () => {
-					browser.newTabRight(this.tab);
+					browser.newTabRight(s.tab);
 				},
 			},
 			{
 				label: "Reload",
 				icon: iconRefresh,
 				action: () => {
-					this.tab.frame.reload();
+					s.tab.frame.reload();
 				},
 			},
 			{
 				label: "Duplicate",
 				icon: iconDuplicate,
 				action: () => {
-					browser.newTabRight(this.tab, this.tab.url);
+					browser.newTabRight(s.tab, s.tab.url);
 				},
 			},
 			{
 				label: "Close Tab",
 				icon: iconClose,
 				action: () => {
-					this.destroy();
+					s.destroy();
 				},
 			},
 		]);
@@ -85,9 +85,9 @@ export const DragTab: Component<
 		<div
 			style="z-index: 0;"
 			class="tab"
-			data-id={this.id}
+			data-id={s.id}
 			on:mousedown={(e: MouseEvent) => {
-				this.mousedown(e);
+				s.mousedown(e);
 				e.stopPropagation();
 				e.preventDefault();
 			}}
@@ -98,10 +98,10 @@ export const DragTab: Component<
 			on:transitionend={() => {
 				cx.root.style.transition = "";
 				cx.root.style.zIndex = "0";
-				this.transitionend();
+				s.transitionend();
 			}}
 			on:mouseenter={() => {
-				forceScreenshot(this.tab);
+				forceScreenshot(s.tab);
 				if (hoverTimeout) clearTimeout(hoverTimeout);
 				hoverTimeout = window.setTimeout(() => {
 					this.tooltipActive = true;
@@ -114,17 +114,17 @@ export const DragTab: Component<
 		>
 			<div class="tooltip" class:active={use(this.tooltipActive)}>
 				<div class="text">
-					<span class="title">{use(this.tab.title)}</span>
-					<span class="hostname">{use(this.tab.url.hostname)}</span>
+					<span class="title">{use(s.tab.title)}</span>
+					<span class="hostname">{use(s.tab.url.hostname)}</span>
 				</div>
 				{isFirefox ? (
 					<div
-						style={use`background-image: -moz-element(#tab${this.tab.id})`}
+						style={use`background-image: -moz-element(#tab${s.tab.id})`}
 						class="img"
 					></div>
 				) : (
-					use(this.tab.screenshot).andThen(
-						<img src={use(this.tab.screenshot)} class="img" />
+					use(s.tab.screenshot).andThen(
+						<img src={use(s.tab.screenshot)} class="img" />
 					)
 				)}
 			</div>
@@ -133,18 +133,18 @@ export const DragTab: Component<
 				style="position: unset;"
 				on:auxclick={(e: MouseEvent) => {
 					if (e.button === 1) {
-						this.destroy();
+						s.destroy();
 					}
 				}}
 			>
-				<div class={use(this.active).map((x) => `main ${x ? "active" : ""}`)}>
-					{use(this.tab.icon).andThen(<img src={use(this.tab.icon)} />)}
-					<span>{use(this.tab.title)}</span>
+				<div class={use(s.active).map((x) => `main ${x ? "active" : ""}`)}>
+					{use(s.tab.icon).andThen(<img src={use(s.tab.icon)} />)}
+					<span>{use(s.tab.title)}</span>
 					<button
 						class="close"
 						on:click={(e: MouseEvent) => {
 							e.stopPropagation();
-							this.destroy();
+							s.destroy();
 						}}
 						on:contextmenu={(e: MouseEvent) => {
 							e.preventDefault();
@@ -155,12 +155,12 @@ export const DragTab: Component<
 					</button>
 				</div>
 				{/* <div class="belowcontainer">
-					{use(this.active).andThen(<div class="below"></div>)}
+					{use(s.active).andThen(<div class="below"></div>)}
 				</div> */}
 			</div>
 		</div>
 	);
-};
+}
 DragTab.style = css`
 	:scope {
 		display: inline-block;
@@ -282,6 +282,7 @@ DragTab.style = css`
 
 		background: var(--bg);
 	}
+
 	.below::before,
 	.below::after {
 		content: "";
@@ -306,14 +307,8 @@ type VisualTab = {
 	pos: number;
 };
 
-export const Tabs: Component<
-	{
-		tabs: Tab[];
-		activetab: Tab;
-		destroyTab: (tab: Tab) => void;
-		addTab: () => void;
-	},
-	{
+export function Tabs(
+	this: {
 		visualtabs: VisualTab[];
 		container: HTMLElement;
 		leftEl: HTMLElement;
@@ -322,8 +317,14 @@ export const Tabs: Component<
 
 		currentlydragging: number;
 	},
-	{}
-> = function (cx) {
+	s: {
+		tabs: Tab[];
+		activetab: Tab;
+		destroyTab: (tab: Tab) => void;
+		addTab: () => void;
+	},
+	cx: ComponentContext
+) {
 	this.currentlydragging = -1;
 	this.visualtabs = [];
 
@@ -464,25 +465,25 @@ export const Tabs: Component<
 
 		calcDragPos(e, tab);
 
-		if (this.activetab != tab.tab) {
-			this.activetab = tab.tab;
+		if (s.activetab != tab.tab) {
+			s.activetab = tab.tab;
 		}
 	};
 
 	const transitionend = () => {
 		transitioningTabs--;
 		if (transitioningTabs == 0) {
-			this.tabs = this.tabs;
+			s.tabs = s.tabs;
 		}
 
 		this.afterEl.style.transition = "";
 	};
 
-	use(this.tabs).listen(() => {
+	use(s.tabs).listen(() => {
 		let newvisualtabs: VisualTab[] = [];
 
-		for (let index = 0; index < this.tabs.length; index++) {
-			let tab = this.tabs[index];
+		for (let index = 0; index < s.tabs.length; index++) {
+			let tab = s.tabs[index];
 
 			let visualtab = this.visualtabs.find((t) => t.tab === tab);
 
@@ -491,10 +492,10 @@ export const Tabs: Component<
 					<DragTab
 						id={tab.id}
 						tab={tab}
-						active={use(this.activetab).map((x) => x === tab)}
+						active={use(s.activetab).map((x) => x === tab)}
 						mousedown={(e) => mouseDown(e, visualtab!)}
 						destroy={() => {
-							this.destroyTab(tab);
+							s.destroyTab(tab);
 						}}
 						transitionend={transitionend}
 					/>
@@ -553,12 +554,12 @@ export const Tabs: Component<
 				label: "New Tab",
 				icon: iconNew,
 				action: () => {
-					this.addTab();
+					s.addTab();
 				},
 			},
 		]);
 
-		this.tabs = this.tabs;
+		this.tabs = s.tabs;
 	};
 
 	return (
@@ -573,12 +574,12 @@ export const Tabs: Component<
 					e.stopPropagation();
 				}}
 			>
-				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
+				<OmnibarButton icon={iconAdd} click={s.addTab}></OmnibarButton>
 			</div>
 			<div class="extra right" this={use(this.rightEl)}></div>
 		</div>
 	);
-};
+}
 Tabs.style = css`
 	:scope {
 		background: var(--bg);
