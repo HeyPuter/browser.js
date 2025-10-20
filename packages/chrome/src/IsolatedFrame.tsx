@@ -120,7 +120,7 @@ const sjIpcSyncPool = new Map<number, (val: any) => void>();
 let sjIpcCounter = 0;
 
 addEventListener("message", async (e) => {
-	if (!e.data || !("$scramjetipc$type" in e.data)) return;
+	if (typeof e.data != "object" || !("$scramjetipc$type" in e.data)) return;
 	const type = e.data.$scramjetipc$type;
 	if (type === "request") {
 		const method = e.data.$scramjetipc$method;

@@ -33,7 +33,7 @@ export function loadScramjet({
 	const transport = new LibcurlClient({ wisp });
 
 	addEventListener("message", async (e) => {
-		if (!e.data || !("$scramjetipc$type" in e.data)) return;
+		if (typeof e.data != "object" || !("$scramjetipc$type" in e.data)) return;
 		const type = e.data.$scramjetipc$type;
 		if (type === "response") {
 			const token = e.data.$scramjetipc$token;
