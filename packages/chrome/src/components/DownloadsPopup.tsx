@@ -5,6 +5,7 @@ import { closeMenu } from "./Menu";
 import { iconClose, iconFolder, iconOpen, iconPause } from "../icons";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
+import { Button } from "./Button";
 
 export function DownloadsPopup() {
 	return (
@@ -12,13 +13,14 @@ export function DownloadsPopup() {
 			<div class="title">
 				<span>Recent Downloads</span>
 				<div class="buttoniconcontainer">
-					<button
+					<Button
+						variant="icon"
 						on:click={() => {
 							closeMenu();
 						}}
 					>
 						<Icon icon={iconClose}></Icon>
-					</button>
+					</Button>
 				</div>
 			</div>
 			<div class="entries">
@@ -44,30 +46,32 @@ export function DownloadsPopup() {
 								.map((b) => !b)
 								.andThen(
 									<>
-										<button>
+										<Button variant="icon">
 											<Icon icon={iconFolder}></Icon>
-										</button>
-										<button>
+										</Button>
+										<Button variant="icon">
 											<Icon icon={iconOpen}></Icon>
-										</button>
+										</Button>
 									</>
 								)}
 							{use(b.progress).andThen(
 								<>
-									<button
+									<Button
+										variant="icon"
 										on:click={() => {
 											b.pause!();
 										}}
 									>
 										<Icon icon={iconPause}></Icon>
-									</button>
-									<button
+									</Button>
+									<Button
+										variant="icon"
 										on:click={() => {
 											b.cancel!();
 										}}
 									>
 										<Icon icon={iconClose}></Icon>
-									</button>
+									</Button>
 								</>
 							)}
 						</div>
