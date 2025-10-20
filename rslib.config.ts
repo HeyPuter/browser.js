@@ -1,27 +1,31 @@
 import { defineConfig } from "@rslib/core";
 
-export default defineConfig({
-	source: {
-		entry: {
-			index: "./src/index.ts",
+const scramjetPath = "./packages/scramjet";
+
+export default [
+	defineConfig({
+		source: {
+			entry: {
+				index: scramjetPath + "/src/index.ts",
+			},
+			tsconfigPath: scramjetPath + "/tsconfig.rslib.json",
 		},
-		tsconfigPath: "./tsconfig.rslib.json",
-	},
-	lib: [
-		{
-			format: "esm",
-			bundle: false,
-			dts: {
+		lib: [
+			{
+				format: "esm",
 				bundle: false,
-				distPath: "./dist/types",
-				abortOnError: false,
-			},
-			output: {
-				distPath: {
-					root: "./dist/temp",
+				dts: {
+					bundle: false,
+					distPath: scramjetPath + "/dist/types",
+					abortOnError: false,
 				},
-				cleanDistPath: true,
+				output: {
+					distPath: {
+						root: scramjetPath + "/dist/temp",
+					},
+					cleanDistPath: true,
+				},
 			},
-		},
-	],
-});
+		],
+	}),
+];

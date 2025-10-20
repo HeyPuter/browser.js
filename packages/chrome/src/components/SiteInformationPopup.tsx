@@ -1,0 +1,91 @@
+import { css } from "dreamland/core";
+import type { Tab } from "../Tab";
+import { splitUrl } from "../utils";
+
+import { iconClose, iconTrash, iconSettings } from "../icons";
+import { Icon } from "./Icon";
+import { Button } from "./Button";
+
+import { closeMenu } from "./Menu";
+
+export function SiteInformationPopup(s: { tab: Tab }) {
+	return (
+		<div>
+			<div class="header">
+				<span>
+					{use(s.tab.url).map((u) => splitUrl(u)[0] + splitUrl(u)[1])}
+				</span>
+				<div class="buttoniconscontainer">
+					<Button
+						variant="icon"
+						on:click={() => {
+							closeMenu();
+						}}
+					>
+						<Icon icon={iconClose}></Icon>
+					</Button>
+				</div>
+			</div>
+			<div class="content">
+				<p>
+					Connection is protected by SSL for this site and forwarded over WISP
+				</p>
+			</div>
+			<div class="footer">
+				<div class="entry">
+					<Icon icon={iconTrash}></Icon>
+					<span>Clear Site Data</span>
+				</div>
+				<div class="entry">
+					<Icon icon={iconSettings}></Icon>
+					<span>Site Settings</span>
+				</div>
+			</div>
+		</div>
+	);
+}
+SiteInformationPopup.style = css`
+	:scope {
+		display: flex;
+		flex-direction: column;
+		gap: 1em;
+		width: 20em;
+	}
+
+	.buttoniconscontainer {
+		flex: 1;
+		display: flex;
+		align-items: top;
+		justify-content: end;
+	}
+
+	.content {
+		padding-left: 1em;
+	}
+
+	.header {
+		padding: 1em;
+		display: flex;
+		border-bottom: 1px solid var(--fg4);
+	}
+	.header span {
+		font-size: 1.15em;
+	}
+
+	.footer {
+		border-top: 1px solid var(--fg4);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.entry {
+		padding: 1em;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 1em;
+	}
+	.entry:hover {
+		background: var(--bg20);
+	}
+`;
