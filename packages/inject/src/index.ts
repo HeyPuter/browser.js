@@ -2,13 +2,13 @@ import chobitsu from "chobitsu";
 import * as h2 from "html-to-image";
 import { Chromebound, FrameboundMethods, InjectScramjetInit } from "./types";
 import { sendChrome } from "./ipc";
-import { ScramjetClient } from "@mercuryworkshop/scramjet";
+import { iswindow, ScramjetClient } from "@mercuryworkshop/scramjet";
 import { setupTitleWatcher } from "./titlewatcher";
 import { setupContextMenu } from "./contextmenu";
 import { setupHistoryEmulation } from "./history";
 import { client, loadScramjet } from "./scramjet";
 
-const history_replaceState = History.prototype.replaceState;
+const history_replaceState = globalThis?.History?.prototype?.replaceState;
 
 export const methods: FrameboundMethods = {
 	async navigate({ url }) {
@@ -24,13 +24,14 @@ export const methods: FrameboundMethods = {
 (globalThis as any).$injectLoad = (init: InjectScramjetInit) => {
 	loadScramjet(init);
 
-	setupTitleWatcher();
-	setupContextMenu();
-	setupHistoryEmulation();
-
-	// inform	chrome of the current url
-	// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
-	sendChrome("load", {
-		url: client.url.href,
-	});
+	if (iswindow) {
+		setupTitleWatcher();
+		setupContextMenu();
+		setupHistoryEmulation();
+		// inform	chrome of the current url
+		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
+		sendChrome("load", {
+			url: client.url.href,
+		});
+	}
 };

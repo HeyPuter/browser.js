@@ -1,3 +1,4 @@
+import { iswindow } from "@mercuryworkshop/scramjet";
 import { methods } from ".";
 import { chromeframe } from "./scramjet";
 import { Chromebound } from "./types";
@@ -26,34 +27,35 @@ export function sendChrome<T extends keyof Chromebound>(
 		syncPool[token] = res;
 	});
 }
+if (iswindow) {
+	window.addEventListener("message", (event) => {
+		// TODO: this won't work in puter
+		if (event.source !== chromeframe) return;
+		let data = event.data;
+		if (!(data && data.$ipc$type)) return;
 
-window.addEventListener("message", (event) => {
-	// TODO: this won't work in puter
-	if (event.source !== chromeframe) return;
-	let data = event.data;
-	if (!(data && data.$ipc$type)) return;
+		if (data.$ipc$type === "response") {
+			let token = data.$ipc$token;
+			if (typeof token !== "number") return;
+			let cb = syncPool[token];
+			if (cb) {
+				cb(data.$ipc$message);
+				delete syncPool[token];
+			}
+		} else if (data.$ipc$type === "request") {
+			const { type, message } = data.$ipc$message;
+			const token = data.$ipc$token;
 
-	if (data.$ipc$type === "response") {
-		let token = data.$ipc$token;
-		if (typeof token !== "number") return;
-		let cb = syncPool[token];
-		if (cb) {
-			cb(data.$ipc$message);
-			delete syncPool[token];
+			methods[type](message).then((response: any) => {
+				chromeframe.postMessage(
+					{
+						$ipc$type: "response",
+						$ipc$token: token,
+						$ipc$message: response,
+					},
+					"*"
+				);
+			});
 		}
-	} else if (data.$ipc$type === "request") {
-		const { type, message } = data.$ipc$message;
-		const token = data.$ipc$token;
-
-		methods[type](message).then((response: any) => {
-			chromeframe.postMessage(
-				{
-					$ipc$type: "response",
-					$ipc$token: token,
-					$ipc$message: response,
-				},
-				"*"
-			);
-		});
-	}
-});
+	});
+}

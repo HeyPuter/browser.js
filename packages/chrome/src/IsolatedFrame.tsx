@@ -68,7 +68,7 @@ const cfg = {
 		syncxhr: false,
 		strictRewrites: true,
 		rewriterLogs: false,
-		captureErrors: false,
+		captureErrors: true,
 		cleanErrors: false,
 		scramitize: false,
 		sourcemaps: true,
@@ -120,7 +120,8 @@ const sjIpcSyncPool = new Map<number, (val: any) => void>();
 let sjIpcCounter = 0;
 
 addEventListener("message", async (e) => {
-	if (typeof e.data != "object" || !("$scramjetipc$type" in e.data)) return;
+	if (!e.data || typeof e.data != "object" || !("$scramjetipc$type" in e.data))
+		return;
 	const type = e.data.$scramjetipc$type;
 	if (type === "request") {
 		const method = e.data.$scramjetipc$method;
@@ -163,6 +164,17 @@ addEventListener("message", async (e) => {
 const virtualWasmPath = "/scramjet.wasm.js";
 const virtualInjectPath = "/inject.js";
 
+function base64Encode(str: string): string {
+	return btoa(
+		new Uint8Array(new TextEncoder().encode(str))
+			.reduce(
+				(data, byte) => (data.push(String.fromCharCode(byte)), data),
+				[] as any
+			)
+			.join("")
+	);
+}
+
 const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 	meta,
 	handler,
@@ -180,20 +192,10 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		document.currentScript.remove();
 	`;
 
-	// for compatibility purpose
-	const base64Injected = btoa(
-		new Uint8Array(new TextEncoder().encode(injected))
-			.reduce(
-				(data, byte) => (data.push(String.fromCharCode(byte)), data),
-				[] as any
-			)
-			.join("")
-	);
-
 	return [
 		script(virtualWasmPath),
 		script(virtualInjectPath),
-		script("data:application/javascript;base64," + base64Injected),
+		script("data:application/javascript;base64," + base64Encode(injected)),
 	];
 };
 setInterface({
@@ -236,14 +238,17 @@ setInterface({
 				str += `importScripts("${script}");\n`;
 			}
 		};
+
+		const injectLoad = `
+			$injectLoad({
+				config: ${JSON.stringify(config)},
+				cookies: null,
+				wisp: ${JSON.stringify(cfg.wisp)},
+			});
+		`;
 		script(virtualWasmPath);
-		// TODO
-		// script();
-		// str += `$scramjetLoadClient().loadAndHook({
-		// 	config: ${JSON.stringify(config)},
-		// 	interface: {},
-		// 	transport: null,
-		// });`;
+		script(virtualInjectPath);
+		script(`data:application/javascript;base64,${base64Encode(injectLoad)}`);
 
 		return str;
 	},

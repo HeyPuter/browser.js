@@ -1,4 +1,5 @@
 import {
+	iswindow,
 	loadAndHook,
 	SCRAMJETCLIENT,
 	ScramjetClient,
@@ -29,39 +30,48 @@ export function loadScramjet({
 	setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 	delete (self as any).WASM;
 
-	chromeframe = sequence.reduce((win, idx) => win!.frames[idx], top)!;
+	if (iswindow) {
+		chromeframe = sequence.reduce((win, idx) => win!.frames[idx], top)!;
+	}
 	const transport = new LibcurlClient({ wisp });
 
-	addEventListener("message", async (e) => {
-		if (typeof e.data != "object" || !("$scramjetipc$type" in e.data)) return;
-		const type = e.data.$scramjetipc$type;
-		if (type === "response") {
-			const token = e.data.$scramjetipc$token;
-			const message = e.data.$scramjetipc$message;
+	if (iswindow) {
+		addEventListener("message", async (e) => {
+			if (
+				!e.data ||
+				typeof e.data != "object" ||
+				!("$scramjetipc$type" in e.data)
+			)
+				return;
+			const type = e.data.$scramjetipc$type;
+			if (type === "response") {
+				const token = e.data.$scramjetipc$token;
+				const message = e.data.$scramjetipc$message;
 
-			const cb = syncPool.get(token);
-			if (cb) {
-				cb(message);
-				syncPool.delete(token);
-			}
-		} else if (type === "request") {
-			const method = e.data.$scramjetipc$method;
-			const message = e.data.$scramjetipc$message;
-			const token = e.data.$scramjetipc$token;
+				const cb = syncPool.get(token);
+				if (cb) {
+					cb(message);
+					syncPool.delete(token);
+				}
+			} else if (type === "request") {
+				const method = e.data.$scramjetipc$method;
+				const message = e.data.$scramjetipc$message;
+				const token = e.data.$scramjetipc$token;
 
-			const fn = listeners.get(method);
-			if (fn) {
-				const response = await fn(message);
-				e.source!.postMessage({
-					$scramjetipc$type: "response",
-					$scramjetipc$token: token,
-					$scramjetipc$message: response,
-				});
-			} else {
-				console.error("Unknown scramjet ipc clientbound method", method);
+				const fn = listeners.get(method);
+				if (fn) {
+					const response = await fn(message);
+					e.source!.postMessage({
+						$scramjetipc$type: "response",
+						$scramjetipc$token: token,
+						$scramjetipc$message: response,
+					});
+				} else {
+					console.error("Unknown scramjet ipc clientbound method", method);
+				}
 			}
-		}
-	});
+		});
+	}
 
 	loadAndHook({
 		interface: {
