@@ -13,7 +13,7 @@ export function Checkbox(props: {
 			></input>
 		</label>
 	);
-};
+}
 
 Checkbox.style = css`
 	:scope {
