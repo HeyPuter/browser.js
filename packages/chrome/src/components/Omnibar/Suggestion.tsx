@@ -19,20 +19,21 @@ const renderResultHighlight = (title: string, inputValue: string) => {
 	return <span style="font-weight: normal; opacity: 0.7;">{title}</span>;
 };
 
-export function Suggestion(s: {
+export function Suggestion(props: {
 	item: OmniboxResult;
 	input: HTMLInputElement;
 	focused: boolean;
 
 	onClick: (e: MouseEvent) => void;
 }) {
-	let item = s.item;
+	let item = props.item;
+	console.log(props.item.title);
 
 	return (
 		<div
 			class="overflowitem"
-			on:click={s.onClick}
-			class:focused={use(s.focused)}
+			on:click={props.onClick}
+			class:focused={use(props.focused)}
 			title={item.url.href}
 		>
 			<div class="result-icon">
@@ -54,7 +55,7 @@ export function Suggestion(s: {
 			>
 				{(item.title && (
 					<span class="description">
-						{renderResultHighlight(item.title, s.input.value)}
+						{renderResultHighlight(item.title, props.input.value)}
 					</span>
 				)) || <span class="description">{trimUrl(item.url)}</span>}
 				{item.kind != "search" && item.kind != "trending" && item.title ? (

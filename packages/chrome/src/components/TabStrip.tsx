@@ -1,4 +1,3 @@
-browser.js / packages / chrome / src / components / TabStrip.tsx;
 import {
 	iconClose,
 	iconAdd,
@@ -22,7 +21,7 @@ const isFirefox =
 
 export function DragTab(
 	this: { tooltipActive: boolean },
-	s: {
+	props: {
 		active: boolean;
 		id: number;
 		tab: Tab;
@@ -39,28 +38,28 @@ export function DragTab(
 				label: "New tab to the right",
 				icon: iconNew,
 				action: () => {
-					browser.newTabRight(s.tab);
+					browser.newTabRight(props.tab);
 				},
 			},
 			{
 				label: "Reload",
 				icon: iconRefresh,
 				action: () => {
-					s.tab.frame.reload();
+					props.tab.frame.reload();
 				},
 			},
 			{
 				label: "Duplicate",
 				icon: iconDuplicate,
 				action: () => {
-					browser.newTabRight(s.tab, s.tab.url);
+					browser.newTabRight(props.tab, props.tab.url);
 				},
 			},
 			{
 				label: "Close Tab",
 				icon: iconClose,
 				action: () => {
-					s.destroy();
+					props.destroy();
 				},
 			},
 		]);
@@ -85,9 +84,9 @@ export function DragTab(
 		<div
 			style="z-index: 0;"
 			class="tab"
-			data-id={s.id}
+			data-id={props.id}
 			on:mousedown={(e: MouseEvent) => {
-				s.mousedown(e);
+				props.mousedown(e);
 				e.stopPropagation();
 				e.preventDefault();
 			}}
@@ -98,10 +97,10 @@ export function DragTab(
 			on:transitionend={() => {
 				cx.root.style.transition = "";
 				cx.root.style.zIndex = "0";
-				s.transitionend();
+				props.transitionend();
 			}}
 			on:mouseenter={() => {
-				forceScreenshot(s.tab);
+				forceScreenshot(props.tab);
 				if (hoverTimeout) clearTimeout(hoverTimeout);
 				hoverTimeout = window.setTimeout(() => {
 					this.tooltipActive = true;
@@ -114,17 +113,17 @@ export function DragTab(
 		>
 			<div class="tooltip" class:active={use(this.tooltipActive)}>
 				<div class="text">
-					<span class="title">{use(s.tab.title)}</span>
-					<span class="hostname">{use(s.tab.url.hostname)}</span>
+					<span class="title">{use(props.tab.title)}</span>
+					<span class="hostname">{use(props.tab.url.hostname)}</span>
 				</div>
 				{isFirefox ? (
 					<div
-						style={use`background-image: -moz-element(#tab${s.tab.id})`}
+						style={use`background-image: -moz-element(#tab${props.tab.id})`}
 						class="img"
 					></div>
 				) : (
-					use(s.tab.screenshot).andThen(
-						<img src={use(s.tab.screenshot)} class="img" />
+					use(props.tab.screenshot).andThen(
+						<img src={use(props.tab.screenshot)} class="img" />
 					)
 				)}
 			</div>
@@ -133,18 +132,18 @@ export function DragTab(
 				style="position: unset;"
 				on:auxclick={(e: MouseEvent) => {
 					if (e.button === 1) {
-						s.destroy();
+						props.destroy();
 					}
 				}}
 			>
-				<div class={use(s.active).map((x) => `main ${x ? "active" : ""}`)}>
-					{use(s.tab.icon).andThen(<img src={use(s.tab.icon)} />)}
-					<span>{use(s.tab.title)}</span>
+				<div class={use(props.active).map((x) => `main ${x ? "active" : ""}`)}>
+					{use(props.tab.icon).andThen(<img src={use(props.tab.icon)} />)}
+					<span>{use(props.tab.title)}</span>
 					<button
 						class="close"
 						on:click={(e: MouseEvent) => {
 							e.stopPropagation();
-							s.destroy();
+							props.destroy();
 						}}
 						on:contextmenu={(e: MouseEvent) => {
 							e.preventDefault();
@@ -559,7 +558,7 @@ export function Tabs(
 			},
 		]);
 
-		this.tabs = s.tabs;
+		s.tabs = s.tabs;
 	};
 
 	return (

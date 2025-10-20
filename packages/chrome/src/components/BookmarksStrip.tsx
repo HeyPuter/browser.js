@@ -5,7 +5,7 @@ import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";
 
-export function BookmarksStrip(cx: ComponentContext) {
+export function BookmarksStrip(_, cx: ComponentContext) {
 	cx.mount = () => {
 		setContextMenu(cx.root, [
 			{

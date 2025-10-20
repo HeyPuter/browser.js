@@ -15,7 +15,7 @@ import {
 import { createMenu, createMenuCustom } from "../Menu";
 import { OmnibarButton } from "./OmnibarButton";
 import type { Tab } from "../../Tab";
-import { Omnibox } from "./Omnibar/Omnibox";
+import { Omnibox } from "./Omnibox";
 import { browser } from "../../Browser";
 import { Icon } from "../Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";

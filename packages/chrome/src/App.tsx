@@ -5,7 +5,7 @@ import type { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
 import { Omnibar } from "./components/Omnibar/Omnibar";
 
-export function App(cx: ComponentContext) {
+export function App(_, cx: ComponentContext) {
 	const applyTheme = () => {
 		let theme = browser.settings.theme;
 

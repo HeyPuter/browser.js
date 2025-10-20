@@ -22,7 +22,7 @@ export function Icon(
 		<svg
 			width={use(s.width).map((x) => x || "1em")}
 			height={use(s.height).map((x) => x || "1em")}
-			viewBox={use(s.icon).map((icon) => `0 0 ${icon.width} ${icon.height}`)}
+			viewBox={use`0 0 ${s.icon.width} ${s.icon.height}`}
 			xmlns="http://www.w3.org/2000/svg"
 			{...(s.class ? { class: s.class } : {})}
 		></svg>

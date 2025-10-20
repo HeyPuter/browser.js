@@ -7,7 +7,7 @@ import { defaultFaviconUrl } from "../assets/favicon";
 import { Icon } from "../components/Icon";
 import { iconSearch } from "../icons";
 
-export function NewTabPage(s: { tab: Tab }) {
+export function NewTabPage(props: { tab: Tab }) {
 	return (
 		<div>
 			<div class="topbar">
@@ -113,67 +113,90 @@ NewTabPage.style = css`
 		background: var(--bg20);
 		border-radius: var(--radius);
 		display: flex;
-		gap: 1em;
 		align-items: center;
-		padding: 0.6em 1em;
-	}
-	.inputcontainer .icon {
-		width: 1.5em;
-		height: 1.5em;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--fg2);
-	}
-	.inputcontainer input {
-		background: none;
-		border: none;
-		outline: none;
-		flex: 1;
-		font-size: 1em;
-		color: var(--fg);
-		font-family: var(--font);
 	}
 
-	.main {
+	.icon {
+		font-size: 1.5em;
+		padding-left: 0.5em;
+		color: var(--fg3);
+	}
+
+	.inputcontainer:focus-within {
+		box-shadow: 0 0 2px var(--accent);
+		outline: 1px solid var(--accent);
+	}
+	input {
+		font-size: 1.25em;
+		outline: none;
+		padding: 1em;
+		padding-top: 0.75em;
+		padding-bottom: 0.75em;
 		flex: 1;
-		width: 100%;
-		max-width: 90em;
-		margin-top: 2em;
+		height: 100%;
+		background: none;
+		border: none;
+		color: var(--fg);
 	}
 
 	.suggestions {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75em;
+		width: 100%;
+
+		grid-template-columns: repeat(5, 1fr);
+		grid-template-rows: repeat(2, 1fr);
+		display: grid;
 	}
 
 	.suggestion {
-		background: var(--bg02);
-		border-radius: var(--radius);
-		padding: 0.75em;
 		cursor: pointer;
-		transition: background 0.15s ease;
+		aspect-ratio: 1/1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 2em;
 	}
 	.suggestion:hover {
 		background: var(--bg03);
 	}
 	.suggestioninner {
 		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5em;
+	}
+	.circle {
+		width: 64px;
+		height: 64px;
+
+		border-radius: 50%;
+		background-color: var(--bg02);
+		display: flex;
+		justify-content: center;
+		align-items: center;
+	}
+	.title {
+		width: 6em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		text-align: center;
+		white-space: nowrap;
+		line-height: 1.2;
+	}
+	.suggestion img {
+		width: 32px;
+		height: 32px;
+	}
+
+	.main {
+		margin-top: 2.5em;
+		width: 70%;
+		display: flex;
+		flex-direction: column;
 		align-items: center;
 		gap: 1em;
 	}
-	.circle {
-		width: 2em;
-		height: 2em;
-		border-radius: 50%;
-		overflow: hidden;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--bg);
-	}
-	.title {
-		font-weight: 600;
+
+	.main {
+		position: relative;
 	}
 `;

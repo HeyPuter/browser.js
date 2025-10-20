@@ -3,7 +3,7 @@ import { browser } from "../Browser";
 import { forceScreenshot, popTab, pushTab } from "../Browser";
 import { takeScreenshotGDM } from "../screenshot";
 
-export function Shell(cx: ComponentContext) {
+export function Shell(_, cx: ComponentContext) {
 	pushTab.listen((tab) => {
 		// paint the iframes
 		tab.frame.frame.classList.add(cx.id!);
