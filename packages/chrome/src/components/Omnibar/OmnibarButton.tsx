@@ -32,7 +32,7 @@ OmnibarButton.style = css`
 		padding: 0.25em;
 
 		font-size: 1.15em;
-		color: var(--fg5);
+		color: var(--fg2);
 		border-radius: 0.2em;
 	}
 	:scope.active:hover {

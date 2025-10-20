@@ -9,25 +9,25 @@ export function Input(s: {
 	required?: boolean;
 	disabled?: boolean;
 	autofocus?: boolean;
-	className?: string;
-	onInput?: (e: Event) => void;
-	onFocus?: (e: FocusEvent) => void;
-	onBlur?: (e: FocusEvent) => void;
-	onKeyDown?: (e: KeyboardEvent) => void;
-	onKeyUp?: (e: KeyboardEvent) => void;
+	class?: string;
+	"on:input"?: (e: Event) => void;
+	"on:focus"?: (e: FocusEvent) => void;
+	"on:blur"?: (e: FocusEvent) => void;
+	"on:keydown"?: (e: KeyboardEvent) => void;
+	"on:keyup"?: (e: KeyboardEvent) => void;
 }) {
 	const handleInput = (e: Event) => {
 		// keep the original behavior: assign into the passed `value` (may be a Pointer)
 		(s.value as any) = (e.target as HTMLInputElement).value;
 
-		if (s.onInput) {
-			s.onInput(e);
+		if (s["on:input"]) {
+			s["on:input"](e);
 		}
 	};
 
 	return (
-		<div class={`input-container ${s.className || ""}`}>
-			{(s.label as any) && <label>{s.label}</label>}
+		<div class={`input-container ${s.class || ""}`}>
+			{s.label && <label>{s.label}</label>}
 			<input
 				type={s.type || "text"}
 				value={typeof s.value === "object" ? use(s.value) : s.value}
@@ -37,10 +37,10 @@ export function Input(s: {
 				disabled={s.disabled}
 				autofocus={s.autofocus}
 				on:input={handleInput}
-				on:focus={s.onFocus as any}
-				on:blur={s.onBlur as any}
-				on:keydown={s.onKeyDown as any}
-				on:keyup={s.onKeyUp as any}
+				on:focus={s["on:focus"] as any}
+				on:blur={s["on:blur"] as any}
+				on:keydown={s["on:keydown"] as any}
+				on:keyup={s["on:keyup"] as any}
 			/>
 		</div>
 	);
