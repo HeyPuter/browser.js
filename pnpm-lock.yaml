@@ -101,8 +101,6 @@ importers:
         specifier: ^7.1.6
         version: 7.1.7(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
-  packages/bare-mux-custom: {}
-
   packages/cdp:
     dependencies:
       axios:
@@ -210,16 +208,16 @@ importers:
         version: 8.0.13
       '@mercuryworkshop/bare-mux-custom':
         specifier: workspace:*
-        version: link:../bare-mux-custom
+        version: link:../scramjet/packages/bare-mux-custom
       '@mercuryworkshop/epoxy-transport':
         specifier: workspace:*
-        version: link:../epoxy-transport
+        version: link:../scramjet/packages/epoxy-transport
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
-        version: link:../libcurl-transport
+        version: link:../scramjet/packages/libcurl-transport
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
-        version: link:../scramjet
+        version: link:../scramjet/packages/core
       devtools-protocol:
         specifier: ^0.0.1339468
         version: 0.0.1339468
@@ -258,26 +256,14 @@ importers:
         specifier: ^6.3.5
         version: 6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
-  packages/epoxy-transport:
-    dependencies:
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../bare-mux-custom
-      '@mercuryworkshop/epoxy-tls':
-        specifier: 2.1.18-1
-        version: 2.1.18-1
-      libcurl.js:
-        specifier: ^0.7.1
-        version: 0.7.2
-
   packages/inject:
     dependencies:
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
-        version: link:../libcurl-transport
+        version: link:../scramjet/packages/libcurl-transport
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
-        version: link:../scramjet
+        version: link:../scramjet/packages/core
       chobitsu:
         specifier: workspace:*
         version: link:../cdp
@@ -285,16 +271,15 @@ importers:
         specifier: ^1.11.13
         version: 1.11.13
 
-  packages/libcurl-transport:
-    dependencies:
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../bare-mux-custom
-      libcurl.js:
-        specifier: ^0.7.1
-        version: 0.7.2
-
   packages/scramjet:
+    dependencies:
+      prettier:
+        specifier: ^3.6.2
+        version: 3.6.2
+
+  packages/scramjet/packages/bare-mux-custom: {}
+
+  packages/scramjet/packages/core:
     dependencies:
       dom-serializer:
         specifier: ^2.0.0
@@ -472,11 +457,32 @@ importers:
         specifier: ^5.9.2
         version: 5.9.2
 
-  packages/scramjetserver:
+  packages/scramjet/packages/epoxy-transport:
+    dependencies:
+      '@mercuryworkshop/bare-mux-custom':
+        specifier: workspace:*
+        version: link:../bare-mux-custom
+      '@mercuryworkshop/epoxy-tls':
+        specifier: 2.1.18-1
+        version: 2.1.18-1
+      libcurl.js:
+        specifier: ^0.7.1
+        version: 0.7.2
+
+  packages/scramjet/packages/libcurl-transport:
+    dependencies:
+      '@mercuryworkshop/bare-mux-custom':
+        specifier: workspace:*
+        version: link:../bare-mux-custom
+      libcurl.js:
+        specifier: ^0.7.1
+        version: 0.7.2
+
+  packages/scramjet/packages/scramjetserver:
     dependencies:
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
-        version: link:../scramjet
+        version: link:../core
       '@nebula-services/bare-server-node':
         specifier: ^2.0.4
         version: 2.0.4(bufferutil@4.0.9)
