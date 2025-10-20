@@ -13,8 +13,8 @@ import {
 	type Serverbound,
 } from "@mercuryworkshop/scramjet/bundled";
 
-import scramjetWASM from "../../scramjet/dist/scramjet.wasm.wasm?url";
-import scramjetAll from "../../scramjet/dist/scramjet.js?url";
+import scramjetWASM from "../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
+import scramjetAll from "../../scramjet/packages/core/dist/scramjet.js?url";
 import injectScript from "../../inject/dist/inject.js?url";
 import { BareClient } from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
