@@ -27,7 +27,6 @@ export function Suggestion(props: {
 	onClick: (e: MouseEvent) => void;
 }) {
 	let item = props.item;
-	console.log(props.item.title);
 
 	return (
 		<div
