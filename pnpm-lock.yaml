@@ -27,9 +27,18 @@ importers:
       bufferutil:
         specifier: ^4.0.9
         version: 4.0.9
+      chafa-wasm:
+        specifier: ^0.3.1
+        version: 0.3.1
+      chalk:
+        specifier: ^5.6.2
+        version: 5.6.2
       ts-checker-rspack-plugin:
         specifier: ^1.1.5
         version: 1.1.5(@rspack/core@1.5.6(@swc/helpers@0.5.17))(typescript@5.9.2)
+      vite:
+        specifier: ^7.1.11
+        version: 7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
   external/dreamlandjs:
     dependencies:
@@ -276,6 +285,19 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
+    devDependencies:
+      '@rsdoctor/rspack-plugin':
+        specifier: ^1.2.3
+        version: 1.2.3(@rsbuild/core@1.5.11)(@rspack/core@1.5.6(@swc/helpers@0.5.17))(bufferutil@4.0.9)(webpack@5.101.1)
+      '@rslib/core':
+        specifier: ^0.13.2
+        version: 0.13.3(typescript@5.9.2)
+      '@rspack/cli':
+        specifier: ^1.5.3
+        version: 1.5.6(@rspack/core@1.5.6(@swc/helpers@0.5.17))(@types/express@4.17.23)(bufferutil@4.0.9)(webpack@5.101.1)
+      '@rspack/core':
+        specifier: ^1.5.3
+        version: 1.5.6(@swc/helpers@0.5.17)
 
   packages/scramjet/packages/bare-mux-custom: {}
 
@@ -351,18 +373,6 @@ importers:
       '@reside-ic/typedoc-plugin-copy-doc':
         specifier: ^1.1.2
         version: 1.1.2(typedoc@0.28.13(typescript@5.9.2))
-      '@rsdoctor/rspack-plugin':
-        specifier: ^1.2.3
-        version: 1.2.3(@rsbuild/core@1.5.11)(@rspack/core@1.5.6(@swc/helpers@0.5.17))(bufferutil@4.0.9)(webpack@5.101.1)
-      '@rslib/core':
-        specifier: ^0.13.2
-        version: 0.13.3(typescript@5.9.2)
-      '@rspack/cli':
-        specifier: ^1.5.3
-        version: 1.5.6(@rspack/core@1.5.6(@swc/helpers@0.5.17))(@types/express@4.17.23)(bufferutil@4.0.9)(webpack@5.101.1)
-      '@rspack/core':
-        specifier: ^1.5.3
-        version: 1.5.6(@swc/helpers@0.5.17)
       '@shipgirl/typedoc-plugin-versions':
         specifier: ^0.3.2
         version: 0.3.2(typedoc@0.28.13(typescript@5.9.2))
@@ -2506,6 +2516,9 @@ packages:
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
+
+  chafa-wasm@0.3.1:
+    resolution: {integrity: sha512-3sD52VK5mPQd6WAwv8sabTEV0hJ3Fsm4Ot81Mct0d3hkMqJswG1gCLNZlcTeYba9GaJ1IGAtzKWE9cmUDwT4nw==}
 
   chai-as-promised@5.3.0:
     resolution: {integrity: sha512-pgAOHklxHtjFAU+SXt8aDJt/OQxR4om8ZSJXQT6nObuxwGEVZ69VZR0JZzj4mDLo6OHKCO6uLTmAhPyuHJw0rw==}
@@ -5611,6 +5624,46 @@ packages:
       yaml:
         optional: true
 
+  vite@7.1.11:
+    resolution: {integrity: sha512-uzcxnSDVjAopEUjljkWh8EIrg6tlzrjFUfMcR1EVsRDGwf/ccef0qQPRyOrROwhrTDaApueq+ja+KLPlzR/zdg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    hasBin: true
+    peerDependencies:
+      '@types/node': ^20.19.0 || >=22.12.0
+      jiti: '>=1.21.0'
+      less: ^4.0.0
+      lightningcss: ^1.21.0
+      sass: ^1.70.0
+      sass-embedded: ^1.70.0
+      stylus: '>=0.54.8'
+      sugarss: ^5.0.0
+      terser: ^5.16.0
+      tsx: ^4.8.1
+      yaml: ^2.4.2
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+      jiti:
+        optional: true
+      less:
+        optional: true
+      lightningcss:
+        optional: true
+      sass:
+        optional: true
+      sass-embedded:
+        optional: true
+      stylus:
+        optional: true
+      sugarss:
+        optional: true
+      terser:
+        optional: true
+      tsx:
+        optional: true
+      yaml:
+        optional: true
+
   vite@7.1.7:
     resolution: {integrity: sha512-VbA8ScMvAISJNJVbRDTJdCwqQoAareR/wutevKanhR2/1EkoXVZVkkORaYm/tNVCjP/UDTKtcw3bAkwOUdedmA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -8273,6 +8326,8 @@ snapshots:
       nofilter: 3.1.0
 
   ccount@2.0.1: {}
+
+  chafa-wasm@0.3.1: {}
 
   chai-as-promised@5.3.0(chai@3.5.0):
     dependencies:
@@ -11676,6 +11731,21 @@ snapshots:
       vite: 6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
   vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1):
+    dependencies:
+      esbuild: 0.25.8
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.52.2
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 24.5.2
+      fsevents: 2.3.3
+      jiti: 2.6.0
+      terser: 5.43.1
+      yaml: 2.8.1
+
+  vite@7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1):
     dependencies:
       esbuild: 0.25.8
       fdir: 6.5.0(picomatch@4.0.3)

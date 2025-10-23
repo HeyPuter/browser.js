@@ -1,7 +1,6 @@
 import { defineConfig } from "@rspack/cli";
 import { rspack } from "@rspack/core";
 import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
-import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
 
 import { readFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
