@@ -1,4 +1,4 @@
-import { createState } from "dreamland/core";
+import { createState, css } from "dreamland/core";
 import { OmnibarButton } from "./OmnibarButton";
 import { browser } from "../../Browser";
 import { createMenuCustom } from "../Menu";
@@ -6,11 +6,12 @@ import { BookmarkPopup } from "../BookmarkPopup";
 import { emToPx } from "../../utils";
 
 import { iconStar, iconStarFilled } from "../../icons";
+import { Icon } from "../Icon";
 
 export function BookmarkButton(s: { url: URL }) {
 	return (
-		<OmnibarButton
-			click={(e) => {
+		<button
+			on:click={(e) => {
 				e.stopPropagation();
 				e.preventDefault();
 				let bookmark = browser.bookmarks.find((b) => b.url == s.url.href);
@@ -33,11 +34,34 @@ export function BookmarkButton(s: { url: URL }) {
 					<BookmarkPopup new={isnew} bookmark={bookmark}></BookmarkPopup>
 				);
 			}}
-			icon={use(browser.bookmarks, s.url).map(() =>
-				browser.bookmarks.some((b) => b.url == s.url.href)
-					? iconStarFilled
-					: iconStar
-			)}
-		></OmnibarButton>
+		>
+			<Icon
+				icon={use(browser.bookmarks, s.url).map(() =>
+					browser.bookmarks.some((b) => b.url == s.url.href)
+						? iconStarFilled
+						: iconStar
+				)}
+			></Icon>
+		</button>
 	);
 }
+BookmarkButton.style = css`
+	:scope {
+		font-size: 1em;
+		color: var(--fg2);
+		display: flex;
+		margin: 0.25em;
+		padding: 0.25em;
+		box-sizing: border-box;
+		aspect-ratio: 1/1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		color: var(--fg2);
+		border-radius: 0.2em;
+	}
+	:scope:hover {
+		background: var(--bg01);
+	}
+`;

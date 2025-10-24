@@ -9,7 +9,6 @@ import { iconOptions } from "../../icons";
 export function SiteOptionsButton() {
 	return (
 		<button
-			class="optionsbutton"
 			on:click={(e: MouseEvent) => {
 				createMenuCustom(
 					{
@@ -27,7 +26,7 @@ export function SiteOptionsButton() {
 	);
 }
 SiteOptionsButton.style = css`
-	.optionsbutton {
+	:scope {
 		width: 100%;
 		cursor: pointer;
 		padding: 0;
@@ -44,7 +43,7 @@ SiteOptionsButton.style = css`
 		justify-content: center;
 		background: var(--bg01);
 	}
-	.optionsbutton:hover {
+	:scope:hover {
 		background: var(--bg02);
 	}
 `;

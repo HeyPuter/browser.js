@@ -426,6 +426,7 @@ Omnibox.style = css`
 		margin: 0 auto;
 
 		border-bottom: 1px solid var(--fg5);
+		margin-bottom: 0.5em;
 	}
 
 	.spacertext {
