@@ -106,14 +106,23 @@ export function Omnibox(
 		// if the user is actually trying to search something we can kill the trending suggestions
 		this.trendingSuggestions = [];
 
+		let controllers: AbortController[] = [];
 		if (timeout) clearTimeout(timeout);
-		timeout = setTimeout(
-			() =>
-				fetchSuggestions(this.value, (results) => {
-					this.searchSuggestions = results;
-				}),
-			100
-		);
+		timeout = setTimeout(() => {
+			const ac = new AbortController();
+			controllers.push(ac);
+			fetchSuggestions(this.value, (results) => {
+				if (ac.signal.aborted) {
+					controllers = controllers.filter((c) => c !== ac);
+					return;
+				}
+				this.searchSuggestions = results;
+				for (const c of controllers) {
+					c.abort();
+				}
+				controllers = [];
+			});
+		}, 100);
 	});
 
 	const activate = () => {
