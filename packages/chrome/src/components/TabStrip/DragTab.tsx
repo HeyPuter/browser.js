@@ -169,7 +169,7 @@ DragTab.style = css`
 		text-overflow: ellipsis;
 		height: 100%;
 		vertical-align: center;
-		line-height: 100%;
+		line-height: 1.2;
 	}
 	.main .close > * {
 		width: 14px;
