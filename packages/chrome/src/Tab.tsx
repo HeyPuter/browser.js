@@ -61,7 +61,7 @@ export class Tab extends StatefulClass {
 		this.history = new History(this);
 		this.history.push(this.url, undefined);
 
-		this.icon = defaultFaviconUrl;
+		this.icon = null;
 
 		let resolver: () => void;
 		this.waitForChobitsuInit = new Promise((resolve) => {
