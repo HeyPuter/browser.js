@@ -8,7 +8,7 @@ export function Checkbox(props: {
 		<label>
 			<input
 				type="checkbox"
-				checked={props.value}
+				checked={use(props.value)}
 				onChange={(e) => props["on:change"]?.(e.target.checked)}
 			></input>
 		</label>
@@ -32,7 +32,7 @@ Checkbox.style = css`
 	}
 
 	:scope::after {
-		content: "✓";
+		content: " ";
 		position: absolute;
 		inset: 0;
 		display: flex;

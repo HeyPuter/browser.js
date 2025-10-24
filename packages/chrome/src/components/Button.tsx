@@ -1,22 +1,24 @@
-import { type Component, css } from "dreamland/core";
+import { type Component, type ComponentContext, css } from "dreamland/core";
 
-export const Button: Component<{
-	class?: string;
-	"on:click"?: (e: any) => void;
-	disabled?: boolean;
-	variant?: "primary" | "secondary" | "icon";
-	children: any;
-}> = function (cx) {
+export function Button(
+	props: {
+		"on:click"?: (e: any) => void;
+		disabled?: boolean;
+		variant?: "primary" | "secondary" | "icon";
+		children: any;
+	},
+	cx: ComponentContext
+) {
 	return (
 		<button
-			class={`${this.variant} ${this.class}`}
-			disabled={use(this.disabled)}
-			on:click={this["on:click"] || (() => {})}
+			class={props.variant || ""}
+			disabled={use(props.disabled)}
+			on:click={props["on:click"] || (() => {})}
 		>
 			{cx.children}
 		</button>
 	);
-};
+}
 
 Button.style = css`
 	:scope:not(.icon) {
