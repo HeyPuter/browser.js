@@ -487,7 +487,6 @@ const methods = {
 
 		const fetchresponse = await controller.fetchHandler.handleFetch(data);
 
-		console.log(fetchresponse.headers);
 		if (
 			isDownload(fetchresponse.headers, data.destination) &&
 			fetchresponse.status === 200

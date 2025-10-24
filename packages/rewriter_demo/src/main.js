@@ -41,7 +41,6 @@ setConfig({
 		scramitize: false,
 		sourcemaps: true,
 		destructureRewrites: true,
-		interceptDownloads: false,
 		allowInvalidJs: false,
 		allowFailedIntercepts: false,
 		antiAntiDebugger: false,
