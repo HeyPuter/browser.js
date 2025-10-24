@@ -73,7 +73,6 @@ const cfg = {
 		scramitize: false,
 		sourcemaps: true,
 		destructureRewrites: false,
-		interceptDownloads: false,
 		allowInvalidJs: false,
 		allowFailedIntercepts: false,
 		antiAntiDebugger: false,
@@ -355,6 +354,53 @@ export class IsolatedFrame {
 			prefix,
 		});
 	}
+
+	reload() {
+		this.frame.contentWindow?.location.reload();
+	}
+}
+
+function isDownload(responseHeaders: any, destination: string): boolean {
+	if (["document", "iframe"].includes(destination)) {
+		const header = responseHeaders["content-disposition"];
+		if (header) {
+			if (header === "inline") {
+				return false; // force it to show in browser
+			} else {
+				return true;
+			}
+		} else {
+			// check mime type as fallback
+			const displayableMimes = [
+				// Text types
+				"text/html",
+				"text/plain",
+				"text/css",
+				"text/javascript",
+				"text/xml",
+				"application/javascript",
+				"application/json",
+				"application/xml",
+				"application/pdf",
+			];
+			const contentType = responseHeaders["content-type"]
+				?.split(";")[0]
+				.trim()
+				.toLowerCase();
+			if (
+				contentType &&
+				!displayableMimes.includes(contentType) &&
+				!contentType.startsWith("text") &&
+				!contentType.startsWith("image") &&
+				!contentType.startsWith("font") &&
+				!contentType.startsWith("video")
+			) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 const methods = {
@@ -429,6 +475,24 @@ const methods = {
 		}
 
 		const fetchresponse = await controller.fetchHandler.handleFetch(data);
+
+		if (
+			isDownload(fetchresponse.headers, data.destination) &&
+			fetchresponse.status === 200
+		) {
+			let filename: string | null = null;
+			const disp = fetchresponse.headers["content-disposition"];
+			if (typeof disp === "string") {
+				const filenameMatch = disp.match(/filename=["']?([^"';\n]*)["']?/i);
+				if (filenameMatch && filenameMatch[1]) {
+					filename = filenameMatch[1];
+				}
+			}
+			const length = fetchresponse.headers["content-length"];
+
+			// endless vortex reference
+			await new Promise(() => {});
+		}
 
 		let transfer: any[] | undefined = undefined;
 		if (
