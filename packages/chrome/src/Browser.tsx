@@ -12,6 +12,7 @@ import {
 	animateDownloadFly,
 	showDownloadsPopup,
 } from "./components/Omnibar/Omnibar";
+import type { RawDownload } from "./IsolatedFrame";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -116,7 +117,7 @@ export class Browser extends StatefulClass {
 		// });
 	}
 
-	async startDownload(download: ScramjetDownload) {
+	async startDownload(download: RawDownload) {
 		this.downloadProgress = 0.1;
 		let downloaded = 0;
 		animateDownloadFly();

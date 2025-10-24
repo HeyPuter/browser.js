@@ -16,7 +16,7 @@ import {
 import scramjetWASM from "../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
 import scramjetAll from "../../scramjet/packages/core/dist/scramjet.js?url";
 import injectScript from "../../inject/dist/inject.js?url";
-import { BareClient } from "@mercuryworkshop/bare-mux-custom";
+import { BareClient, type BareHeaders } from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
 import { type ChildNode, DomHandler, Element, Comment, Node } from "domhandler";
 import * as tldts from "tldts";
@@ -360,9 +360,12 @@ export class IsolatedFrame {
 	}
 }
 
-function isDownload(responseHeaders: any, destination: string): boolean {
+function isDownload(
+	responseHeaders: BareHeaders,
+	destination: string
+): boolean {
 	if (["document", "iframe"].includes(destination)) {
-		const header = responseHeaders["content-disposition"];
+		const header = responseHeaders["content-disposition"]?.[0];
 		if (header) {
 			if (header === "inline") {
 				return false; // force it to show in browser
@@ -383,7 +386,7 @@ function isDownload(responseHeaders: any, destination: string): boolean {
 				"application/xml",
 				"application/pdf",
 			];
-			const contentType = responseHeaders["content-type"]
+			const contentType = responseHeaders["content-type"]?.[0]
 				?.split(";")[0]
 				.trim()
 				.toLowerCase();
@@ -402,6 +405,14 @@ function isDownload(responseHeaders: any, destination: string): boolean {
 
 	return false;
 }
+
+export type RawDownload = {
+	filename: string | null;
+	url: string;
+	type: string;
+	body: BodyType;
+	length: number;
+};
 
 const methods = {
 	async fetch(
@@ -476,19 +487,30 @@ const methods = {
 
 		const fetchresponse = await controller.fetchHandler.handleFetch(data);
 
+		console.log(fetchresponse.headers);
 		if (
 			isDownload(fetchresponse.headers, data.destination) &&
 			fetchresponse.status === 200
 		) {
 			let filename: string | null = null;
-			const disp = fetchresponse.headers["content-disposition"];
+			const disp = fetchresponse.headers["content-disposition"]?.[0];
 			if (typeof disp === "string") {
 				const filenameMatch = disp.match(/filename=["']?([^"';\n]*)["']?/i);
 				if (filenameMatch && filenameMatch[1]) {
 					filename = filenameMatch[1];
 				}
 			}
-			const length = fetchresponse.headers["content-length"];
+			const length = fetchresponse.headers["content-length"][0];
+
+			browser.startDownload({
+				filename,
+				url: unrewriteUrl(data.rawUrl, { prefix: controller.prefix } as any),
+				type:
+					fetchresponse.headers["content-type"][0] ||
+					"application/octet-stream",
+				length: parseInt(length),
+				body: fetchresponse.body,
+			});
 
 			// endless vortex reference
 			await new Promise(() => {});
