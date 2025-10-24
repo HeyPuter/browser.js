@@ -142,11 +142,15 @@ export function Omnibox(
 					if (!firstResult.url) return;
 
 					// todo support http:example.com
-					const normalizedUrl =
+					let normalizedUrl =
 						this.realvalue.startsWith("http://") ||
 						this.realvalue.startsWith("https://")
 							? firstResult.url.href
 							: trimUrl(firstResult.url);
+
+					if (normalizedUrl.endsWith("/") && !this.realvalue.endsWith("/")) {
+						normalizedUrl = normalizedUrl.slice(0, -1);
+					}
 					if (this.realvalue.length >= normalizedUrl.length) return;
 					if (
 						!normalizedUrl
@@ -376,6 +380,10 @@ export function Omnibox(
 					this.focusindex = 0;
 
 					this.realvalue = this.value;
+
+					if (this.value === "") {
+						this.subtleinput = true;
+					}
 				}}
 			></UrlInput>
 		</div>
