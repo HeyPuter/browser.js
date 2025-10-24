@@ -64,3 +64,7 @@ export function splitUrl(url: URL): [string, string, string] {
 
 	return [subdomain || "", domain || "", last];
 }
+
+export const isFirefox =
+	navigator.userAgent.includes("Gecko/") &&
+	!navigator.userAgent.includes("Chrome");

@@ -1,5 +1,5 @@
 import type { ComponentContext } from "dreamland/core";
-import { Tabs } from "./components/TabStrip";
+import { TabStrip } from "./components/TabStrip/TabStrip";
 import { browser } from "./Browser";
 import type { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
@@ -34,7 +34,7 @@ export function App(_, cx: ComponentContext) {
 
 	return (
 		<div id="app">
-			<Tabs
+			<TabStrip
 				tabs={use(browser.tabs)}
 				activetab={use(browser.activetab)}
 				addTab={() => {
