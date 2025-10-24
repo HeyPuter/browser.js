@@ -54,6 +54,7 @@ InactiveBar.style = css`
 export function Omnibox(
 	this: {
 		value: string;
+		realvalue: string;
 		active: boolean;
 		justselected: boolean;
 		subtleinput: boolean;
@@ -97,8 +98,9 @@ export function Omnibox(
 	});
 
 	let timeout: number | null = null;
-	use(this.value).listen(() => {
-		if (!this.value) {
+
+	use(this.realvalue).listen(() => {
+		if (!this.realvalue) {
 			this.searchSuggestions = [];
 			return;
 		}
@@ -106,21 +108,36 @@ export function Omnibox(
 		// if the user is actually trying to search something we can kill the trending suggestions
 		this.trendingSuggestions = [];
 
-		let controllers: AbortController[] = [];
 		if (timeout) clearTimeout(timeout);
 		timeout = setTimeout(() => {
 			const ac = new AbortController();
-			controllers.push(ac);
-			fetchSuggestions(this.value, (results) => {
-				if (ac.signal.aborted) {
-					controllers = controllers.filter((c) => c !== ac);
-					return;
-				}
+			fetchSuggestions(this.realvalue, (results) => {
 				this.searchSuggestions = results;
-				for (const c of controllers) {
-					c.abort();
+
+				const firstResult = results[0];
+				if (!firstResult) return;
+				if (firstResult.kind === "search") {
+					if (!firstResult.title) return;
+					if (this.realvalue.length >= firstResult.title.length) return;
+					if (
+						!firstResult.title
+							.toLowerCase()
+							.startsWith(this.realvalue.toLowerCase())
+					)
+						return;
+
+					let currentCursor = this.input.selectionStart || 0;
+
+					this.input.setSelectionRange(
+						currentCursor,
+						currentCursor + firstResult.title.length
+					);
+					this.value = firstResult.title;
+					this.input.setSelectionRange(
+						currentCursor,
+						currentCursor + firstResult.title.length
+					);
 				}
-				controllers = [];
 			});
 		}, 100);
 	});
@@ -191,6 +208,21 @@ export function Omnibox(
 
 	const overflowlength = () =>
 		this.searchSuggestions.length + this.trendingSuggestions.length;
+
+	const updateValue = () => {
+		const focused =
+			this.focusindex < this.searchSuggestions.length
+				? this.searchSuggestions[this.focusindex]
+				: this.trendingSuggestions[
+						this.focusindex - this.searchSuggestions.length
+					];
+		this.value =
+			focused.kind === "search" ||
+			focused.kind === "trending" ||
+			focused.kind === "directsearch"
+				? focused.title!
+				: focused.url!.href;
+	};
 
 	return (
 		<div
@@ -266,6 +298,7 @@ export function Omnibox(
 							idx = 0;
 						}
 						this.focusindex = idx;
+						updateValue();
 					}
 					if (e.key === "ArrowUp") {
 						e.preventDefault();
@@ -274,6 +307,7 @@ export function Omnibox(
 							idx = overflowlength() - 1;
 						}
 						this.focusindex = idx;
+						updateValue();
 					}
 					if (e.key === "Enter") {
 						e.preventDefault();
@@ -304,6 +338,8 @@ export function Omnibox(
 				oninput={(e: InputEvent) => {
 					this.focusindex = 0;
 					this.subtleinput = false;
+
+					this.realvalue = this.value;
 				}}
 			></UrlInput>
 		</div>

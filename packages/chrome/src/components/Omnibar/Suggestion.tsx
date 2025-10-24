@@ -47,18 +47,34 @@ export function Suggestion(props: {
 			<div
 				class="result-content"
 				class:single={
+					item.kind === "directsearch" ||
 					item.title == null ||
 					item.title === "" ||
 					item.title === trimUrl(item.url)
 				}
 			>
-				{(item.title && (
-					<span class="description">
-						{renderResultHighlight(item.title, props.input.value)}
-					</span>
-				)) || <span class="description">{trimUrl(item.url)}</span>}
-				{item.kind != "search" && item.kind != "trending" && item.title ? (
+				{item.kind !== "directsearch"
+					? (item.title && (
+							<span class="description">
+								{renderResultHighlight(item.title, props.input.value)}
+							</span>
+						)) || <span class="description">{trimUrl(item.url)}</span>
+					: null}
+				{item.kind != "search" &&
+				item.kind != "directsearch" &&
+				item.kind != "trending" &&
+				item.title ? (
 					<span class="url">{trimUrl(item.url)}</span>
+				) : null}
+
+				{item.kind === "directsearch" ? (
+					<span>
+						{item.title}
+						<span style="font-weight: normal; opacity: 0.7">
+							{" "}
+							- Google Search
+						</span>
+					</span>
 				) : null}
 			</div>
 		</div>

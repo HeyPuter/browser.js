@@ -2,7 +2,13 @@ import { browser } from "../../Browser";
 import { bare } from "../../IsolatedFrame";
 
 export type OmniboxResult = {
-	kind: "search" | "history" | "bookmark" | "direct" | "trending";
+	kind:
+		| "search"
+		| "history"
+		| "bookmark"
+		| "direct"
+		| "trending"
+		| "directsearch";
 	title: string | null;
 	url: URL;
 	favicon: string | null;
@@ -22,7 +28,7 @@ function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 		return 100;
 	}
 
-	if (result.kind === "direct") {
+	if (result.kind === "direct" || result.kind === "directsearch") {
 		return 90;
 	}
 
@@ -91,7 +97,7 @@ const fetchHistoryResults = (query: string): OmniboxResult[] => {
 	return results.slice(0, 5);
 };
 
-const addDirectUrlResult = (
+const addDirectResult = (
 	query: string,
 	results: OmniboxResult[]
 ): OmniboxResult[] => {
@@ -105,9 +111,19 @@ const addDirectUrlResult = (
 			},
 			...results,
 		];
+	} else {
+		return [
+			{
+				kind: "directsearch",
+				url: new URL(
+					`https://www.google.com/search?q=${encodeURIComponent(query)}`
+				),
+				title: query,
+				favicon: null,
+			},
+			...results,
+		];
 	}
-
-	return results;
 };
 
 const fetchGoogleSuggestions = async (
@@ -163,7 +179,7 @@ export async function fetchSuggestions(
 		...cachedGoogleResults,
 	];
 
-	combinedResults = addDirectUrlResult(query, combinedResults);
+	combinedResults = addDirectResult(query, combinedResults);
 
 	// first update, so the user sees something quickly
 	setResults(rankResults(combinedResults, query));
@@ -171,7 +187,7 @@ export async function fetchSuggestions(
 	const googleResults = await fetchGoogleSuggestions(query);
 
 	combinedResults = [...historyResults, ...googleResults];
-	combinedResults = addDirectUrlResult(query, combinedResults);
+	combinedResults = addDirectResult(query, combinedResults);
 
 	// update with the new google results
 	setResults(rankResults(combinedResults, query));
