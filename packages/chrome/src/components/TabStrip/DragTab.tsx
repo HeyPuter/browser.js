@@ -148,10 +148,12 @@ DragTab.style = css`
 		min-width: 0;
 		width: 100%;
 
-		color: var(--fg);
+		color: var(--tab_background_text);
 
 		border-radius: 4px;
 		padding: 7px 8px;
+
+		background: var(--background_tab_inactive);
 
 		display: flex;
 		align-items: center;
@@ -184,26 +186,26 @@ DragTab.style = css`
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--fg);
+		color: var(--tab_text);
 
 		padding: 0;
 		margin-left: 8px;
 	}
 	.close:hover {
-		background: var(--bg20);
+		background: red;
 		border-radius: 0.5em;
 	}
 
 	.main:not(.active):hover {
 		transition: background 250ms;
 
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--background_tab);
+		/*color: var(-);*/
 	}
 
 	.main.active {
-		background: var(--bg02);
-		color: var(--fg);
+		background: var(--toolbar);
+		color: var(--tab_text);
 	}
 
 	.belowcontainer {

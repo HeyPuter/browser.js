@@ -225,7 +225,7 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 Omnibar.style = css`
 	:scope {
 		z-index: 1;
-		background: var(--bg01);
+		background: var(--toolbar);
 		display: flex;
 		padding: 0 7px 0 7px;
 		height: 2.5em;

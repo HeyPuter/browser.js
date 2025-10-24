@@ -102,8 +102,8 @@ BookmarksStrip.style = css`
 		height: 2em;
 		display: flex;
 		gap: 0.5em;
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--toolbar);
+		color: var(--bookmark_text);
 	}
 
 	button {

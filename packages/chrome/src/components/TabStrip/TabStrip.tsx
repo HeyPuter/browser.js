@@ -301,7 +301,7 @@ export function TabStrip(
 }
 TabStrip.style = css`
 	:scope {
-		background: var(--bg);
+		background: var(--frame);
 		padding: 6px 12px;
 		height: calc(28px + 12px);
 		z-index: 2;
