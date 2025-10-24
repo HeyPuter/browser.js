@@ -7,7 +7,7 @@ import { splitUrl } from "../../utils";
 import { OmnibarButton } from "./OmnibarButton";
 import { BookmarkButton } from "./BookmarkButton";
 
-export function UrlInput(s: {
+export function UrlInput(props: {
 	active: boolean;
 	favicon: string | null;
 	url: URL;
@@ -20,56 +20,76 @@ export function UrlInput(s: {
 	doSearch?: () => void;
 }) {
 	return (
-		<div class:active={use(s.active)}>
+		<div class:active={use(props.active)}>
 			<div class="lefticon">
-				{use(s.active).andThen(
-					use(s.favicon).andThen(
-						<Favicon url={s.favicon}></Favicon>,
+				{use(props.active).andThen(
+					use(props.favicon).andThen(
+						<Favicon url={props.favicon}></Favicon>,
 						<Icon icon={iconSearch}></Icon>
 					),
 					<SiteOptionsButton></SiteOptionsButton>
 				)}
 			</div>
-			{use(s.active).andThen(
+			{use(props.active).andThen(
 				<input
 					spellcheck="false"
-					this={use(s.input)}
-					value={use(s.value)}
+					this={use(props.input)}
+					value={use(props.value)}
 					on:keydown={(e: KeyboardEvent) => {
-						s.onkeydown?.(e);
+						props.onkeydown?.(e);
 					}}
 					on:keyup={(e: KeyboardEvent) => {
-						s.onkeyup?.(e);
+						props.onkeyup?.(e);
 					}}
 					on:input={(e: InputEvent) => {
-						s.oninput?.(e);
+						props.oninput?.(e);
 					}}
 				></input>
 			)}
-			{use(s.active, s.url)
+			{use(props.active, props.url)
 				.map(([active, url]) => !active && url.href != "puter://newtab")
 				.andThen(
 					<span class="inactiveurl">
-						<span class="subdomain">
-							{use(s.url).map((t) => splitUrl(t)[0])}
-						</span>
-						<span class="domain">{use(s.url).map((t) => splitUrl(t)[1])}</span>
-						<span class="rest">{use(s.url).map((t) => splitUrl(t)[2])}</span>
+						{use(props.url)
+							.map((u) => u.protocol === "puter:")
+							.andThen(
+								<>
+									<span class="subdomain">puter://</span>
+									<span class="domain">
+										{use(props.url).map((t) => t.hostname)}
+									</span>
+									<span class="rest">
+										{use(props.url).map((t) => t.pathname + t.search + t.hash)}
+									</span>
+								</>,
+								<>
+									<span class="subdomain">
+										{use(props.url).map((t) => console.log(t, splitUrl(t)))}
+										{use(props.url).map((t) => splitUrl(t)[0])}
+									</span>
+									<span class="domain">
+										{use(props.url).map((t) => splitUrl(t)[1])}
+									</span>
+									<span class="rest">
+										{use(props.url).map((t) => splitUrl(t)[2])}
+									</span>
+								</>
+							)}
 					</span>
 				)}
-			{use(s.active, s.url)
+			{use(props.active, props.url)
 				.map(([active, url]) => !active && url.href == "puter://newtab")
 				.andThen(
 					<span class="placeholder">Search with Google or enter address</span>
 				)}
 
-			{use(s.active)
+			{use(props.active)
 				.map((a) => !a)
-				.andThen(<BookmarkButton url={use(s.url)}></BookmarkButton>)}
-			{use(s.active).andThen(
+				.andThen(<BookmarkButton url={use(props.url)}></BookmarkButton>)}
+			{use(props.active).andThen(
 				<OmnibarButton
 					click={(e: MouseEvent) => {
-						s.doSearch?.();
+						props.doSearch?.();
 						e.stopPropagation();
 						e.preventDefault();
 					}}

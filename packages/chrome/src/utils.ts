@@ -53,7 +53,7 @@ export function splitUrl(url: URL): [string, string, string] {
 	if (last == "/") last = "";
 
 	let results = parse(url.href);
-	let domain = results.domain;
+	let domain = results.domain || results.hostname;
 	if (domain && url.port) {
 		domain += ":" + url.port;
 	}
