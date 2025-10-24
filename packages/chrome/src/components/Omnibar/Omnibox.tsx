@@ -62,6 +62,8 @@ export function Omnibox(
 		searchSuggestions: OmniboxResult[];
 		trendingSuggestions: OmniboxResult[];
 		input: HTMLInputElement;
+
+		suggestionDenied: boolean;
 	},
 	props: {
 		url: URL;
@@ -110,8 +112,7 @@ export function Omnibox(
 
 		if (timeout) clearTimeout(timeout);
 		timeout = setTimeout(() => {
-			const ac = new AbortController();
-			fetchSuggestions(this.realvalue, (results) => {
+			fetchSuggestions(this.realvalue, this.suggestionDenied, (results) => {
 				this.searchSuggestions = results;
 
 				const firstResult = results[0];
@@ -137,8 +138,37 @@ export function Omnibox(
 						currentCursor,
 						currentCursor + firstResult.title.length
 					);
+				} else {
+					if (!firstResult.url) return;
+
+					// todo support http:example.com
+					const normalizedUrl =
+						this.realvalue.startsWith("http://") ||
+						this.realvalue.startsWith("https://")
+							? firstResult.url.href
+							: trimUrl(firstResult.url);
+					if (this.realvalue.length >= normalizedUrl.length) return;
+					if (
+						!normalizedUrl
+							.toLowerCase()
+							.startsWith(this.realvalue.toLowerCase())
+					)
+						return;
+
+					let currentCursor = this.input.selectionStart || 0;
+
+					this.input.setSelectionRange(
+						currentCursor,
+						currentCursor + normalizedUrl.length
+					);
+					this.value = normalizedUrl;
+					this.input.setSelectionRange(
+						currentCursor,
+						currentCursor + normalizedUrl.length
+					);
 				}
 			});
+			this.suggestionDenied = false;
 		}, 100);
 	});
 
@@ -336,8 +366,14 @@ export function Omnibox(
 					this.justselected = false;
 				}}
 				oninput={(e: InputEvent) => {
-					this.focusindex = 0;
 					this.subtleinput = false;
+
+					if (e.inputType === "deleteContentBackward") {
+						this.suggestionDenied = true;
+					} else {
+						this.suggestionDenied = false;
+					}
+					this.focusindex = 0;
 
 					this.realvalue = this.value;
 				}}

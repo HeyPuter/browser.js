@@ -63,13 +63,27 @@ function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 	return score;
 }
 
-function rankResults(results: OmniboxResult[], query: string): OmniboxResult[] {
+function rankResults(
+	results: OmniboxResult[],
+	query: string,
+	suggestionDenied: boolean
+): OmniboxResult[] {
 	return results
 		.map((result) => ({
 			...result,
 			relevanceScore: calculateRelevanceScore(result, query),
 		}))
-		.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+		.sort((a, b) => {
+			if (
+				suggestionDenied &&
+				(b.kind === "direct" || b.kind === "directsearch")
+			) {
+				// force direct results to the top
+				return 1;
+			} else {
+				return (b.relevanceScore || 0) - (a.relevanceScore || 0);
+			}
+		});
 }
 let cachedGoogleResults: OmniboxResult[] = [];
 
@@ -164,6 +178,7 @@ const fetchGoogleSuggestions = async (
 
 export async function fetchSuggestions(
 	query: string,
+	suggestionDenied: boolean,
 	setResults: (results: OmniboxResult[]) => void
 ) {
 	if (!query) {
@@ -182,7 +197,7 @@ export async function fetchSuggestions(
 	combinedResults = addDirectResult(query, combinedResults);
 
 	// first update, so the user sees something quickly
-	setResults(rankResults(combinedResults, query));
+	setResults(rankResults(combinedResults, query, suggestionDenied));
 
 	const googleResults = await fetchGoogleSuggestions(query);
 
@@ -190,7 +205,7 @@ export async function fetchSuggestions(
 	combinedResults = addDirectResult(query, combinedResults);
 
 	// update with the new google results
-	setResults(rankResults(combinedResults, query));
+	setResults(rankResults(combinedResults, query, suggestionDenied));
 	cachedGoogleResults = googleResults;
 }
 
