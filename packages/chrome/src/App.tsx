@@ -5,7 +5,7 @@ import type { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
 import { Omnibar } from "./components/Omnibar/Omnibar";
 
-export function App(_, cx: ComponentContext) {
+export function App(props: {}, cx: ComponentContext) {
 	const applyTheme = () => {
 		let theme = browser.settings.theme;
 
@@ -45,7 +45,7 @@ export function App(_, cx: ComponentContext) {
 				}}
 			/>
 			<Omnibar tab={use(browser.activetab)} />
-			{use(browser.activetab.url, browser.settings.bookmarksPinned)
+			{use(browser.activetab.url, browser.settings.showBookmarksBar)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
 				.andThen(<BookmarksStrip />)}
 			<div style="border-bottom: 1px solid var(--bg20)"></div>
