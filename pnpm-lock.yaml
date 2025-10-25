@@ -494,6 +494,25 @@ importers:
         specifier: ^0.7.1
         version: 0.7.2
 
+  packages/scramjet/packages/rewriter_demo:
+    dependencies:
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+      dreamland:
+        specifier: workspace:*
+        version: link:../../../../external/dreamlandjs
+      monaco-editor:
+        specifier: ^0.52.2
+        version: 0.52.2
+      vite-plugin-static-copy:
+        specifier: ^3.1.1
+        version: 3.1.1(vite@7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1))
+    devDependencies:
+      vite:
+        specifier: ^7.1.2
+        version: 7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
+
   packages/scramjet/packages/scramjetserver:
     dependencies:
       '@mercuryworkshop/scramjet':
@@ -11735,6 +11754,15 @@ snapshots:
       picocolors: 1.1.1
       tinyglobby: 0.2.15
       vite: 6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
+
+  vite-plugin-static-copy@3.1.1(vite@7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)):
+    dependencies:
+      chokidar: 3.6.0
+      fs-extra: 11.3.1
+      p-map: 7.0.3
+      picocolors: 1.1.1
+      tinyglobby: 0.2.15
+      vite: 7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
   vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1):
     dependencies:
