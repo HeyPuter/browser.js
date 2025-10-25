@@ -62,7 +62,6 @@ export type Settings = {
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
 	showBookmarksBar: boolean;
-	bookmarksPinned: boolean;
 	defaultSearchEngine:
 		| "google"
 		| "bing"
@@ -98,7 +97,6 @@ export class Browser extends StatefulClass {
 		startupPage: "new-tab",
 		defaultZoom: 100,
 		showBookmarksBar: true,
-		bookmarksPinned: false,
 		defaultSearchEngine: "google",
 		searchSuggestionsEnabled: true,
 		blockTrackers: true,
@@ -219,11 +217,16 @@ export class Browser extends StatefulClass {
 			state.deserialize(s);
 			return state;
 		});
-		for (let detab of de.tabs) {
-			let tab = this.newTab();
-			tab.deserialize(detab);
-			tab.history.justTriggeredNavigation = true;
-			tab.history.go(0, false);
+
+		if (de.settings.startupPage === "continue") {
+			for (let detab of de.tabs) {
+				let tab = this.newTab();
+				tab.deserialize(detab);
+				tab.history.justTriggeredNavigation = true;
+				tab.history.go(0, false);
+			}
+		} else {
+			this.tabs[0] = this.newTab();
 		}
 		this.activetab = this.tabs[0];
 		this.bookmarks = de.bookmarks.map(createState);

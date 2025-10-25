@@ -5,7 +5,7 @@ import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";
 
-export function BookmarksStrip(_, cx: ComponentContext) {
+export function BookmarksStrip(props: {}, cx: ComponentContext) {
 	cx.mount = () => {
 		setContextMenu(cx.root, [
 			{
@@ -15,11 +15,11 @@ export function BookmarksStrip(_, cx: ComponentContext) {
 			},
 			{
 				label: "Pin Bookmarks Strip",
-				checkbox: use(browser.settings.bookmarksPinned),
+				checkbox: use(browser.settings.showBookmarksBar),
 			},
 		]);
 	};
-
+	console.log(browser.bookmarks);
 	return (
 		<div>
 			<button

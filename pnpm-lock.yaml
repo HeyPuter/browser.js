@@ -494,6 +494,25 @@ importers:
         specifier: ^0.7.1
         version: 0.7.2
 
+  packages/scramjet/packages/rewriter_demo:
+    dependencies:
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+      dreamland:
+        specifier: ^0.1.1
+        version: 0.1.1
+      monaco-editor:
+        specifier: ^0.52.2
+        version: 0.52.2
+      vite-plugin-static-copy:
+        specifier: ^3.1.1
+        version: 3.1.1(vite@7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1))
+    devDependencies:
+      vite:
+        specifier: ^7.1.2
+        version: 7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
+
   packages/scramjet/packages/scramjetserver:
     dependencies:
       '@mercuryworkshop/scramjet':
@@ -2951,6 +2970,9 @@ packages:
   dotenv@17.2.2:
     resolution: {integrity: sha512-Sf2LSQP+bOlhKWWyhFsn0UsfdK/kCWRv1iuA2gXAwt3dyNabr6QSj00I2V10pidqz69soatm9ZwZvpQMTIOd5Q==}
     engines: {node: '>=12'}
+
+  dreamland@0.1.1:
+    resolution: {integrity: sha512-Xpm4sjhShY6PNAw69TKlG+vNOwMegETl4fIGJQw7R31ARls4+gFhlxAt/k3cC/LOg3tSWVeglpqp52tG1Gxleg==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -8730,6 +8752,14 @@ snapshots:
 
   dotenv@17.2.2: {}
 
+  dreamland@0.1.1:
+    dependencies:
+      dom-serializer: 2.0.0
+      domhandler: 5.0.3
+      htm: 3.1.1
+      htmlparser2: 10.0.0
+      rrweb-cssom: 0.8.0
+
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -11735,6 +11765,15 @@ snapshots:
       picocolors: 1.1.1
       tinyglobby: 0.2.15
       vite: 6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
+
+  vite-plugin-static-copy@3.1.1(vite@7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)):
+    dependencies:
+      chokidar: 3.6.0
+      fs-extra: 11.3.1
+      p-map: 7.0.3
+      picocolors: 1.1.1
+      tinyglobby: 0.2.15
+      vite: 7.1.11(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1)
 
   vite@6.3.5(@types/node@24.5.2)(jiti@2.6.0)(terser@5.43.1)(yaml@2.8.1):
     dependencies:

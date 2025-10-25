@@ -1,6 +1,7 @@
 import { css } from "dreamland/core";
-import type { OmniboxResult } from "./suggestions";
+import { type OmniboxResult, AVAILABLE_SEARCH_ENGINES } from "./suggestions";
 import { iconSearch, iconTrendingUp } from "../../icons";
+import { browser } from "../../Browser";
 import { Icon } from "../Icon";
 import { Favicon } from "../Favicon";
 import { trimUrl } from "./utils";
@@ -72,7 +73,12 @@ export function Suggestion(props: {
 						{item.title}
 						<span style="font-weight: normal; opacity: 0.7">
 							{" "}
-							- Google Search
+							-{" "}
+							{
+								AVAILABLE_SEARCH_ENGINES[browser.settings.defaultSearchEngine]
+									.name
+							}{" "}
+							Search
 						</span>
 					</span>
 				) : null}

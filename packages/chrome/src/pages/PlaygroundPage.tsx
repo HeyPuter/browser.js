@@ -27,7 +27,7 @@ import type { Tab } from "../Tab";
 // 	}
 // `;
 
-export function PlaygroundPage(s: { tab: Tab }) {
+export function PlaygroundPage(props: { tab: Tab }) {
 	return (
 		<div>
 			<h1>Scramjet Playground</h1>

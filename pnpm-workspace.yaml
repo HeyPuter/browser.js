@@ -14,3 +14,5 @@ packages:
   - "packages/scramjet/packages/bare-mux-custom"
   - "packages/scramjet/packages/epoxy-transport"
   - "packages/scramjet/packages/libcurl-transport"
+  - "packages/scramjet/packages/demo"
+  - "packages/scramjet/packages/rewriter_demo"

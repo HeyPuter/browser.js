@@ -1,3 +1,3 @@
-import defaultFavicon from "../../public/defaultfavicon.png";
+import defaultFavicon from "/defaultfavicon.png";
 
 export const defaultFaviconUrl = defaultFavicon;

@@ -5,56 +5,44 @@ import { Input } from "./Input";
 import { closeMenu } from "./Menu";
 import { Button } from "./Button";
 
-export function BookmarkPopup(s: {
+export function BookmarkPopup(props: {
 	bookmark: Stateful<BookmarkEntry>;
 	new: boolean;
 }) {
 	return (
 		<div>
-			<div class="title">{s.new ? "Add Bookmark" : "Edit Bookmark"}</div>
+			<div class="title">{props.new ? "Add Bookmark" : "Edit Bookmark"}</div>
 
 			<div class="field">
-				<Input
-					label="Title"
-					value={s.bookmark.title}
-					onInput={(e) =>
-						(s.bookmark.title = (e.target as HTMLInputElement).value)
-					}
-				/>
+				<Input label="Title" value={use(props.bookmark.title)} />
 			</div>
 			<div class="field">
-				<Input
-					label="URL"
-					value={s.bookmark.url}
-					onInput={(e) =>
-						(s.bookmark.url = (e.target as HTMLInputElement).value)
-					}
-				/>
+				<Input label="URL" value={use(props.bookmark.url)} />
 			</div>
 			<div class="actions">
 				<Button
 					on:click={() => {
-						if (!s.new) {
+						if (!props.new) {
 							browser.bookmarks = browser.bookmarks.filter(
-								(b) => b !== s.bookmark
+								(b) => b !== props.bookmark
 							);
 						}
 						closeMenu();
 					}}
 				>
-					{s.new ? "Cancel" : "Delete"}
+					{props.new ? "Cancel" : "Delete"}
 				</Button>
 				<Button
 					variant="primary"
 					on:click={() => {
-						if (s.new) {
-							browser.bookmarks = [s.bookmark, ...browser.bookmarks];
+						if (props.new) {
+							browser.bookmarks = [props.bookmark, ...browser.bookmarks];
 						}
 
 						closeMenu();
 					}}
 				>
-					{s.new ? "Add" : "Save"}
+					{props.new ? "Add" : "Save"}
 				</Button>
 			</div>
 		</div>

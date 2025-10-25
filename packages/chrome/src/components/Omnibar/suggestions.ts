@@ -15,6 +15,53 @@ export type OmniboxResult = {
 	relevanceScore?: number;
 };
 
+export interface SearchEngine {
+	name: string;
+	suggestUrlBuilder: (query: string) => string;
+	searchUrlBuilder: (query: string) => string;
+	suggestionParser: (data: any) => string[];
+}
+
+/** Available search engines */
+export const AVAILABLE_SEARCH_ENGINES: Record<string, SearchEngine> = {
+	google: {
+		name: "Google",
+		searchUrlBuilder: (query) =>
+			`https://www.google.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	brave: {
+		name: "Brave",
+		searchUrlBuilder: (query) =>
+			`https://search.brave.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://search.brave.com/api/suggest?q=${encodeURIComponent(query)}&source=web`,
+		suggestionParser: (data) => {
+			// Google format
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			// Brave Format
+			if (
+				Array.isArray(data) &&
+				data.length > 0 &&
+				typeof data[0] === "string"
+			) {
+				return data.map((item: string) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+};
+
 function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 	if (!query) return 0;
 
@@ -130,7 +177,9 @@ const addDirectResult = (
 			{
 				kind: "directsearch",
 				url: new URL(
-					`https://www.google.com/search?q=${encodeURIComponent(query)}`
+					AVAILABLE_SEARCH_ENGINES[
+						browser.settings.defaultSearchEngine
+					].searchUrlBuilder(query)
 				),
 				title: query,
 				favicon: null,
@@ -147,13 +196,20 @@ const fetchGoogleSuggestions = async (
 
 	try {
 		const resp = await bare.fetch(
-			`http://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].suggestUrlBuilder(query)
 		);
 
 		const json = await resp.json();
+		let rawSuggestions =
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].suggestionParser(json);
+		rawSuggestions = rawSuggestions.slice(0, 5);
 		const suggestions: OmniboxResult[] = [];
 
-		for (const item of json[1].slice(0, 5)) {
+		for (const item of rawSuggestions) {
 			// it's gonna be stuff like "http //fortnite.com/2fa ps5"
 			// generally not useful
 			if (item.startsWith("http")) continue;
@@ -162,7 +218,9 @@ const fetchGoogleSuggestions = async (
 				kind: "search",
 				title: item,
 				url: new URL(
-					`https://www.google.com/search?q=${encodeURIComponent(item)}`
+					AVAILABLE_SEARCH_ENGINES[
+						browser.settings.defaultSearchEngine
+					].searchUrlBuilder(query)
 				),
 				favicon: null,
 			});
@@ -217,6 +275,7 @@ export type TrendingQuery = {
 
 export let trendingCached: TrendingQuery[] | null = null;
 export async function fetchGoogleTrending(geo = "US"): Promise<void> {
+	// TODO: make this search engine agnostic
 	try {
 		if (trendingCached) return;
 
