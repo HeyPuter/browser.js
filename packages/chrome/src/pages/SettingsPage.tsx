@@ -7,6 +7,7 @@ import { browser } from "../Browser";
 import { Checkbox } from "../components/Checkbox";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { AVAILABLE_SEARCH_ENGINES } from "../components/Omnibar/suggestions";
 
 import {
 	iconSettings,
@@ -203,12 +204,11 @@ export function SettingsPage(
 												class="select-input"
 												value={use(browser.settings.defaultSearchEngine)}
 											>
-												<option value="google">Google</option>
-												<option value="bing">Bing</option>
-												<option value="duckduckgo">DuckDuckGo</option>
-												<option value="yahoo">Yahoo</option>
-												<option value="ecosia">Ecosia</option>
-												<option value="startpage">Startpage</option>
+												{Object.keys(AVAILABLE_SEARCH_ENGINES).map((key) => (
+													<option value={key}>
+														{AVAILABLE_SEARCH_ENGINES[key].name}
+													</option>
+												))}
 											</select>
 										</div>
 									</div>
