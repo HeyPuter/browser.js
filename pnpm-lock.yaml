@@ -500,8 +500,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       dreamland:
-        specifier: workspace:*
-        version: link:../../../../external/dreamlandjs
+        specifier: ^0.1.1
+        version: 0.1.1
       monaco-editor:
         specifier: ^0.52.2
         version: 0.52.2
@@ -2970,6 +2970,9 @@ packages:
   dotenv@17.2.2:
     resolution: {integrity: sha512-Sf2LSQP+bOlhKWWyhFsn0UsfdK/kCWRv1iuA2gXAwt3dyNabr6QSj00I2V10pidqz69soatm9ZwZvpQMTIOd5Q==}
     engines: {node: '>=12'}
+
+  dreamland@0.1.1:
+    resolution: {integrity: sha512-Xpm4sjhShY6PNAw69TKlG+vNOwMegETl4fIGJQw7R31ARls4+gFhlxAt/k3cC/LOg3tSWVeglpqp52tG1Gxleg==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -8748,6 +8751,14 @@ snapshots:
   dotenv@16.6.1: {}
 
   dotenv@17.2.2: {}
+
+  dreamland@0.1.1:
+    dependencies:
+      dom-serializer: 2.0.0
+      domhandler: 5.0.3
+      htm: 3.1.1
+      htmlparser2: 10.0.0
+      rrweb-cssom: 0.8.0
 
   dunder-proto@1.0.1:
     dependencies:
