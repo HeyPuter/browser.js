@@ -37,6 +37,45 @@ export const AVAILABLE_SEARCH_ENGINES: Record<string, SearchEngine> = {
 			return [];
 		},
 	},
+	bing: {
+		name: "Microsoft Bing",
+		searchUrlBuilder: (query) =>
+			`https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://www.bing.com/osjson.aspx?query=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	yahoo: {
+		name: "Yahoo!",
+		searchUrlBuilder: (query) =>
+			`https://search.yahoo.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas_sfp&command=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	duckduckgo: {
+		name: "DuckDuckGo",
+		searchUrlBuilder: (query) =>
+			`https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://duckduckgo.com/ac/?q=${encodeURIComponent(query)}&type=list`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
 	brave: {
 		name: "Brave",
 		searchUrlBuilder: (query) =>
@@ -46,7 +85,6 @@ export const AVAILABLE_SEARCH_ENGINES: Record<string, SearchEngine> = {
 		suggestionParser: (data) => {
 			// Google format
 			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
-				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 				return data[1].map((item: any) => String(item)).filter(Boolean);
 			}
 			// Brave Format
