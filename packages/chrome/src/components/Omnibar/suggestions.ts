@@ -23,7 +23,7 @@ export interface SearchEngine {
 }
 
 /** Available search engines */
-export const AVAILABLE_SEARCH_ENGINES: Record<string, SearchEngine> = {
+export const AVAILABLE_SEARCH_ENGINES = {
 	google: {
 		name: "Google",
 		searchUrlBuilder: (query) =>
@@ -98,7 +98,7 @@ export const AVAILABLE_SEARCH_ENGINES: Record<string, SearchEngine> = {
 			return [];
 		},
 	},
-};
+} as const satisfies Record<string, SearchEngine>;
 
 function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 	if (!query) return 0;
