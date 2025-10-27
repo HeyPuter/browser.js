@@ -132,6 +132,7 @@ const PAD_TOP = 1;
 const PAD_BOTTOM = 1;
 
 function blackSpaces(count: number) {
+	count = Math.abs(count);
 	return black()(" ".repeat(count));
 }
 
