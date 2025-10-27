@@ -9,12 +9,13 @@
 		"preview": "vite preview"
 	},
 	"devDependencies": {
-		"typescript": "~5.8.3",
-		"vite": "^6.3.5"
+		"typescript": "~5.9.3",
+		"vite": "^7.1.12"
 	},
 	"dependencies": {
 		"@iconify/types": "^2.0.0",
 		"@ktibow/iconset-ion": "^8.0.13",
+		"@heyputer/puter.js": "^2.1.2",
 		"@mercuryworkshop/bare-mux-custom": "workspace:*",
 		"@mercuryworkshop/epoxy-transport": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "workspace:*",
@@ -25,7 +26,7 @@
 		"html-to-image": "^1.11.13",
 		"html2canvas": "^1.4.1",
 		"htmlparser2": "^10.0.0",
-		"monaco-editor": "^0.52.2",
+		"monaco-editor": "^0.54.0",
 		"tldts": "^7.0.11",
 		"vite-plugin-singlefile": "^2.3.0",
 		"vite-plugin-static-copy": "^3.1.0"

@@ -5,6 +5,7 @@ import { createDelegate } from "dreamland/core";
 import type { SerializedHistoryState } from "./History";
 import { HistoryState } from "./History";
 import { focusOmnibox } from "./components/Omnibar/Omnibox";
+import { type AVAILABLE_SEARCH_ENGINES } from "./components/Omnibar/suggestions";
 
 import * as tldts from "tldts";
 import { isPuter } from "./main";
@@ -62,13 +63,7 @@ export type Settings = {
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
 	showBookmarksBar: boolean;
-	defaultSearchEngine:
-		| "google"
-		| "bing"
-		| "duckduckgo"
-		| "yahoo"
-		| "ecosia"
-		| "startpage";
+	defaultSearchEngine: keyof typeof AVAILABLE_SEARCH_ENGINES;
 	searchSuggestionsEnabled: boolean;
 	blockTrackers: boolean;
 	clearHistoryOnExit: boolean;

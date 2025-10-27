@@ -25,15 +25,16 @@ export function BookmarksStrip(props: {}, cx: ComponentContext) {
 			<button
 				on:click={(e: MouseEvent) => {
 					let b = createState<BookmarkEntry>({
-						url: "",
-						title: "New Bookmark",
+						url: browser.activetab.url.toString(),
+						title: browser.activetab.title || "Unknown",
+						favicon: browser.activetab.icon,
 					});
 					createMenuCustom(
 						{
 							left: e.clientX,
 							top: e.clientY,
 						},
-						<BookmarkPopup bookmark={b} new={false} />
+						<BookmarkPopup bookmark={b} new={true} />
 					);
 				}}
 			>
