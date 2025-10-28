@@ -37,7 +37,7 @@ export function Suggestion(props: {
 			title={item.url.href}
 		>
 			<div class="result-icon">
-				{item.kind === "search" ? (
+				{item.kind === "search" || item.kind === "directsearch" ? (
 					<Icon icon={iconSearch}></Icon>
 				) : item.kind === "trending" ? (
 					<Icon icon={iconTrendingUp}></Icon>

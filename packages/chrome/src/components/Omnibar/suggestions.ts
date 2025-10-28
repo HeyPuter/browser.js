@@ -1,6 +1,8 @@
 import { browser } from "../../Browser";
 import { bare } from "../../IsolatedFrame";
 
+import * as tldts from "tldts";
+
 export type OmniboxResult = {
 	kind:
 		| "search"
@@ -109,11 +111,15 @@ function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 
 	let score = 0;
 
-	if (urlString === lowerQuery || title === lowerQuery) {
-		return 100;
+	// if (urlString === lowerQuery || title === lowerQuery) {
+	// 	return 100;
+	// }
+
+	if (result.kind === "direct") {
+		return 95;
 	}
 
-	if (result.kind === "direct" || result.kind === "directsearch") {
+	if (result.kind === "directsearch") {
 		return 90;
 	}
 
@@ -163,7 +169,7 @@ function rankResults(
 				suggestionDenied &&
 				(b.kind === "direct" || b.kind === "directsearch")
 			) {
-				// force direct results to the top
+				// don't allow something other than What Was Typed to be higher if the user just backspaced
 				return 1;
 			} else {
 				return (b.relevanceScore || 0) - (a.relevanceScore || 0);
@@ -196,35 +202,39 @@ const fetchHistoryResults = (query: string): OmniboxResult[] => {
 	return results.slice(0, 5);
 };
 
-const addDirectResult = (
-	query: string,
-	results: OmniboxResult[]
-): OmniboxResult[] => {
+const addDirectResult = (query: string, results: OmniboxResult[]) => {
+	let directurl;
 	if (URL.canParse(query)) {
-		return [
-			{
-				kind: "direct",
-				url: new URL(query),
-				title: null,
-				favicon: null,
-			},
-			...results,
-		];
+		directurl = new URL(query);
 	} else {
-		return [
-			{
-				kind: "directsearch",
-				url: new URL(
-					AVAILABLE_SEARCH_ENGINES[
-						browser.settings.defaultSearchEngine
-					].searchUrlBuilder(query)
-				),
-				title: query,
-				favicon: null,
-			},
-			...results,
-		];
+		let parsed = tldts.parse(query);
+		if ((parsed.domain && parsed.isIcann) || parsed.isIp) {
+			// TODO: this probably isn't right for all cases
+			// i think typing in `://a.com` would break it because it's an invalid url but passes tldts
+			// but tldts doesn't parse path/port/schema so we can't use its parser
+			directurl = new URL("https://" + query);
+		}
 	}
+
+	if (directurl) {
+		results.unshift({
+			kind: "direct",
+			url: directurl,
+			title: null,
+			favicon: null,
+		});
+	}
+
+	results.unshift({
+		kind: "directsearch",
+		url: new URL(
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].searchUrlBuilder(query)
+		),
+		title: query,
+		favicon: null,
+	});
 };
 
 const fetchGoogleSuggestions = async (
@@ -290,7 +300,7 @@ export async function fetchSuggestions(
 		...cachedGoogleResults,
 	];
 
-	combinedResults = addDirectResult(query, combinedResults);
+	addDirectResult(query, combinedResults);
 
 	// first update, so the user sees something quickly
 	setResults(rankResults(combinedResults, query, suggestionDenied));
@@ -298,7 +308,7 @@ export async function fetchSuggestions(
 	const googleResults = await fetchGoogleSuggestions(query);
 
 	combinedResults = [...historyResults, ...googleResults];
-	combinedResults = addDirectResult(query, combinedResults);
+	addDirectResult(query, combinedResults);
 
 	// update with the new google results
 	setResults(rankResults(combinedResults, query, suggestionDenied));
