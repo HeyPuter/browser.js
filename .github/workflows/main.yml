@@ -2,11 +2,7 @@ name: CI
 
 on:
   push:
-    paths-ignore: &ci_ignore_paths
-      - ".github/workflows/**"
-      - "assets/**"
-      - "scripts/**"
-      # Editor configs
+    paths-ignore: &ci_ignore_paths # Editor configs
       - ".zed/**"
       - ".vscode/**"
       # Docs
