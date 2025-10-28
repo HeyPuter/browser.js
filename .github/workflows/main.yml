@@ -192,6 +192,7 @@ jobs:
 
       - name: Build Frontend
         run: |
+          pnpm i
           SKIP_CORE=1 pnpm build
           # TODO you should not have to run this twice
           SKIP_CORE=1 pnpm build
