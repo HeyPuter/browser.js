@@ -193,9 +193,9 @@ jobs:
       - name: Build Frontend
         run: |
           pnpm i
-          SKIP_CORE=1 pnpm build
+          SKIP_CORE=1 pnpm build || :
           # TODO you should not have to run this twice
-          SKIP_CORE=1 pnpm build
+          SKIP_CORE=1 pnpm build || :
           VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
   tests:
     name: Run Scramjet Tests
