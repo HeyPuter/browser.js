@@ -10,6 +10,8 @@ packages:
   - "external/dreamlandjs"
   - "packages/scramjet"
   - "packages/scramjet/packages/core"
+  - "packages/scramjet/packages/bootstrap"
+  - "packages/scramjet/packages/controller"
   - "packages/scramjet/packages/scramjetserver"
   - "packages/scramjet/packages/bare-mux-custom"
   - "packages/scramjet/packages/epoxy-transport"

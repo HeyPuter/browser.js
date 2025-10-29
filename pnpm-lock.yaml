@@ -310,6 +310,18 @@ importers:
 
   packages/scramjet/packages/bare-mux-custom: {}
 
+  packages/scramjet/packages/bootstrap:
+    dependencies:
+      server:
+        specifier: link:@mercuryworkshop/wisp-js/server
+        version: link:@mercuryworkshop/wisp-js/server
+
+  packages/scramjet/packages/controller:
+    dependencies:
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+
   packages/scramjet/packages/core:
     dependencies:
       dom-serializer:
