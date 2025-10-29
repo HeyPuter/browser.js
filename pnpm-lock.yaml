@@ -570,6 +570,9 @@ importers:
       tslib:
         specifier: ^2.8.1
         version: 2.8.1
+      typedoc-plugin-dt-links:
+        specifier: ^2.0.26
+        version: 2.0.26(typedoc@0.28.13(typescript@5.9.3))
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -6083,6 +6086,11 @@ packages:
     engines: {node: '>=18.0.0', npm: '>=8.6.0'}
     peerDependencies:
       typedoc: ^0.25.13 || ^0.26.x || ^0.27.x || ^0.28.x
+
+  typedoc-plugin-dt-links@2.0.26:
+    resolution: {integrity: sha512-pda134c6zdYuFqjaXc29YG0/SB3INn5XQ9o5K4uqfpO4mrKXCptSqgcGPhI6OH7MLt2na5sp5sycuvbSXYlALg==}
+    peerDependencies:
+      typedoc: 0.28.x
 
   typedoc-plugin-frontmatter@1.3.0:
     resolution: {integrity: sha512-xYQFMAecMlsRUjmf9oM/Sq2FVz4zlgcbIeVFNLdO118CHTN06gIKJNSlyExh9+Xl8sK0YhIvoQwViUURxritWA==}
@@ -12833,6 +12841,10 @@ snapshots:
   typedoc-material-theme@1.4.0(typedoc@0.28.13(typescript@5.9.3)):
     dependencies:
       '@material/material-color-utilities': 0.3.0
+      typedoc: 0.28.13(typescript@5.9.3)
+
+  typedoc-plugin-dt-links@2.0.26(typedoc@0.28.13(typescript@5.9.3)):
+    dependencies:
       typedoc: 0.28.13(typescript@5.9.3)
 
   typedoc-plugin-frontmatter@1.3.0(typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.3))):
