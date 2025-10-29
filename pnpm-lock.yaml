@@ -349,15 +349,6 @@ importers:
         specifier: ^2.7.1
         version: 2.7.1
     devDependencies:
-      '@8hobbies/typedoc-plugin-404':
-        specifier: ^3.2.1
-        version: 3.2.1(typedoc@0.28.13(typescript@5.9.2))
-      '@8hobbies/typedoc-plugin-plausible':
-        specifier: ^2.2.0
-        version: 2.2.0(typedoc@0.28.13(typescript@5.9.2))
-      '@catppuccin/vscode':
-        specifier: ^3.18.0
-        version: 3.18.0
       '@eslint/eslintrc':
         specifier: ^3.3.1
         version: 3.3.1
@@ -370,9 +361,6 @@ importers:
       '@fastify/static':
         specifier: ^8.2.0
         version: 8.2.0
-      '@giancosta86/typedoc-readonly':
-        specifier: ^1.0.1
-        version: 1.0.1(typedoc@0.28.13(typescript@5.9.2))
       '@mercuryworkshop/bare-as-module3':
         specifier: ^2.2.5
         version: 2.2.5
@@ -394,15 +382,6 @@ importers:
       '@playwright/test':
         specifier: ^1.55.0
         version: 1.55.0
-      '@reside-ic/typedoc-plugin-copy-doc':
-        specifier: ^1.1.2
-        version: 1.1.2(typedoc@0.28.13(typescript@5.9.2))
-      '@shipgirl/typedoc-plugin-versions':
-        specifier: ^0.3.2
-        version: 0.3.2(typedoc@0.28.13(typescript@5.9.2))
-      '@stephansama/catppuccin-typedoc':
-        specifier: ^1.0.1
-        version: 1.0.1
       '@types/eslint':
         specifier: ^9.6.1
         version: 9.6.1
@@ -469,24 +448,6 @@ importers:
       tslib:
         specifier: ^2.8.1
         version: 2.8.1
-      typedoc:
-        specifier: ^0.28.12
-        version: 0.28.13(typescript@5.9.2)
-      typedoc-material-theme:
-        specifier: ^1.4.0
-        version: 1.4.0(typedoc@0.28.13(typescript@5.9.2))
-      typedoc-plugin-frontmatter:
-        specifier: ^1.3.0
-        version: 1.3.0(typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.2)))
-      typedoc-plugin-include-example:
-        specifier: ^3.0.2
-        version: 3.0.2(typedoc@0.28.13(typescript@5.9.2))
-      typedoc-plugin-markdown:
-        specifier: ^4.8.1
-        version: 4.9.0(typedoc@0.28.13(typescript@5.9.2))
-      typedoc-plugin-mdn-links:
-        specifier: ^5.0.9
-        version: 5.0.9(typedoc@0.28.13(typescript@5.9.2))
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -548,6 +509,70 @@ importers:
       '@nebula-services/bare-server-node':
         specifier: ^2.0.4
         version: 2.0.4(bufferutil@4.0.9)
+
+  packages/scramjet/packages/typedoc:
+    dependencies:
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+      typedoc:
+        specifier: ^0.28.12
+        version: 0.28.13(typescript@5.9.3)
+      typedoc-material-theme:
+        specifier: ^1.4.0
+        version: 1.4.0(typedoc@0.28.13(typescript@5.9.3))
+      typedoc-plugin-frontmatter:
+        specifier: ^1.3.0
+        version: 1.3.0(typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.3)))
+      typedoc-plugin-include-example:
+        specifier: ^3.0.2
+        version: 3.0.2(typedoc@0.28.13(typescript@5.9.3))
+      typedoc-plugin-markdown:
+        specifier: ^4.8.1
+        version: 4.9.0(typedoc@0.28.13(typescript@5.9.3))
+      typedoc-plugin-mdn-links:
+        specifier: ^5.0.9
+        version: 5.0.9(typedoc@0.28.13(typescript@5.9.3))
+    devDependencies:
+      '@8hobbies/typedoc-plugin-404':
+        specifier: ^3.2.1
+        version: 3.2.1(typedoc@0.28.13(typescript@5.9.3))
+      '@8hobbies/typedoc-plugin-plausible':
+        specifier: ^2.2.0
+        version: 2.2.0(typedoc@0.28.13(typescript@5.9.3))
+      '@catppuccin/vscode':
+        specifier: ^3.18.0
+        version: 3.18.0
+      '@eslint/eslintrc':
+        specifier: ^3.3.1
+        version: 3.3.1
+      '@eslint/js':
+        specifier: ^9.35.0
+        version: 9.36.0
+      '@estruyf/github-actions-reporter':
+        specifier: ^1.10.0
+        version: 1.10.0(@playwright/test@1.55.0)
+      '@fastify/static':
+        specifier: ^8.2.0
+        version: 8.2.0
+      '@giancosta86/typedoc-readonly':
+        specifier: ^1.0.1
+        version: 1.0.1(typedoc@0.28.13(typescript@5.9.3))
+      '@reside-ic/typedoc-plugin-copy-doc':
+        specifier: ^1.1.2
+        version: 1.1.2(typedoc@0.28.13(typescript@5.9.3))
+      '@shipgirl/typedoc-plugin-versions':
+        specifier: ^0.3.2
+        version: 0.3.2(typedoc@0.28.13(typescript@5.9.3))
+      '@stephansama/catppuccin-typedoc':
+        specifier: ^1.0.1
+        version: 1.0.1
+      tslib:
+        specifier: ^2.8.1
+        version: 2.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
 
 packages:
 
@@ -6607,13 +6632,13 @@ packages:
 
 snapshots:
 
-  '@8hobbies/typedoc-plugin-404@3.2.1(typedoc@0.28.13(typescript@5.9.2))':
+  '@8hobbies/typedoc-plugin-404@3.2.1(typedoc@0.28.13(typescript@5.9.3))':
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
-  '@8hobbies/typedoc-plugin-plausible@2.2.0(typedoc@0.28.13(typescript@5.9.2))':
+  '@8hobbies/typedoc-plugin-plausible@2.2.0(typedoc@0.28.13(typescript@5.9.3))':
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
   '@actions/core@1.11.1':
     dependencies:
@@ -7661,9 +7686,9 @@ snapshots:
       '@shikijs/types': 3.13.0
       '@shikijs/vscode-textmate': 10.0.2
 
-  '@giancosta86/typedoc-readonly@1.0.1(typedoc@0.28.13(typescript@5.9.2))':
+  '@giancosta86/typedoc-readonly@1.0.1(typedoc@0.28.13(typescript@5.9.3))':
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
   '@heyputer/kv.js@0.2.1': {}
 
@@ -7994,9 +8019,9 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
-  '@reside-ic/typedoc-plugin-copy-doc@1.1.2(typedoc@0.28.13(typescript@5.9.2))':
+  '@reside-ic/typedoc-plugin-copy-doc@1.1.2(typedoc@0.28.13(typescript@5.9.3))':
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
   '@rollup/plugin-node-resolve@16.0.1(rollup@4.52.2)':
     dependencies:
@@ -8582,11 +8607,11 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.0.2': {}
 
-  '@shipgirl/typedoc-plugin-versions@0.3.2(typedoc@0.28.13(typescript@5.9.2))':
+  '@shipgirl/typedoc-plugin-versions@0.3.2(typedoc@0.28.13(typescript@5.9.3))':
     dependencies:
       fs-extra: 11.3.1
       semver: 7.7.2
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
   '@sindresorhus/merge-streams@2.3.0': {}
 
@@ -8610,16 +8635,16 @@ snapshots:
 
   '@types/bonjour@3.5.13':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/concat-stream@2.0.3':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/connect-history-api-fallback@1.5.4':
     dependencies:
       '@types/express-serve-static-core': 4.19.6
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/connect@3.4.38':
     dependencies:
@@ -8627,7 +8652,7 @@ snapshots:
 
   '@types/cors@2.8.19':
     dependencies:
-      '@types/node': 20.19.10
+      '@types/node': 24.9.1
 
   '@types/debug@4.1.12':
     dependencies:
@@ -8653,7 +8678,7 @@ snapshots:
 
   '@types/express-serve-static-core@4.19.6':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
       '@types/qs': 6.14.0
       '@types/range-parser': 1.2.7
       '@types/send': 0.17.5
@@ -8686,7 +8711,7 @@ snapshots:
 
   '@types/http-proxy@1.17.16':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/is-empty@1.2.3': {}
 
@@ -8702,7 +8727,7 @@ snapshots:
 
   '@types/node-forge@1.3.13':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/node@20.19.10':
     dependencies:
@@ -8747,7 +8772,7 @@ snapshots:
 
   '@types/sockjs@0.3.36':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@types/supports-color@8.1.3': {}
 
@@ -8765,7 +8790,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
 
   '@typescript-eslint/eslint-plugin@8.44.1(@typescript-eslint/parser@8.44.1(eslint@8.57.1)(typescript@5.9.2))(eslint@8.57.1)(typescript@5.9.2)':
     dependencies:
@@ -9834,7 +9859,7 @@ snapshots:
   engine.io@6.6.4(bufferutil@4.0.9):
     dependencies:
       '@types/cors': 2.8.19
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
       accepts: 1.3.8
       base64id: 2.0.0
       cookie: 0.7.2
@@ -10861,7 +10886,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 24.5.2
+      '@types/node': 24.9.1
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -12805,35 +12830,35 @@ snapshots:
 
   typedarray@0.0.6: {}
 
-  typedoc-material-theme@1.4.0(typedoc@0.28.13(typescript@5.9.2)):
+  typedoc-material-theme@1.4.0(typedoc@0.28.13(typescript@5.9.3)):
     dependencies:
       '@material/material-color-utilities': 0.3.0
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
-  typedoc-plugin-frontmatter@1.3.0(typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.2))):
+  typedoc-plugin-frontmatter@1.3.0(typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.3))):
     dependencies:
-      typedoc-plugin-markdown: 4.9.0(typedoc@0.28.13(typescript@5.9.2))
+      typedoc-plugin-markdown: 4.9.0(typedoc@0.28.13(typescript@5.9.3))
       yaml: 2.8.1
 
-  typedoc-plugin-include-example@3.0.2(typedoc@0.28.13(typescript@5.9.2)):
+  typedoc-plugin-include-example@3.0.2(typedoc@0.28.13(typescript@5.9.3)):
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
-  typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.2)):
+  typedoc-plugin-markdown@4.9.0(typedoc@0.28.13(typescript@5.9.3)):
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
-  typedoc-plugin-mdn-links@5.0.9(typedoc@0.28.13(typescript@5.9.2)):
+  typedoc-plugin-mdn-links@5.0.9(typedoc@0.28.13(typescript@5.9.3)):
     dependencies:
-      typedoc: 0.28.13(typescript@5.9.2)
+      typedoc: 0.28.13(typescript@5.9.3)
 
-  typedoc@0.28.13(typescript@5.9.2):
+  typedoc@0.28.13(typescript@5.9.3):
     dependencies:
       '@gerrit0/mini-shiki': 3.13.0
       lunr: 2.3.9
       markdown-it: 14.1.0
       minimatch: 9.0.5
-      typescript: 5.9.2
+      typescript: 5.9.3
       yaml: 2.8.1
 
   typescript-eslint@8.44.1(eslint@9.36.0(jiti@2.6.1))(typescript@5.9.2):
