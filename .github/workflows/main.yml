@@ -96,7 +96,7 @@ jobs:
         if: steps.rewriter-cache.outputs.cache-hit != 'true'
         uses: jetli/wasm-bindgen-action@v0.2.0
         with:
-          version: "0.2.100"
+          version: "0.2.105"
 
       - name: Setup Binaryen
         if: steps.rewriter-cache.outputs.cache-hit != 'true'
@@ -124,9 +124,7 @@ jobs:
         with:
           name: scramjet
           path: |
-            packages/scramjet/packages/core/dist/*.js
-            packages/scramjet/packages/core/dist/*.js.map
-            packages/scramjet/packages/core/dist/*.wasm
+            packages/scramjet/packages/core/dist/*
   frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
