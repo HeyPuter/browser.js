@@ -18,4 +18,4 @@ packages:
   - "packages/scramjet/packages/libcurl-transport"
   - "packages/scramjet/packages/demo"
   - "packages/scramjet/packages/rewriter_demo"
-  - "packages/scramjet/packages/typedoc"
+  - "packages/scramjet/packages/rpc"
