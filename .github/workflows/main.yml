@@ -108,10 +108,14 @@ jobs:
         if: steps.rewriter-cache.outputs.cache-hit != 'true'
         run: "cargo install --git https://github.com/r58playz/wasm-snip"
 
+      - name: Build Scramjet (failing)
+        run: pnpm build
+        continue-on-error: true
+        working-directory: packages/scramjet/packages/core
+
       - name: Pack Scramjet
-        run: |
-          cd packages/scramjet/packages/core
-          pnpm pack
+        run: pnpm pack
+        working-directory: packages/scramjet/packages/core
 
       - name: Upload Artifact (pnpm pack)
         uses: actions/upload-artifact@v4
@@ -155,9 +159,7 @@ jobs:
           path: packages/scramjet/packages/core/dist
 
       - name: Build Dreamland
-        run: |
-          cd external/dreamlandjs
-          pnpm build
+        run: pnpm build:dreamland
 
       # - name: Get Chii submodule commit hash
       #   id: chii-hash
@@ -190,7 +192,6 @@ jobs:
 
       - name: Build Frontend
         run: |
-          pnpm i
           SKIP_CORE=1 pnpm build
           VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
   tests:
