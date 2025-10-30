@@ -16,7 +16,11 @@ import {
 import scramjetWASM from "../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
 import scramjetAll from "../../scramjet/packages/core/dist/scramjet.js?url";
 import injectScript from "../../inject/dist/inject.js?url";
-import { BareClient, type BareHeaders } from "@mercuryworkshop/bare-mux-custom";
+import {
+	BareClient,
+	type BareHeaders,
+	type BareResponseFetch,
+} from "@mercuryworkshop/bare-mux-custom";
 import { ElementType, type Handler, Parser } from "htmlparser2";
 import { type ChildNode, DomHandler, Element, Comment, Node } from "domhandler";
 import * as tldts from "tldts";
@@ -197,35 +201,8 @@ const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		script("data:application/javascript;base64," + base64Encode(injected)),
 	];
 };
+
 setInterface({
-	onServerbound: (type, listener) => {
-		sjIpcListeners.set(type, listener);
-	},
-	sendClientbound: async (type, msg) => {
-		// TODO: the fetchandler needs an abstracted concept of clients so it can manually decide which one to send to
-		for (let tab of browser.tabs) {
-			if (!tab.frame.frame.contentWindow) continue;
-			const token = sjIpcCounter++;
-
-			const recurseSend = (win: Window) => {
-				win.postMessage(
-					{
-						$scramjetipc$type: "request",
-						$scramjetipc$method: type,
-						$scramjetipc$token: token,
-						$scramjetipc$message: msg,
-					},
-					"*"
-				);
-				for (let i = 0; i < win.frames.length; i++) {
-					recurseSend(win.frames[i]);
-				}
-			};
-
-			recurseSend(tab.frame.frame.contentWindow);
-		}
-		return undefined;
-	},
 	getInjectScripts,
 	getWorkerInjectScripts: (meta, js, config, type) => {
 		const module = type === "module";
@@ -312,6 +289,41 @@ function makeController(url: URL): Controller {
 		client: bare,
 		cookieJar,
 		prefix: prefix,
+		onServerbound: (type, listener) => {
+			sjIpcListeners.set(type, listener);
+		},
+		sendClientbound: async (type, msg) => {
+			// TODO: the fetchandler needs an abstracted concept of clients so it can manually decide which one to send to
+			for (let tab of browser.tabs) {
+				if (!tab.frame.frame.contentWindow) continue;
+				const token = sjIpcCounter++;
+
+				const recurseSend = (win: Window) => {
+					win.postMessage(
+						{
+							$scramjetipc$type: "request",
+							$scramjetipc$method: type,
+							$scramjetipc$token: token,
+							$scramjetipc$message: msg,
+						},
+						"*"
+					);
+					for (let i = 0; i < win.frames.length; i++) {
+						recurseSend(win.frames[i]);
+					}
+				};
+
+				recurseSend(tab.frame.frame.contentWindow);
+			}
+			return undefined;
+		},
+		async fetchDataUrl(dataUrl: string) {
+			return (await fetch(dataUrl)) as BareResponseFetch;
+		},
+		async fetchBlobUrl(blobUrl: string) {
+			console.log("uuhhh");
+			return new Response("hawk tuah") as BareResponseFetch;
+		},
 	});
 
 	const controller = {
