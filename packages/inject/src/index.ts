@@ -9,6 +9,7 @@ import { setupHistoryEmulation } from "./history";
 import { client, loadScramjet } from "./scramjet";
 
 const history_replaceState = globalThis?.History?.prototype?.replaceState;
+const realFetch = fetch;
 
 export const methods: FrameboundMethods = {
 	async navigate({ url }) {
@@ -20,7 +21,7 @@ export const methods: FrameboundMethods = {
 		window.dispatchEvent(popStateEvent);
 	},
 	async fetchBlob(url) {
-		const response = await fetch(url);
+		const response = await realFetch(url);
 		const ab = await response.arrayBuffer();
 		return {
 			body: ab,

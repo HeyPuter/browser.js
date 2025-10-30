@@ -64,7 +64,6 @@ export function UrlInput(props: {
 								</>,
 								<>
 									<span class="subdomain">
-										{use(props.url).map((t) => console.log(t, splitUrl(t)))}
 										{use(props.url).map((t) => splitUrl(t)[0])}
 									</span>
 									<span class="domain">

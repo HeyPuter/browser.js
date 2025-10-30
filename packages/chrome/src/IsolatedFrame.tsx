@@ -333,11 +333,9 @@ function makeController(url: URL): Controller {
 			let headers = new Headers();
 			headers.set("Content-Type", response.type);
 
-			return {
+			return new Response(response.body, {
 				headers,
-				body: response.body,
-				status: 200,
-			} as unknown as BareResponseFetch;
+			}) as BareResponseFetch;
 		},
 	});
 
