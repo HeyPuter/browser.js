@@ -19,6 +19,15 @@ export const methods: FrameboundMethods = {
 		const popStateEvent = new PopStateEvent("popstate", { state });
 		window.dispatchEvent(popStateEvent);
 	},
+	async fetchBlob(url) {
+		const response = await fetch(url);
+		const ab = await response.arrayBuffer();
+		return {
+			body: ab,
+			contentType:
+				response.headers.get("Content-Type") || "application/octet-stream",
+		};
+	},
 };
 
 (globalThis as any).$injectLoad = (init: InjectScramjetInit) => {

@@ -321,8 +321,23 @@ function makeController(url: URL): Controller {
 			return (await fetch(dataUrl)) as BareResponseFetch;
 		},
 		async fetchBlobUrl(blobUrl: string) {
-			console.log("uuhhh");
-			return new Response("hawk tuah") as BareResponseFetch;
+			// find a random tab under this controller
+			console.log("FETCHUBG BLOB");
+			const tab = browser.tabs.find(
+				(tab) => tab.frame.controller === controller
+			);
+			if (!tab) throw new Error("No tab found for blob fetch (?)");
+			const response = await sendFrame(tab, "fetchBlob", blobUrl);
+			console.log("FETCHED BLOB", response);
+
+			let headers = new Headers();
+			headers.set("Content-Type", response.type);
+
+			return {
+				headers,
+				body: response.body,
+				status: 200,
+			} as unknown as BareResponseFetch;
 		},
 	});
 
@@ -344,6 +359,7 @@ function makeController(url: URL): Controller {
 
 export class IsolatedFrame {
 	frame: HTMLIFrameElement;
+	controller: Controller | null = null;
 	constructor() {
 		this.frame = document.createElement("iframe");
 	}
@@ -357,6 +373,7 @@ export class IsolatedFrame {
 			controller = makeController(url);
 		}
 		await controller.ready;
+		this.controller = controller;
 
 		const prefix = controller.prefix;
 

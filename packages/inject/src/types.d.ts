@@ -66,6 +66,13 @@ export type Framebound = {
 			title: string;
 		},
 	];
+	fetchBlob: [
+		string,
+		{
+			body: ArrayBuffer;
+			contentType: string;
+		},
+	];
 };
 
 export type InjectScramjetInit = {
