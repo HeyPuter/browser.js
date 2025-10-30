@@ -221,7 +221,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: scramjet
-          path: dist
+          path: packages/scramjet/packages/core/dist
 
       - name: Cache Playwright browsers
         id: pw-browsers-cache
@@ -234,7 +234,9 @@ jobs:
 
       - name: Install Playwright Chromium
         if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: |
+          cd packages/scramjet/packages/core
+          npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
         run: pnpm test:integration
@@ -255,9 +257,9 @@ jobs:
         id: rewriter-cache
         with:
           path: |
-            rewriter/wasm/out
-            dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('rewriter/**/Cargo.toml', 'rewriter/**/src/**/*.rs', 'rewriter/**/src/**/*.toml', 'rewriter/**/src/**/*.json', 'rewriter/**/src/**/*.md', 'rewriter/**/*.sh') }}
+            packages/scramjet/packages/core/rewriter/wasm/out
+            packages/scramjet/packages/core/dist/scramjet.wasm.wasm
+          key: rewriter-release-${{ hashFiles('packages/scramjet/packages/core/rewriter/**/Cargo.toml', 'packages/scramjet/packages/core/rewriter/**/*.rs', 'packages/scramjet/packages/core/rewriter/**/src/**/*.toml', 'packages/scramjet/packages/core/rewriter/**/src/**/*.json', 'packages/scramjet/packages/core/rewriter/**/src/**/*.md', 'packages/scramjet/packages/core/rewriter/**/*.sh') }}
           restore-keys: |
             rewriter-release-
 
