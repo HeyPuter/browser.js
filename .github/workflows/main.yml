@@ -234,12 +234,12 @@ jobs:
 
       - name: Install Playwright Chromium
         if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/scramjet/packages/core
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/scramjet/packages/core
 
       - name: Run Playwright tests
         run: pnpm test:integration
+        working-directory: packages/scramjet/packages/core
 
   rewritertests:
     name: "Run Rewriter Tests"
@@ -270,4 +270,5 @@ jobs:
           cache-all-crates: true
 
       - name: Run Tests
-        run: cd rewriter/native && cargo test
+        run: cargo test
+        working-directory: packages/scramjet/packages/core/rewriter/native
