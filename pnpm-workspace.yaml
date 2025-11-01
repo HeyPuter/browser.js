@@ -19,3 +19,5 @@ packages:
   - "packages/scramjet/packages/demo"
   - "packages/scramjet/packages/rewriter_demo"
   - "packages/scramjet/packages/rpc"
+  - "packages/scramjet/packages/typedoc"
+  - "packages/scramjet/packages/create-proxy-app"
