@@ -13,7 +13,8 @@
 		"build:chrome": "cd packages/chrome && pnpm build",
 		"dev": "node --no-warnings=ExperimentalWarning devserver.ts",
 		"watch": "rspack build --watch",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"preinstall": "npx only-allow pnpm"
 	},
 	"devDependencies": {
 		"@mercuryworkshop/wisp-js": "^0.4.0",
