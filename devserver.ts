@@ -16,9 +16,7 @@ import {
 	runRspack,
 } from "./packages/scramjet/devlib.ts";
 
-const image = await fs.readFile(
-	"./packages/scramjet/assets/scramjet-mini-noalpha.png"
-);
+const image = await fs.readFile("./assets/icon.png");
 
 const commit = execSync("git rev-parse --short HEAD", {
 	encoding: "utf-8",
@@ -64,14 +62,14 @@ const server = await createServer({
 
 await server.listen();
 
-const accent = (text: string) => chalk.hex("#f1855bff").bold(text);
-const highlight = (text: string) => chalk.hex("#fdd76cff").bold(text);
+const accent = (text: string) => chalk.hex("#4799f1").bold(text);
+const highlight = (text: string) => chalk.hex("#ffffff").bold(text);
 const urlColor = (text: string) => chalk.hex("#64DFDF").underline(text);
 const note = (text: string) => chalk.hex("#CDB4DB")(text);
 const connector = chalk.hex("#8D99AE").dim("@");
 
 const lines = [
-	black()(`${highlight("SCRAMJET DEV SERVER")}`),
+	black()(`${highlight("BROWSER.JS DEV SERVER")}`),
 	black()(
 		`${accent("chrome")} ${connector} ${urlColor(
 			`http://localhost:${CHROME_PORT}/`
@@ -87,7 +85,7 @@ const lines = [
 			process.env.VITE_ISOLATION_ORIGIN ?? ""
 		)}`
 	),
-	black()(chalk.dim(`[${branch}] ${commit} scramjet/${version}`)),
+	black()(chalk.dim(`[${branch}] ${commit} browserjs/${version}`)),
 ];
 
 printBanner(image, lines);
