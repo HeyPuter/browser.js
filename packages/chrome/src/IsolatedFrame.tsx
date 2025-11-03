@@ -229,11 +229,24 @@ setInterface({
 		return str;
 	},
 });
-export const bare = new BareClient(
-	new LibcurlClient({
-		wisp: cfg.wisp,
-	})
-);
+export let bare: BareClient;
+if (cfg.wisp) {
+	bare = new BareClient(
+		new LibcurlClient({
+			wisp: cfg.wisp,
+		})
+	);
+}
+
+export function setWispUrl(wispurl: string) {
+	cfg.wisp = wispurl;
+
+	bare = new BareClient(
+		new LibcurlClient({
+			wisp: cfg.wisp,
+		})
+	);
+}
 
 type Controller = {
 	controllerframe: HTMLIFrameElement;

@@ -9,10 +9,10 @@ let app = document.getElementById("app")!;
 import { Shell } from "./components/Shell";
 import { App } from "./App";
 import { css } from "dreamland/core";
+import { setWispUrl } from "./IsolatedFrame";
 
 export const isPuter = !import.meta.env.VITE_LOCAL && puter.env == "app";
 
-export function setWispUrl(wispurl: string) {}
 export function LoadInterstitial(s: { status: string }) {
 	return (
 		<dialog class="signin">
