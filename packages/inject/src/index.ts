@@ -37,7 +37,7 @@ export const methods: FrameboundMethods = {
 	if (iswindow) {
 		setupTitleWatcher();
 		setupContextMenu();
-		setupHistoryEmulation();
+		// setupHistoryEmulation();
 		// inform	chrome of the current url
 		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
 		sendChrome("load", {

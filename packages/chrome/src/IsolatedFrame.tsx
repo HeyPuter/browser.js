@@ -8,9 +8,11 @@ import {
 	setConfig,
 	unrewriteUrl,
 	type URLMeta,
-	setInterface,
 	type ScramjetInterface,
 	type Serverbound,
+	type ScramjetContext,
+	type ScramjetConfig,
+	defaultConfig,
 } from "@mercuryworkshop/scramjet/bundled";
 
 import scramjetWASM from "../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
@@ -51,53 +53,17 @@ const ISOLATION_ORIGIN = import.meta.env.VITE_ISOLATION_ORIGIN;
 
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 
-const cfg = {
-	wisp: import.meta.env.VITE_WISP_URL,
-	prefix: "/scramjet/",
-	globals: {
-		wrapfn: "$scramjet$wrap",
-		wrappropertybase: "$scramjet__",
-		wrappropertyfn: "$scramjet$prop",
-		cleanrestfn: "$scramjet$clean",
-		importfn: "$scramjet$import",
-		rewritefn: "$scramjet$rewrite",
-		metafn: "$scramjet$meta",
-		wrappostmessagefn: "$scramjet$wrappostmessage",
-		pushsourcemapfn: "$scramjet$pushsourcemap",
-		trysetfn: "$scramjet$tryset",
-		templocid: "$scramjet$temploc",
-		tempunusedid: "$scramjet$tempunused",
-	},
-	flags: {
-		syncxhr: false,
-		strictRewrites: true,
-		rewriterLogs: false,
-		captureErrors: true,
-		cleanErrors: false,
-		scramitize: false,
-		sourcemaps: true,
-		destructureRewrites: false,
-		allowInvalidJs: false,
-		allowFailedIntercepts: false,
-		antiAntiDebugger: false,
-	},
-	siteFlags: {},
-	codec: {
-		encode: `(url) => {
-						if (!url) return url;
+const codecEncode = (url: string) => {
+	if (!url) return url;
 
-						return encodeURIComponent(url);
-					}`,
-		decode: `(url) => {
-						if (!url) return url;
-
-						return decodeURIComponent(url);
-					}`,
-	},
-	maskedfiles: ["inject.js", "scramjet.wasm.js"],
+	return encodeURIComponent(url);
 };
 
-setConfig(cfg);
+const codecDecode = (url: string) => {
+	if (!url) return url;
+
+	return decodeURIComponent(url);
+};
 
 // you can get to any frame by window.frames[index][index]...
 // so we can encode a certain frame as a sequence of indices to reach it, and then it will be available from any other frame, even cross-origin
@@ -178,74 +144,21 @@ function base64Encode(str: string): string {
 	);
 }
 
-const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
-	meta,
-	handler,
-	config,
-	cookieJar,
-	script
-) => {
-	const injected = `
-		$injectLoad({
-			sequence: ${JSON.stringify(findSelfSequence(self)!)},
-			config: ${JSON.stringify(config)},
-			cookies: ${JSON.stringify(cookieJar.dump())},
-			wisp: ${JSON.stringify(cfg.wisp)},
-		});
-		document.currentScript.remove();
-	`;
-
-	return [
-		script(virtualWasmPath),
-		script(virtualInjectPath),
-		script("data:application/javascript;base64," + base64Encode(injected)),
-	];
-};
-
-setInterface({
-	getInjectScripts,
-	getWorkerInjectScripts: (meta, js, config, type) => {
-		const module = type === "module";
-		let str = "";
-		const script = (script: string) => {
-			if (module) {
-				str += `import "${script}"\n`;
-			} else {
-				str += `importScripts("${script}");\n`;
-			}
-		};
-
-		const injectLoad = `
-			$injectLoad({
-				config: ${JSON.stringify(config)},
-				cookies: null,
-				wisp: ${JSON.stringify(cfg.wisp)},
-			});
-		`;
-		script(virtualWasmPath);
-		script(virtualInjectPath);
-		script(`data:application/javascript;base64,${base64Encode(injectLoad)}`);
-
-		return str;
-	},
-});
 export let bare: BareClient;
-if (cfg.wisp) {
+export let wispUrl: string;
+
+export function setWispUrl(wispurl: string) {
+	wispUrl = wispurl;
+
 	bare = new BareClient(
 		new LibcurlClient({
-			wisp: cfg.wisp,
+			wisp: wispurl,
 		})
 	);
 }
 
-export function setWispUrl(wispurl: string) {
-	cfg.wisp = wispurl;
-
-	bare = new BareClient(
-		new LibcurlClient({
-			wisp: cfg.wisp,
-		})
-	);
+if (import.meta.env.VITE_WISP_URL) {
+	setWispUrl(import.meta.env.VITE_WISP_URL);
 }
 
 type Controller = {
@@ -278,6 +191,14 @@ function getRootDomain(url: URL): string {
 	return tldts.getDomain(url.href) || url.hostname;
 }
 
+function makeConfig(): ScramjetConfig {
+	return {
+		...defaultConfig,
+		maskedfiles: ["inject.js", "scramjet.wasm.js"],
+		allowedwebsockets: [import.meta.env.VITE_WISP_URL],
+	};
+}
+
 function makeController(url: URL): Controller {
 	let originurl = new URL(ISOLATION_ORIGIN);
 	let baseurl = new URL(
@@ -295,13 +216,76 @@ function makeController(url: URL): Controller {
 		readyResolve = res;
 	});
 
-	const prefix = new URL(baseurl.protocol + baseurl.host + cfg.prefix);
+	const prefix = new URL(baseurl.protocol + baseurl.host + "/scramjet/");
 	const cookieJar = new CookieJar();
+
+	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
+		meta,
+		handler,
+		script
+	) => {
+		const injected = `
+			$injectLoad({
+				sequence: ${JSON.stringify(findSelfSequence(self)!)},
+				config: ${JSON.stringify(makeConfig())},
+				cookies: ${JSON.stringify(cookieJar.dump())},
+				wisp: ${JSON.stringify(wispUrl)},
+				codecEncode: ${codecEncode.toString()},
+				codecDecode: ${codecDecode.toString()},
+				prefix: "${prefix.href}",
+			});
+			document.currentScript.remove();
+		`;
+
+		return [
+			script(virtualWasmPath),
+			script(virtualInjectPath),
+			script("data:application/javascript;base64," + base64Encode(injected)),
+		];
+	};
+
+	const getWorkerInjectScripts: ScramjetInterface["getWorkerInjectScripts"] = (
+		meta,
+		js,
+		type
+	) => {
+		const module = type === "module";
+		let str = "";
+		const script = (script: string) => {
+			if (module) {
+				str += `import "${script}"\n`;
+			} else {
+				str += `importScripts("${script}");\n`;
+			}
+		};
+
+		const injectLoad = `
+			$injectLoad({
+				config: ${JSON.stringify(makeConfig())},
+				cookies: null,
+				wisp: ${JSON.stringify(wispUrl)},
+			});
+		`;
+		script(virtualWasmPath);
+		script(virtualInjectPath);
+		script(`data:application/javascript;base64,${base64Encode(injectLoad)}`);
+
+		return str;
+	};
 
 	const fetchHandler = new ScramjetFetchHandler({
 		client: bare,
-		cookieJar,
-		prefix: prefix,
+		context: {
+			interface: {
+				getInjectScripts,
+				getWorkerInjectScripts,
+				codecEncode,
+				codecDecode,
+			},
+			cookieJar,
+			config: makeConfig(),
+			prefix: prefix,
+		},
 		onServerbound: (type, listener) => {
 			sjIpcListeners.set(type, listener);
 		},
@@ -344,7 +328,7 @@ function makeController(url: URL): Controller {
 			console.log("FETCHED BLOB", response);
 
 			let headers = new Headers();
-			headers.set("Content-Type", response.type);
+			headers.set("Content-Type", response.contentType);
 
 			return new Response(response.body, {
 				headers,
@@ -352,7 +336,7 @@ function makeController(url: URL): Controller {
 		},
 	});
 
-	const controller = {
+	const controller: Controller = {
 		controllerframe: frame,
 		window: frame.contentWindow!,
 		rootdomain,
@@ -388,10 +372,9 @@ export class IsolatedFrame {
 
 		const prefix = controller.prefix;
 
-		this.frame.src = rewriteUrl(url, {
+		this.frame.src = rewriteUrl(url, controller.fetchHandler.context, {
 			origin: prefix, // origin/base don't matter here because we're always sending an absolute URL
 			base: prefix,
-			prefix,
 		});
 	}
 
@@ -488,9 +471,10 @@ const methods = {
 		}
 
 		if (data.destination === "document" || data.destination === "iframe") {
-			const unrewritten = unrewriteUrl(data.rawUrl, {
-				prefix: controller.prefix,
-			} as URLMeta);
+			const unrewritten = unrewriteUrl(
+				data.rawUrl,
+				controller.fetchHandler.context
+			);
 
 			// our controller is bound to a root domain
 			// if a site under the controller tries to iframe a cross-site domain it needs to redirect to that different controller
@@ -513,11 +497,14 @@ const methods = {
 						statusText: "Found",
 						headers: {
 							"Content-Type": "text/plain",
-							Location: rewriteUrl(new URL(unrewritten), {
-								origin: crosscontroller.prefix,
-								base: crosscontroller.prefix,
-								prefix: crosscontroller.prefix,
-							}),
+							Location: rewriteUrl(
+								new URL(unrewritten),
+								controller.fetchHandler.context,
+								{
+									origin: crosscontroller.prefix,
+									base: crosscontroller.prefix,
+								}
+							),
 						},
 					},
 					undefined,

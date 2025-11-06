@@ -1,3 +1,5 @@
+import { ScramjetInterface } from "@mercuryworkshop/scramjet";
+
 export type FrameboundMethods = {
 	[K in keyof Framebound]: (arg: Framebound[K][0]) => Promise<Framebound[K][1]>;
 };
@@ -81,4 +83,7 @@ export type InjectScramjetInit = {
 	cookies: string;
 	getInjectScripts: ScramjetInterface["getInjectScripts"];
 	wisp: string;
+	prefix: string;
+	codecEncode: ScramjetInterface["codecEncode"];
+	codecDecode: ScramjetInterface["codecDecode"];
 };
