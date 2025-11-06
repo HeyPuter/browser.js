@@ -33,10 +33,14 @@ const CHROME_PORT = process.env.CHROME_PORT || 6767;
 const WISP_PORT = process.env.WISP_PORT || 6768;
 const ISOLATION_PORT = process.env.ISOLATION_PORT || 5233;
 
-process.env.VITE_WISP_URL =
-	process.env.VITE_WISP_URL || `ws://localhost:${WISP_PORT}/`;
-process.env.VITE_ISOLATION_ORIGIN =
-	process.env.VITE_ISOLATION_ORIGIN || `http://localhost:${ISOLATION_PORT}`;
+const puterBranding = Boolean(process.env.VITE_PUTER_BRANDING);
+
+if (puterBranding) {
+	process.env.VITE_ISOLATION_ORIGIN ||= `https://puter.zone`;
+} else {
+	process.env.VITE_WISP_URL ||= `ws://localhost:${WISP_PORT}/`;
+	process.env.VITE_ISOLATION_ORIGIN ||= `http://localhost:${ISOLATION_PORT}`;
+}
 
 const sandboxRoot = path.resolve("./packages/sandbox");
 
@@ -77,7 +81,7 @@ const lines = [
 	),
 	black()(
 		`${accent("wisp")} ${connector} ${urlColor(
-			process.env.VITE_WISP_URL ?? ""
+			process.env.VITE_WISP_URL ?? "(puter)"
 		)}`
 	),
 	black()(

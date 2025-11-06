@@ -11,7 +11,18 @@ import { App } from "./App";
 import { css } from "dreamland/core";
 import { setWispUrl } from "./IsolatedFrame";
 
-export const isPuter = !import.meta.env.VITE_LOCAL && puter.env == "app";
+// load puter sdk
+if (import.meta.env.VITE_PUTER_BRANDING) {
+	let script = <script src="https://js.puter.com/v2/"></script>;
+	document.head.appendChild(script);
+
+	await new Promise((resolve) => {
+		script.onload = () => resolve(null);
+	});
+}
+
+export const isPuter =
+	import.meta.env.VITE_PUTER_BRANDING && puter.env == "app";
 
 export function LoadInterstitial(s: { status: string }) {
 	return (
@@ -60,7 +71,7 @@ export async function mount(): Promise<HTMLElement> {
 			e.preventDefault();
 		});
 
-		if (!import.meta.env.VITE_LOCAL) {
+		if (import.meta.env.VITE_PUTER_BRANDING) {
 			if (!puter.auth.isSignedIn()) {
 				await puter.auth.signIn();
 				return;

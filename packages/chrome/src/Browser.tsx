@@ -292,10 +292,10 @@ export async function saveBrowserState() {
 
 	let ser = browser.serialize();
 
-	if (import.meta.env.VITE_LOCAL) {
-		localStorage["browserstate"] = JSON.stringify(ser);
-	} else {
+	if (import.meta.env.VITE_PUTER_BRANDING) {
 		await puter.kv.set("browserstate", JSON.stringify(ser));
+	} else {
+		localStorage["browserstate"] = JSON.stringify(ser);
 	}
 
 	// if (!import.meta.env.VITE_LOCAL) {
@@ -319,10 +319,10 @@ export async function initBrowser() {
 	// }
 
 	let de;
-	if (import.meta.env.VITE_LOCAL) {
-		de = localStorage["browserstate"];
-	} else {
+	if (import.meta.env.VITE_PUTER_BRANDING) {
 		de = await puter.kv.get("browserstate");
+	} else {
+		de = localStorage["browserstate"];
 	}
 	if (de) {
 		try {
