@@ -9,16 +9,39 @@ let app = document.getElementById("app")!;
 import { Shell } from "./components/Shell";
 import { App } from "./App";
 import { css } from "dreamland/core";
-import { setWispUrl } from "./IsolatedFrame";
+import { setWispUrl } from "./proxy/wisp";
 
-// load puter sdk
 if (import.meta.env.VITE_PUTER_BRANDING) {
-	let script = <script src="https://js.puter.com/v2/"></script>;
-	document.head.appendChild(script);
+	let promises = [];
 
-	await new Promise((resolve) => {
-		script.onload = () => resolve(null);
-	});
+	let puterSdk = <script src="https://js.puter.com/v2/"></script>;
+	document.head.append(puterSdk);
+	promises.push(
+		new Promise<void>((res) => {
+			puterSdk.onload = () => res();
+		})
+	);
+
+	if (import.meta.env.VITE_SENTRY_URL) {
+		let sentrySdk = (
+			<script
+				src={import.meta.env.VITE_SENTRY_URL}
+				crossorigin="anonymous"
+			></script>
+		);
+		document.head.append(sentrySdk);
+		promises.push(
+			new Promise<void>((res, rej) => {
+				sentrySdk.onload = () => res();
+				sentrySdk.onerror = () => {
+					console.error("Error loading Sentry (adblocker?)");
+					res();
+				};
+			})
+		);
+	}
+
+	await Promise.all(promises);
 }
 
 export const isPuter =
@@ -74,12 +97,12 @@ export async function mount(): Promise<HTMLElement> {
 		if (import.meta.env.VITE_PUTER_BRANDING) {
 			if (!puter.auth.isSignedIn()) {
 				await puter.auth.signIn();
-				return;
 			}
 
 			let wisp = await puter.net.generateWispV1URL();
 			setWispUrl(wisp);
-			console.log(wisp);
+		} else {
+			setWispUrl(import.meta.env.VITE_WISP_URL);
 		}
 		return built;
 	} catch (e) {
