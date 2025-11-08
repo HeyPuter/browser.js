@@ -10,16 +10,12 @@ self.addEventListener("install", () => {
 	self.skipWaiting();
 });
 
-async function notify() {
-	let clients = await self.clients.matchAll();
-	for (let client of clients) {
-		client.postMessage("ready");
-	}
-}
-
 self.addEventListener("activate", (e) => {
-	e.waitUntil(self.clients.claim().then(notify));
+	e.waitUntil(self.clients.claim());
 });
 
 console.log("sw initialized");
-notify();
+
+addEventListener("message", (e) => {
+	console.log(e);
+});

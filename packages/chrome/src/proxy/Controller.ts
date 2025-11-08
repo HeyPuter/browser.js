@@ -126,6 +126,8 @@ addEventListener("message", (e) => {
 		if (resolve) {
 			controllerWaitPromises.delete(e.source as Window);
 			resolve(null);
+		} else {
+			console.error("???");
 		}
 	}
 });
