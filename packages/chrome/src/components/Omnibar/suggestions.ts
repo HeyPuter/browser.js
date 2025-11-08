@@ -241,6 +241,7 @@ const fetchGoogleSuggestions = async (
 	query: string
 ): Promise<OmniboxResult[]> => {
 	if (!query) return [];
+	if (!bare) return [];
 
 	try {
 		const resp = await bare.fetch(
@@ -323,6 +324,7 @@ export type TrendingQuery = {
 
 export let trendingCached: TrendingQuery[] | null = null;
 export async function fetchGoogleTrending(geo = "US"): Promise<void> {
+	if (!bare) return;
 	// TODO: make this search engine agnostic
 	try {
 		if (trendingCached) return;
