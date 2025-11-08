@@ -3,6 +3,7 @@ import { browser } from "./Browser";
 import { StatefulClass } from "./StatefulClass";
 import type { Tab } from "./Tab";
 import { sendFrame } from "./proxy/ipc";
+import { markDirty } from "./storage";
 
 // history api emulation
 export class HistoryState extends StatefulClass {
@@ -105,6 +106,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
+		markDirty();
 		return this.states[this.index];
 	}
 	replace(
@@ -130,6 +132,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
+		markDirty();
 		return this.states[this.index];
 	}
 	go(delta: number, navigate: boolean = true): HistoryState {
@@ -164,6 +167,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
+		markDirty();
 		return newstate;
 	}
 	canGoBack(): boolean {

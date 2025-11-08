@@ -15,7 +15,3 @@ self.addEventListener("activate", (e) => {
 });
 
 console.log("sw initialized");
-
-addEventListener("message", (e) => {
-	console.log(e);
-});

@@ -1,7 +1,6 @@
 <title>Proxy Sandbox Controller</title>
 <script>
 	function wake(controller) {
-		console.log("wakling");
 		window.parent.postMessage({ $sandboxsw$type: "ready" }, "*");
 	}
 	navigator.serviceWorker
@@ -9,25 +8,6 @@
 			scope: "./",
 		})
 		.then((registration) => {
-			console.log("Service Worker registered with scope:", registration.scope);
-			console.log("Registration installing:", registration.installing);
-			console.log("Registration waiting:", registration.waiting);
-			console.log("Registration active:", registration.active);
-
-			// Monitor the registration for changes
-			registration.addEventListener("updatefound", () => {
-				console.log("SW update found!");
-				const newWorker = registration.installing;
-				console.log("New worker state:", newWorker?.state);
-
-				newWorker?.addEventListener("statechange", () => {
-					console.log("SW state changed to:", newWorker.state);
-				});
-			});
-
-			// Check current controller
-			console.log("Current controller:", navigator.serviceWorker.controller);
-
 			if (navigator.serviceWorker.controller) {
 				// there's probably already a service worker
 				wake(navigator.serviceWorker.controller);

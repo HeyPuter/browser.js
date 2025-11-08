@@ -30,7 +30,13 @@ setInterval(() => {
 		saveBrowserState();
 		dirty = false;
 	}
-}, 5000);
+}, 3000);
+
+// just in case
+setInterval(() => {
+	saveBrowserState();
+	dirty = false;
+}, 10000);
 
 window.addEventListener("beforeunload", (e) => {
 	if (dirty) {
