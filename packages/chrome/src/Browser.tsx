@@ -14,6 +14,8 @@ import {
 	showDownloadsPopup,
 } from "./components/Omnibar/Omnibar";
 import type { RawDownload } from "./proxy/fetch";
+import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
+import { getSerializedBrowserState, markDirty } from "./storage";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -28,6 +30,7 @@ export type SerializedBrowser = {
 	activetab: number;
 	bookmarks: BookmarkEntry[];
 	settings: Settings;
+	cookiedump: string;
 };
 
 export type GlobalHistoryEntry = {
@@ -85,6 +88,8 @@ export class Browser extends StatefulClass {
 
 	unfocusframes: boolean = false;
 
+	cookieJar: CookieJar = new CookieJar();
+
 	downloadProgress = 0;
 
 	settings: Stateful<Settings> = createState({
@@ -102,8 +107,6 @@ export class Browser extends StatefulClass {
 
 	constructor() {
 		super(createState(Object.create(Browser.prototype)));
-
-		setInterval(saveBrowserState, 10000);
 
 		// scramjet.addEventListener("download", (e) => {
 		// 	this.startDownload(e.download);
@@ -203,6 +206,7 @@ export class Browser extends StatefulClass {
 			bookmarks: this.bookmarks,
 			settings: { ...this.settings },
 			globalDownloadHistory: this.globalDownloadHistory,
+			cookiedump: this.cookieJar.dump(),
 		};
 	}
 	deserialize(de: SerializedBrowser) {
@@ -227,6 +231,7 @@ export class Browser extends StatefulClass {
 		this.bookmarks = de.bookmarks.map(createState);
 		this.globalDownloadHistory = de.globalDownloadHistory.map(createState);
 		this.settings = createState(de.settings);
+		this.cookieJar.load(de.cookiedump);
 		// this.activetab = this.tabs.find((t) => t.id == de.activetab)!;
 	}
 
@@ -286,44 +291,12 @@ export class Browser extends StatefulClass {
 	}
 }
 
-let loaded = false;
-export async function saveBrowserState() {
-	if (!loaded) return;
-
-	let ser = browser.serialize();
-
-	if (import.meta.env.VITE_PUTER_BRANDING) {
-		await puter.kv.set("browserstate", JSON.stringify(ser));
-	} else {
-		localStorage["browserstate"] = JSON.stringify(ser);
-	}
-
-	// if (!import.meta.env.VITE_LOCAL) {
-	// 	let data = await serializeAll();
-	// 	await puter.kv.set("browserdata", JSON.stringify(data));
-	// }
-}
+export let browserLoaded = false;
 
 export async function initBrowser() {
 	browser = new Browser();
 
-	// if (!import.meta.env.VITE_LOCAL) {
-	// 	let de = await puter.kv.get("browserdata");
-	// 	if (de) {
-	// 		try {
-	// 			await deserializeAll(JSON.parse(de));
-	// 		} catch (e) {
-	// 			console.error("Error while loading browser data:", e);
-	// 		}
-	// 	}
-	// }
-
-	let de;
-	if (import.meta.env.VITE_PUTER_BRANDING) {
-		de = await puter.kv.get("browserstate");
-	} else {
-		de = localStorage["browserstate"];
-	}
+	let de = await getSerializedBrowserState();
 	if (de) {
 		try {
 			browser.deserialize(JSON.parse(de));
@@ -334,6 +307,7 @@ export async function initBrowser() {
 			browser = new Browser();
 			let tab = browser.newTab();
 			browser.activetab = tab;
+			markDirty();
 		}
 	} else {
 		let tab = browser.newTab();
@@ -341,5 +315,5 @@ export async function initBrowser() {
 	}
 
 	(self as any).browser = browser;
-	loaded = true;
+	browserLoaded = true;
 }

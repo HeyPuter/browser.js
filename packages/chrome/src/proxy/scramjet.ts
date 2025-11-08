@@ -57,8 +57,6 @@ function findSelfSequence(
 }
 
 export function createFetchHandler(controller: Controller) {
-	const cookieJar = new CookieJar();
-
 	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		meta,
 		handler,
@@ -68,7 +66,7 @@ export function createFetchHandler(controller: Controller) {
 				$injectLoad({
 					sequence: ${JSON.stringify(findSelfSequence(self)!)},
 					config: ${JSON.stringify(makeConfig())},
-					cookies: ${JSON.stringify(cookieJar.dump())},
+					cookies: ${JSON.stringify(browser.cookieJar.dump())},
 					wisp: ${JSON.stringify(wispUrl)},
 					codecEncode: ${codecEncode.toString()},
 					codecDecode: ${codecDecode.toString()},
@@ -122,7 +120,7 @@ export function createFetchHandler(controller: Controller) {
 				codecEncode,
 				codecDecode,
 			},
-			cookieJar,
+			cookieJar: browser.cookieJar,
 			config: makeConfig(),
 			prefix: controller.prefix,
 		},
