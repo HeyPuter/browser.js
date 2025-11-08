@@ -2,7 +2,7 @@ import { createState } from "dreamland/core";
 import { browser } from "./Browser";
 import { StatefulClass } from "./StatefulClass";
 import type { Tab } from "./Tab";
-import { sendFrame } from "./IsolatedFrame";
+import { sendFrame } from "./proxy/ipc";
 
 // history api emulation
 export class HistoryState extends StatefulClass {

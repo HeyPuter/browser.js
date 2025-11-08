@@ -1,5 +1,5 @@
 import { browser } from "../../Browser";
-import { bare } from "../../IsolatedFrame";
+import { bare } from "../../proxy/wisp";
 
 import * as tldts from "tldts";
 

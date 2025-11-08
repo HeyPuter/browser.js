@@ -3,6 +3,7 @@
 
 interface ImportMetaEnv {
 	readonly VITE_PUTER_BRANDING: boolean;
+	readonly VITE_SENTRY_URL: string;
 	readonly VITE_ISOLATION_ORIGIN: string;
 	readonly VITE_WISP_URL: string;
 }

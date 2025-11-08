@@ -18,6 +18,7 @@
 		"@heyputer/puter.js": "^2.1.2",
 		"@mercuryworkshop/bare-mux-custom": "workspace:*",
 		"@mercuryworkshop/epoxy-transport": "workspace:*",
+		"@mercuryworkshop/rpc": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "workspace:*",
 		"@mercuryworkshop/scramjet": "workspace:*",
 		"devtools-protocol": "^0.0.1339468",

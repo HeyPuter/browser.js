@@ -9,7 +9,7 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { serviceWorkerReady } from "./main";
 import { DownloadsPage } from "./pages/DownloadsPage";
-import { IsolatedFrame } from "./IsolatedFrame";
+import { ProxyFrame } from "./proxy/ProxyFrame";
 import { defaultFaviconUrl } from "./assets/favicon";
 
 const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
@@ -24,7 +24,7 @@ let id = 100;
 export class Tab extends StatefulClass {
 	id: number;
 	title: string | null;
-	frame: IsolatedFrame;
+	frame: ProxyFrame;
 	devtoolsFrame: any;
 	screenshot: string | null = null;
 
@@ -56,7 +56,7 @@ export class Tab extends StatefulClass {
 		this.title = null;
 		this.internalpage = null;
 
-		this.frame = new IsolatedFrame();
+		this.frame = new ProxyFrame();
 
 		this.history = new History(this);
 		this.history.push(this.url, undefined);

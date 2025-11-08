@@ -13,7 +13,7 @@ import {
 	animateDownloadFly,
 	showDownloadsPopup,
 } from "./components/Omnibar/Omnibar";
-import type { RawDownload } from "./IsolatedFrame";
+import type { RawDownload } from "./proxy/fetch";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
