@@ -25,16 +25,16 @@ export async function getSerializedBrowserState(): Promise<string | null> {
 	}
 }
 
-setInterval(() => {
+setInterval(async () => {
 	if (dirty) {
-		saveBrowserState();
+		await saveBrowserState();
 		dirty = false;
 	}
 }, 3000);
 
 // just in case
-setInterval(() => {
-	saveBrowserState();
+setInterval(async () => {
+	await saveBrowserState();
 	dirty = false;
 }, 10000);
 

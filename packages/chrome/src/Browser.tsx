@@ -94,7 +94,7 @@ export class Browser extends StatefulClass {
 
 	settings: Stateful<Settings> = createState({
 		theme: "system",
-		startupPage: "new-tab",
+		startupPage: "continue",
 		defaultZoom: 100,
 		showBookmarksBar: true,
 		defaultSearchEngine: "google",
@@ -219,24 +219,24 @@ export class Browser extends StatefulClass {
 
 		if (de.settings.startupPage === "continue") {
 			for (let detab of de.tabs) {
-				let tab = this.newTab();
+				let tab = this.newTab(undefined, false, detab.id);
 				tab.deserialize(detab);
 				tab.history.justTriggeredNavigation = true;
 				tab.history.go(0, false);
 			}
+			this.activetab = this.tabs.find((t) => t.id == de.activetab)!;
 		} else {
 			this.tabs[0] = this.newTab();
+			this.activetab = this.tabs[0];
 		}
-		this.activetab = this.tabs[0];
 		this.bookmarks = de.bookmarks.map(createState);
 		this.globalDownloadHistory = de.globalDownloadHistory.map(createState);
 		this.settings = createState(de.settings);
 		this.cookieJar.load(de.cookiedump);
-		// this.activetab = this.tabs.find((t) => t.id == de.activetab)!;
 	}
 
-	newTab(url?: URL, focusomnibox: boolean = false) {
-		let tab = new Tab(url);
+	newTab(url?: URL, focusomnibox: boolean = false, id?: number) {
+		let tab = new Tab(url, id);
 		pushTab(tab);
 		this.tabs = [...this.tabs, tab];
 		this.activetab = tab;

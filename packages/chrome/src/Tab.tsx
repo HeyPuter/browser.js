@@ -7,7 +7,6 @@ import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { AboutPage } from "./pages/AboutPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { serviceWorkerReady } from "./main";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { ProxyFrame } from "./proxy/ProxyFrame";
 import { defaultFaviconUrl } from "./assets/favicon";
@@ -20,9 +19,8 @@ export type SerializedTab = {
 	history: SerializedHistory;
 };
 
-let id = 100;
+let idcnt = 100;
 export class Tab extends StatefulClass {
-	id: number;
 	title: string | null;
 	frame: ProxyFrame;
 	devtoolsFrame: any;
@@ -48,10 +46,12 @@ export class Tab extends StatefulClass {
 	onChobitsuMessage: ((message: string) => void) | null = null;
 	waitForChobitsuInit: Promise<void>;
 
-	constructor(public url: URL = new URL("puter://newtab")) {
+	constructor(
+		public url: URL = new URL("puter://newtab"),
+		public id = idcnt++
+	) {
 		super(createState(Object.create(Tab.prototype)));
-
-		this.id = id++;
+		if (id >= idcnt) idcnt = id + 1;
 
 		this.title = null;
 		this.internalpage = null;

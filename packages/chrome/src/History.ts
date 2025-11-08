@@ -145,7 +145,6 @@ export class History {
 		}
 
 		let newstate = this.states[this.index];
-		console.error("going", newstate);
 
 		if (current.virtual) {
 			sendFrame(this.tab, "popstate", {
