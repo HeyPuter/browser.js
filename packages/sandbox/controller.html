@@ -1,40 +1,8 @@
 <title>Proxy Sandbox Controller</title>
 <script>
-	function notifyReady(controller) {
-		parent.postMessage({ $sandboxsw$type: "ready" }, "*");
-	}
-
-	function checkAndNotifyIfReady(registration) {
-		const controller = navigator.serviceWorker.controller;
-		if (!controller) return;
-
-		if (controller.state === "activated") {
-			notifyReady(controller);
-		} else {
-			controller.addEventListener("statechange", function onStateChange() {
-				if (controller.state === "activated") {
-					console.log("state activated");
-					controller.removeEventListener("statechange", onStateChange);
-					notifyReady(controller);
-				}
-			});
-		}
-	}
-
 	navigator.serviceWorker
 		.register("/sw.js", {
 			scope: "./",
-		})
-		.then((registration) => {
-			if (navigator.serviceWorker.controller) {
-				// there's probably already a service worker
-				checkAndNotifyIfReady(registration);
-			} else {
-				// there's no service worker, wait until we're controlled
-				navigator.serviceWorker.addEventListener("controllerchange", () => {
-					checkAndNotifyIfReady(registration);
-				});
-			}
 		})
 		.catch((error) => {
 			console.error("Service Worker registration failed:", error);
@@ -53,5 +21,10 @@
 
 		// forward messageport
 		navigator.serviceWorker.controller.postMessage(event.data, event.ports);
+	});
+	navigator.serviceWorker.addEventListener("message", (event) => {
+		if (event.data === "ready") {
+			window.parent.postMessage({ $sandboxsw$type: "ready" }, "*");
+		}
 	});
 </script>
