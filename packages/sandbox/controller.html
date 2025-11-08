@@ -1,7 +1,7 @@
 <title>Proxy Sandbox Controller</title>
 <script>
-	function wake(controller) {
-		controller.postMessage({ $sandboxsw$type: "wake" });
+	function notifyReady(controller) {
+		parent.postMessage({ $sandboxsw$type: "ready" }, "*");
 	}
 	navigator.serviceWorker
 		.register("/sw.js", {
@@ -10,11 +10,11 @@
 		.then((registration) => {
 			if (navigator.serviceWorker.controller) {
 				// there's probably already a service worker
-				wake(navigator.serviceWorker.controller);
+				notifyReady(navigator.serviceWorker.controller);
 			} else {
 				// there's no service worker, wait until we're controlled
 				navigator.serviceWorker.addEventListener("controllerchange", () => {
-					wake(navigator.serviceWorker.controller);
+					notifyReady(navigator.serviceWorker.controller);
 				});
 			}
 		})
@@ -25,34 +25,28 @@
 				"*"
 			);
 		});
+
+	// forward service worker -> chrome
 	navigator.serviceWorker.addEventListener("message", (event) => {
-		let data = event.data;
-		if ("$sandboxsw$type" in data) {
-			let transfer;
-			if (data.$sandboxsw$message?.body) {
-				let body = data.$sandboxsw$message.body;
-				if (body instanceof ArrayBuffer || body instanceof ReadableStream) {
-					transfer = [body];
-				}
-			}
-			window.parent.postMessage(event.data, "*", transfer);
-		}
+		if (typeof event.data !== "object" || event.data === null) return;
+		const data = event.data.$sandboxsw;
+		if (typeof data !== "object" || data === null) return;
+
+		window.parent.postMessage(event.data, "*");
 	});
+
+	// chrome -> controller -> service worker
 	window.addEventListener("message", (event) => {
-		let data = event.data;
-		if ("$sandboxsw$type" in data) {
-			if (navigator.serviceWorker.controller) {
-				let transfer;
-				if (data.$sandboxsw$message?.body) {
-					let body = data.$sandboxsw$message.body;
-					if (body instanceof ArrayBuffer || body instanceof ReadableStream) {
-						transfer = [body];
-					}
-				}
-				navigator.serviceWorker.controller.postMessage(data, transfer);
-			} else {
-				console.error("No service worker controller to send message to.");
-			}
+		if (typeof event.data !== "object" || event.data === null) return;
+		const data = event.data.$sandboxsw;
+		if (typeof data !== "object" || data === null) return;
+
+		if (!navigator.serviceWorker.controller) {
+			console.error("No service worker controller to send message to.");
+			return;
 		}
+
+		// forward messageport
+		navigator.serviceWorker.controller.postMessage(data, event.ports);
 	});
 </script>
