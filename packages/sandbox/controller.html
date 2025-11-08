@@ -3,6 +3,24 @@
 	function notifyReady(controller) {
 		parent.postMessage({ $sandboxsw$type: "ready" }, "*");
 	}
+
+	function checkAndNotifyIfReady(registration) {
+		const controller = navigator.serviceWorker.controller;
+		if (!controller) return;
+
+		if (controller.state === "activated") {
+			notifyReady(controller);
+		} else {
+			controller.addEventListener("statechange", function onStateChange() {
+				if (controller.state === "activated") {
+					console.log("state activated");
+					controller.removeEventListener("statechange", onStateChange);
+					notifyReady(controller);
+				}
+			});
+		}
+	}
+
 	navigator.serviceWorker
 		.register("/sw.js", {
 			scope: "./",
@@ -10,11 +28,11 @@
 		.then((registration) => {
 			if (navigator.serviceWorker.controller) {
 				// there's probably already a service worker
-				notifyReady(navigator.serviceWorker.controller);
+				checkAndNotifyIfReady(registration);
 			} else {
 				// there's no service worker, wait until we're controlled
 				navigator.serviceWorker.addEventListener("controllerchange", () => {
-					notifyReady(navigator.serviceWorker.controller);
+					checkAndNotifyIfReady(registration);
 				});
 			}
 		})
@@ -26,27 +44,14 @@
 			);
 		});
 
-	// forward service worker -> chrome
-	navigator.serviceWorker.addEventListener("message", (event) => {
-		if (typeof event.data !== "object" || event.data === null) return;
-		const data = event.data.$sandboxsw;
-		if (typeof data !== "object" || data === null) return;
-
-		window.parent.postMessage(event.data, "*");
-	});
-
 	// chrome -> controller -> service worker
 	window.addEventListener("message", (event) => {
-		if (typeof event.data !== "object" || event.data === null) return;
-		const data = event.data.$sandboxsw;
-		if (typeof data !== "object" || data === null) return;
-
 		if (!navigator.serviceWorker.controller) {
 			console.error("No service worker controller to send message to.");
 			return;
 		}
 
 		// forward messageport
-		navigator.serviceWorker.controller.postMessage(data, event.ports);
+		navigator.serviceWorker.controller.postMessage(event.data, event.ports);
 	});
 </script>

@@ -17,7 +17,7 @@ function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
 }
 
-const controllers: Controller[] = [];
+export const controllers: Controller[] = [];
 
 export class Controller {
 	private rpc: RpcHelper<Controllerbound, SWbound>;
@@ -199,7 +199,7 @@ export async function controllerForURL(url: URL): Promise<Controller> {
 		const controllerId = makeId();
 		let prefix = new URL(baseurl + basePrefix + controllerId);
 
-		controller = new Controller(prefix, controllerId, channel);
+		controller = new Controller(prefix, controllerId, channel, rootdomain);
 		controllers.push(controller);
 
 		channel.port1.start();

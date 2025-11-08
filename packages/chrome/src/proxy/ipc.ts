@@ -3,7 +3,7 @@ import { browser } from "../Browser";
 import { createMenu } from "../components/Menu";
 import type { Tab } from "../Tab";
 import { pageContextItems } from "./contextitems";
-// import { controllers } from "./Controller";
+import { controllers } from "./Controller";
 
 let sjIpcListeners = new Map<string, (msg: any) => Promise<any>>();
 const sjIpcSyncPool = new Map<number, (val: any) => void>();
@@ -58,46 +58,6 @@ export type RawDownload = {
 	body: BodyType;
 	length: number;
 };
-
-const methods = {};
-window.addEventListener("message", async (event) => {
-	let data = event.data;
-	if (!(data && "$sandboxsw$type" in data)) return;
-	let controller = controllers.find(
-		(c) => c.controllerframe.contentWindow == event.source
-	);
-	if (!controller) {
-		console.error("No controller found for message", data);
-		return;
-	}
-
-	try {
-		if (data.$sandboxsw$type == "request") {
-			let domain = data.$sandboxsw$domain;
-			let message = data.$sandboxsw$message;
-			let token = data.$sandboxsw$token;
-
-			let fn = (methods as any)[domain];
-
-			let [result, transfer] = await fn(message, controller);
-			controller.window.postMessage(
-				{
-					$sandboxsw$type: "response",
-					$sandboxsw$token: token,
-					$sandboxsw$message: result,
-				},
-				controller.baseurl.origin,
-				transfer
-			);
-		} else if (data.$sandboxsw$type == "confirm") {
-			console.log(controller.rootdomain + " controller activated");
-			controller.readyResolve();
-		}
-	} catch (e) {
-		console.log(e);
-		console.error("error in response", e);
-	}
-});
 
 let synctoken = 0;
 let syncPool: { [token: number]: (val: any) => void } = {};

@@ -1,8 +1,8 @@
 importScripts("./controller.sw.js");
 
 addEventListener("fetch", (event) => {
-	if (shouldRoute(event)) {
-		event.respondWith(route(event));
+	if ($scramjetController.shouldRoute(event)) {
+		event.respondWith($scramjetController.route(event));
 	}
 });
 

@@ -7,10 +7,10 @@ import {
 	type ScramjetInterface,
 	unrewriteUrl,
 	type ScramjetFetchResponse,
+	rewriteUrl,
 } from "@mercuryworkshop/scramjet/bundled";
 
 import scramjetWASM from "../../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
-import scramjetAll from "../../../scramjet/packages/core/dist/scramjet.js?url";
 import injectScript from "../../../inject/dist/inject.js?url";
 
 import { browser } from "../Browser";
@@ -39,7 +39,7 @@ function base64Encode(str: string): string {
 import type { FrameSequence } from "../../../inject/src/types";
 import { bare, wispUrl } from "./wisp";
 import { codecDecode, codecEncode } from "./codec";
-import type { Controller } from "./Controller";
+import { controllerForURL, type Controller } from "./Controller";
 function findSelfSequence(
 	target: Window,
 	path: FrameSequence = []
@@ -276,47 +276,35 @@ export async function handlefetch(
 		});
 	}
 
-	// if (data.destination === "document" || data.destination === "iframe") {
-	// 	const unrewritten = unrewriteUrl(
-	// 		data.rawUrl,
-	// 		controller.fetchHandler.context
-	// 	);
+	if (data.destination === "document" || data.destination === "iframe") {
+		const unrewritten = unrewriteUrl(
+			data.rawUrl,
+			controller.fetchHandler.context
+		);
 
-	// 	// our controller is bound to a root domain
-	// 	// if a site under the controller tries to iframe a cross-site domain it needs to redirect to that different controller
-	// 	const reqrootdomain = getRootDomain(new URL(unrewritten));
-	// 	if (reqrootdomain !== controller.rootdomain) {
-	// 		let crosscontroller = controllers.find((c) => {
-	// 			return c.rootdomain === reqrootdomain;
-	// 		});
-
-	// 		if (!crosscontroller) {
-	// 			crosscontroller = makeController(new URL(unrewritten));
-	// 		}
-	// 		await crosscontroller.ready;
-
-	// 		// now send a redirect so the browser will load the request from the other controller's sw
-	// 		return [
-	// 			{
-	// 				body: "Redirecting Cross-Origin Frame Request...",
-	// 				status: 302,
-	// 				statusText: "Found",
-	// 				headers: {
-	// 					"Content-Type": "text/plain",
-	// 					Location: rewriteUrl(
-	// 						new URL(unrewritten),
-	// 						controller.fetchHandler.context,
-	// 						{
-	// 							origin: crosscontroller.prefix,
-	// 							base: crosscontroller.prefix,
-	// 						}
-	// 					),
-	// 				},
-	// 			},
-	// 			undefined,
-	// 		];
-	// 	}
-	// }
+		// our controller is bound to a root domain
+		// if a site under the controller tries to iframe a cross-site domain it needs to redirect to that different controller
+		const newcontroller = await controllerForURL(new URL(unrewritten));
+		if (controller !== newcontroller) {
+			// then send a redirect so the browser will load the request from the other controller's sw
+			return {
+				body: "Redirecting Cross-Origin Frame Request...",
+				status: 302,
+				statusText: "Found",
+				headers: {
+					"Content-Type": "text/plain",
+					Location: rewriteUrl(
+						new URL(unrewritten),
+						newcontroller.fetchHandler.context,
+						{
+							origin: newcontroller.prefix,
+							base: newcontroller.prefix,
+						}
+					),
+				},
+			};
+		}
+	}
 
 	const fetchresponse = await controller.fetchHandler.handleFetch(data);
 
