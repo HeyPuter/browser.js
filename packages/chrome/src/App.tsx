@@ -33,24 +33,26 @@ export function App(props: {}, cx: ComponentContext) {
 	use(browser.settings.theme).listen(applyTheme);
 
 	const theme = {
-		colors: {
-			frame: [81, 111, 163],
-			toolbar: [145, 168, 208],
-			ntp_background: [131, 156, 200],
-			tab_text: [27, 43, 70],
-			bookmark_text: [27, 43, 70],
-			tab_background_text: [255, 255, 255],
-			ntp_text: [27, 43, 70],
-		},
-		tints: {
-			buttons: [0.6, 1, 0.2],
-			frame_incognito: [0.6, 0.5, 0.25],
-		},
+		toolbar: "rgb(45, 41, 59)",
+		toolbar_text: "rgb(236, 191, 189)",
+		frame: "rgb(30, 30, 40)",
+		tab_background_text: "rgb(215, 218, 224)",
+		toolbar_field: "rgb(30, 30, 40)",
+		toolbar_field_text: "rgb(236, 191, 189)",
+		tab_line: "rgb(236, 191, 189)",
+		popup: "rgb(30, 30, 40)",
+		popup_text: "rgb(236, 191, 189)",
+		icons: "rgb(198, 170, 232)",
+		ntp_background: "rgb(21, 18, 28)",
+		ntp_text: "rgb(164, 185, 239)",
+		popup_border: "rgb(236, 191, 189)",
+		toolbar_top_separator: "rgb(30, 30, 40)",
+		tab_loading: "rgb(236, 191, 189)",
 	};
 
 	cx.mount = () => {
-		for (const [key, value] of Object.entries(theme.colors)) {
-			cx.root.style.setProperty(`--${key}`, `rgb(${value.join(",")})`);
+		for (const [key, value] of Object.entries(theme)) {
+			cx.root.style.setProperty(`--${key}`, value);
 		}
 	};
 

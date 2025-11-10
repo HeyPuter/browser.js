@@ -77,8 +77,8 @@ NewTabPage.style = css`
 		flex-direction: column;
 		align-items: center;
 		font-family: var(--font);
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--ntp_background);
+		color: var(--ntp_text);
 
 		padding: 5em;
 	}

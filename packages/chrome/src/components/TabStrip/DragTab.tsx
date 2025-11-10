@@ -141,10 +141,12 @@ DragTab.style = css`
 		--tab-active-border-width: 11px;
 		--tab-active-border-radius: 10px;
 		--tab-active-border-radius-neg: -10px;
+
+		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
 	.main {
-		height: 28px;
+		height: var(--tab-height);
 		min-width: 0;
 		width: 100%;
 
@@ -169,9 +171,9 @@ DragTab.style = css`
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		height: 100%;
-		vertical-align: center;
-		line-height: 1.2;
+		display: flex;
+		align-items: center;
+		line-height: var(--tab-height);
 	}
 	.main .close > * {
 		width: 14px;
@@ -190,22 +192,32 @@ DragTab.style = css`
 
 		padding: 0;
 		margin-left: 8px;
+		position: relative;
 	}
-	.close:hover {
-		background: red;
-		border-radius: 0.5em;
+	.close:hover::before {
+		background: color-mix(in srgb, currentColor 17%, transparent);
+		position: absolute;
+		content: "";
+		width: 21px;
+		height: 21px;
+		top: -4px;
+		left: -4px;
+		border-radius: 3px;
 	}
 
 	.main:not(.active):hover {
 		transition: background 250ms;
-
-		background: var(--background_tab);
+		background-color: color-mix(in srgb, currentColor 7%, transparent);
+		/*background: var(--background_tab);*/
 		/*color: var(-);*/
 	}
 
 	.main.active {
 		background: var(--toolbar);
-		color: var(--tab_text);
+		color: var(--tab-selected-textcolor);
+
+		outline: 1px solid var(--tab-selected-textcolor);
+		outline-offset: -1px;
 	}
 
 	.belowcontainer {

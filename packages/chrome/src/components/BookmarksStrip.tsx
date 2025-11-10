@@ -104,7 +104,17 @@ BookmarksStrip.style = css`
 		display: flex;
 		gap: 0.5em;
 		background: var(--toolbar);
-		color: var(--bookmark_text);
+		color: var(--toolbar_text);
+		--toolbarbutton-hover-background: color-mix(
+			in srgb,
+			currentColor 17%,
+			transparent
+		);
+		--toolbarbutton-active-background: color-mix(
+			in srgb,
+			currentColor 30%,
+			transparent
+		);
 	}
 
 	button {
@@ -115,10 +125,11 @@ BookmarksStrip.style = css`
 
 		padding-left: 0.25em;
 		padding-right: 0.25em;
-		border-radius: var(--radius);
+		border-radius: 3px;
+		color: var(--toolbar_text);
 	}
 	button:hover {
-		background: var(--bg20);
+		background: var(--toolbarbutton-hover-background);
 	}
 	button span {
 		white-space: nowrap;
