@@ -1,5 +1,7 @@
 import { browser } from "../../Browser";
-import { bare } from "../../IsolatedFrame";
+import { bare } from "../../proxy/wisp";
+
+import * as tldts from "tldts";
 
 export type OmniboxResult = {
 	kind:
@@ -15,6 +17,91 @@ export type OmniboxResult = {
 	relevanceScore?: number;
 };
 
+export interface SearchEngine {
+	name: string;
+	suggestUrlBuilder: (query: string) => string;
+	searchUrlBuilder: (query: string) => string;
+	suggestionParser: (data: any) => string[];
+}
+
+/** Available search engines */
+export const AVAILABLE_SEARCH_ENGINES = {
+	google: {
+		name: "Google",
+		searchUrlBuilder: (query) =>
+			`https://www.google.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	bing: {
+		name: "Microsoft Bing",
+		searchUrlBuilder: (query) =>
+			`https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://www.bing.com/osjson.aspx?query=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	yahoo: {
+		name: "Yahoo!",
+		searchUrlBuilder: (query) =>
+			`https://search.yahoo.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas_sfp&command=${encodeURIComponent(query)}`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	duckduckgo: {
+		name: "DuckDuckGo",
+		searchUrlBuilder: (query) =>
+			`https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://duckduckgo.com/ac/?q=${encodeURIComponent(query)}&type=list`,
+		suggestionParser: (data) => {
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+	brave: {
+		name: "Brave",
+		searchUrlBuilder: (query) =>
+			`https://search.brave.com/search?q=${encodeURIComponent(query)}`,
+		suggestUrlBuilder: (query) =>
+			`https://search.brave.com/api/suggest?q=${encodeURIComponent(query)}&source=web`,
+		suggestionParser: (data) => {
+			// Google format
+			if (Array.isArray(data) && data.length > 1 && Array.isArray(data[1])) {
+				return data[1].map((item: any) => String(item)).filter(Boolean);
+			}
+			// Brave Format
+			if (
+				Array.isArray(data) &&
+				data.length > 0 &&
+				typeof data[0] === "string"
+			) {
+				return data.map((item: string) => String(item)).filter(Boolean);
+			}
+			return [];
+		},
+	},
+} as const satisfies Record<string, SearchEngine>;
+
 function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 	if (!query) return 0;
 
@@ -24,11 +111,15 @@ function calculateRelevanceScore(result: OmniboxResult, query: string): number {
 
 	let score = 0;
 
-	if (urlString === lowerQuery || title === lowerQuery) {
-		return 100;
+	// if (urlString === lowerQuery || title === lowerQuery) {
+	// 	return 100;
+	// }
+
+	if (result.kind === "direct") {
+		return 95;
 	}
 
-	if (result.kind === "direct" || result.kind === "directsearch") {
+	if (result.kind === "directsearch") {
 		return 90;
 	}
 
@@ -78,7 +169,7 @@ function rankResults(
 				suggestionDenied &&
 				(b.kind === "direct" || b.kind === "directsearch")
 			) {
-				// force direct results to the top
+				// don't allow something other than What Was Typed to be higher if the user just backspaced
 				return 1;
 			} else {
 				return (b.relevanceScore || 0) - (a.relevanceScore || 0);
@@ -111,49 +202,63 @@ const fetchHistoryResults = (query: string): OmniboxResult[] => {
 	return results.slice(0, 5);
 };
 
-const addDirectResult = (
-	query: string,
-	results: OmniboxResult[]
-): OmniboxResult[] => {
+const addDirectResult = (query: string, results: OmniboxResult[]) => {
+	let directurl;
 	if (URL.canParse(query)) {
-		return [
-			{
-				kind: "direct",
-				url: new URL(query),
-				title: null,
-				favicon: null,
-			},
-			...results,
-		];
+		directurl = new URL(query);
 	} else {
-		return [
-			{
-				kind: "directsearch",
-				url: new URL(
-					`https://www.google.com/search?q=${encodeURIComponent(query)}`
-				),
-				title: query,
-				favicon: null,
-			},
-			...results,
-		];
+		let parsed = tldts.parse(query);
+		if ((parsed.domain && parsed.isIcann) || parsed.isIp) {
+			// TODO: this probably isn't right for all cases
+			// i think typing in `://a.com` would break it because it's an invalid url but passes tldts
+			// but tldts doesn't parse path/port/schema so we can't use its parser
+			directurl = new URL("https://" + query);
+		}
 	}
+
+	if (directurl) {
+		results.unshift({
+			kind: "direct",
+			url: directurl,
+			title: null,
+			favicon: null,
+		});
+	}
+
+	results.unshift({
+		kind: "directsearch",
+		url: new URL(
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].searchUrlBuilder(query)
+		),
+		title: query,
+		favicon: null,
+	});
 };
 
 const fetchGoogleSuggestions = async (
 	query: string
 ): Promise<OmniboxResult[]> => {
 	if (!query) return [];
+	if (!bare) return [];
 
 	try {
 		const resp = await bare.fetch(
-			`http://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].suggestUrlBuilder(query)
 		);
 
 		const json = await resp.json();
+		let rawSuggestions =
+			AVAILABLE_SEARCH_ENGINES[
+				browser.settings.defaultSearchEngine
+			].suggestionParser(json);
+		rawSuggestions = rawSuggestions.slice(0, 5);
 		const suggestions: OmniboxResult[] = [];
 
-		for (const item of json[1].slice(0, 5)) {
+		for (const item of rawSuggestions) {
 			// it's gonna be stuff like "http //fortnite.com/2fa ps5"
 			// generally not useful
 			if (item.startsWith("http")) continue;
@@ -162,7 +267,9 @@ const fetchGoogleSuggestions = async (
 				kind: "search",
 				title: item,
 				url: new URL(
-					`https://www.google.com/search?q=${encodeURIComponent(item)}`
+					AVAILABLE_SEARCH_ENGINES[
+						browser.settings.defaultSearchEngine
+					].searchUrlBuilder(query)
 				),
 				favicon: null,
 			});
@@ -194,7 +301,7 @@ export async function fetchSuggestions(
 		...cachedGoogleResults,
 	];
 
-	combinedResults = addDirectResult(query, combinedResults);
+	addDirectResult(query, combinedResults);
 
 	// first update, so the user sees something quickly
 	setResults(rankResults(combinedResults, query, suggestionDenied));
@@ -202,7 +309,7 @@ export async function fetchSuggestions(
 	const googleResults = await fetchGoogleSuggestions(query);
 
 	combinedResults = [...historyResults, ...googleResults];
-	combinedResults = addDirectResult(query, combinedResults);
+	addDirectResult(query, combinedResults);
 
 	// update with the new google results
 	setResults(rankResults(combinedResults, query, suggestionDenied));
@@ -217,6 +324,8 @@ export type TrendingQuery = {
 
 export let trendingCached: TrendingQuery[] | null = null;
 export async function fetchGoogleTrending(geo = "US"): Promise<void> {
+	if (!bare) return;
+	// TODO: make this search engine agnostic
 	try {
 		if (trendingCached) return;
 

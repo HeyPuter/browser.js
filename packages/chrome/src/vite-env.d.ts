@@ -2,7 +2,8 @@
 /// <reference types="@mercuryworkshop/scramjet" />
 
 interface ImportMetaEnv {
-	readonly VITE_LOCAL: boolean;
+	readonly VITE_PUTER_BRANDING: boolean;
+	readonly VITE_SENTRY_URL: string;
 	readonly VITE_ISOLATION_ORIGIN: string;
 	readonly VITE_WISP_URL: string;
 }

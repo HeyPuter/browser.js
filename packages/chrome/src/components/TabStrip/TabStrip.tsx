@@ -15,6 +15,7 @@ import { setContextMenu } from "../Menu";
 import { browser, forceScreenshot, pushTab } from "../../Browser";
 import { defaultFaviconUrl } from "../../assets/favicon";
 import { DragTab } from "./DragTab";
+import { markDirty } from "../../storage";
 
 type VisualTab = {
 	tab: Tab;
@@ -186,6 +187,7 @@ export function TabStrip(
 
 		if (s.activetab != tab.tab) {
 			s.activetab = tab.tab;
+			markDirty();
 		}
 	};
 

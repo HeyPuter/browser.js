@@ -1,11 +1,13 @@
 import { css, type Component } from "dreamland/core";
 import type { Tab } from "../Tab";
 import type { IconifyIcon } from "@iconify/types";
+import { versionInfo } from "@mercuryworkshop/scramjet";
 import { Icon } from "../components/Icon";
 import { browser } from "../Browser";
 import { Checkbox } from "../components/Checkbox";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { AVAILABLE_SEARCH_ENGINES } from "../components/Omnibar/suggestions";
 
 import {
 	iconSettings,
@@ -15,15 +17,10 @@ import {
 	iconAbout,
 } from "../icons";
 
-export const SettingsPage: Component<
-	{
-		tab: Tab;
-	},
-	{
-		selected: string;
-		searchQuery: string;
-	}
-> = function () {
+export function SettingsPage(
+	this: { selected: string; searchQuery: string },
+	props: { tab: Tab }
+) {
 	this.selected = "general";
 	this.searchQuery = "";
 
@@ -137,7 +134,9 @@ export const SettingsPage: Component<
 														id="startup-new-tab"
 														name="startupPage"
 														value="new-tab"
-														checked={browser.settings.startupPage === "new-tab"}
+														checked={use(browser.settings.startupPage).map(
+															(v) => v === "new-tab"
+														)}
 														on:change={() => {
 															browser.settings.startupPage = "new-tab";
 														}}
@@ -150,9 +149,9 @@ export const SettingsPage: Component<
 														id="startup-continue"
 														name="startupPage"
 														value="continue"
-														checked={
-															browser.settings.startupPage === "continue"
-														}
+														checked={use(browser.settings.startupPage).map(
+															(v) => v === "continue"
+														)}
 														on:change={() => {
 															browser.settings.startupPage = "continue";
 														}}
@@ -175,9 +174,6 @@ export const SettingsPage: Component<
 											<div class="checkbox-option">
 												<Checkbox
 													value={use(browser.settings.showBookmarksBar)}
-													on:change={(checked) => {
-														browser.settings.showBookmarksBar = checked;
-													}}
 												/>
 												<label for="show-bookmarks-bar">
 													Always show bookmarks bar
@@ -206,19 +202,13 @@ export const SettingsPage: Component<
 										<div class="setting-group">
 											<select
 												class="select-input"
-												value={browser.settings.defaultSearchEngine}
-												on:change={(e: Event) => {
-													browser.settings.defaultSearchEngine = (
-														e.target as HTMLSelectElement
-													).value as any;
-												}}
+												value={use(browser.settings.defaultSearchEngine)}
 											>
-												<option value="google">Google</option>
-												<option value="bing">Bing</option>
-												<option value="duckduckgo">DuckDuckGo</option>
-												<option value="yahoo">Yahoo</option>
-												<option value="ecosia">Ecosia</option>
-												<option value="startpage">Startpage</option>
+												{Object.keys(AVAILABLE_SEARCH_ENGINES).map((key) => (
+													<option value={key}>
+														{AVAILABLE_SEARCH_ENGINES[key].name}
+													</option>
+												))}
 											</select>
 										</div>
 									</div>
@@ -233,9 +223,6 @@ export const SettingsPage: Component<
 											<div class="checkbox-option">
 												<Checkbox
 													value={use(browser.settings.searchSuggestionsEnabled)}
-													on:change={(checked) => {
-														browser.settings.searchSuggestionsEnabled = checked;
-													}}
 												/>
 												<label for="search-suggestions">
 													Show search and site suggestions in the address bar
@@ -262,24 +249,14 @@ export const SettingsPage: Component<
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<Checkbox
-													value={use(browser.settings.blockTrackers)}
-													on:change={(value) => {
-														browser.settings.blockTrackers = value;
-													}}
-												/>
+												<Checkbox value={use(browser.settings.blockTrackers)} />
 												<label for="block-trackers">
 													Block third-party trackers
 												</label>
 											</div>
 
 											<div class="checkbox-option">
-												<Checkbox
-													value={use(browser.settings.doNotTrack)}
-													on:change={(checked) => {
-														browser.settings.doNotTrack = checked;
-													}}
-												/>
+												<Checkbox value={use(browser.settings.doNotTrack)} />
 												<label for="do-not-track">
 													Send 'Do Not Track' with browsing requests
 												</label>
@@ -299,9 +276,6 @@ export const SettingsPage: Component<
 											<div class="checkbox-option">
 												<Checkbox
 													value={use(browser.settings.clearHistoryOnExit)}
-													on:change={(checked) => {
-														browser.settings.clearHistoryOnExit = checked;
-													}}
 												/>
 												<label for="clear-history">
 													Clear history when browser closes
@@ -351,9 +325,6 @@ export const SettingsPage: Component<
 											<div class="checkbox-option">
 												<Checkbox
 													value={use(browser.settings.extensionsDevMode)}
-													on:change={(checked) => {
-														browser.settings.extensionsDevMode = checked;
-													}}
 												/>
 												<label for="dev-mode">Enable developer mode</label>
 											</div>
@@ -387,7 +358,10 @@ export const SettingsPage: Component<
 											/>
 											<div class="browser-info">
 												<h3>Browser.js</h3>
-												{/* <p>Scramjet Version: {$scramjetVersion.build} {$scramjetVersion.version}</p> */}
+												<p>
+													Scramjet Version: {versionInfo.version} (
+													{versionInfo.build})
+												</p>
 												<p>© 2025 Puter Technologies</p>
 											</div>
 										</div>
@@ -418,7 +392,7 @@ export const SettingsPage: Component<
 			</div>
 		</div>
 	);
-};
+}
 
 SettingsPage.style = css`
 	:scope {

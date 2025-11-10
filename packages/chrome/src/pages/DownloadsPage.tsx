@@ -6,7 +6,7 @@ import { Icon } from "../components/Icon";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export function DownloadsPage(s: { tab: Tab }) {
+export function DownloadsPage(props: { tab: Tab }) {
 	return (
 		<div>
 			<nav>

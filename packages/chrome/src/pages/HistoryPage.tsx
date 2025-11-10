@@ -3,7 +3,7 @@ import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export function HistoryPage(s: { tab: Tab }) {
+export function HistoryPage(props: { tab: Tab }) {
 	return (
 		<div>
 			<nav>

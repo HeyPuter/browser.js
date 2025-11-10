@@ -67,7 +67,7 @@ export function App(props: {}, cx: ComponentContext) {
 				}}
 			/>
 			<Omnibar tab={use(browser.activetab)} />
-			{use(browser.activetab.url, browser.settings.bookmarksPinned)
+			{use(browser.activetab.url, browser.settings.showBookmarksBar)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
 				.andThen(<BookmarksStrip />)}
 			<div style="border-bottom: 1px solid var(--bg20)"></div>

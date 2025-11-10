@@ -98,7 +98,7 @@ export function DragTab(
 				this.tooltipActive = false;
 			}}
 		>
-			<TabTooltip tab={props.tab} active={this.tooltipActive} />
+			<TabTooltip tab={props.tab} active={use(this.tooltipActive)} />
 			<div
 				class="dragroot"
 				style="position: unset;"

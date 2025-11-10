@@ -5,7 +5,7 @@ import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";
 
-export function BookmarksStrip(_, cx: ComponentContext) {
+export function BookmarksStrip(props: {}, cx: ComponentContext) {
 	cx.mount = () => {
 		setContextMenu(cx.root, [
 			{
@@ -15,25 +15,26 @@ export function BookmarksStrip(_, cx: ComponentContext) {
 			},
 			{
 				label: "Pin Bookmarks Strip",
-				checkbox: use(browser.settings.bookmarksPinned),
+				checkbox: use(browser.settings.showBookmarksBar),
 			},
 		]);
 	};
-
+	console.log(browser.bookmarks);
 	return (
 		<div>
 			<button
 				on:click={(e: MouseEvent) => {
 					let b = createState<BookmarkEntry>({
-						url: "",
-						title: "New Bookmark",
+						url: browser.activetab.url.toString(),
+						title: browser.activetab.title || "Unknown",
+						favicon: browser.activetab.icon,
 					});
 					createMenuCustom(
 						{
 							left: e.clientX,
 							top: e.clientY,
 						},
-						<BookmarkPopup bookmark={b} new={false} />
+						<BookmarkPopup bookmark={b} new={true} />
 					);
 				}}
 			>

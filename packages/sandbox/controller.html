@@ -1,7 +1,7 @@
 <title>Proxy Sandbox Controller</title>
 <script>
 	function wake(controller) {
-		controller.postMessage({ $sandboxsw$type: "wake" });
+		window.parent.postMessage({ $sandboxsw$type: "ready" }, "*");
 	}
 	navigator.serviceWorker
 		.register("/sw.js", {
@@ -25,34 +25,15 @@
 				"*"
 			);
 		});
-	navigator.serviceWorker.addEventListener("message", (event) => {
-		let data = event.data;
-		if ("$sandboxsw$type" in data) {
-			let transfer;
-			if (data.$sandboxsw$message?.body) {
-				let body = data.$sandboxsw$message.body;
-				if (body instanceof ArrayBuffer || body instanceof ReadableStream) {
-					transfer = [body];
-				}
-			}
-			window.parent.postMessage(event.data, "*", transfer);
-		}
-	});
+
+	// chrome -> controller -> service worker
 	window.addEventListener("message", (event) => {
-		let data = event.data;
-		if ("$sandboxsw$type" in data) {
-			if (navigator.serviceWorker.controller) {
-				let transfer;
-				if (data.$sandboxsw$message?.body) {
-					let body = data.$sandboxsw$message.body;
-					if (body instanceof ArrayBuffer || body instanceof ReadableStream) {
-						transfer = [body];
-					}
-				}
-				navigator.serviceWorker.controller.postMessage(data, transfer);
-			} else {
-				console.error("No service worker controller to send message to.");
-			}
+		if (!navigator.serviceWorker.controller) {
+			console.error("No service worker controller to send message to.");
+			return;
 		}
+
+		// forward messageport
+		navigator.serviceWorker.controller.postMessage(event.data, event.ports);
 	});
 </script>

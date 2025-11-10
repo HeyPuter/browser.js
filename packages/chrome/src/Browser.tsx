@@ -5,6 +5,7 @@ import { createDelegate } from "dreamland/core";
 import type { SerializedHistoryState } from "./History";
 import { HistoryState } from "./History";
 import { focusOmnibox } from "./components/Omnibar/Omnibox";
+import { type AVAILABLE_SEARCH_ENGINES } from "./components/Omnibar/suggestions";
 
 import * as tldts from "tldts";
 import { isPuter } from "./main";
@@ -12,7 +13,9 @@ import {
 	animateDownloadFly,
 	showDownloadsPopup,
 } from "./components/Omnibar/Omnibar";
-import type { RawDownload } from "./IsolatedFrame";
+import type { RawDownload } from "./proxy/fetch";
+import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
+import { getSerializedBrowserState, markDirty } from "./storage";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -27,6 +30,7 @@ export type SerializedBrowser = {
 	activetab: number;
 	bookmarks: BookmarkEntry[];
 	settings: Settings;
+	cookiedump: string;
 };
 
 export type GlobalHistoryEntry = {
@@ -62,14 +66,7 @@ export type Settings = {
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
 	showBookmarksBar: boolean;
-	bookmarksPinned: boolean;
-	defaultSearchEngine:
-		| "google"
-		| "bing"
-		| "duckduckgo"
-		| "yahoo"
-		| "ecosia"
-		| "startpage";
+	defaultSearchEngine: keyof typeof AVAILABLE_SEARCH_ENGINES;
 	searchSuggestionsEnabled: boolean;
 	blockTrackers: boolean;
 	clearHistoryOnExit: boolean;
@@ -91,14 +88,15 @@ export class Browser extends StatefulClass {
 
 	unfocusframes: boolean = false;
 
+	cookieJar: CookieJar = new CookieJar();
+
 	downloadProgress = 0;
 
 	settings: Stateful<Settings> = createState({
 		theme: "system",
-		startupPage: "new-tab",
+		startupPage: "continue",
 		defaultZoom: 100,
 		showBookmarksBar: true,
-		bookmarksPinned: false,
 		defaultSearchEngine: "google",
 		searchSuggestionsEnabled: true,
 		blockTrackers: true,
@@ -109,8 +107,6 @@ export class Browser extends StatefulClass {
 
 	constructor() {
 		super(createState(Object.create(Browser.prototype)));
-
-		setInterval(saveBrowserState, 10000);
 
 		// scramjet.addEventListener("download", (e) => {
 		// 	this.startDownload(e.download);
@@ -210,6 +206,7 @@ export class Browser extends StatefulClass {
 			bookmarks: this.bookmarks,
 			settings: { ...this.settings },
 			globalDownloadHistory: this.globalDownloadHistory,
+			cookiedump: this.cookieJar.dump(),
 		};
 	}
 	deserialize(de: SerializedBrowser) {
@@ -219,21 +216,27 @@ export class Browser extends StatefulClass {
 			state.deserialize(s);
 			return state;
 		});
-		for (let detab of de.tabs) {
-			let tab = this.newTab();
-			tab.deserialize(detab);
-			tab.history.justTriggeredNavigation = true;
-			tab.history.go(0, false);
+
+		if (de.settings.startupPage === "continue") {
+			for (let detab of de.tabs) {
+				let tab = this.newTab(undefined, false, detab.id);
+				tab.deserialize(detab);
+				tab.history.justTriggeredNavigation = true;
+				tab.history.go(0, false);
+			}
+			this.activetab = this.tabs.find((t) => t.id == de.activetab)!;
+		} else {
+			this.tabs[0] = this.newTab();
+			this.activetab = this.tabs[0];
 		}
-		this.activetab = this.tabs[0];
 		this.bookmarks = de.bookmarks.map(createState);
 		this.globalDownloadHistory = de.globalDownloadHistory.map(createState);
 		this.settings = createState(de.settings);
-		// this.activetab = this.tabs.find((t) => t.id == de.activetab)!;
+		this.cookieJar.load(de.cookiedump);
 	}
 
-	newTab(url?: URL, focusomnibox: boolean = false) {
-		let tab = new Tab(url);
+	newTab(url?: URL, focusomnibox: boolean = false, id?: number) {
+		let tab = new Tab(url, id);
 		pushTab(tab);
 		this.tabs = [...this.tabs, tab];
 		this.activetab = tab;
@@ -288,44 +291,12 @@ export class Browser extends StatefulClass {
 	}
 }
 
-let loaded = false;
-export async function saveBrowserState() {
-	if (!loaded) return;
-
-	let ser = browser.serialize();
-
-	if (import.meta.env.VITE_LOCAL) {
-		localStorage["browserstate"] = JSON.stringify(ser);
-	} else {
-		await puter.kv.set("browserstate", JSON.stringify(ser));
-	}
-
-	// if (!import.meta.env.VITE_LOCAL) {
-	// 	let data = await serializeAll();
-	// 	await puter.kv.set("browserdata", JSON.stringify(data));
-	// }
-}
+export let browserLoaded = false;
 
 export async function initBrowser() {
 	browser = new Browser();
 
-	// if (!import.meta.env.VITE_LOCAL) {
-	// 	let de = await puter.kv.get("browserdata");
-	// 	if (de) {
-	// 		try {
-	// 			await deserializeAll(JSON.parse(de));
-	// 		} catch (e) {
-	// 			console.error("Error while loading browser data:", e);
-	// 		}
-	// 	}
-	// }
-
-	let de;
-	if (import.meta.env.VITE_LOCAL) {
-		de = localStorage["browserstate"];
-	} else {
-		de = await puter.kv.get("browserstate");
-	}
+	let de = await getSerializedBrowserState();
 	if (de) {
 		try {
 			browser.deserialize(JSON.parse(de));
@@ -336,6 +307,7 @@ export async function initBrowser() {
 			browser = new Browser();
 			let tab = browser.newTab();
 			browser.activetab = tab;
+			markDirty();
 		}
 	} else {
 		let tab = browser.newTab();
@@ -343,5 +315,5 @@ export async function initBrowser() {
 	}
 
 	(self as any).browser = browser;
-	loaded = true;
+	browserLoaded = true;
 }

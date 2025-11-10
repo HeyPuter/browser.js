@@ -1,4 +1,5 @@
 import {
+	CookieJar,
 	iswindow,
 	loadAndHook,
 	SCRAMJETCLIENT,
@@ -26,6 +27,9 @@ export function loadScramjet({
 	cookies,
 	getInjectScripts,
 	wisp,
+	prefix,
+	codecEncode,
+	codecDecode,
 }: InjectScramjetInit) {
 	setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 	delete (self as any).WASM;
@@ -73,9 +77,21 @@ export function loadScramjet({
 		});
 	}
 
+	let cookieJar = new CookieJar();
+	cookieJar.load(cookies);
+
 	loadAndHook({
-		interface: {
-			getInjectScripts,
+		context: {
+			interface: {
+				getInjectScripts,
+				codecEncode,
+				codecDecode,
+			},
+			config,
+			cookieJar,
+			prefix: new URL(prefix),
+		},
+		rpc: {
 			onClientbound: function (type, callback) {
 				listeners.set(type, callback);
 			},
@@ -96,8 +112,6 @@ export function loadScramjet({
 				});
 			},
 		},
-		config,
-		cookies,
 		transport,
 	});
 
