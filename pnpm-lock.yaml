@@ -233,6 +233,9 @@ importers:
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
         version: link:../scramjet/packages/libcurl-transport
+      '@mercuryworkshop/rpc':
+        specifier: workspace:*
+        version: link:../scramjet/packages/rpc
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
         version: link:../scramjet/packages/core
@@ -324,6 +327,9 @@ importers:
       '@mercuryworkshop/bare-mux-custom':
         specifier: workspace:*
         version: link:../bare-mux-custom
+      '@mercuryworkshop/libcurl-transport':
+        specifier: workspace:*
+        version: link:../libcurl-transport
       '@mercuryworkshop/rpc':
         specifier: workspace:*
         version: link:../rpc
@@ -490,15 +496,31 @@ importers:
 
   packages/scramjet/packages/demo:
     dependencies:
-      '@mercuryworkshop/proxy-bootstrap':
+      '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
-        version: link:../bootstrap
+        version: link:../libcurl-transport
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+      '@mercuryworkshop/scramjet-controller':
+        specifier: workspace:*
+        version: link:../controller
       '@types/express':
         specifier: ^5.0.5
         version: 5.0.5
+      dreamland:
+        specifier: ^0.1.1
+        version: 0.1.1
       express:
         specifier: ^5.1.0
         version: 5.1.0
+    devDependencies:
+      vite:
+        specifier: ^7.1.12
+        version: 7.1.12(@types/node@24.9.1)(jiti@2.6.1)(terser@5.43.1)(yaml@2.8.1)
+      vite-plugin-static-copy:
+        specifier: ^3.1.4
+        version: 3.1.4(vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(terser@5.43.1)(yaml@2.8.1))
 
   packages/scramjet/packages/epoxy-transport:
     dependencies:
@@ -6451,6 +6473,12 @@ packages:
 
   vite-plugin-static-copy@3.1.1:
     resolution: {integrity: sha512-oR53SkL5cX4KT1t18E/xU50vJDo0N8oaHza4EMk0Fm+2/u6nQivxavOfrDk3udWj+dizRizB/QnBvJOOQrTTAQ==}
+    engines: {node: ^18.0.0 || >=20.0.0}
+    peerDependencies:
+      vite: ^5.0.0 || ^6.0.0 || ^7.0.0
+
+  vite-plugin-static-copy@3.1.4:
+    resolution: {integrity: sha512-iCmr4GSw4eSnaB+G8zc2f4dxSuDjbkjwpuBLLGvQYR9IW7rnDzftnUjOH5p4RYR+d4GsiBqXRvzuFhs5bnzVyw==}
     engines: {node: ^18.0.0 || >=20.0.0}
     peerDependencies:
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0
@@ -13410,6 +13438,14 @@ snapshots:
     dependencies:
       chokidar: 3.6.0
       fs-extra: 11.3.1
+      p-map: 7.0.3
+      picocolors: 1.1.1
+      tinyglobby: 0.2.15
+      vite: 7.1.12(@types/node@24.9.1)(jiti@2.6.1)(terser@5.43.1)(yaml@2.8.1)
+
+  vite-plugin-static-copy@3.1.4(vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(terser@5.43.1)(yaml@2.8.1)):
+    dependencies:
+      chokidar: 3.6.0
       p-map: 7.0.3
       picocolors: 1.1.1
       tinyglobby: 0.2.15
