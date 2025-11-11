@@ -28,8 +28,8 @@ TabTooltip.style = css`
 		top: 2.25em;
 		left: 0;
 		z-index: 1000;
-		background: var(--bg);
-		border: 1px solid var(--bg20);
+		background: var(--popup);
+		border: 1px solid var(--popup_border);
 		border-radius: 4px;
 		width: 20em;
 		gap: 0.25em;

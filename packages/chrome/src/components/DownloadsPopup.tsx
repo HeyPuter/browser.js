@@ -109,7 +109,7 @@ DownloadsPopup.style = css`
 	.title {
 		padding: 1em;
 		display: flex;
-		border-bottom: 1px solid var(--fg4);
+		border-bottom: 1px solid var(--text-30);
 	}
 	.title p {
 		font-size: 1.25em;
@@ -129,7 +129,7 @@ DownloadsPopup.style = css`
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
-		background: var(--bg20);
+		background: var(--text-15);
 		border-radius: 50%;
 	}
 
@@ -149,7 +149,7 @@ DownloadsPopup.style = css`
 		position: relative;
 	}
 	.entry:hover {
-		background: var(--bg20);
+		background: var(--text-15);
 	}
 	.contents {
 		display: flex;
@@ -168,7 +168,7 @@ DownloadsPopup.style = css`
 		right: 0;
 		top: 0;
 		padding: 1em;
-		background: var(--bg20);
+		background: var(--text-15);
 		height: 100%;
 		align-items: start;
 		gap: 1em;
@@ -188,22 +188,22 @@ DownloadsPopup.style = css`
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
-		background: var(--fg4);
+		background: var(--text-30);
 		border-radius: 50%;
 	}
 
 	.contents .data {
-		color: var(--fg2);
+		color: var(--text-70);
 	}
 	.footer {
-		border-top: 1px solid var(--fg4);
+		border-top: 1px solid var(--text-30);
 		padding: 1em;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 	}
 	.footer:hover {
-		background: var(--bg20);
+		background: var(--text-15);
 	}
 	.buttoniconcontainer {
 		flex: 1;
@@ -221,11 +221,11 @@ DownloadsPopup.style = css`
 		border: none;
 	}
 	progress::-webkit-progress-bar {
-		background-color: var(--fg4);
+		background-color: var(--text-30);
 		border-radius: var(--radius);
 	}
 	progress::-webkit-progress-value {
-		background-color: var(--accent);
+		background-color: var(--tab_line);
 		border-radius: var(--radius);
 	}
 `;

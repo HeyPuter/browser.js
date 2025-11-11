@@ -25,24 +25,24 @@ Button.style = css`
 		color: inherit;
 	}
 	:scope:not(.icon) {
-		background: var(--bg02);
-		border: 1px solid var(--fg4);
+		background: var(--toolbar_field);
+		border: 1px solid var(--text-20);
 		border-radius: 4px;
 		padding: 0.5em 1em;
 		font-size: 0.9em;
 		cursor: pointer;
-		color: var(--fg);
+		color: var(--toolbar_field_text);
 	}
 	:scope:not(.icon):hover {
-		background: var(--bg03);
+		background: var(--text-10);
 	}
 	:scope.primary {
-		background: var(--accent);
+		background: var(--tab_line);
 		color: white;
-		border-color: var(--accent);
+		border-color: var(--tab_line);
 	}
 	:scope.primary:hover {
-		background: var(--accent-hover, var(--accent));
+		background: var(--accent-dark);
 	}
 
 	:scope:disabled,
@@ -50,13 +50,13 @@ Button.style = css`
 		opacity: 0.6;
 		cursor: not-allowed;
 		pointer-events: none;
-		background: var(--bg02);
-		color: var(--fg4);
-		border-color: var(--fg4);
+		background: var(--toolbar_field);
+		color: var(--text-40);
+		border-color: var(--text-20);
 	}
 	:scope:disabled:hover,
 	:scope[disabled]:hover {
-		background: var(--bg02);
+		background: var(--toolbar_field);
 	}
 
 	:scope.icon {
@@ -74,7 +74,7 @@ Button.style = css`
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
-		background: var(--bg20);
+		background: var(--text-15);
 		border-radius: 50%;
 	}
 `;

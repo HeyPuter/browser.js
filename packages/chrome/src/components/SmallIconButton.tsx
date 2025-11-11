@@ -28,7 +28,7 @@ SmallIconButton.style = css`
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
-		background: var(--bg20);
+		background: var(--text-15);
 		border-radius: 50%;
 	}
 `;

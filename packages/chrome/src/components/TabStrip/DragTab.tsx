@@ -230,7 +230,7 @@ DragTab.style = css`
 		height: 6px;
 		width: 100%;
 
-		background: var(--bg);
+		background: var(--toolbar);
 	}
 
 	.below::before,
@@ -242,6 +242,6 @@ DragTab.style = css`
 		width: var(--tab-active-border-width);
 		height: var(--tab-active-border-radius);
 
-		background: var(--bg01);
+		background: var(--toolbar);
 	}
 `;

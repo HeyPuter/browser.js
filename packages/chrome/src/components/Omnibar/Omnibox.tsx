@@ -47,7 +47,7 @@ InactiveBar.style = css`
 	}
 
 	:scope.subtle.active {
-		border: 1px solid var(--accent);
+		border: 1px solid var(--tab_line);
 	}
 `;
 
@@ -425,7 +425,8 @@ Omnibox.style = css`
 		width: 98%;
 		margin: 0 auto;
 
-		border-bottom: 1px solid var(--fg5);
+		border-bottom: 1px solid
+			var(--text-35);
 		margin-bottom: 0.5em;
 	}
 
@@ -434,7 +435,7 @@ Omnibox.style = css`
 		height: 2em;
 		line-height: 2.5em;
 		padding-left: 1.5em;
-		color: var(--fg3);
+		color: var(--text-60);
 		font-size: 0.9em;
 	}
 

@@ -56,17 +56,17 @@ Input.style = css`
 
 	label {
 		font-size: 0.9em;
-		color: var(--fg2);
+		color: var(--text-70);
 	}
 
 	input {
-		background: var(--bg01);
-		border: 1px solid var(--fg4);
+		background: var(--toolbar_field);
+		border: 1px solid var(--text-20);
 		border-radius: 4px;
 		padding: 0.75em;
 		font-family: var(--font);
 		font-size: 0.9em;
-		color: var(--fg);
+		color: var(--toolbar_field_text);
 		outline: none;
 		transition:
 			border-color 0.2s ease,
@@ -74,8 +74,8 @@ Input.style = css`
 	}
 
 	input:focus {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent-transparent);
+		border-color: var(--tab_line);
+		box-shadow: 0 0 0 2px var(--accent-20);
 	}
 
 	input:disabled {
@@ -84,6 +84,6 @@ Input.style = css`
 	}
 
 	input::placeholder {
-		color: var(--fg4);
+		color: var(--field-text-50);
 	}
 `;

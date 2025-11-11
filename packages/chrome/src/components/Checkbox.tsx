@@ -19,8 +19,8 @@ Checkbox.style = css`
 	:scope {
 		width: 1em;
 		height: 1em;
-		background: var(--bg);
-		border: 1px solid var(--bg20);
+		background: var(--toolbar_field);
+		border: 1px solid var(--text-20);
 		display: inline-block;
 		position: relative;
 		border-radius: 4px;
@@ -38,7 +38,7 @@ Checkbox.style = css`
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--bg);
+		color: var(--toolbar_field);
 		font-size: 0.8em;
 		transform: scale(0);
 		transition: transform 120ms ease;
@@ -46,8 +46,8 @@ Checkbox.style = css`
 	}
 
 	:scope:has(input:checked) {
-		background: var(--accent);
-		border-color: var(--accent);
+		background: var(--tab_line);
+		border-color: var(--tab_line);
 	}
 
 	:scope:has(input:checked)::after {

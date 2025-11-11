@@ -170,7 +170,7 @@ Menu.style = css`
 		transform: scale(100%);
 	}
 	.separator {
-		border-top: 1px solid var(--toolbar_text);
+		border-top: 1px solid var(--text-20);
 	}
 	:scope.closing {
 		transform: scale(95%);
@@ -204,11 +204,11 @@ Menu.style = css`
 		padding: 0;
 		margin: 0;
 
-		background: var(--bg);
-		border: 1px solid var(--bg20);
+		background: var(--toolbar_field);
+		border: 1px solid var(--text-20);
 	}
 	.item:hover {
-		background: var(--bg01);
+		background: var(--text-10);
 	}
 `;
 

@@ -156,6 +156,6 @@ Shell.style = css`
 		background-color: transparent;
 	}
 	progress::-webkit-progress-value {
-		background-color: var(--accent);
+		background-color: var(--tab_line);
 	}
 `;

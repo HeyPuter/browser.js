@@ -496,7 +496,7 @@ SettingsPage.style = css`
 	}
 
 	p {
-		color: color-mix(in srgb, var(--ntp_text) 70%, transparent);
+		color: var(--ntp-text-70);
 		font-size: 0.9rem;
 		line-height: 1.5;
 	}
@@ -505,8 +505,7 @@ SettingsPage.style = css`
 		width: max(20rem, 250px);
 		padding: 2rem;
 		background: var(--toolbar);
-		border-right: 1px solid
-			color-mix(in srgb, var(--toolbar_text) 15%, transparent);
+		border-right: 1px solid var(--text-15);
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
@@ -531,11 +530,11 @@ SettingsPage.style = css`
 	}
 
 	.nav-button:hover {
-		background: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
+		background: var(--text-10);
 	}
 
 	.nav-button.active {
-		background: color-mix(in oklab, var(--tab_line) 15%, transparent);
+		background: var(--accent-15);
 		color: var(--tab_line);
 		font-weight: 500;
 	}
@@ -549,8 +548,7 @@ SettingsPage.style = css`
 
 	.search-container {
 		padding: 1.5rem 2rem;
-		border-bottom: 1px solid
-			color-mix(in srgb, var(--ntp_text) 15%, transparent);
+		border-bottom: 1px solid var(--ntp-text-15);
 	}
 
 	input {
@@ -569,7 +567,7 @@ SettingsPage.style = css`
 		height: 2.5rem;
 		padding: 0 2.5rem;
 		border-radius: 6px;
-		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
 		color: var(--toolbar_field_text);
 		font-size: 0.95rem;
@@ -579,7 +577,7 @@ SettingsPage.style = css`
 
 	.search-input input:focus {
 		border-color: var(--tab_line);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--tab_line) 20%, transparent);
+		box-shadow: 0 0 0 2px var(--accent-20);
 	}
 
 	.search-input .icon {
@@ -609,7 +607,7 @@ SettingsPage.style = css`
 	}
 
 	.clear-search:hover {
-		background: color-mix(in srgb, var(--ntp_text) 10%, transparent);
+		background: var(--ntp-text-10);
 	}
 
 	.settings-content {
@@ -625,8 +623,7 @@ SettingsPage.style = css`
 	.setting-section {
 		margin-bottom: 2rem;
 		padding-bottom: 2rem;
-		border-bottom: 1px solid
-			color-mix(in srgb, var(--ntp_text) 15%, transparent);
+		border-bottom: 1px solid var(--ntp-text-15);
 	}
 
 	.setting-section:last-child {
@@ -641,7 +638,7 @@ SettingsPage.style = css`
 
 	.description {
 		margin-top: 0.25rem;
-		color: color-mix(in srgb, var(--ntp_text) 60%, transparent);
+		color: var(--ntp-text-60);
 	}
 
 	.section-content {
@@ -711,7 +708,7 @@ SettingsPage.style = css`
 	.select-input {
 		padding: 0.5rem;
 		border-radius: 4px;
-		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
 		color: var(--toolbar_field_text);
 		font-size: 0.9rem;
@@ -726,7 +723,7 @@ SettingsPage.style = css`
 	.action-button {
 		margin-top: 1rem;
 		background: var(--toolbar_field);
-		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		border: 1px solid var(--ntp-text-20);
 		color: var(--toolbar_field_text);
 		padding: 0.5rem 1rem;
 		border-radius: 4px;
@@ -736,7 +733,7 @@ SettingsPage.style = css`
 	}
 
 	.action-button:hover {
-		background: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
+		background: var(--text-10);
 	}
 
 	.dev-buttons {
@@ -745,15 +742,14 @@ SettingsPage.style = css`
 	}
 
 	.extensions-list {
-		border: 1px solid color-mix(in srgb, var(--ntp_text) 15%, transparent);
+		border: 1px solid var(--ntp-text-15);
 		border-radius: 6px;
 		overflow: hidden;
 	}
 
 	.extension-item {
 		padding: 1rem;
-		border-bottom: 1px solid
-			color-mix(in srgb, var(--ntp_text) 15%, transparent);
+		border-bottom: 1px solid var(--ntp-text-15);
 	}
 
 	.extension-item:last-child {
@@ -771,7 +767,7 @@ SettingsPage.style = css`
 		height: 2.5rem;
 		font-size: 2.25rem;
 		border-radius: 6px;
-		background: color-mix(in srgb, var(--ntp_text) 10%, transparent);
+		background: var(--ntp-text-10);
 		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
 	}
 
@@ -781,7 +777,7 @@ SettingsPage.style = css`
 
 	.extension-details p {
 		font-size: 0.85rem;
-		color: color-mix(in srgb, var(--ntp_text) 60%, transparent);
+		color: var(--ntp-text-60);
 	}
 
 	.about-info {
@@ -830,9 +826,9 @@ SettingsPage.style = css`
 		height: 100%;
 		background: linear-gradient(
 			90deg,
-			color-mix(in srgb, var(--ntp_text) 5%, transparent) 0%,
-			color-mix(in srgb, var(--ntp_text) 10%, transparent) 50%,
-			color-mix(in srgb, var(--ntp_text) 5%, transparent) 100%
+			var(--ntp-text-5) 0%,
+			var(--ntp-text-10) 50%,
+			var(--ntp-text-5) 100%
 		);
 		animation: shimmer 1.5s infinite;
 		background-size: 200% 100%;
@@ -855,7 +851,7 @@ SettingsPage.style = css`
 	}
 
 	.theme-card {
-		border: 2px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		border: 2px solid var(--ntp-text-20);
 		border-radius: 8px;
 		overflow: hidden;
 		cursor: pointer;
@@ -870,7 +866,7 @@ SettingsPage.style = css`
 
 	.theme-card.selected {
 		border-color: var(--tab_line);
-		box-shadow: 0 0 0 3px color-mix(in oklab, var(--tab_line) 20%, transparent);
+		box-shadow: 0 0 0 3px var(--accent-20);
 	}
 
 	.theme-preview {
@@ -916,7 +912,7 @@ SettingsPage.style = css`
 	.theme-info p {
 		margin: 0;
 		font-size: 0.8rem;
-		color: color-mix(in srgb, var(--toolbar_field_text) 60%, transparent);
+		color: var(--field-text-60);
 		line-height: 1.3;
 	}
 `;

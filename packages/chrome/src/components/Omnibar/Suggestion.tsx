@@ -138,7 +138,7 @@ Suggestion.style = css`
 	}
 
 	.url {
-		color: var(--fg20);
+		color: var(--text-65);
 		font-size: 0.85em;
 		min-width: 0;
 		opacity: 0.6;
@@ -148,7 +148,7 @@ Suggestion.style = css`
 	}
 	:scope.focused,
 	:scope.focused:hover {
-		background: var(--accent);
+		background: var(--tab_line);
 	}
 	:scope:hover {
 		background: var(--toolbarbutton-hover-background);

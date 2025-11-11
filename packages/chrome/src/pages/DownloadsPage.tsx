@@ -52,13 +52,13 @@ DownloadsPage.style = css`
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--ntp_background);
+		color: var(--ntp_text);
 	}
 	nav {
 		width: 100%;
 		padding: 1.5em;
-		background: var(--bg02);
+		background: var(--toolbar);
 	}
 	h1 {
 		font-size: 1.5rem;
@@ -84,10 +84,10 @@ DownloadsPage.style = css`
 		padding-block: 0.75em;
 		padding-left: 0.5em;
 		margin-left: 1.75em;
-		border-bottom: 1px solid var(--bg08);
+		border-bottom: 1px solid var(--ntp-text-10);
 	}
 	.entry:hover {
-		background: var(--bg08);
+		background: var(--ntp-text-10);
 	}
 	.entry img {
 		width: 16px;
@@ -99,7 +99,7 @@ DownloadsPage.style = css`
 		text-decoration: none;
 	}
 	.entry .title:hover {
-		color: var(--accent);
+		color: var(--tab_line);
 		text-decoration: underline;
 	}
 	.inner span {
@@ -118,7 +118,7 @@ DownloadsPage.style = css`
 	.details {
 		display: flex;
 		gap: 1em;
-		color: var(--fg2);
+		color: var(--ntp-text-70);
 	}
 	.icons {
 		display: flex;
@@ -128,6 +128,6 @@ DownloadsPage.style = css`
 	.icons :global(svg) {
 		width: 1em;
 		height: 1em;
-		color: var(--fg2);
+		color: var(--ntp-text-70);
 	}
 `;

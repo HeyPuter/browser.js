@@ -75,10 +75,10 @@ CircularProgress.style = css`
 	}
 	circle {
 		fill: transparent;
-		stroke: var(--accent);
+		stroke: var(--tab_line);
 		/*transition: stroke-dashoffset 0.2s ease;*/
 	}
 	circle.inactive {
-		stroke: var(--bg20);
+		stroke: var(--text-15);
 	}
 `;

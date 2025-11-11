@@ -248,7 +248,7 @@ Omnibar.style = css`
 		border: none;
 		font-size: 1.25em;
 		background: none;
-		color: var(--fg);
+		color: var(--toolbar_text);
 		border-radius: 0.2em;
 
 		transition: top 0.5s ease;
@@ -264,6 +264,6 @@ Omnibar.style = css`
 		width: 2em;
 		border-radius: 50%;
 		opacity: 0.5;
-		background: var(--bg20);
+		background: var(--text-15);
 	}
 `;

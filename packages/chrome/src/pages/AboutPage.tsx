@@ -19,8 +19,8 @@ AboutPage.style = css`
 		display: flex;
 		justify-content: center;
 		font-family: sans-serif;
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--ntp_background);
+		color: var(--ntp_text);
 	}
 
 	.main {

@@ -110,7 +110,7 @@ NewTabPage.style = css`
 		flex: 1;
 		max-width: 60em;
 		box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
-		background: var(--bg20);
+		background: var(--ntp-text-15);
 		border-radius: var(--radius);
 		display: flex;
 		align-items: center;
@@ -119,12 +119,12 @@ NewTabPage.style = css`
 	.icon {
 		font-size: 1.5em;
 		padding-left: 0.5em;
-		color: var(--fg3);
+		color: var(--ntp-text-60);
 	}
 
 	.inputcontainer:focus-within {
-		box-shadow: 0 0 2px var(--accent);
-		outline: 1px solid var(--accent);
+		box-shadow: 0 0 2px var(--tab_line);
+		outline: 1px solid var(--tab_line);
 	}
 	input {
 		font-size: 1.25em;
@@ -136,7 +136,7 @@ NewTabPage.style = css`
 		height: 100%;
 		background: none;
 		border: none;
-		color: var(--fg);
+		color: var(--ntp_text);
 	}
 
 	.suggestions {
@@ -156,7 +156,7 @@ NewTabPage.style = css`
 		border-radius: 2em;
 	}
 	.suggestion:hover {
-		background: var(--bg03);
+		background: var(--ntp-text-8);
 	}
 	.suggestioninner {
 		display: flex;
@@ -169,7 +169,7 @@ NewTabPage.style = css`
 		height: 64px;
 
 		border-radius: 50%;
-		background-color: var(--bg02);
+		background-color: var(--ntp-text-5);
 		display: flex;
 		justify-content: center;
 		align-items: center;

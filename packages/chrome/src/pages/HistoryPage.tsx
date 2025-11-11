@@ -37,13 +37,13 @@ HistoryPage.style = css`
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--ntp_background);
+		color: var(--ntp_text);
 	}
 	nav {
 		width: 100%;
 		padding: 1.5em;
-		background: var(--bg02);
+		background: var(--toolbar);
 	}
 	h1 {
 		font-size: 1.5rem;
@@ -69,10 +69,10 @@ HistoryPage.style = css`
 		padding-block: 0.75em;
 		padding-left: 0.5em;
 		margin-left: 1.75em;
-		border-bottom: 1px solid var(--bg08);
+		border-bottom: 1px solid var(--ntp-text-10);
 	}
 	.entry:hover {
-		background: var(--bg08);
+		background: var(--ntp-text-10);
 	}
 	.entry img {
 		width: 16px;

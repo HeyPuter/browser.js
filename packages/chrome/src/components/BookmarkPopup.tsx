@@ -59,7 +59,7 @@ BookmarkPopup.style = css`
 	.title {
 		padding: 1em;
 		font-weight: bold;
-		border-bottom: 1px solid var(--fg4);
+		border-bottom: 1px solid var(--text-30);
 		text-align: center;
 		margin: 0 -1em;
 	}
@@ -73,23 +73,23 @@ BookmarkPopup.style = css`
 		margin-top: 0.5em;
 	}
 	button {
-		background: var(--bg02);
-		border: 1px solid var(--fg4);
+		background: var(--toolbar_field);
+		border: 1px solid var(--text-20);
 		border-radius: 4px;
 		padding: 0.5em 1em;
 		font-size: 0.9em;
 		cursor: pointer;
-		color: var(--fg);
+		color: var(--toolbar_field_text);
 	}
 	button:hover {
-		background: var(--bg03);
+		background: var(--text-10);
 	}
 	button.accent {
-		background: var(--accent);
+		background: var(--tab_line);
 		color: white;
-		border-color: var(--accent);
+		border-color: var(--tab_line);
 	}
 	button.accent:hover {
-		background: var(--accent-hover, var(--accent));
+		background: var(--accent-dark);
 	}
 `;
