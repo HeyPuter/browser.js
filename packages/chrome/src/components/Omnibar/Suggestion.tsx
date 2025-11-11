@@ -105,7 +105,7 @@ Suggestion.style = css`
 		padding-bottom: 0.25em;
 
 		white-space: nowrap;
-		color: var(--fg);
+		color: var(--toolbar_text);
 		overflow: hidden;
 
 		border-radius: var(--radius);
@@ -148,10 +148,10 @@ Suggestion.style = css`
 	}
 	:scope.focused,
 	:scope.focused:hover {
-		background: var(--bg20);
+		background: var(--accent);
 	}
 	:scope:hover {
-		background: var(--bg04);
+		background: var(--toolbarbutton-hover-background);
 	}
 
 	.focused .description {
