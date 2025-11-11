@@ -1,0 +1,65 @@
+version: 1
+
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "preBuild enable corepack and prepare pnpm"
+        - corepack enable
+        - corepack prepare pnpm@latest --activate
+        - node -v
+        - npm -v
+        - pnpm -v || true
+        - echo "Install JS dependencies (root of monorepo)"
+        - pnpm install --frozen-lockfile
+
+        - |
+          if ! command -v cargo >/dev/null 2>&1; then
+            echo "Installing rustup & cargo toolchain (stable)"
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            source $HOME/.cargo/env
+          else
+            echo "cargo already available"
+          fi
+
+        - |
+          if ! command -v wasm-bindgen >/dev/null 2>&1; then
+            echo "Installing wasm-bindgen-cli"
+            cargo install wasm-bindgen-cli --version 0.2.105 || true
+          fi
+        - |
+          if ! command -v wasm-snip >/dev/null 2>&1; then
+          	echo "Installing wasm-snip"
+            cargo install --git https://github.com/r58playz/wasm-snip || true
+          fi
+
+    build:
+      commands:
+        - echo "Build Dreamland"
+        - cd external/dreamland
+        - pnpm install --frozen-lockfile
+        - pnpm build
+        - cd -
+        - echo "1) Build Scramjet core"
+        - cd packages/scramjet/packages/core
+
+        - echo "Pack core package"
+        - pnpm pack
+        - cd -
+
+        - echo "2) Build frontend"
+
+        - pnpm build
+        - VITE_PUTER_BRANDING=1 VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
+
+# No tests, no artifact collection steps per request.
+
+cache:
+  paths:
+    - ~/.pnpm-store/**/*
+    - node_modules/**/*
+    - packages/**/node_modules/**/*
+    - packages/scramjet/packages/core/rewriter/wasm/out/**/*
+    - packages/scramjet/packages/core/dist/**/*
+    - $HOME/.cargo/**/*
+    - $HOME/.rustup/**/*
