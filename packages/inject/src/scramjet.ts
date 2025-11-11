@@ -4,7 +4,7 @@ import {
 	loadAndHook,
 	SCRAMJETCLIENT,
 	ScramjetClient,
-	ScramjetClientEntryInit,
+	ScramjetClientInit,
 	ScramjetInitConfig,
 	ScramjetInterface,
 	setWasm,
@@ -39,44 +39,6 @@ export function loadScramjet({
 	}
 	const transport = new LibcurlClient({ wisp });
 
-	if (iswindow) {
-		addEventListener("message", async (e) => {
-			if (
-				!e.data ||
-				typeof e.data != "object" ||
-				!("$scramjetipc$type" in e.data)
-			)
-				return;
-			const type = e.data.$scramjetipc$type;
-			if (type === "response") {
-				const token = e.data.$scramjetipc$token;
-				const message = e.data.$scramjetipc$message;
-
-				const cb = syncPool.get(token);
-				if (cb) {
-					cb(message);
-					syncPool.delete(token);
-				}
-			} else if (type === "request") {
-				const method = e.data.$scramjetipc$method;
-				const message = e.data.$scramjetipc$message;
-				const token = e.data.$scramjetipc$token;
-
-				const fn = listeners.get(method);
-				if (fn) {
-					const response = await fn(message);
-					e.source!.postMessage({
-						$scramjetipc$type: "response",
-						$scramjetipc$token: token,
-						$scramjetipc$message: response,
-					});
-				} else {
-					console.error("Unknown scramjet ipc clientbound method", method);
-				}
-			}
-		});
-	}
-
 	let cookieJar = new CookieJar();
 	cookieJar.load(cookies);
 
@@ -91,28 +53,8 @@ export function loadScramjet({
 			cookieJar,
 			prefix: new URL(prefix),
 		},
-		rpc: {
-			onClientbound: function (type, callback) {
-				listeners.set(type, callback);
-			},
-			sendServerbound: async function (type, msg) {
-				const token = counter++;
-				chromeframe.postMessage(
-					{
-						$scramjetipc$type: "request",
-						$scramjetipc$method: type,
-						$scramjetipc$token: token,
-						$scramjetipc$message: msg,
-					},
-					"*"
-				);
-
-				return new Promise((res) => {
-					syncPool.set(token, res);
-				});
-			},
-		},
 		transport,
+		sendSetCookie: async (url: URL, cookie: string) => {},
 	});
 
 	client = self[SCRAMJETCLIENT];

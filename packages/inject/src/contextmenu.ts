@@ -1,4 +1,4 @@
-import { sendChrome } from "./ipc";
+import { rpc } from ".";
 import { Chromebound } from "./types";
 
 export function setupContextMenu() {
@@ -32,6 +32,6 @@ export function setupContextMenu() {
 			};
 		}
 
-		sendChrome("contextmenu", resp);
+		rpc.call("contextmenu", resp);
 	});
 }

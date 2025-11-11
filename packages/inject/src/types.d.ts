@@ -1,9 +1,4 @@
 import { ScramjetInterface } from "@mercuryworkshop/scramjet";
-
-export type FrameboundMethods = {
-	[K in keyof Framebound]: (arg: Framebound[K][0]) => Promise<Framebound[K][1]>;
-};
-
 export type FrameSequence = number[];
 
 export type Chromebound = {
@@ -36,6 +31,7 @@ export type Chromebound = {
 	load: [
 		{
 			url: string;
+			sequence: FrameSequence;
 		},
 	];
 	history_pushState: [
@@ -79,6 +75,7 @@ export type Framebound = {
 
 export type InjectScramjetInit = {
 	sequence: FrameSequence;
+	id: string;
 	config: any;
 	cookies: string;
 	getInjectScripts: ScramjetInterface["getInjectScripts"];

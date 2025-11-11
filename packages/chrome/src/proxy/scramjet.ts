@@ -9,6 +9,11 @@ import {
 	type ScramjetFetchResponse,
 	rewriteUrl,
 } from "@mercuryworkshop/scramjet/bundled";
+import type {
+	BareHeaders,
+	BareResponseFetch,
+} from "@mercuryworkshop/bare-mux-custom";
+import { RpcHelper } from "@mercuryworkshop/rpc";
 
 import scramjetWASM from "../../../scramjet/packages/core/dist/scramjet.wasm.wasm?url";
 import injectScript from "../../../inject/dist/inject.js?url";
@@ -36,10 +41,18 @@ function base64Encode(str: string): string {
 	);
 }
 
-import type { FrameSequence } from "../../../inject/src/types";
-import { bare, wispUrl } from "./wisp";
+import type {
+	Chromebound,
+	Framebound,
+	FrameSequence,
+} from "../../../inject/src/types";
+import { bare, transport, wispUrl } from "./wisp";
 import { codecDecode, codecEncode } from "./codec";
-import { controllerForURL, type Controller } from "./Controller";
+import { controllerForURL, makeId, type Controller } from "./Controller";
+import type { Tab } from "../Tab";
+import { createMenu } from "../components/Menu";
+import { pageContextItems } from "./contextitems";
+import type { BodyType } from "../../../scramjet/packages/controller/src/types";
 function findSelfSequence(
 	target: Window,
 	path: FrameSequence = []
@@ -56,24 +69,122 @@ function findSelfSequence(
 	}
 }
 
+function reduceSequence(sequence: FrameSequence): Window | null {
+	return sequence.reduce<Window | null>((win, idx) => {
+		if (!win) return null;
+		return win.frames[idx];
+	}, self.top);
+}
+
+class ProxyFrameContext {
+	rpc: RpcHelper<Chromebound, Framebound>;
+	windowproxy: Window | null = null;
+	constructor(
+		public controller: Controller,
+		public id: string
+	) {
+		let tab: Tab | null = null;
+		this.rpc = new RpcHelper(
+			{
+				load: async ({ url, sequence }) => {
+					this.windowproxy = reduceSequence(sequence);
+					tab =
+						browser.tabs.find(
+							(t) => t.frame.frame.contentWindow === this.windowproxy
+						) || null;
+					if (!tab) return;
+
+					console.log("TAB FOUND", url);
+					if (tab.history.justTriggeredNavigation) {
+						// url bar was typed in, we triggered this navigation, don't push a new state since we already did
+						tab.history.justTriggeredNavigation = false;
+					} else {
+						// the page just loaded on its own (a link was clicked, window.location was set)
+						tab.history.push(new URL(url), undefined, false);
+					}
+				},
+				titlechange: async ({ title, icon }) => {
+					if (!tab) return;
+					if (title) {
+						tab.title = title;
+						tab.history.current().title = title;
+					}
+					if (icon) {
+						tab.icon = icon;
+						tab.history.current().favicon = icon;
+					}
+				},
+				contextmenu: async (msg) => {
+					if (!tab) return;
+
+					let offX = 0;
+					let offY = 0;
+					let { x, y } = tab!.frame.frame.getBoundingClientRect();
+					offX += x;
+					offY += y;
+					createMenu(
+						{ left: msg.x + offX, top: msg.y + offY },
+						pageContextItems(tab, msg)
+					);
+				},
+				history_go: async ({ delta }) => {
+					if (tab) {
+						console.error("hist go" + delta);
+						tab.history.go(delta);
+					}
+				},
+				history_pushState: async ({ url, title, state }) => {
+					if (tab) {
+						console.error("hist push", url);
+						tab.history.push(new URL(url), title, state, false, true);
+					}
+				},
+				history_replaceState: async ({ url, title, state }) => {
+					if (tab) {
+						tab.history.replace(new URL(url), title, state, false);
+					}
+				},
+			},
+			id,
+			(message, transfer) => {
+				if (this.windowproxy) {
+					this.windowproxy.postMessage(message, "*", transfer);
+				} else {
+					console.warn("No window proxy available for frame context", this.id);
+				}
+			}
+		);
+		addEventListener("message", (event) => {
+			this.rpc.recieve(event.data);
+		});
+	}
+}
+
+export let contexts: ProxyFrameContext[] = [];
+
 export function createFetchHandler(controller: Controller) {
 	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		meta,
 		handler,
 		script
 	) => {
+		const contextId = "context-" + makeId();
+		let frameContext = new ProxyFrameContext(controller, contextId);
+		contexts.push(frameContext);
+
 		const injected = `
-				$injectLoad({
-					sequence: ${JSON.stringify(findSelfSequence(self)!)},
-					config: ${JSON.stringify(makeConfig())},
-					cookies: ${JSON.stringify(browser.cookieJar.dump())},
-					wisp: ${JSON.stringify(wispUrl)},
-					codecEncode: ${codecEncode.toString()},
-					codecDecode: ${codecDecode.toString()},
-					prefix: "${controller.prefix.href}",
-				});
-				document.currentScript.remove();
-			`;
+			$injectLoad({
+				id: "${contextId}",
+				sequence: ${JSON.stringify(findSelfSequence(self)!)},
+				config: ${JSON.stringify(makeConfig())},
+				cookies: ${JSON.stringify(browser.cookieJar.dump())},
+				wisp: ${JSON.stringify(wispUrl)},
+				codecEncode: ${codecEncode.toString()},
+				codecDecode: ${codecDecode.toString()},
+				prefix: "${controller.prefix.href}",
+			});
+			document.currentScript.remove();
+		`;
 
 		return [
 			script(controller.prefix.href + virtualWasmPath),
@@ -112,7 +223,7 @@ export function createFetchHandler(controller: Controller) {
 	};
 
 	const fetchHandler = new ScramjetFetchHandler({
-		client: bare,
+		transport: transport,
 		context: {
 			interface: {
 				getInjectScripts,
@@ -124,59 +235,48 @@ export function createFetchHandler(controller: Controller) {
 			config: makeConfig(),
 			prefix: controller.prefix,
 		},
-		onServerbound: (type, listener) => {
-			// sjIpcListeners.set(type, listener);
-		},
-		sendClientbound: async (type, msg) => {
-			// // TODO: the fetchandler needs an abstracted concept of clients so it can manually decide which one to send to
-			// for (let tab of browser.tabs) {
-			// 	if (!tab.frame.frame.contentWindow) continue;
-			// 	const token = sjIpcCounter++;
-			// 	const recurseSend = (win: Window) => {
-			// 		win.postMessage(
-			// 			{
-			// 				$scramjetipc$type: "request",
-			// 				$scramjetipc$method: type,
-			// 				$scramjetipc$token: token,
-			// 				$scramjetipc$message: msg,
-			// 			},
-			// 			"*"
-			// 		);
-			// 		for (let i = 0; i < win.frames.length; i++) {
-			// 			recurseSend(win.frames[i]);
-			// 		}
-			// 	};
-			// 	recurseSend(tab.frame.frame.contentWindow);
-			// }
-			// return undefined;
-		},
 		async fetchDataUrl(dataUrl: string) {
 			return (await fetch(dataUrl)) as BareResponseFetch;
 		},
 		async fetchBlobUrl(blobUrl: string) {
 			// find a random tab under this controller
-			// console.log("FETCHUBG BLOB");
-			// const tab = browser.tabs.find(
-			// 	(tab) => tab.frame.controller === controller
-			// );
-			// if (!tab) throw new Error("No tab found for blob fetch (?)");
-			// const response = await sendFrame(tab, "fetchBlob", blobUrl);
-			// console.log("FETCHED BLOB", response);
-			// let headers = new Headers();
-			// headers.set("Content-Type", response.contentType);
-			// return new Response(response.body, {
-			// 	headers,
-			// }) as BareResponseFetch;
+			const tab = browser.tabs.find(
+				(tab) => tab.frame.controller === controller
+			);
+			if (!tab) throw new Error("No tab found for blob fetch (?)");
+			let framewindowproxy = tab.frame.frame.contentWindow;
+			if (!framewindowproxy)
+				throw new Error("No frame window proxy for blob fetch");
+			// find the context for this proxy
+			const context = contexts.find(
+				(ctx) => ctx.windowproxy === framewindowproxy
+			);
+			if (!context) throw new Error("No context found for blob fetch");
+
+			const response = await context.rpc.call("fetchBlob", blobUrl);
+
+			console.log("FETCHED BLOB", response);
+			let headers = new Headers();
+			headers.set("Content-Type", response.contentType);
+			return new Response(response.body, {
+				headers,
+			}) as BareResponseFetch;
 		},
+		async sendSetCookie(url: URL, cookie: string) {},
 	});
 
 	return fetchHandler;
 }
 
-import type { BareHeaders } from "@mercuryworkshop/bare-mux-custom";
-
 let wasmPayload: string | null = null;
 
+export type RawDownload = {
+	filename: string | null;
+	url: string;
+	type: string;
+	body: BodyType;
+	length: number;
+};
 function isDownload(
 	responseHeaders: BareHeaders,
 	destination: string

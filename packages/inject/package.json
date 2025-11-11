@@ -14,6 +14,7 @@
 	"dependencies": {
 		"@mercuryworkshop/scramjet": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "workspace:*",
+		"@mercuryworkshop/rpc": "workspace:*",
 		"chobitsu": "workspace:*",
 		"html-to-image": "^1.11.13"
 	}
