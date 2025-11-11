@@ -52,7 +52,11 @@ frontend:
         - pnpm build
         - VITE_PUTER_BRANDING=1 VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
 
-# No tests, no artifact collection steps per request.
+
+artifacts:
+  baseDirectory: packages/scramjet/packages/core/dist
+  files:
+    - "**/*"
 
 cache:
   paths:
