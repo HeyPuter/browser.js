@@ -80,7 +80,7 @@ body.light-mode {
 
 :root {
 	font-family: "Inter", system-ui, sans-serif;
-	--tab-height: 33px;
+	--tab-height: 37px;
 
 	--toolbarbutton-hover-background: color-mix(
 		in srgb,

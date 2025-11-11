@@ -53,7 +53,7 @@ export function App(props: {}, cx: ComponentContext) {
 
 	cx.mount = () => {
 		for (const [key, value] of Object.entries(theme)) {
-			cx.root.style.setProperty(`--${key}`, value);
+			document.body.style.setProperty(`--${key}`, value);
 		}
 	};
 
