@@ -42,6 +42,9 @@ export function App(props: {}, cx: ComponentContext) {
 		toolbar_field: "#1C1B22",
 		toolbar_field_text: "white",
 		icons: "white",
+		ntp_background: "#121117",
+		ntp_text: "white",
+
 		// toolbar_text: "rgb(236, 191, 189)",
 		// frame: "rgb(30, 30, 40)",
 		// tab_background_text: "rgb(215, 218, 224)",
