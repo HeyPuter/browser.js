@@ -158,6 +158,11 @@ class ProxyFrameContext {
 			this.rpc.recieve(event.data);
 		});
 	}
+
+	alive(): boolean {
+		// the windowproxy *object* will still exist, so we need to check if there's still a path to it
+		return findSelfSequence(this.windowproxy!) !== null;
+	}
 }
 
 export let contexts: ProxyFrameContext[] = [];
@@ -262,7 +267,30 @@ export function createFetchHandler(controller: Controller) {
 				headers,
 			}) as BareResponseFetch;
 		},
-		async sendSetCookie(url: URL, cookie: string) {},
+		async sendSetCookie(url: URL, cookie: string) {
+			let promises: Promise<any>[] = [];
+			for (const context of contexts) {
+				if (context.alive()) {
+					promises.push(
+						context.rpc.call("setCookie", {
+							url: url.href,
+							cookie,
+						})
+					);
+				}
+			}
+
+			// a context could be deadlocked, so add a safety
+			await Promise.race([
+				new Promise((res) =>
+					setTimeout(() => {
+						console.error("a context deadlocked! hit timeout");
+						res(null);
+					}, 1000)
+				),
+				Promise.all(promises),
+			]);
+		},
 	});
 
 	return fetchHandler;
