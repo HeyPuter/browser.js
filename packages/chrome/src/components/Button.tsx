@@ -21,6 +21,9 @@ export function Button(
 }
 
 Button.style = css`
+	:scope {
+		color: inherit;
+	}
 	:scope:not(.icon) {
 		background: var(--bg02);
 		border: 1px solid var(--fg4);

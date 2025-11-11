@@ -50,6 +50,8 @@ SiteInformationPopup.style = css`
 		flex-direction: column;
 		gap: 1em;
 		width: 20em;
+
+		color: var(--toolbar_text);
 	}
 
 	.buttoniconscontainer {
@@ -57,6 +59,7 @@ SiteInformationPopup.style = css`
 		display: flex;
 		align-items: top;
 		justify-content: end;
+		color: var(--toolbar_text);
 	}
 
 	.content {
@@ -66,14 +69,14 @@ SiteInformationPopup.style = css`
 	.header {
 		padding: 1em;
 		display: flex;
-		border-bottom: 1px solid var(--fg4);
+		border-bottom: 1px solid var(--toolbar_text);
 	}
 	.header span {
 		font-size: 1.15em;
 	}
 
 	.footer {
-		border-top: 1px solid var(--fg4);
+		border-top: 1px solid var(--toolbar_text);
 		display: flex;
 		flex-direction: column;
 	}
@@ -86,6 +89,6 @@ SiteInformationPopup.style = css`
 		gap: 1em;
 	}
 	.entry:hover {
-		background: var(--bg20);
+		background: var(--toolbarbutton-hover-background);
 	}
 `;
