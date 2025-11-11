@@ -5,18 +5,30 @@ import { browser } from "./Browser";
 import { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
 import { Omnibar } from "./components/Omnibar/Omnibar";
+import { getTheme } from "./themes";
 
 export function App(props: {}, cx: ComponentContext) {
 	const applyTheme = () => {
-		let theme = browser.settings.theme;
+		const appearance = browser.settings.appearance;
+		const themeId = browser.settings.themeId;
+		const theme = getTheme(themeId);
 
-		if (theme === "system") {
+		// Determine if we should use light mode
+		let isLight = false;
+		if (appearance === "system") {
 			const prefersDark = window.matchMedia(
 				"(prefers-color-scheme: dark)"
 			).matches;
-			document.body.classList.toggle("light-mode", !prefersDark);
+			isLight = !prefersDark;
 		} else {
-			document.body.classList.toggle("light-mode", theme === "light");
+			isLight = appearance === "light";
+		}
+
+		document.body.classList.toggle("light-mode", isLight);
+
+		// Apply theme tokens
+		for (const [key, value] of Object.entries(theme.tokens)) {
+			document.body.style.setProperty(`--${key}`, value);
 		}
 	};
 
@@ -24,61 +36,18 @@ export function App(props: {}, cx: ComponentContext) {
 
 	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const handleThemeChange = () => {
-		if (browser.settings.theme === "system") {
+		if (browser.settings.appearance === "system") {
 			applyTheme();
 		}
 	};
 
 	mediaQuery.addEventListener("change", handleThemeChange);
 
-	use(browser.settings.theme).listen(applyTheme);
-
-	const theme = {
-		// dark theme
-		// frame: "rgb(240, 240, 244)",
-		// toolbar: "rgb(249, 249, 251)",
-		// tab_selected: "rgb(255, 255, 255)",
-		// tab_background_text: "black",
-		// toolbar_text: "rgb(21, 20, 26)",
-		// icons: "rgb(91, 91, 102)",
-		// toolbar_field: "rgb(230 230, 230)",
-		// ntp_background: "rgb(249, 249, 251)",
-		// ntp_background_text: "rgb(21, 20, 26)",
-
-		// light theme
-		// frame: "#1c1b22",
-		// tab_selected: "#42414d",
-		// tab_background_text: "white",
-		// toolbar: "#2b2a33",
-		// toolbar_text: "white",
-		// toolbar_field: "#1C1B22",
-		// toolbar_field_text: "white",
-		// icons: "white",
-		// ntp_background: "#121117",
-		// ntp_text: "white",
-
-		// catppuccin
-		toolbar: "rgb(45, 41, 59)",
-		toolbar_text: "rgb(236, 191, 189)",
-		frame: "rgb(30, 30, 40)",
-		tab_background_text: "rgb(215, 218, 224)",
-		toolbar_field: "rgb(30, 30, 40)",
-		toolbar_field_text: "rgb(236, 191, 189)",
-		tab_line: "rgb(236, 191, 189)",
-		popup: "rgb(30, 30, 40)",
-		popup_text: "rgb(236, 191, 189)",
-		icons: "rgb(198, 170, 232)",
-		ntp_background: "rgb(21, 18, 28)",
-		ntp_text: "rgb(164, 185, 239)",
-		popup_border: "rgb(236, 191, 189)",
-		toolbar_top_separator: "rgb(30, 30, 40)",
-		tab_loading: "rgb(236, 191, 189)",
-	};
+	use(browser.settings.appearance).listen(applyTheme);
+	use(browser.settings.themeId).listen(applyTheme);
 
 	cx.mount = () => {
-		for (const [key, value] of Object.entries(theme)) {
-			document.body.style.setProperty(`--${key}`, value);
-		}
+		applyTheme();
 	};
 
 	return (

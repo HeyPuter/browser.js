@@ -2,7 +2,6 @@ import { createState } from "dreamland/core";
 import { browser } from "./Browser";
 import { StatefulClass } from "./StatefulClass";
 import type { Tab } from "./Tab";
-import { sendFrame } from "./proxy/ipc";
 import { markDirty } from "./storage";
 
 // history api emulation
@@ -147,11 +146,11 @@ export class History {
 		let newstate = this.states[this.index];
 
 		if (current.virtual) {
-			sendFrame(this.tab, "popstate", {
-				state: newstate.state,
-				url: newstate.url.href,
-				title: newstate.title || "",
-			});
+			// sendFrame(this.tab, "popstate", {
+			// 	state: newstate.state,
+			// 	url: newstate.url.href,
+			// 	title: newstate.title || "",
+			// });
 		} else if (navigate) {
 			this.justTriggeredNavigation = true;
 			this.tab._directnavigate(newstate.url);

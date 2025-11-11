@@ -16,6 +16,11 @@ import {
 import type { RawDownload } from "./proxy/fetch";
 import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
 import { getSerializedBrowserState, markDirty } from "./storage";
+import {
+	type AppearancePreference,
+	type ThemeId,
+	DEFAULT_THEME_ID,
+} from "./themes";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -62,7 +67,8 @@ export type DownloadEntry = {
 };
 
 export type Settings = {
-	theme: "system" | "dark" | "light";
+	appearance: AppearancePreference;
+	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
 	showBookmarksBar: boolean;
@@ -93,7 +99,8 @@ export class Browser extends StatefulClass {
 	downloadProgress = 0;
 
 	settings: Stateful<Settings> = createState({
-		theme: "system",
+		appearance: "system",
+		themeId: DEFAULT_THEME_ID,
 		startupPage: "continue",
 		defaultZoom: 100,
 		showBookmarksBar: true,
@@ -231,7 +238,10 @@ export class Browser extends StatefulClass {
 		}
 		this.bookmarks = de.bookmarks.map(createState);
 		this.globalDownloadHistory = de.globalDownloadHistory.map(createState);
-		this.settings = createState(de.settings);
+
+		const settings = { ...de.settings };
+
+		this.settings = createState(settings);
 		this.cookieJar.load(de.cookiedump);
 	}
 

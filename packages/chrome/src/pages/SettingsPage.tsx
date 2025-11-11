@@ -8,6 +8,7 @@ import { Checkbox } from "../components/Checkbox";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { AVAILABLE_SEARCH_ENGINES } from "../components/Omnibar/suggestions";
+import { THEMES } from "../themes";
 
 import {
 	iconSettings,
@@ -71,50 +72,93 @@ export function SettingsPage(
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Appearance</h3>
+										<p class="description">
+											Customize how the browser looks and feels
+										</p>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
-											<h4>Theme</h4>
+											<h4>Page Appearance</h4>
 											<div class="radio-group">
 												<div class="radio-option">
 													<input
 														type="radio"
-														id="theme-system"
-														name="theme"
+														id="appearance-system"
+														name="appearance"
 														value="system"
-														checked={browser.settings.theme === "system"}
+														checked={browser.settings.appearance === "system"}
 														on:change={() => {
-															browser.settings.theme = "system";
+															browser.settings.appearance = "system";
 														}}
 													/>
-													<label for="theme-system">System Default</label>
+													<label for="appearance-system">System Default</label>
 												</div>
 												<div class="radio-option">
 													<input
 														type="radio"
-														id="theme-dark"
-														name="theme"
+														id="appearance-dark"
+														name="appearance"
 														value="dark"
-														checked={browser.settings.theme === "dark"}
+														checked={browser.settings.appearance === "dark"}
 														on:change={() => {
-															browser.settings.theme = "dark";
+															browser.settings.appearance = "dark";
 														}}
 													/>
-													<label for="theme-dark">Dark</label>
+													<label for="appearance-dark">Dark</label>
 												</div>
 												<div class="radio-option">
 													<input
 														type="radio"
-														id="theme-light"
-														name="theme"
+														id="appearance-light"
+														name="appearance"
 														value="light"
-														checked={browser.settings.theme === "light"}
+														checked={browser.settings.appearance === "light"}
 														on:change={() => {
-															browser.settings.theme = "light";
+															browser.settings.appearance = "light";
 														}}
 													/>
-													<label for="theme-light">Light</label>
+													<label for="appearance-light">Light</label>
 												</div>
+											</div>
+										</div>
+
+										<div class="setting-group">
+											<h4>Color Theme</h4>
+											<p class="description">
+												Choose your preferred color scheme
+											</p>
+											<div class="theme-grid">
+												{THEMES.map((theme) => (
+													<div
+														class="theme-card"
+														class:selected={use(browser.settings.themeId).map(
+															(id) => id === theme.id
+														)}
+														on:click={() => {
+															browser.settings.themeId = theme.id;
+														}}
+													>
+														<div class="theme-preview">
+															<div
+																class="preview-toolbar"
+																style={`background: ${theme.preview.toolbar};`}
+															>
+																<div
+																	class="preview-field"
+																	style={`background: ${theme.preview.field};`}
+																></div>
+																<div
+																	class="preview-accent"
+																	style={`background: ${theme.preview.accent};`}
+																></div>
+															</div>
+														</div>
+														<div class="theme-info">
+															<h5>{theme.name}</h5>
+															<p>{theme.description}</p>
+														</div>
+													</div>
+												))}
 											</div>
 										</div>
 									</div>
@@ -411,8 +455,8 @@ SettingsPage.style = css`
 			"Open Sans",
 			"Helvetica Neue",
 			sans-serif;
-		background: var(--bg01);
-		color: var(--fg);
+		background: var(--ntp_background);
+		color: var(--ntp_text);
 		overflow: hidden;
 	}
 
@@ -435,24 +479,24 @@ SettingsPage.style = css`
 		font-size: 1.3rem;
 		font-weight: 600;
 		margin-bottom: 1.5rem;
-		color: var(--fg);
+		color: var(--ntp_text);
 	}
 
 	h3 {
 		font-size: 1.1rem;
 		font-weight: 600;
-		color: var(--fg);
+		color: var(--ntp_text);
 	}
 
 	h4 {
 		font-size: 0.95rem;
 		font-weight: 500;
-		color: var(--fg);
+		color: var(--ntp_text);
 		margin-bottom: 0.5rem;
 	}
 
 	p {
-		color: var(--fg2);
+		color: color-mix(in srgb, var(--ntp_text) 70%, transparent);
 		font-size: 0.9rem;
 		line-height: 1.5;
 	}
@@ -460,8 +504,9 @@ SettingsPage.style = css`
 	.sidebar {
 		width: max(20rem, 250px);
 		padding: 2rem;
-		background: var(--bg02);
-		border-right: 1px solid var(--bg10);
+		background: var(--toolbar);
+		border-right: 1px solid
+			color-mix(in srgb, var(--toolbar_text) 15%, transparent);
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
@@ -482,16 +527,16 @@ SettingsPage.style = css`
 		cursor: pointer;
 		transition: background-color 0.2s ease;
 		font-size: 0.95rem;
-		color: var(--fg);
+		color: var(--toolbar_text);
 	}
 
 	.nav-button:hover {
-		background: var(--bg05);
+		background: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
 	}
 
 	.nav-button.active {
-		background: color-mix(in oklab, var(--accent) 15%, transparent);
-		color: var(--accent);
+		background: color-mix(in oklab, var(--tab_line) 15%, transparent);
+		color: var(--tab_line);
 		font-weight: 500;
 	}
 
@@ -504,7 +549,8 @@ SettingsPage.style = css`
 
 	.search-container {
 		padding: 1.5rem 2rem;
-		border-bottom: 1px solid var(--bg10);
+		border-bottom: 1px solid
+			color-mix(in srgb, var(--ntp_text) 15%, transparent);
 	}
 
 	input {
@@ -523,17 +569,17 @@ SettingsPage.style = css`
 		height: 2.5rem;
 		padding: 0 2.5rem;
 		border-radius: 6px;
-		border: 1px solid var(--bg15);
-		background: var(--bg02);
-		color: var(--fg);
+		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		background: var(--toolbar_field);
+		color: var(--toolbar_field_text);
 		font-size: 0.95rem;
 		outline: none;
 		transition: all 0.2s ease;
 	}
 
 	.search-input input:focus {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 20%, transparent);
+		border-color: var(--tab_line);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--tab_line) 20%, transparent);
 	}
 
 	.search-input .icon {
@@ -541,7 +587,7 @@ SettingsPage.style = css`
 		left: 0.75rem;
 		top: 50%;
 		transform: translateY(-50%);
-		color: var(--fg3);
+		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
 	}
 
 	.clear-search {
@@ -551,7 +597,7 @@ SettingsPage.style = css`
 		transform: translateY(-50%);
 		background: none;
 		border: none;
-		color: var(--fg3);
+		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
 		font-size: 1.2rem;
 		cursor: pointer;
 		display: flex;
@@ -563,7 +609,7 @@ SettingsPage.style = css`
 	}
 
 	.clear-search:hover {
-		background: var(--bg10);
+		background: color-mix(in srgb, var(--ntp_text) 10%, transparent);
 	}
 
 	.settings-content {
@@ -579,7 +625,8 @@ SettingsPage.style = css`
 	.setting-section {
 		margin-bottom: 2rem;
 		padding-bottom: 2rem;
-		border-bottom: 1px solid var(--bg16);
+		border-bottom: 1px solid
+			color-mix(in srgb, var(--ntp_text) 15%, transparent);
 	}
 
 	.setting-section:last-child {
@@ -594,7 +641,7 @@ SettingsPage.style = css`
 
 	.description {
 		margin-top: 0.25rem;
-		color: var(--fg3);
+		color: color-mix(in srgb, var(--ntp_text) 60%, transparent);
 	}
 
 	.section-content {
@@ -636,7 +683,7 @@ SettingsPage.style = css`
 
 	input[type="radio"],
 	input[type="checkbox"] {
-		accent-color: var(--accent);
+		accent-color: var(--tab_line);
 	}
 
 	.zoom-control {
@@ -654,7 +701,7 @@ SettingsPage.style = css`
 	input[type="range"] {
 		flex: 1;
 		max-width: 20rem;
-		accent-color: var(--accent);
+		accent-color: var(--tab_line);
 	}
 
 	select {
@@ -664,23 +711,23 @@ SettingsPage.style = css`
 	.select-input {
 		padding: 0.5rem;
 		border-radius: 4px;
-		border: 1px solid var(--bg15);
-		background: var(--bg02);
-		color: var(--fg);
+		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		background: var(--toolbar_field);
+		color: var(--toolbar_field_text);
 		font-size: 0.9rem;
 		min-width: 15rem;
 		outline: none;
 	}
 
 	.select-input:focus {
-		border-color: var(--accent);
+		border-color: var(--tab_line);
 	}
 
 	.action-button {
 		margin-top: 1rem;
-		background: var(--bg05);
-		border: 1px solid var(--bg15);
-		color: var(--fg);
+		background: var(--toolbar_field);
+		border: 1px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		color: var(--toolbar_field_text);
 		padding: 0.5rem 1rem;
 		border-radius: 4px;
 		font-size: 0.9rem;
@@ -689,7 +736,7 @@ SettingsPage.style = css`
 	}
 
 	.action-button:hover {
-		background: var(--bg10);
+		background: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
 	}
 
 	.dev-buttons {
@@ -698,14 +745,15 @@ SettingsPage.style = css`
 	}
 
 	.extensions-list {
-		border: 1px solid var(--bg10);
+		border: 1px solid color-mix(in srgb, var(--ntp_text) 15%, transparent);
 		border-radius: 6px;
 		overflow: hidden;
 	}
 
 	.extension-item {
 		padding: 1rem;
-		border-bottom: 1px solid var(--bg10);
+		border-bottom: 1px solid
+			color-mix(in srgb, var(--ntp_text) 15%, transparent);
 	}
 
 	.extension-item:last-child {
@@ -723,8 +771,8 @@ SettingsPage.style = css`
 		height: 2.5rem;
 		font-size: 2.25rem;
 		border-radius: 6px;
-		background: var(--bg10);
-		color: var(--fg3);
+		background: color-mix(in srgb, var(--ntp_text) 10%, transparent);
+		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
 	}
 
 	.extension-details h4 {
@@ -733,7 +781,7 @@ SettingsPage.style = css`
 
 	.extension-details p {
 		font-size: 0.85rem;
-		color: var(--fg3);
+		color: color-mix(in srgb, var(--ntp_text) 60%, transparent);
 	}
 
 	.about-info {
@@ -760,7 +808,7 @@ SettingsPage.style = css`
 	.link {
 		display: inline-block;
 		margin-top: 0.75rem;
-		color: var(--accent);
+		color: var(--tab_line);
 		text-decoration: none;
 	}
 
@@ -782,9 +830,9 @@ SettingsPage.style = css`
 		height: 100%;
 		background: linear-gradient(
 			90deg,
-			var(--bg05) 0%,
-			var(--bg10) 50%,
-			var(--bg05) 100%
+			color-mix(in srgb, var(--ntp_text) 5%, transparent) 0%,
+			color-mix(in srgb, var(--ntp_text) 10%, transparent) 50%,
+			color-mix(in srgb, var(--ntp_text) 5%, transparent) 100%
 		);
 		animation: shimmer 1.5s infinite;
 		background-size: 200% 100%;
@@ -797,5 +845,78 @@ SettingsPage.style = css`
 		100% {
 			background-position: 200% 0;
 		}
+	}
+
+	.theme-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+		gap: 1rem;
+		margin-top: 0.75rem;
+	}
+
+	.theme-card {
+		border: 2px solid color-mix(in srgb, var(--ntp_text) 20%, transparent);
+		border-radius: 8px;
+		overflow: hidden;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		background: var(--toolbar_field);
+	}
+
+	.theme-card:hover {
+		border-color: var(--tab_line);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.theme-card.selected {
+		border-color: var(--tab_line);
+		box-shadow: 0 0 0 3px color-mix(in oklab, var(--tab_line) 20%, transparent);
+	}
+
+	.theme-preview {
+		height: 5rem;
+		padding: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.preview-toolbar {
+		flex: 1;
+		border-radius: 4px;
+		padding: 0.5rem;
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.preview-field {
+		height: 1.5rem;
+		flex: 1;
+		border-radius: 3px;
+	}
+
+	.preview-accent {
+		width: 1.5rem;
+		height: 1.5rem;
+		border-radius: 50%;
+	}
+
+	.theme-info {
+		padding: 0.75rem 1rem 1rem;
+	}
+
+	.theme-info h5 {
+		margin: 0 0 0.25rem 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--toolbar_field_text);
+	}
+
+	.theme-info p {
+		margin: 0;
+		font-size: 0.8rem;
+		color: color-mix(in srgb, var(--toolbar_field_text) 60%, transparent);
+		line-height: 1.3;
 	}
 `;
