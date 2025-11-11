@@ -153,8 +153,8 @@ Menu.style = css`
 		position: absolute;
 		top: var(--y);
 		left: var(--x);
-		background: var(--bg02);
-		border: 1px solid var(--fg4);
+		background-color: var(--frame);
+		border: 1px solid var(--toolbar_text);
 		border-radius: 4px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		z-index: 1000;
@@ -170,7 +170,7 @@ Menu.style = css`
 		transform: scale(100%);
 	}
 	.separator {
-		border-top: 1px solid var(--fg4);
+		border-top: 1px solid var(--toolbar_text);
 	}
 	:scope.closing {
 		transform: scale(95%);
@@ -182,7 +182,7 @@ Menu.style = css`
 		font-size: 0.8em;
 		padding: 1em;
 		text-align: left;
-		color: var(--fg);
+		color: var(--toolbar_text);
 
 		display: flex;
 		align-items: center;

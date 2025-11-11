@@ -38,7 +38,7 @@ function InactiveBar(props: { subtle: boolean; active: boolean }) {
 }
 InactiveBar.style = css`
 	:scope {
-		background: var(--bg);
+		background: var(--toolbar_field);
 		width: 100%;
 		border: none;
 		outline: none;
@@ -411,11 +411,11 @@ Omnibox.style = css`
 	.overflow {
 		position: absolute;
 		display: none;
-		background: var(--bg02);
+		background: var(--toolbar_field);
 		width: 100%;
 		border-radius: 4px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-		border: 1px solid var(--fg5);
+		border: 1px solid var(--toolbar_text);
 		padding-bottom: 0.5em;
 	}
 	.overflow .spacer {

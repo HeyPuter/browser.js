@@ -34,16 +34,16 @@ SiteOptionsButton.style = css`
 		background: none;
 		outline: none;
 		border: none;
-		color: var(--fg);
+		color: var(--toolbar_text);
 		font-size: 1em;
 		padding: 0.1em;
 		border-radius: 0.2em;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: var(--bg01);
+		background: var(--toolbar);
 	}
 	:scope:hover {
-		background: var(--bg02);
+		background: var(--toolbarbutton-hover-background);
 	}
 `;

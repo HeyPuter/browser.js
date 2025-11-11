@@ -48,7 +48,7 @@ export function BookmarkButton(s: { url: URL }) {
 BookmarkButton.style = css`
 	:scope {
 		font-size: 1em;
-		color: var(--fg2);
+		color: var(--toolbar_text);
 		display: flex;
 		margin: 0.25em;
 		padding: 0.25em;
@@ -58,10 +58,9 @@ BookmarkButton.style = css`
 		align-items: center;
 		justify-content: center;
 
-		color: var(--fg2);
 		border-radius: 0.2em;
 	}
 	:scope:hover {
-		background: var(--bg01);
+		background: var(--toolbarbutton-hover-background);
 	}
 `;

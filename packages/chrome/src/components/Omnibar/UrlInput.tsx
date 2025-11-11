@@ -122,29 +122,30 @@ UrlInput.style = css`
 		text-wrap: nowrap;
 		overflow: hidden;
 		font-family: var(--font);
-		color: var(--fg);
+		color: var(--toolbar_text);
 		cursor: text;
 	}
 	.inactiveurl {
 		display: flex;
 		align-items: center;
-		color: var(--fg);
+		color: var(--toolbar_text);
 	}
 	.inactiveurl .subdomain,
 	.inactiveurl .rest {
 		opacity: 0.7;
-		color: var(--fg2);
+		color: var(--toolbar_text);
 	}
 
 	.placeholder {
-		color: var(--fg4);
+		color: var(--toolbar_text);
+		opacity: 0.5;
 		display: flex;
 		align-items: center;
 	}
 
 	.lefticon {
 		font-size: 1.15em;
-		color: var(--fg2);
+		color: var(--toolbar_text);
 		display: flex;
 		margin: 0.25em;
 
