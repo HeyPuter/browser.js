@@ -415,7 +415,7 @@ Omnibox.style = css`
 		width: 100%;
 		border-radius: 4px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-		border: 1px solid var(--toolbar_text);
+		border: 1px solid var(--popup_border);
 		padding-bottom: 0.5em;
 	}
 	.overflow .spacer {

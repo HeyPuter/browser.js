@@ -154,7 +154,7 @@ Menu.style = css`
 		top: var(--y);
 		left: var(--x);
 		background-color: var(--frame);
-		border: 1px solid var(--toolbar_text);
+		border: 1px solid var(--popup_border);
 		border-radius: 4px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		z-index: 1000;

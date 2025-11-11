@@ -215,8 +215,9 @@ DragTab.style = css`
 	.main.active {
 		background: var(--toolbar);
 		color: var(--tab-selected-textcolor);
+		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 
-		outline: 1px solid var(--tab-selected-textcolor);
+		outline: 1px solid var(--popup_border);
 		outline-offset: -1px;
 	}
 
