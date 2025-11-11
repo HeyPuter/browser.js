@@ -1,4 +1,5 @@
 import type { ComponentContext } from "dreamland/core";
+import { css } from "dreamland/core";
 import { TabStrip } from "./components/TabStrip/TabStrip";
 import { browser } from "./Browser";
 import type { Tab } from "./Tab";
@@ -72,8 +73,18 @@ export function App(props: {}, cx: ComponentContext) {
 			{use(browser.activetab.url, browser.settings.showBookmarksBar)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
 				.andThen(<BookmarksStrip />)}
-			<div style="border-bottom: 1px solid var(--bg20)"></div>
+			<div class="separator"></div>
 			{cx.children}
 		</div>
 	);
 }
+App.style = css`
+	:scope {
+		background-color: var(--toolbar);
+		--separator-color: color-mix(in srgb, currentColor 10%, transparent);
+	}
+	.separator {
+		color: var(--toolbar);
+		/*border-bottom: 1px solid var(--separator-color);*/
+	}
+`;

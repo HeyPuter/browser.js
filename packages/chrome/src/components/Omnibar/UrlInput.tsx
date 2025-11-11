@@ -137,14 +137,15 @@ UrlInput.style = css`
 	}
 
 	.placeholder {
-		color: var(--fg4);
+		color: var(--toolbar_text);
+		opacity: 0.5;
 		display: flex;
 		align-items: center;
 	}
 
 	.lefticon {
 		font-size: 1.15em;
-		color: var(--fg2);
+		color: var(--toolbar_text);
 		display: flex;
 		margin: 0.25em;
 
