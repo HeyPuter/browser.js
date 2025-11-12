@@ -138,12 +138,14 @@ function $injectLoadError(
 	let toggleBtn = document.getElementById("toggleBtn")!;
 	let details = document.getElementById("details")!;
 	let copyBtn = document.getElementById("copyBtn")!;
+	let errorMessage = document.getElementById("errorMessage")!;
 
 	reloadBtn.addEventListener("click", () => location.reload());
 
 	let error = `Error: ${errormeta.message}\n\n${errormeta.stack}`;
 
-	details.innerText = error;
+	errorMessage.innerText = errormeta.message;
+	details.innerText = errormeta.stack;
 	toggleBtn.addEventListener("click", () => {
 		if (details.style.display === "none") {
 			details.style.display = "block";

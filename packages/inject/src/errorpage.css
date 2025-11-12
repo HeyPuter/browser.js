@@ -60,6 +60,19 @@ body {
 	font-size: 14px;
 }
 
+.err-message {
+	margin: 0 0 16px 0;
+	padding: 10px 14px;
+	background: color-mix(in srgb, var(--muted) 6%, transparent);
+	border-left: 2px solid color-mix(in srgb, var(--muted) 30%, transparent);
+	border-radius: 4px;
+	color: var(--muted);
+	font-size: 13px;
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+	word-break: break-word;
+}
+
 .controls {
 	display: flex;
 	gap: 12px;
@@ -81,7 +94,7 @@ body {
 	box-shadow: 0 2px 0 rgba(0, 0, 0, 0.06);
 }
 .btn-link {
-	background: transparent;
+	background: color-mix(in srgb, currentColor 5%, transparent);
 	color: var(--muted);
 	border: 1px solid transparent;
 }
