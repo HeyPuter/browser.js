@@ -282,6 +282,9 @@ importers:
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
         version: link:../scramjet/packages/libcurl-transport
+      '@mercuryworkshop/rpc':
+        specifier: workspace:*
+        version: link:../scramjet/packages/rpc
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
         version: link:../scramjet/packages/core
