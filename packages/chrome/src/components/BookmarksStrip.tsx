@@ -22,25 +22,6 @@ export function BookmarksStrip(props: {}, cx: ComponentContext) {
 	console.log(browser.bookmarks);
 	return (
 		<div>
-			<button
-				on:click={(e: MouseEvent) => {
-					let b = createState<BookmarkEntry>({
-						url: browser.activetab.url.toString(),
-						title: browser.activetab.title || "Unknown",
-						favicon: browser.activetab.icon,
-					});
-					createMenuCustom(
-						{
-							left: e.clientX,
-							top: e.clientY,
-						},
-						<BookmarkPopup bookmark={b} new={true} />
-					);
-				}}
-			>
-				<Icon icon={iconAdd}></Icon>
-				<span>create bookmark</span>
-			</button>
 			{use(browser.bookmarks).mapEach((b) => (
 				<button
 					on:auxclick={(e: MouseEvent) => {
@@ -100,6 +81,7 @@ export function BookmarksStrip(props: {}, cx: ComponentContext) {
 BookmarksStrip.style = css`
 	:scope {
 		padding: 0.25em;
+		padding-left: 0.5em;
 		height: 2em;
 		display: flex;
 		gap: 0.5em;
