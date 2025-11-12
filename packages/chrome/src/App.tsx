@@ -78,8 +78,10 @@ App.style = css`
 	}
 	.separator {
 		color: var(--toolbar);
+		position: relative;
+		top: -1px;
 
-		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
-		border-bottom: 1px solid var(--separator-color);
+		/*box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);*/
+		border-top: 1px solid var(--text-15);
 	}
 `;

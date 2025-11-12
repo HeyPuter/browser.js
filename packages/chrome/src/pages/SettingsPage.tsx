@@ -851,7 +851,6 @@ SettingsPage.style = css`
 	}
 
 	.theme-card {
-		border: 2px solid var(--ntp-text-20);
 		border-radius: 8px;
 		overflow: hidden;
 		cursor: pointer;

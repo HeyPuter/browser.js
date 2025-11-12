@@ -100,6 +100,8 @@ Shell.style = css`
 		/*https://screen-share.github.io/element-capture/#elements-eligible-for-restriction*/
 		isolation: isolate;
 		transform-style: flat;
+
+		background-color: var(--ntp_background);
 	}
 	.container.active {
 		z-index: 0;

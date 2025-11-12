@@ -149,12 +149,15 @@ Suggestion.style = css`
 	:scope.focused,
 	:scope.focused:hover {
 		background: var(--tab_line);
+		color: white;
 	}
 	:scope:hover {
 		background: var(--toolbarbutton-hover-background);
 	}
 
-	.focused .description {
-		color: var(--highlight);
+	:scope.focused .title,
+	:scope.focused .url,
+	:scope.focused .description {
+		color: white;
 	}
 `;
