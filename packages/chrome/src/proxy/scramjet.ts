@@ -192,7 +192,7 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 		<script src="${controller.prefix.href}${virtualWasmPath}"></script>
 		<script src="${controller.prefix.href}${virtualInjectPath}"></script>
 		<script>
-			$injectLoad({
+			$injectLoadError({
 				id: "${contextId}",
 				sequence: ${JSON.stringify(findSequence(top!, self)!)},
 				config: ${JSON.stringify(makeConfig())},
@@ -201,179 +201,13 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 				codecEncode: ${codecEncode.toString()},
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
+			}, {
+				message: ${JSON.stringify(error.message)},
+				stack: ${JSON.stringify(error.stack)},
+				theme: ${JSON.stringify(theme)},
 			});
 			document.currentScript.remove();
 		</script>
-		<style>
-			:root {
-				--font: "Inter", system-ui, sans-serif;
-				--bg: ${theme.tokens.ntp_background};
-				--text: ${theme.tokens.ntp_text};
-				--muted: color-mix(in srgb, ${theme.tokens.ntp_text} 55%, transparent);
-				--accent: ${theme.tokens.tab_line};
-				--button-bg: ${theme.tokens.tab_line};
-				--button-text: ${theme.tokens.ntp_background};
-			}
-			html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden;}
-			.wrapper{
-				height:100%;
-				display:flex;
-				align-items:flex-start;
-				justify-content:center;
-				padding:120px 20px 20px 20px;
-				overflow:auto;
-			}
-
-			.errpage{
-				max-width:920px;
-				width:100%;
-				display:flex;
-				flex-direction:row;
-				gap:28px;
-				align-items:flex-start;
-			}
-
-			.err-graphic{
-				flex:0 0 120px;
-				display:flex;
-				align-items:center;
-				justify-content:center;
-			}
-			.err-graphic .face{
-				width:96px;
-				height:96px;
-				border-radius:12px;
-				display:flex;
-				align-items:center;
-				justify-content:center;
-				background:transparent;
-				border:4px solid var(--muted);
-				color:var(--muted);
-				font-size:44px;
-				line-height:1;
-			}
-
-			.err-main{
-				flex:1 1 auto;
-			}
-			.err-title{
-				font-size:28px;
-				font-weight:600;
-				margin:0 0 8px 0;
-				color:var(--text);
-			}
-			.err-sub{
-				margin:0 0 18px 0;
-				color:var(--muted);
-				font-size:14px;
-			}
-
-			.controls{
-				display:flex;
-				gap:12px;
-				align-items:center;
-				flex-wrap:wrap;
-				margin-bottom:14px;
-			}
-			.btn{
-				padding:10px 16px;
-				border-radius:8px;
-				font-weight:600;
-				border:none;
-				cursor:pointer;
-				font-size:14px;
-			}
-			.btn-primary{
-				background:var(--button-bg);
-				color:var(--button-text);
-				box-shadow:0 2px 0 rgba(0,0,0,0.06);
-			}
-			.btn-link{
-				background:transparent;
-				color:var(--muted);
-				border:1px solid transparent;
-			}
-			.details{
-				margin-top:8px;
-				background:transparent;
-				border:1px dashed color-mix(in srgb, var(--muted) 22%, transparent);
-				padding:10px;
-				border-radius:6px;
-				font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
-				font-size:12px;
-				color:var(--muted);
-				max-height:260px;
-				overflow:auto;
-				white-space:pre-wrap;
-			}
-
-			.suggestions{
-				margin-top:12px;
-				color:var(--muted);
-				font-size:13px;
-			}
-
-			@media (max-width:720px){
-				.errpage{flex-direction:column;align-items:center;text-align:center;}
-				.err-graphic{order:0;}
-				.err-main{order:1;width:100%;}
-			}
-		</style>
-
-		<body>
-			<div class="wrapper" role="main" aria-labelledby="errTitle">
-				<div class="errpage" role="alert" aria-live="polite">
-					<div class="err-graphic" aria-hidden="true">
-						<div class="face">:(</div>
-					</div>
-
-					<div class="err-main">
-						<h1 id="errTitle" class="err-title">This page can&#39;t be loaded</h1>
-						<p class="err-sub">The page at this address could not be loaded. This might be due to a network issue or the server being unreachable.</p>
-
-						<div class="controls">
-							<button class="btn btn-primary" id="reloadBtn">Reload</button>
-							<button class="btn btn-link" id="toggleBtn">Show details</button>
-							<button class="btn btn-link" id="copyBtn">Copy details</button>
-						</div>
-						<pre id="details" class="details" style="display:none;">${escapeHtml((error.stack || error.message) as any)}</pre>
-
-						<p class="suggestions">Try checking your connection, or try again later. If you believe this is a problem with the browser, try disabling extensions.</p>
-					</div>
-				</div>
-			</div>
-
-			<script>
-				reloadBtn.addEventListener('click', ()=> location.reload());
-				toggleBtn.addEventListener('click', function(){
-					if(details.style.display === 'none'){
-						details.style.display = 'block';
-						toggleBtn.textContent = 'Hide details';
-					} else {
-						details.style.display = 'none';
-						toggleBtn.textContent = 'Show details';
-					}
-				});
-
-				copyBtn.addEventListener('click', function(){
-					const text = ${JSON.stringify((error.stack || error.message) as any)};
-					const textarea = document.createElement('textarea');
-					textarea.value = text;
-					textarea.style.position = 'fixed';
-					textarea.style.opacity = '0';
-					document.body.appendChild(textarea);
-					textarea.select();
-					document.execCommand('copy');
-					document.body.removeChild(textarea);
-
-					const originalText = copyBtn.textContent;
-					copyBtn.textContent = 'Copied!';
-					setTimeout(() => {
-						copyBtn.textContent = originalText;
-					}, 2000);
-				});
-			</script>
-		</body>
 	`;
 }
 

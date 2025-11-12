@@ -75,7 +75,14 @@ const injectConfig = defineConfig({
 		extensions: [".ts", ".js"],
 	},
 	module: {
-		rules: [tsloader, cssloader],
+		rules: [
+			tsloader,
+			cssloader,
+			{
+				test: /\.html$/,
+				type: "asset/source",
+			},
+		],
 	},
 	performance: {
 		hints: false,

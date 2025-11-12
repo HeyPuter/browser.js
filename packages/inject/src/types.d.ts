@@ -1,4 +1,5 @@
 import { ScramjetInterface } from "@mercuryworkshop/scramjet";
+import type { ThemeDefinition } from "../../chrome/src/themes";
 export type FrameSequence = number[];
 
 export type Chromebound = {
@@ -77,6 +78,7 @@ export type Framebound = {
 			url: string;
 		},
 	];
+	updateTheme: [ThemeDefinition];
 };
 
 export type InjectScramjetInit = {

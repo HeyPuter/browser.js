@@ -6,6 +6,7 @@ import { Tab } from "./Tab";
 import { BookmarksStrip } from "./components/BookmarksStrip";
 import { Omnibar } from "./components/Omnibar/Omnibar";
 import { getTheme } from "./themes";
+import { contexts } from "./proxy/scramjet";
 
 export function App(props: {}, cx: ComponentContext) {
 	const applyTheme = () => {
@@ -29,6 +30,10 @@ export function App(props: {}, cx: ComponentContext) {
 		// Apply theme tokens
 		for (const [key, value] of Object.entries(theme.tokens)) {
 			document.body.style.setProperty(`--${key}`, value);
+		}
+
+		for (const context of contexts) {
+			context.rpc.call("updateTheme", theme);
 		}
 	};
 

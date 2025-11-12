@@ -1,0 +1,122 @@
+html,
+body {
+	height: 100%;
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	overflow: hidden;
+}
+.wrapper {
+	height: 100%;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 120px 20px 20px 20px;
+	overflow: auto;
+}
+
+.errpage {
+	max-width: 920px;
+	width: 100%;
+	display: flex;
+	flex-direction: row;
+	gap: 28px;
+	align-items: flex-start;
+}
+
+.err-graphic {
+	flex: 0 0 120px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.err-graphic .face {
+	width: 96px;
+	height: 96px;
+	border-radius: 12px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	border: 4px solid var(--muted);
+	color: var(--muted);
+	font-size: 44px;
+	line-height: 1;
+}
+
+.err-main {
+	flex: 1 1 auto;
+}
+.err-title {
+	font-size: 28px;
+	font-weight: 600;
+	margin: 0 0 8px 0;
+	color: var(--text);
+}
+.err-sub {
+	margin: 0 0 18px 0;
+	color: var(--muted);
+	font-size: 14px;
+}
+
+.controls {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	flex-wrap: wrap;
+	margin-bottom: 14px;
+}
+.btn {
+	padding: 10px 16px;
+	border-radius: 8px;
+	font-weight: 600;
+	border: none;
+	cursor: pointer;
+	font-size: 14px;
+}
+.btn-primary {
+	background: var(--button-bg);
+	color: var(--button-text);
+	box-shadow: 0 2px 0 rgba(0, 0, 0, 0.06);
+}
+.btn-link {
+	background: transparent;
+	color: var(--muted);
+	border: 1px solid transparent;
+}
+.details {
+	margin-top: 8px;
+	background: transparent;
+	border: 1px dashed color-mix(in srgb, var(--muted) 22%, transparent);
+	padding: 10px;
+	border-radius: 6px;
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+	font-size: 12px;
+	color: var(--muted);
+	max-height: 260px;
+	overflow: auto;
+	white-space: pre-wrap;
+}
+
+.suggestions {
+	margin-top: 12px;
+	color: var(--muted);
+	font-size: 13px;
+}
+
+@media (max-width: 720px) {
+	.errpage {
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+	.err-graphic {
+		order: 0;
+	}
+	.err-main {
+		order: 1;
+		width: 100%;
+	}
+}

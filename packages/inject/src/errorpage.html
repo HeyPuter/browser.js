@@ -1,0 +1,27 @@
+<div class="wrapper" role="main" aria-labelledby="errTitle">
+	<div class="errpage" role="alert" aria-live="polite">
+		<div class="err-graphic" aria-hidden="true">
+			<div class="face">:(</div>
+		</div>
+
+		<div class="err-main">
+			<h1 id="errTitle" class="err-title">This page can&#39;t be loaded</h1>
+			<p class="err-sub">
+				The page at this address could not be loaded. This might be due to a
+				network issue or the server being unreachable.
+			</p>
+
+			<div class="controls">
+				<button class="btn btn-primary" id="reloadBtn">Reload</button>
+				<button class="btn btn-link" id="toggleBtn">Show details</button>
+				<button class="btn btn-link" id="copyBtn">Copy details</button>
+			</div>
+			<pre id="details" class="details" style="display: none"></pre>
+
+			<p class="suggestions">
+				Try checking your connection, or try again later. If you believe this is
+				a problem with the browser, try disabling extensions.
+			</p>
+		</div>
+	</div>
+</div>
