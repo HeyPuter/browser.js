@@ -6,7 +6,12 @@ import type {
 } from "../../../scramjet/packages/controller/src/types";
 import { RpcHelper, type MethodsDefinition } from "@mercuryworkshop/rpc";
 import * as tldts from "tldts";
-import { createFetchHandler, handlefetch } from "./scramjet";
+import {
+	createFetchHandler,
+	handlefetch,
+	renderErrorPage,
+	virtualInjectPath,
+} from "./scramjet";
 import {
 	ScramjetHeaders,
 	type ScramjetFetchHandler,
@@ -29,42 +34,55 @@ export class Controller {
 			this.readyResolve();
 		},
 		request: async (data) => {
-			let headers = new ScramjetHeaders();
-			for (let [k, v] of Object.entries(data.initialHeaders)) {
-				if (typeof v !== "string") v = v[0];
-				if (v) headers.set(k, v);
+			try {
+				let headers = new ScramjetHeaders();
+				for (let [k, v] of Object.entries(data.initialHeaders)) {
+					if (typeof v !== "string") v = v[0];
+					if (v) headers.set(k, v);
+				}
+				const request: ScramjetFetchRequest = {
+					rawUrl: new URL(data.rawUrl),
+					rawClientUrl: data.rawClientUrl
+						? new URL(data.rawClientUrl)
+						: undefined,
+					method: data.method,
+					initialHeaders: headers,
+					body: data.body,
+					mode: data.mode,
+					cache: data.cache,
+					referrer: data.referrer,
+					destination: data.destination,
+				};
+
+				const fetchresp = await handlefetch(request, this);
+
+				const response: TransferResponse = {
+					status: fetchresp.status,
+					statusText: fetchresp.statusText,
+					headers: fetchresp.headers,
+					body: fetchresp.body,
+				};
+
+				let transfer: any[] | undefined = [];
+				if (
+					response.body instanceof ArrayBuffer ||
+					response.body instanceof ReadableStream
+				) {
+					transfer = [response.body];
+				}
+				return [response, transfer];
+			} catch (e: any) {
+				return [
+					{
+						status: 500,
+						statusText: "Internal Server Error",
+						headers: {
+							"Content-Type": "text/html",
+						},
+						body: renderErrorPage(this, e),
+					},
+				];
 			}
-			const request: ScramjetFetchRequest = {
-				rawUrl: new URL(data.rawUrl),
-				rawClientUrl: data.rawClientUrl
-					? new URL(data.rawClientUrl)
-					: undefined,
-				method: data.method,
-				initialHeaders: headers,
-				body: data.body,
-				mode: data.mode,
-				cache: data.cache,
-				referrer: data.referrer,
-				destination: data.destination,
-			};
-
-			const fetchresp = await handlefetch(request, this);
-
-			const response: TransferResponse = {
-				status: fetchresp.status,
-				statusText: fetchresp.statusText,
-				headers: fetchresp.headers,
-				body: fetchresp.body,
-			};
-
-			let transfer: any[] | undefined = [];
-			if (
-				response.body instanceof ArrayBuffer ||
-				response.body instanceof ReadableStream
-			) {
-				transfer = [response.body];
-			}
-			return [response, transfer];
 		},
 	};
 

@@ -12,19 +12,14 @@ import {
 import { FrameSequence, InjectScramjetInit } from "./types";
 
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
+import { cookieJar } from ".";
 
 export let client: ScramjetClient;
-export let chromeframe: Window;
 
-let counter = 0;
 const top = self.top;
-let syncPool = new Map();
-let listeners = new Map();
 
 export function loadScramjet({
-	sequence,
 	config,
-	cookies,
 	getInjectScripts,
 	wisp,
 	prefix,
@@ -34,13 +29,7 @@ export function loadScramjet({
 	setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 	delete (self as any).WASM;
 
-	if (iswindow) {
-		chromeframe = sequence.reduce((win, idx) => win!.frames[idx], top)!;
-	}
 	const transport = new LibcurlClient({ wisp });
-
-	let cookieJar = new CookieJar();
-	cookieJar.load(cookies);
 
 	loadAndHook({
 		context: {

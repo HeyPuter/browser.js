@@ -1,11 +1,11 @@
-import { sendChrome } from "./ipc";
+import { rpc } from ".";
 
 let cachedfaviconurl: string | null = null;
 export function setupTitleWatcher() {
 	const observer = new MutationObserver(() => {
 		const title = document.querySelector("title");
 		if (title) {
-			sendChrome("titlechange", { title: title.textContent });
+			rpc.call("titlechange", { title: title.textContent || undefined });
 		}
 		const favicon = document.querySelector(
 			"link[rel='icon'], link[rel='shortcut icon']"
@@ -16,7 +16,7 @@ export function setupTitleWatcher() {
 			let blob = await res.blob();
 			const reader = new FileReader();
 			reader.onload = () => {
-				sendChrome("titlechange", { icon: reader.result as string });
+				rpc.call("titlechange", { icon: reader.result as string });
 			};
 			reader.onabort = () => {
 				console.warn("Failed to read favicon");

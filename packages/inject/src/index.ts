@@ -6,19 +6,20 @@ import {
 	FrameSequence,
 	InjectScramjetInit,
 } from "./types";
-import { iswindow, ScramjetClient } from "@mercuryworkshop/scramjet";
+import { CookieJar, iswindow, ScramjetClient } from "@mercuryworkshop/scramjet";
 import { setupTitleWatcher } from "./titlewatcher";
 import { setupContextMenu } from "./contextmenu";
 import { setupHistoryEmulation } from "./history";
 import { client, loadScramjet } from "./scramjet";
+import { MethodsDefinition, RpcHelper } from "@mercuryworkshop/rpc";
 
 const history_replaceState = globalThis?.History?.prototype?.replaceState;
 const realFetch = fetch;
 
-import { chromeframe } from "./scramjet";
-import { MethodsDefinition, RpcHelper } from "@mercuryworkshop/rpc";
+export let chromeframe: Window;
 
 export let rpc: RpcHelper<Framebound, Chromebound>;
+export let cookieJar: CookieJar;
 export const methods: MethodsDefinition<Framebound> = {
 	async navigate({ url }) {
 		window.location.href = url;
@@ -40,6 +41,9 @@ export const methods: MethodsDefinition<Framebound> = {
 			[ab],
 		];
 	},
+	setCookie({ url, cookie }) {
+		cookieJar.setCookies([cookie], new URL(url));
+	},
 };
 
 function findSelfSequence(
@@ -59,25 +63,29 @@ function findSelfSequence(
 }
 
 (globalThis as any).$injectLoad = (init: InjectScramjetInit) => {
+	cookieJar = new CookieJar();
+	cookieJar.load(init.cookies);
+	loadScramjet(init);
+
+	if (!iswindow) return;
+	chromeframe = init.sequence.reduce((win, idx) => win!.frames[idx], top)!;
+
 	rpc = new RpcHelper(methods, init.id, (message, transfer) =>
 		chromeframe.postMessage(message, "*", transfer)
 	);
 	addEventListener("message", (event) => {
-		if (event.source !== chromeframe) return;
+		// console.log("inject got message", event.data, event.source, chromeframe);
+		// if (event.source !== chromeframe) return;
 		rpc.recieve(event.data);
 	});
 
-	loadScramjet(init);
-
-	if (iswindow) {
-		setupTitleWatcher();
-		setupContextMenu();
-		// setupHistoryEmulation();
-		// inform	chrome of the current url
-		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
-		rpc.call("load", {
-			url: client.url.href,
-			sequence: findSelfSequence(top!)!,
-		});
-	}
+	setupTitleWatcher();
+	setupContextMenu();
+	// setupHistoryEmulation();
+	// inform	chrome of the current url
+	// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
+	rpc.call("load", {
+		url: client.url.href,
+		sequence: findSelfSequence(top!)!,
+	});
 };

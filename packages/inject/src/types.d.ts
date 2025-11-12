@@ -71,6 +71,12 @@ export type Framebound = {
 			contentType: string;
 		},
 	];
+	setCookie: [
+		{
+			cookie: string;
+			url: string;
+		},
+	];
 };
 
 export type InjectScramjetInit = {
