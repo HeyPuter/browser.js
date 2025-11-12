@@ -132,6 +132,7 @@ jobs:
   frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    permissions: write-all
     needs: [build]
 
     steps:
