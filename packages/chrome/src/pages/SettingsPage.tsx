@@ -223,6 +223,7 @@ export function SettingsPage(
 											<div class="checkbox-option">
 												<Checkbox
 													value={use(browser.settings.showBookmarksBar)}
+													id="show-bookmarks-bar"
 												/>
 												<label for="show-bookmarks-bar">
 													Always show bookmarks bar
@@ -271,6 +272,7 @@ export function SettingsPage(
 										<div class="setting-group">
 											<div class="checkbox-option">
 												<Checkbox
+													id="search-suggestions"
 													value={use(browser.settings.searchSuggestionsEnabled)}
 												/>
 												<label for="search-suggestions">
@@ -298,14 +300,20 @@ export function SettingsPage(
 									<div class="section-content">
 										<div class="setting-group">
 											<div class="checkbox-option">
-												<Checkbox value={use(browser.settings.blockTrackers)} />
+												<Checkbox
+													id="block-trackers"
+													value={use(browser.settings.blockTrackers)}
+												/>
 												<label for="block-trackers">
 													Block third-party trackers
 												</label>
 											</div>
 
 											<div class="checkbox-option">
-												<Checkbox value={use(browser.settings.doNotTrack)} />
+												<Checkbox
+													id="do-not-track"
+													value={use(browser.settings.doNotTrack)}
+												/>
 												<label for="do-not-track">
 													Send 'Do Not Track' with browsing requests
 												</label>
@@ -324,6 +332,7 @@ export function SettingsPage(
 										<div class="setting-group">
 											<div class="checkbox-option">
 												<Checkbox
+													id="clear-history"
 													value={use(browser.settings.clearHistoryOnExit)}
 												/>
 												<label for="clear-history">
@@ -373,6 +382,7 @@ export function SettingsPage(
 										<div class="setting-group">
 											<div class="checkbox-option">
 												<Checkbox
+													id="dev-mode"
 													value={use(browser.settings.extensionsDevMode)}
 												/>
 												<label for="dev-mode">Enable developer mode</label>

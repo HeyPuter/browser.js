@@ -2,12 +2,14 @@ import { css } from "dreamland/core";
 
 export function Checkbox(props: {
 	value: boolean;
+	id?: string;
 	"on:change"?: (value: boolean) => void;
 }) {
 	return (
 		<label>
 			<input
 				type="checkbox"
+				id={use(props.id)}
 				checked={use(props.value)}
 				onChange={(e) => props["on:change"]?.(e.target.checked)}
 			></input>
