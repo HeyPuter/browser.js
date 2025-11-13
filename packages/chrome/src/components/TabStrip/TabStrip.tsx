@@ -16,6 +16,7 @@ import { browser, forceScreenshot, pushTab } from "../../Browser";
 import { defaultFaviconUrl } from "../../assets/favicon";
 import { DragTab } from "./DragTab";
 import { markDirty } from "../../storage";
+import { requestUnfocusFrames } from "../Shell";
 
 type VisualTab = {
 	tab: Tab;
@@ -47,6 +48,8 @@ export function TabStrip(
 ) {
 	this.currentlydragging = -1;
 	this.visualtabs = [];
+
+	const [lock, unlock] = requestUnfocusFrames();
 
 	const TAB_PADDING = 6;
 	const TAB_MAX_SIZE = 231;
@@ -167,11 +170,13 @@ export function TabStrip(
 		tab.dragpos = -1;
 		layoutTabs(true);
 		this.currentlydragging = -1;
+		unlock();
 	});
 
 	const mouseDown = (e: MouseEvent, tab: VisualTab) => {
 		if (e.button != 0) return;
 		this.currentlydragging = tab.tab.id;
+		lock();
 
 		const rect = tab.root.getBoundingClientRect();
 		tab.root.style.zIndex = "100";

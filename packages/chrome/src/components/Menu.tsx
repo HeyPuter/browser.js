@@ -11,6 +11,7 @@ import { Icon } from "./Icon";
 import type { IconifyIcon } from "@iconify/types";
 import { emToPx } from "../utils";
 import { isPuter } from "../main";
+import { requestUnfocusFrames } from "./Shell";
 
 export const closeMenu = createDelegate<void>();
 
@@ -41,8 +42,10 @@ export function Menu(
 	this.x = 0;
 	this.y = 0;
 
+	const [lock, unlock] = requestUnfocusFrames();
+
 	const close = () => {
-		browser.unfocusframes = false;
+		unlock();
 
 		window.removeEventListener("click", ev, { capture: true });
 		window.removeEventListener("contextmenu", ev, { capture: true });
@@ -66,7 +69,7 @@ export function Menu(
 	};
 
 	cx.mount = () => {
-		browser.unfocusframes = true;
+		lock();
 		document.body.appendChild(cx.root);
 		const { width, height } = cx.root.getBoundingClientRect();
 		const docWidth = document.documentElement.clientWidth;

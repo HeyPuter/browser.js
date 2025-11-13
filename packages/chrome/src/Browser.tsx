@@ -92,8 +92,6 @@ export class Browser extends StatefulClass {
 	sessionDownloadHistory: Stateful<DownloadEntry>[] = [];
 	globalDownloadHistory: Stateful<DownloadEntry>[] = [];
 
-	unfocusframes: boolean = false;
-
 	cookieJar: CookieJar = new CookieJar();
 
 	downloadProgress = 0;

@@ -25,6 +25,7 @@ import { SiteOptionsButton } from "./SiteOptionsButton";
 import { Favicon } from "../Favicon";
 import { UrlInput } from "./UrlInput";
 import { Suggestion } from "./Suggestion";
+import { requestUnfocusFrames } from "../Shell";
 
 export const focusOmnibox = createDelegate<void>();
 
@@ -75,6 +76,8 @@ export function Omnibox(
 	this.searchSuggestions = [];
 	this.value = "";
 	this.trendingSuggestions = [];
+
+	const [lock, unlock] = requestUnfocusFrames();
 
 	cx.mount = () => {
 		setContextMenu(cx.root, [
@@ -179,11 +182,11 @@ export function Omnibox(
 	const activate = () => {
 		this.subtleinput = false;
 		this.active = true;
-		browser.unfocusframes = true;
+		lock();
 
 		const handleClickOutside = (e: MouseEvent) => {
 			this.active = false;
-			browser.unfocusframes = false;
+			unlock();
 			e.preventDefault();
 
 			document.body.removeEventListener("click", handleClickOutside);
