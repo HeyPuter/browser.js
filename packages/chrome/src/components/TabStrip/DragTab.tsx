@@ -72,32 +72,35 @@ export function DragTab(
 			style="z-index: 0;"
 			class="tab"
 			data-id={props.id}
-			on:mousedown={(e: MouseEvent) => {
-				props.mousedown(e);
-				e.stopPropagation();
-				e.preventDefault();
-			}}
-			on:contextmenu={() => {
-				if (hoverTimeout) clearTimeout(hoverTimeout);
-				this.tooltipActive = false;
-			}}
 			on:transitionend={() => {
 				cx.root.style.transition = "";
 				cx.root.style.zIndex = "0";
 				props.transitionend();
 			}}
-			on:mouseenter={() => {
-				forceScreenshot(props.tab);
-				if (hoverTimeout) clearTimeout(hoverTimeout);
-				hoverTimeout = window.setTimeout(() => {
-					this.tooltipActive = true;
-				}, 500);
-			}}
-			on:mouseleave={() => {
-				if (hoverTimeout) clearTimeout(hoverTimeout);
-				this.tooltipActive = false;
-			}}
 		>
+			<div
+				class="hover-area"
+				on:mousedown={(e: MouseEvent) => {
+					props.mousedown(e);
+					e.stopPropagation();
+					e.preventDefault();
+				}}
+				on:contextmenu={() => {
+					if (hoverTimeout) clearTimeout(hoverTimeout);
+					this.tooltipActive = false;
+				}}
+				on:mouseenter={() => {
+					forceScreenshot(props.tab);
+					if (hoverTimeout) clearTimeout(hoverTimeout);
+					hoverTimeout = window.setTimeout(() => {
+						this.tooltipActive = true;
+					}, 500);
+				}}
+				on:mouseleave={() => {
+					if (hoverTimeout) clearTimeout(hoverTimeout);
+					this.tooltipActive = false;
+				}}
+			></div>
 			<TabTooltip tab={props.tab} active={use(this.tooltipActive)} />
 			<div
 				class="dragroot"
@@ -126,8 +129,8 @@ export function DragTab(
 					</button>
 				</div>
 				{/* <div class="belowcontainer">
-					{use(s.active).andThen(<div class="below"></div>)}
-				</div> */}
+						{use(s.active).andThen(<div class="below"></div>)}
+					</div> */}
 			</div>
 		</div>
 	);
@@ -143,6 +146,15 @@ DragTab.style = css`
 		--tab-active-border-radius-neg: -10px;
 
 		--tab-selected-textcolor: var(--toolbar_text);
+	}
+
+	.hover-area {
+		position: absolute;
+		top: -5px;
+		left: -3px;
+		right: -5px;
+		bottom: -5px;
+		pointer-events: auto;
 	}
 
 	.main {
@@ -205,7 +217,7 @@ DragTab.style = css`
 		border-radius: 3px;
 	}
 
-	.main:not(.active):hover {
+	:scope:has(.hover-area:hover) .main:not(.active) {
 		transition: background 250ms;
 		background-color: color-mix(in srgb, currentColor 7%, transparent);
 		/*background: var(--background_tab);*/
