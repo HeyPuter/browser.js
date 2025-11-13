@@ -4,7 +4,7 @@ import { setContextMenu } from "../Menu";
 import { iconClose, iconDuplicate, iconNew, iconRefresh } from "../../icons";
 import { browser, forceScreenshot } from "../../Browser";
 import { Icon } from "../Icon";
-import { TabTooltip } from "./TabTooltip";
+import { activeTooltips, TabTooltip } from "./TabTooltip";
 
 export function DragTab(
 	this: { tooltipActive: boolean },
@@ -92,11 +92,22 @@ export function DragTab(
 				on:mouseenter={() => {
 					forceScreenshot(props.tab);
 					if (hoverTimeout) clearTimeout(hoverTimeout);
-					hoverTimeout = window.setTimeout(() => {
+
+					if (activeTooltips > 0) {
+						// skip delay
 						this.tooltipActive = true;
-					}, 500);
+					} else {
+						hoverTimeout = window.setTimeout(() => {
+							this.tooltipActive = true;
+						}, 500);
+					}
 				}}
-				on:mouseleave={() => {
+				on:mouseleave={(e: MouseEvent) => {
+					const relatedTarget = e.relatedTarget as Node | null;
+					if (relatedTarget && cx.root.contains(relatedTarget)) {
+						// don't dismiss if hovering over the close button, even though that takes focus away from hover-area
+						return;
+					}
 					if (hoverTimeout) clearTimeout(hoverTimeout);
 					this.tooltipActive = false;
 				}}
@@ -217,7 +228,8 @@ DragTab.style = css`
 		border-radius: 3px;
 	}
 
-	:scope:has(.hover-area:hover) .main:not(.active) {
+	:scope:has(.hover-area:hover) .main:not(.active),
+	:scope:has(.close:hover) .main:not(.active) {
 		transition: background 250ms;
 		background-color: color-mix(in srgb, currentColor 7%, transparent);
 		/*background: var(--background_tab);*/

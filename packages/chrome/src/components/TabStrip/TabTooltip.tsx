@@ -2,6 +2,8 @@ import { css, type ComponentContext } from "dreamland/core";
 import type { Tab } from "../../Tab";
 import { isFirefox } from "../../utils";
 
+export let activeTooltips = 0;
+
 export function TabTooltip(
 	props: { active: boolean; tab: Tab },
 	cx: ComponentContext
@@ -21,6 +23,7 @@ export function TabTooltip(
 	use(props.active).listen((active) => {
 		if (active && !wasActive) {
 			wasActive = true;
+			activeTooltips++;
 			cx.root.animate([hidden, visible], {
 				duration,
 				fill: "forwards",
@@ -30,7 +33,9 @@ export function TabTooltip(
 			cx.root.animate([visible, hidden], {
 				duration,
 				fill: "forwards",
-			});
+			}).onfinish = () => {
+				activeTooltips--;
+			};
 		}
 	});
 	return (
