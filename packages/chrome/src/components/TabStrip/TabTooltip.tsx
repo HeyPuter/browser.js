@@ -1,10 +1,40 @@
-import { css } from "dreamland/core";
+import { css, type ComponentContext } from "dreamland/core";
 import type { Tab } from "../../Tab";
 import { isFirefox } from "../../utils";
 
-export function TabTooltip(props: { active: boolean; tab: Tab }) {
+export function TabTooltip(
+	props: { active: boolean; tab: Tab },
+	cx: ComponentContext
+) {
+	let wasActive = props.active;
+
+	const duration = 150;
+	const visible = {
+		opacity: "1",
+		transform: "scale(100%)",
+	};
+	const hidden = {
+		opacity: "0",
+		transform: "scale(95%)",
+	};
+
+	use(props.active).listen((active) => {
+		if (active && !wasActive) {
+			wasActive = true;
+			cx.root.animate([hidden, visible], {
+				duration,
+				fill: "forwards",
+			});
+		} else if (!active && wasActive) {
+			wasActive = false;
+			cx.root.animate([visible, hidden], {
+				duration,
+				fill: "forwards",
+			});
+		}
+	});
 	return (
-		<div class:active={use(props.active)}>
+		<div>
 			<div class="text">
 				<span class="title">{use(props.tab.title)}</span>
 				<span class="hostname">{use(props.tab.url.hostname)}</span>
@@ -35,11 +65,8 @@ TabTooltip.style = css`
 		width: 17em;
 		gap: 0.25em;
 		flex-direction: column;
-		display: none;
+		opacity: 0;
 		border-radius: 4px;
-	}
-	:scope.active {
-		display: flex;
 	}
 	.text {
 		padding: 0.5em;
