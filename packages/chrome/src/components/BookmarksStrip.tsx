@@ -87,16 +87,6 @@ BookmarksStrip.style = css`
 		gap: 0.5em;
 		background: var(--toolbar);
 		color: var(--toolbar_text);
-		--toolbarbutton-hover-background: color-mix(
-			in srgb,
-			currentColor 17%,
-			transparent
-		);
-		--toolbarbutton-active-background: color-mix(
-			in srgb,
-			currentColor 30%,
-			transparent
-		);
 	}
 
 	button {

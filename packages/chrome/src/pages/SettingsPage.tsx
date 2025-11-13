@@ -65,6 +65,11 @@ export function SettingsPage(
 					/>
 				</div>
 				<div class="settings-content">
+					<h1>
+						{use(this.selected).map(
+							(s) => s.charAt(0).toUpperCase() + s.slice(1)
+						)}
+					</h1>
 					{/* General Tab */}
 					{use(this.selected).map((selected) =>
 						selected === "general" ? (
@@ -390,7 +395,6 @@ export function SettingsPage(
 					{use(this.selected).map((selected) =>
 						selected === "about" ? (
 							<div class="settings-tab">
-								<h3>About</h3>
 								<section class="setting-section">
 									<div class="section-header"></div>
 									<div class="section-content">
@@ -547,8 +551,7 @@ SettingsPage.style = css`
 	}
 
 	.search-container {
-		padding: 1.5rem 2rem;
-		border-bottom: 1px solid var(--ntp-text-15);
+		padding: 1rem 1rem;
 	}
 
 	input {
@@ -614,6 +617,10 @@ SettingsPage.style = css`
 		flex: 1;
 		padding: 1.5rem 2rem 2rem;
 		overflow-y: auto;
+	}
+	.settings-content h1 {
+		margin-bottom: 1.5rem;
+		font-size: 1.75rem;
 	}
 
 	.settings-tab {
