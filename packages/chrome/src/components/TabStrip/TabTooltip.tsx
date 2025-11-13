@@ -1,11 +1,18 @@
-import { css, type ComponentContext } from "dreamland/core";
+import { createDelegate, css, type ComponentContext } from "dreamland/core";
 import type { Tab } from "../../Tab";
 import { isFirefox } from "../../utils";
 
 export let activeTooltips = 0;
+export let lastX;
+
+export const fastClose = createDelegate<void>();
 
 export function TabTooltip(
-	props: { active: boolean; tab: Tab },
+	props: {
+		active: boolean;
+		animate: boolean;
+		tab: Tab;
+	},
 	cx: ComponentContext
 ) {
 	let wasActive = props.active;
@@ -20,20 +27,56 @@ export function TabTooltip(
 		transform: "scale(95%)",
 	};
 
+	let isClosing = false;
+	fastClose.listen(() => {
+		if (isClosing) {
+			// instantly finish any current animations
+			let animations = cx.root.getAnimations();
+			for (let anim of animations) {
+				anim.finish();
+			}
+		}
+	});
+
 	use(props.active).listen((active) => {
 		if (active && !wasActive) {
 			wasActive = true;
 			activeTooltips++;
-			cx.root.animate([hidden, visible], {
-				duration,
-				fill: "forwards",
-			});
+
+			let x = cx.root.getBoundingClientRect().left;
+
+			if (props.animate) {
+				let shift = lastX - x;
+				cx.root.animate([hidden, visible], {
+					duration: 0,
+					fill: "forwards",
+				});
+				cx.root.animate(
+					[
+						{ transform: `translateX(${shift}px)` },
+						{ transform: "translateX(0px)" },
+					],
+					{
+						duration: 300,
+						easing: "ease-out",
+					}
+				);
+				props.animate = false;
+			} else {
+				cx.root.animate([hidden, visible], {
+					duration,
+					fill: "forwards",
+				});
+			}
+			lastX = x;
 		} else if (!active && wasActive) {
 			wasActive = false;
+			isClosing = true;
 			cx.root.animate([visible, hidden], {
 				duration,
 				fill: "forwards",
 			}).onfinish = () => {
+				isClosing = false;
 				activeTooltips--;
 			};
 		}

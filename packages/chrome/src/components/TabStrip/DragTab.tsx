@@ -4,10 +4,13 @@ import { setContextMenu } from "../Menu";
 import { iconClose, iconDuplicate, iconNew, iconRefresh } from "../../icons";
 import { browser, forceScreenshot } from "../../Browser";
 import { Icon } from "../Icon";
-import { activeTooltips, TabTooltip } from "./TabTooltip";
+import { activeTooltips, fastClose, TabTooltip } from "./TabTooltip";
 
 export function DragTab(
-	this: { tooltipActive: boolean },
+	this: {
+		tooltipActive: boolean;
+		tooltipAnimate: boolean;
+	},
 	props: {
 		active: boolean;
 		id: number;
@@ -95,6 +98,8 @@ export function DragTab(
 
 					if (activeTooltips > 0) {
 						// skip delay
+						fastClose();
+						this.tooltipAnimate = true;
 						this.tooltipActive = true;
 					} else {
 						hoverTimeout = window.setTimeout(() => {
@@ -112,7 +117,11 @@ export function DragTab(
 					this.tooltipActive = false;
 				}}
 			></div>
-			<TabTooltip tab={props.tab} active={use(this.tooltipActive)} />
+			<TabTooltip
+				tab={props.tab}
+				active={use(this.tooltipActive)}
+				animate={use(this.tooltipAnimate)}
+			/>
 			<div
 				class="dragroot"
 				style="position: unset;"
@@ -161,10 +170,10 @@ DragTab.style = css`
 
 	.hover-area {
 		position: absolute;
-		top: -5px;
+		top: -3px;
 		left: -3px;
-		right: -5px;
-		bottom: -5px;
+		right: -3px;
+		bottom: -3px;
 		pointer-events: auto;
 	}
 
