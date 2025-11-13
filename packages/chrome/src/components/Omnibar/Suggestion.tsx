@@ -148,7 +148,7 @@ Suggestion.style = css`
 	}
 	:scope.focused,
 	:scope.focused:hover {
-		background: var(--tab_line);
+		background: color-mix(in oklab, var(--tab_line) 50%, transparent);
 		color: white;
 	}
 	:scope:hover {
