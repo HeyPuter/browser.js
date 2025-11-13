@@ -24,14 +24,15 @@ export function TabTooltip(props: { active: boolean; tab: Tab }) {
 }
 TabTooltip.style = css`
 	:scope {
+		pointer-events: none;
 		position: absolute;
-		top: 2.25em;
+		top: calc(var(--tab-height) + 0.25em);
 		left: 0;
 		z-index: 1000;
 		background: var(--popup);
 		border: 1px solid var(--popup_border);
 		border-radius: 4px;
-		width: 20em;
+		width: 17em;
 		gap: 0.25em;
 		flex-direction: column;
 		display: none;
