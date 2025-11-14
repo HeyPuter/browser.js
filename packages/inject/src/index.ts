@@ -178,6 +178,6 @@ function $injectLoadError(
 }
 
 // @ts-expect-error
-window.$injectLoadError = $injectLoadError;
+globalThis.$injectLoadError = $injectLoadError;
 // @ts-expect-error
-window.$injectLoad = $injectLoad;
+globalThis.$injectLoad = $injectLoad;
