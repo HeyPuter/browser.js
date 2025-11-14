@@ -11,7 +11,7 @@
 		"build": "rspack build",
 		"build:dreamland": "cd external/dreamlandjs && pnpm build",
 		"build:chrome": "cd packages/chrome && pnpm build",
-		"dev": "node --no-warnings=ExperimentalWarning devserver.ts",
+		"dev": "node --localstorage-file='./uwu' --no-warnings=ExperimentalWarning devserver.ts",
 		"watch": "rspack build --watch",
 		"format": "prettier --write .",
 		"preinstall": "npx only-allow pnpm"
