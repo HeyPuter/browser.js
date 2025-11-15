@@ -29,9 +29,15 @@ export function loadScramjet({
 	setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 	delete (self as any).WASM;
 
+	if (SCRAMJETCLIENT in globalThis) {
+		//@ts-expect-error god bless america
+		client = globalThis[SCRAMJETCLIENT];
+		return;
+	}
+
 	const transport = new LibcurlClient({ wisp });
 
-	loadAndHook({
+	client = new ScramjetClient(globalThis, {
 		context: {
 			interface: {
 				getInjectScripts,
@@ -43,8 +49,10 @@ export function loadScramjet({
 			prefix: new URL(prefix),
 		},
 		transport,
+		shouldPassthroughWebsocket: (url) => {
+			return url === "wss://anura.pro/";
+		},
 		sendSetCookie: async (url: URL, cookie: string) => {},
 	});
-
-	client = self[SCRAMJETCLIENT];
+	client.hook();
 }
