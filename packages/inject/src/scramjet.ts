@@ -50,7 +50,7 @@ export function loadScramjet({
 		},
 		transport,
 		shouldPassthroughWebsocket: (url) => {
-			return url === "wss://anura.pro/";
+			return url === wisp;
 		},
 		sendSetCookie: async (url: URL, cookie: string) => {},
 	});

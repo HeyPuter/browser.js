@@ -262,6 +262,9 @@ export function createFetchHandler(controller: Controller) {
 					config: ${JSON.stringify(makeConfig())},
 					cookies: null,
 					wisp: ${JSON.stringify(wispUrl)},
+					codecEncode: ${codecEncode.toString()},
+					codecDecode: ${codecDecode.toString()},
+					prefix: "${controller.prefix.href}",
 				});
 			`;
 		script(controller.prefix.href + virtualWasmPath);
