@@ -244,18 +244,10 @@ export function createFetchHandler(controller: Controller) {
 
 	const getWorkerInjectScripts: ScramjetInterface["getWorkerInjectScripts"] = (
 		meta,
-		js,
-		type
+		type,
+		script
 	) => {
-		const module = type === "module";
 		let str = "";
-		const script = (script: string) => {
-			if (module) {
-				str += `import "${script}"\n`;
-			} else {
-				str += `importScripts("${script}");\n`;
-			}
-		};
 
 		const injectLoad = `
 				$injectLoad({
@@ -267,9 +259,11 @@ export function createFetchHandler(controller: Controller) {
 					prefix: "${controller.prefix.href}",
 				});
 			`;
-		script(controller.prefix.href + virtualWasmPath);
-		script(controller.prefix.href + virtualInjectPath);
-		script(`data:application/javascript;base64,${base64Encode(injectLoad)}`);
+		str += script(controller.prefix.href + virtualWasmPath);
+		str += script(controller.prefix.href + virtualInjectPath);
+		str += script(
+			`data:application/javascript;base64,${base64Encode(injectLoad)}`
+		);
 
 		return str;
 	};
