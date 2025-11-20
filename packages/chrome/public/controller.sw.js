@@ -49,16 +49,16 @@ var $scramjetController;
 							const method = dt.$method;
 							const args = dt.$args;
 							this.methods[method](args)
-								.then(([res, transfer]) => {
+								.then((r) => {
 									this.sendRaw(
 										{
 											[this.id]: {
 												$type: "response",
 												$token: dt.$token,
-												$data: res,
+												$data: r?.[0],
 											},
 										},
-										transfer
+										r?.[1]
 									);
 								})
 								.catch((err) => {
@@ -206,46 +206,52 @@ var $scramjetController;
 			return tab !== undefined;
 		}
 		async function route(event) {
-			const url = new URL(event.request.url);
-			const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
-			const client = await clients.get(event.clientId);
-			const bareheaders = {};
-			// @ts-expect-error for some reason it thinks headers.entries doesn't exist?
-			for (const [key, value] of event.request.headers.entries()) {
-				bareheaders[key] = [value];
-			}
-			const response = await tab.rpc.call(
-				"request",
-				{
-					rawUrl: event.request.url,
-					destination: event.request.destination,
-					mode: event.request.mode,
-					referrer: event.request.referrer,
-					method: event.request.method,
-					body: event.request.body,
-					cache: event.request.cache,
-					forceCrossOriginIsolated: false,
-					initialHeaders: bareheaders,
-					rawClientUrl: client ? client.url : undefined,
-				},
-				event.request.body instanceof ReadableStream || // @ts-expect-error the types for fetchevent are messed up
-					event.request.body instanceof ArrayBuffer
-					? [event.request.body]
-					: undefined
-			);
-			const realHeaders = new Headers();
-			for (const [key, values] of Object.entries(response.headers)) {
-				let val =
-					typeof values === "string" ? values : (values?.[0] ?? undefined);
-				if (val !== undefined) {
-					realHeaders.set(key, val);
+			try {
+				const url = new URL(event.request.url);
+				const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
+				const client = await clients.get(event.clientId);
+				const bareheaders = {};
+				// @ts-expect-error for some reason it thinks headers.entries doesn't exist?
+				for (const [key, value] of event.request.headers.entries()) {
+					bareheaders[key] = [value];
 				}
+				const response = await tab.rpc.call(
+					"request",
+					{
+						rawUrl: event.request.url,
+						destination: event.request.destination,
+						mode: event.request.mode,
+						referrer: event.request.referrer,
+						method: event.request.method,
+						body: event.request.body,
+						cache: event.request.cache,
+						forceCrossOriginIsolated: false,
+						initialHeaders: bareheaders,
+						rawClientUrl: client ? client.url : undefined,
+					},
+					event.request.body instanceof ReadableStream || // @ts-expect-error the types for fetchevent are messed up
+						event.request.body instanceof ArrayBuffer
+						? [event.request.body]
+						: undefined
+				);
+				const realHeaders = new Headers();
+				for (const [key, values] of Object.entries(response.headers)) {
+					let val =
+						typeof values === "string" ? values : (values?.[0] ?? undefined);
+					if (val !== undefined) {
+						realHeaders.set(key, val);
+					}
+				}
+				return new Response(response.body, {
+					status: response.status,
+					statusText: response.statusText,
+					headers: realHeaders,
+				});
+			} catch (e) {
+				return new Response("Internal Service Worker Error: " + e.message, {
+					status: 500,
+				});
 			}
-			return new Response(response.body, {
-				status: response.status,
-				statusText: response.statusText,
-				headers: realHeaders,
-			});
 		}
 	})();
 

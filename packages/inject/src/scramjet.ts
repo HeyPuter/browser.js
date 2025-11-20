@@ -1,12 +1,8 @@
 import {
 	CookieJar,
 	iswindow,
-	loadAndHook,
 	SCRAMJETCLIENT,
 	ScramjetClient,
-	ScramjetClientInit,
-	ScramjetInitConfig,
-	ScramjetInterface,
 	setWasm,
 } from "@mercuryworkshop/scramjet";
 import { FrameSequence, InjectScramjetInit } from "./types";
@@ -31,7 +27,9 @@ export function loadScramjet({
 
 	const transport = new LibcurlClient({ wisp });
 
-	loadAndHook({
+	if (SCRAMJETCLIENT in self) return;
+
+	client = new ScramjetClient(globalThis, {
 		context: {
 			interface: {
 				getInjectScripts,
@@ -45,6 +43,5 @@ export function loadScramjet({
 		transport,
 		sendSetCookie: async (url: URL, cookie: string) => {},
 	});
-
-	client = self[SCRAMJETCLIENT];
+	client.hook();
 }
