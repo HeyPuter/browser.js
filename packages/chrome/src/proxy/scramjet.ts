@@ -312,7 +312,7 @@ export function createFetchHandler(controller: Controller) {
 			let promises: Promise<any>[] = [];
 			for (const context of contexts) {
 				if (context.alive()) {
-					console.log("sending to " + context.id, context.windowproxy);
+					// console.log("sending to " + context.id, context.windowproxy);
 					promises.push(
 						context.rpc.call("setCookie", {
 							url: url.href,
@@ -322,18 +322,18 @@ export function createFetchHandler(controller: Controller) {
 				}
 			}
 			if (promises.length === 0) return;
-			console.log("actually sent");
+			// console.log("actually sent");
 
 			// a context could be deadlocked, so add a safety
-			await Promise.race([
-				new Promise((res) =>
-					setTimeout(() => {
-						console.error("a context deadlocked! hit timeout");
-						res(null);
-					}, 1000)
-				),
-				Promise.all(promises),
-			]);
+			// await Promise.race([
+			// 	new Promise((res) =>
+			// 		setTimeout(() => {
+			// 			console.error("a context deadlocked! hit timeout");
+			// 			res(null);
+			// 		}, 1000)
+			// 	),
+			// 	Promise.all(promises),
+			// ]);
 		},
 	});
 

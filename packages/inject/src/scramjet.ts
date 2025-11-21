@@ -1,12 +1,8 @@
 import {
 	CookieJar,
 	iswindow,
-	loadAndHook,
 	SCRAMJETCLIENT,
 	ScramjetClient,
-	ScramjetClientInit,
-	ScramjetInitConfig,
-	ScramjetInterface,
 	setWasm,
 } from "@mercuryworkshop/scramjet";
 import { FrameSequence, InjectScramjetInit } from "./types";

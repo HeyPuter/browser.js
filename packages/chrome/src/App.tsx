@@ -78,7 +78,7 @@ export function App(props: {}, cx: ComponentContext) {
 }
 App.style = css`
 	:scope {
-		background-color: var(--toolbar);
+		background-color: var(--frame);
 		--separator-color: color-mix(in srgb, currentColor 10%, transparent);
 	}
 	.separator {
