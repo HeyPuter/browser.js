@@ -25,9 +25,13 @@ export function loadScramjet({
 	setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 	delete (self as any).WASM;
 
-	const transport = new LibcurlClient({ wisp });
+	if (SCRAMJETCLIENT in globalThis) {
+		//@ts-expect-error god bless america
+		client = globalThis[SCRAMJETCLIENT];
+		return;
+	}
 
-	if (SCRAMJETCLIENT in self) return;
+	const transport = new LibcurlClient({ wisp });
 
 	client = new ScramjetClient(globalThis, {
 		context: {
@@ -41,6 +45,9 @@ export function loadScramjet({
 			prefix: new URL(prefix),
 		},
 		transport,
+		shouldPassthroughWebsocket: (url) => {
+			return url === wisp;
+		},
 		sendSetCookie: async (url: URL, cookie: string) => {},
 	});
 	client.hook();

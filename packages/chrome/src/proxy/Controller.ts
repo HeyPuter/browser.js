@@ -217,7 +217,7 @@ export async function controllerForURL(url: URL): Promise<Controller> {
 		let channel = new MessageChannel();
 
 		const controllerId = makeId();
-		let prefix = new URL(baseurl + basePrefix + controllerId);
+		let prefix = new URL(baseurl.origin + basePrefix + controllerId + "/");
 
 		controller = new Controller(prefix, controllerId, channel, rootdomain);
 		controllers.push(controller);
