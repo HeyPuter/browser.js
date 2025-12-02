@@ -66,6 +66,7 @@ const injectConfig = defineConfig({
 	entry: join(injectdir, "src/index.ts"),
 	devtool: "source-map",
 	target: "web",
+	mode: "development",
 	output: {
 		filename: "inject.js",
 		path: join(injectdir, "dist"),
