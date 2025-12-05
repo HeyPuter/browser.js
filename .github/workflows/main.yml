@@ -322,8 +322,7 @@ jobs:
   pages:
     name: Upload to Github Pages
     runs-on: ubuntu-latest
-    # make sure to add rewritertests and tests, omitting them due to bugs currently
-    needs: [frontend]
+    needs: [frontend, tests, rewritertests]
     permissions: write-all
     if: github.ref == 'refs/heads/main'
 
