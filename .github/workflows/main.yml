@@ -117,18 +117,25 @@ jobs:
         run: pnpm pack
         working-directory: packages/scramjet/packages/core
 
-      - name: Upload Artifact (pnpm pack)
-        uses: actions/upload-artifact@v4
-        with:
-          name: packaged-scramjet
-          path: packages/scramjet/packages/core/mercuryworkshop-scramjet-*.tgz
-
-      - name: Upload Artifact (dist)
+      - name: Upload Artifact (scramjet/core)
         uses: actions/upload-artifact@v4
         with:
           name: scramjet
           path: |
             packages/scramjet/packages/core/dist/*
+
+      - name: Upload Artifact (packaged)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scramjet-package
+          path: packages/scramjet/packages/core/mercuryworkshop-scramjet-*.tgz
+
+      - name: Upload Artifact (scramjet/controller)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scramjet-controller
+          path: |
+            packages/scramjet/packages/controller/dist/*
 
   package-validation:
     name: Validate Package Structure
@@ -154,7 +161,7 @@ jobs:
       - name: Get artifacts
         uses: actions/download-artifact@v4
         with:
-          name: packaged-scramjet
+          name: scramjet-package
           path: packages/scramjet/packages/core
 
       - name: Extract package
@@ -189,11 +196,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Get artifacts
+      - name: Get artifacts (scramjet/core)
         uses: actions/download-artifact@v4
         with:
           name: scramjet
           path: packages/scramjet/packages/core/dist
+
+      - name: Get artifacts (scramjet/controller)
+        uses: actions/download-artifact@v4
+        with:
+          name: scramjet-controller
+          path: packages/scramjet/packages/controller/dist
 
       - name: Cache Playwright browsers
         id: pw-browsers-cache
