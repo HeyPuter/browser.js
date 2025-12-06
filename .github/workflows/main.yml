@@ -202,6 +202,15 @@ jobs:
           name: scramjet
           path: packages/scramjet/packages/core/dist
 
+      - name: Get cached rewriter build
+        uses: actions/cache/restore@v4
+        id: rewriter-cache
+        with:
+          path: |
+            packages/scramjet/packages/core/rewriter/wasm/out
+            packages/scramjet/packages/core/dist/scramjet.wasm.wasm
+          key: rewriter-release-${{ hashFiles('packages/scramjet/packages/core/rewriter/**/Cargo.toml', 'packages/scramjet/packages/core/rewriter/**/*.rs', 'packages/scramjet/packages/core/rewriter/**/src/**/*.toml', 'packages/scramjet/packages/core/rewriter/**/src/**/*.json', 'packages/scramjet/packages/core/rewriter/**/src/**/*.md', 'packages/scramjet/packages/core/rewriter/**/*.sh') }}
+
       - name: Get artifacts (scramjet/controller)
         uses: actions/download-artifact@v4
         with:
