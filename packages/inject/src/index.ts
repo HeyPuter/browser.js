@@ -12,7 +12,7 @@ function $injectLoad(init: InjectScramjetInit) {
 		return;
 	}
 
-	if (!chromeframe) {
+	if (init.sequence && !chromeframe) {
 		chromeframe = init.sequence.reduce((win, idx) => win!.frames[idx], top)!;
 		if (!chromeframe) {
 			throw new Error(
@@ -22,6 +22,7 @@ function $injectLoad(init: InjectScramjetInit) {
 	}
 
 	const context = new ExecutionContextWrapper(self, init);
+	console.log("Execution Context Created", self);
 }
 
 function $injectLoadError(init: InjectScramjetInit, errormeta) {

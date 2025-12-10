@@ -16,17 +16,20 @@ import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import { applyTheme } from "./errorpage/errorpage";
 import { chromeframe } from ".";
+import { setupContextMenu } from "./emulators/contextmenu";
+import { setupTitleWatcher } from "./emulators/titlewatcher";
 
-function findSelfSequence(
+function findSequence(
+	top: Window,
 	target: Window,
 	path: FrameSequence = []
 ): FrameSequence | null {
-	if (target == self) {
+	if (top == target) {
 		return path;
 	} else {
-		for (let i = 0; i < target.frames.length; i++) {
-			const child = target.frames[i];
-			const res = findSelfSequence(child, [...path, i]);
+		for (let i = 0; i < top.frames.length; i++) {
+			const child = top.frames[i];
+			const res = findSequence(child, target, [...path, i]);
 			if (res) return res;
 		}
 		return null;
@@ -53,15 +56,15 @@ export class ExecutionContextWrapper {
 		const realFetch = self.fetch.bind(self);
 		this.rpc = new RpcHelper(
 			{
-				async navigate({ url }) {
+				navigate: async ({ url }) => {
 					window.location.href = url;
 				},
-				async popstate({ url, state, title }) {
+				popstate: async ({ url, state, title }) => {
 					history_replaceState.call(history, state, title, url);
 					const popStateEvent = new PopStateEvent("popstate", { state });
 					window.dispatchEvent(popStateEvent);
 				},
-				async fetchBlob(url) {
+				fetchBlob: async (url) => {
 					const response = await realFetch(url);
 					const ab = await response.arrayBuffer();
 					return [
@@ -74,10 +77,10 @@ export class ExecutionContextWrapper {
 						[ab],
 					];
 				},
-				async setCookie({ url, cookie }) {
+				setCookie: async ({ url, cookie }) => {
 					this.cookieJar.setCookies([cookie], new URL(url));
 				},
-				async updateTheme(theme) {
+				updateTheme: async (theme) => {
 					applyTheme(theme);
 				},
 			},
@@ -89,14 +92,14 @@ export class ExecutionContextWrapper {
 			this.rpc.recieve(event.data);
 		});
 
-		setupTitleWatcher();
-		setupContextMenu();
+		setupTitleWatcher(this);
+		setupContextMenu(this);
 		// setupHistoryEmulation();
 		// inform	chrome of the current url
 		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
 		this.rpc.call("load", {
 			url: this.client.url.href,
-			sequence: findSelfSequence(top!)!,
+			sequence: findSequence(top!, self as any)!,
 		});
 	}
 
@@ -119,6 +122,32 @@ export class ExecutionContextWrapper {
 			transport,
 			shouldPassthroughWebsocket: (url) => {
 				return url === this.init.wisp;
+			},
+			hookSubcontext: (frameself, frame) => {
+				if (!frame) {
+					throw new Error(
+						"hookSubcontext was called, but a frame null was passed. It shouldn't be possible for a window.open to happen here"
+					);
+				}
+
+				// recalculate chromeframe's sequence just in case
+				const newseq = findSequence(top!, chromeframe);
+				if (!newseq) {
+					throw new Error("could not find chromeframe in top?");
+				}
+				const context = new ExecutionContextWrapper(frameself, {
+					sequence: newseq,
+					id: this.init.id,
+					config: this.init.config,
+					cookies: this.cookieJar.dump(),
+					getInjectScripts: this.init.getInjectScripts,
+					wisp: this.init.wisp,
+					prefix: this.init.prefix,
+					codecEncode: this.init.codecEncode,
+					codecDecode: this.init.codecDecode,
+				});
+
+				return context.client;
 			},
 			sendSetCookie: async (url: URL, cookie: string) => {},
 		});
