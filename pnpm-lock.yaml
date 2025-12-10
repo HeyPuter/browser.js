@@ -512,8 +512,8 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5
       dreamland:
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.1.2
+        version: 0.1.2
       express:
         specifier: ^5.1.0
         version: 5.1.0
@@ -3600,6 +3600,9 @@ packages:
 
   dreamland@0.1.1:
     resolution: {integrity: sha512-Xpm4sjhShY6PNAw69TKlG+vNOwMegETl4fIGJQw7R31ARls4+gFhlxAt/k3cC/LOg3tSWVeglpqp52tG1Gxleg==}
+
+  dreamland@0.1.2:
+    resolution: {integrity: sha512-cQLOxx2KrSSZb5IL1aEyqwPW7bI83EFrfg/hK6fMzwCaVweKmH6//rpx/MYnrp+CNiN2S5fE+0hpZcSfAZjN2g==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -10061,6 +10064,14 @@ snapshots:
   dotenv@17.2.2: {}
 
   dreamland@0.1.1:
+    dependencies:
+      dom-serializer: 2.0.0
+      domhandler: 5.0.3
+      htm: 3.1.1
+      htmlparser2: 10.0.0
+      rrweb-cssom: 0.8.0
+
+  dreamland@0.1.2:
     dependencies:
       dom-serializer: 2.0.0
       domhandler: 5.0.3
