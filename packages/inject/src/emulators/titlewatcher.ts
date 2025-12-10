@@ -1,13 +1,13 @@
-import { rpc } from ".";
+import { ExecutionContextWrapper } from "../context";
 
-let cachedfaviconurl: string | null = null;
-export function setupTitleWatcher() {
+export function setupTitleWatcher({ self, rpc }: ExecutionContextWrapper) {
+	let cachedfaviconurl: string | null = null;
 	const observer = new MutationObserver(() => {
-		const title = document.querySelector("title");
+		const title = self.document.querySelector("title");
 		if (title) {
 			rpc.call("titlechange", { title: title.textContent || undefined });
 		}
-		const favicon = document.querySelector(
+		const favicon = self.document.querySelector(
 			"link[rel='icon'], link[rel='shortcut icon']"
 		);
 
@@ -51,7 +51,7 @@ export function setupTitleWatcher() {
 			}
 		}
 	});
-	observer.observe(document, {
+	observer.observe(self.document, {
 		childList: true,
 		subtree: true,
 	});

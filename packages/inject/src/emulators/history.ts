@@ -1,7 +1,9 @@
-import { rpc } from ".";
-import { client } from "./scramjet";
+import { ExecutionContextWrapper } from "../context";
 
-export function setupHistoryEmulation() {
+export function setupHistoryEmulation({
+	client,
+	rpc,
+}: ExecutionContextWrapper) {
 	client.Proxy("History.prototype.pushState", {
 		apply(ctx) {
 			rpc.call("history_pushState", {
