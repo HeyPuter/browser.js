@@ -113,7 +113,6 @@ export function applyTheme(theme: ThemeDefinition) {
 	}`;
 }
 
-console.log(rawErrorHtml);
 function $injectLoadError(
 	init: InjectScramjetInit,
 	errormeta: {

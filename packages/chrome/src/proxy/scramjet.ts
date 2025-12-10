@@ -426,7 +426,6 @@ export async function handlefetch(
 	data: ScramjetFetchRequest,
 	controller: Controller
 ): Promise<ScramjetFetchResponse> {
-	console.log(data.rawUrl);
 	// handle scramjet.all.js and scramjet.wasm.js requests
 	if (data.rawUrl.pathname === controller.prefix.pathname + virtualWasmPath) {
 		return await makeWasmResponse();
