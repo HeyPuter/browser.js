@@ -35,11 +35,7 @@ export class Controller {
 		},
 		request: async (data) => {
 			try {
-				let headers = new ScramjetHeaders();
-				for (let [k, v] of Object.entries(data.initialHeaders)) {
-					if (typeof v !== "string") v = v[0];
-					if (v) headers.set(k, v);
-				}
+				let headers = ScramjetHeaders.fromRawHeaders(data.initialHeaders);
 				const request: ScramjetFetchRequest = {
 					rawUrl: new URL(data.rawUrl),
 					rawClientUrl: data.rawClientUrl
@@ -59,7 +55,7 @@ export class Controller {
 				const response: TransferResponse = {
 					status: fetchresp.status,
 					statusText: fetchresp.statusText,
-					headers: fetchresp.headers,
+					headers: fetchresp.headers.toRawHeaders(),
 					body: fetchresp.body,
 				};
 
@@ -72,6 +68,7 @@ export class Controller {
 				}
 				return [response, transfer];
 			} catch (e: any) {
+				console.error("Error in controller fetch:", e);
 				return [
 					{
 						status: 500,

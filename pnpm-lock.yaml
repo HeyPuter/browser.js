@@ -224,15 +224,15 @@ importers:
       '@ktibow/iconset-ion':
         specifier: ^8.0.13
         version: 8.0.13
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../scramjet/packages/bare-mux-custom
       '@mercuryworkshop/epoxy-transport':
         specifier: workspace:*
         version: link:../scramjet/packages/epoxy-transport
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
         version: link:../scramjet/packages/libcurl-transport
+      '@mercuryworkshop/proxy-transports':
+        specifier: workspace:*
+        version: link:../scramjet/packages/proxy-transports
       '@mercuryworkshop/rpc':
         specifier: workspace:*
         version: link:../scramjet/packages/rpc
@@ -314,8 +314,6 @@ importers:
         specifier: ^1.5.8
         version: 1.5.8(@swc/helpers@0.5.17)
 
-  packages/scramjet/packages/bare-mux-custom: {}
-
   packages/scramjet/packages/bootstrap:
     dependencies:
       server:
@@ -327,12 +325,12 @@ importers:
 
   packages/scramjet/packages/controller:
     dependencies:
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../bare-mux-custom
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
         version: link:../libcurl-transport
+      '@mercuryworkshop/proxy-transports':
+        specifier: workspace:*
+        version: link:../proxy-transports
       '@mercuryworkshop/rpc':
         specifier: workspace:*
         version: link:../rpc
@@ -379,15 +377,15 @@ importers:
       '@mercuryworkshop/bare-as-module3':
         specifier: ^2.2.5
         version: 2.2.5
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../bare-mux-custom
       '@mercuryworkshop/epoxy-transport':
         specifier: ^2.1.28
         version: 2.1.28
       '@mercuryworkshop/libcurl-transport':
         specifier: ^1.5.0
         version: 1.5.0
+      '@mercuryworkshop/proxy-transports':
+        specifier: workspace:*
+        version: link:../proxy-transports
       '@mercuryworkshop/wisp-js':
         specifier: ^0.4.0
         version: 0.4.0
@@ -527,21 +525,30 @@ importers:
 
   packages/scramjet/packages/epoxy-transport:
     dependencies:
-      '@mercuryworkshop/bare-mux-custom':
-        specifier: workspace:*
-        version: link:../bare-mux-custom
       '@mercuryworkshop/epoxy-tls':
         specifier: 2.1.18-1
         version: 2.1.18-1
+      '@mercuryworkshop/proxy-transports':
+        specifier: workspace:*
+        version: link:../proxy-transports
 
   packages/scramjet/packages/libcurl-transport:
     dependencies:
-      '@mercuryworkshop/bare-mux-custom':
+      '@mercuryworkshop/proxy-transports':
         specifier: workspace:*
-        version: link:../bare-mux-custom
+        version: link:../proxy-transports
       libcurl.js:
         specifier: ^0.7.2
         version: 0.7.2
+
+  packages/scramjet/packages/proxy-transports:
+    devDependencies:
+      rollup:
+        specifier: ^4.24.0
+        version: 4.52.5
+      rollup-plugin-typescript2:
+        specifier: ^0.36.0
+        version: 0.36.0(rollup@4.52.5)(typescript@5.9.3)
 
   packages/scramjet/packages/rewriter_demo:
     dependencies:
@@ -2001,6 +2008,10 @@ packages:
         optional: true
       tslib:
         optional: true
+
+  '@rollup/pluginutils@4.2.1':
+    resolution: {integrity: sha512-iKnFXr7NkdZAIHiIWE+BX5ULi/ucVFYWD6TbAV+rZctiRTY2PL6tsIKhoIOaoskiWAkgu+VsbXgUVDNLHf+InQ==}
+    engines: {node: '>= 8.0.0'}
 
   '@rollup/pluginutils@5.2.0':
     resolution: {integrity: sha512-qWJ2ZTbmumwiLFomfzTyt5Kng4hwPi9rwCYN4SHb6eaRU1KNO4ccxINHr/VhH4GgPlt1XfSTLX2LBTme8ne4Zw==}
@@ -4091,6 +4102,10 @@ packages:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
 
+  fs-extra@10.1.0:
+    resolution: {integrity: sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==}
+    engines: {node: '>=12'}
+
   fs-extra@11.3.1:
     resolution: {integrity: sha512-eXvGGwZ5CL17ZSwHWd3bbgk7UUpF6IFHtP57NYYakPvHOs8GDgDe5KJI36jIJzDkJ6eJjuzRA8eBQb6SkKue0g==}
     engines: {node: '>=14.14'}
@@ -5684,6 +5699,12 @@ packages:
     peerDependencies:
       rollup: ^3.29.4 || ^4
       typescript: ^4.5 || ^5.0
+
+  rollup-plugin-typescript2@0.36.0:
+    resolution: {integrity: sha512-NB2CSQDxSe9+Oe2ahZbf+B4bh7pHwjV5L+RSYpCu7Q5ROuN94F9b6ioWwKfz3ueL3KTtmX4o2MUH2cgHDIEUsw==}
+    peerDependencies:
+      rollup: '>=1.26.3'
+      typescript: '>=2.4.0'
 
   rollup-plugin-visualizer@6.0.3:
     resolution: {integrity: sha512-ZU41GwrkDcCpVoffviuM9Clwjy5fcUxlz0oMoTXTYsK+tcIFzbdacnrr2n8TXcHxbGKKXtOdjxM2HUS4HjkwIw==}
@@ -8367,6 +8388,11 @@ snapshots:
       rollup: 4.52.2
       tslib: 2.8.1
 
+  '@rollup/pluginutils@4.2.1':
+    dependencies:
+      estree-walker: 2.0.2
+      picomatch: 2.3.1
+
   '@rollup/pluginutils@5.2.0(rollup@4.52.2)':
     dependencies:
       '@types/estree': 1.0.8
@@ -10793,6 +10819,12 @@ snapshots:
 
   fresh@2.0.0: {}
 
+  fs-extra@10.1.0:
+    dependencies:
+      graceful-fs: 4.2.11
+      jsonfile: 6.2.0
+      universalify: 2.0.1
+
   fs-extra@11.3.1:
     dependencies:
       graceful-fs: 4.2.11
@@ -12568,6 +12600,16 @@ snapshots:
     optionalDependencies:
       '@babel/code-frame': 7.27.1
 
+  rollup-plugin-typescript2@0.36.0(rollup@4.52.5)(typescript@5.9.3):
+    dependencies:
+      '@rollup/pluginutils': 4.2.1
+      find-cache-dir: 3.3.2
+      fs-extra: 10.1.0
+      rollup: 4.52.5
+      semver: 7.7.3
+      tslib: 2.8.1
+      typescript: 5.9.3
+
   rollup-plugin-visualizer@6.0.3(rollup@4.52.2):
     dependencies:
       open: 8.4.2
@@ -13566,7 +13608,7 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
       postcss: 8.5.6
-      rollup: 4.52.2
+      rollup: 4.52.5
       tinyglobby: 0.2.15
     optionalDependencies:
       '@types/node': 24.9.1

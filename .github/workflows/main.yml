@@ -108,6 +108,9 @@ jobs:
         if: steps.rewriter-cache.outputs.cache-hit != 'true'
         run: "cargo install --git https://github.com/r58playz/wasm-snip"
 
+      - name: Build proxy-transports
+        run: cd packages/scramjet/packages/proxy-transports && pnpm build
+
       - name: Build Scramjet (failing)
         run: pnpm build
         continue-on-error: true
@@ -234,7 +237,7 @@ jobs:
       - name: Run Playwright tests
         run: pnpm test:integration
         working-directory: packages/scramjet/packages/core
-      
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -242,7 +245,6 @@ jobs:
           name: playwright-test-results
           path: packages/scramjet/packages/core/blob-report/*
           if-no-files-found: error
-
 
   rewritertests:
     name: Run Rewriter Tests
