@@ -334,10 +334,10 @@ export async function fetchGoogleTrending(geo = "US"): Promise<void> {
 			{
 				method: "POST",
 				body: `f.req=[[["i0OFE","[null, null, \\"${geo}\\", 0, null, 48]"]]]`,
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-					Referer: "https://trends.google.com/trends/explore",
-				},
+				headers: [
+					["Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"],
+					["Referer", "https://trends.google.com/trends/explore"],
+				],
 			}
 		);
 		if (!res.ok) return;

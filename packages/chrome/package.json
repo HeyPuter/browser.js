@@ -16,7 +16,7 @@
 		"@iconify/types": "^2.0.0",
 		"@ktibow/iconset-ion": "^8.0.13",
 		"@heyputer/puter.js": "^2.1.2",
-		"@mercuryworkshop/bare-mux-custom": "workspace:*",
+		"@mercuryworkshop/proxy-transports": "workspace:*",
 		"@mercuryworkshop/epoxy-transport": "workspace:*",
 		"@mercuryworkshop/rpc": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "workspace:*",
