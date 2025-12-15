@@ -1,9 +1,9 @@
-import { rpc } from ".";
-import { Chromebound } from "./types";
+import { ExecutionContextWrapper } from "../context";
+import { Chromebound } from "../types";
 
-export function setupContextMenu() {
+export function setupContextMenu({ self, rpc }: ExecutionContextWrapper) {
 	// TODO: this needs to always be last
-	document.addEventListener("contextmenu", (e) => {
+	self.document.addEventListener("contextmenu", (e) => {
 		e.preventDefault();
 		const target = e.target;
 		const selection = getSelection()?.toString();
