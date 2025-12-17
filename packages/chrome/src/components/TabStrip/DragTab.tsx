@@ -88,6 +88,11 @@ export function DragTab(
 					e.stopPropagation();
 					e.preventDefault();
 				}}
+				on:auxclick={(e: MouseEvent) => {
+					if (e.button === 1) {
+						props.destroy();
+					}
+				}}
 				on:contextmenu={() => {
 					if (hoverTimeout) clearTimeout(hoverTimeout);
 					this.tooltipActive = false;
@@ -122,15 +127,7 @@ export function DragTab(
 				active={use(this.tooltipActive)}
 				animate={use(this.tooltipAnimate)}
 			/>
-			<div
-				class="dragroot"
-				style="position: unset;"
-				on:auxclick={(e: MouseEvent) => {
-					if (e.button === 1) {
-						props.destroy();
-					}
-				}}
-			>
+			<div class="dragroot" style="position: unset;">
 				<div class={use(props.active).map((x) => `main ${x ? "active" : ""}`)}>
 					{use(props.tab.icon).andThen(<img src={use(props.tab.icon)} />)}
 					<span>{use(props.tab.title)}</span>
