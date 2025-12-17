@@ -74,7 +74,6 @@
 		"@typescript-eslint/parser": "^8.43.0",
 		"actionlint": "^2.0.6",
 		"ava": "^6.4.1",
-		"@mercuryworkshop/proxy-transports": "workspace:*",
 		"dotenv": "^17.2.2",
 		"eslint": "^9.35.0",
 		"fastify": "^5.6.0",
@@ -92,6 +91,7 @@
 		"typescript": "^5.9.2"
 	},
 	"dependencies": {
+		"@mercuryworkshop/proxy-transports": "catalog:",
 		"dom-serializer": "^2.0.0",
 		"domhandler": "^5.0.3",
 		"domutils": "^3.2.2",

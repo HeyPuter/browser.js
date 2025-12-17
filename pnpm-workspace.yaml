@@ -13,7 +13,6 @@ packages:
   - "packages/scramjet/packages/bootstrap"
   - "packages/scramjet/packages/controller"
   - "packages/scramjet/packages/scramjetserver"
-  - "packages/scramjet/packages/proxy-transports"
   - "packages/scramjet/packages/epoxy-transport"
   - "packages/scramjet/packages/libcurl-transport"
   - "packages/scramjet/packages/demo"
@@ -21,3 +20,6 @@ packages:
   - "packages/scramjet/packages/rpc"
   - "packages/scramjet/packages/typedoc"
   - "packages/scramjet/packages/create-proxy-app"
+
+catalog:
+  "@mercuryworkshop/proxy-transports": 1.0.0
