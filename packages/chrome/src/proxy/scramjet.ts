@@ -1,6 +1,7 @@
 import {
 	CookieJar,
 	defaultConfig,
+	defaultConfigDev,
 	ScramjetFetchHandler,
 	type ScramjetConfig,
 	type ScramjetFetchRequest,
@@ -27,7 +28,7 @@ function makeConfig(): ScramjetConfig {
 	return {
 		...defaultConfig,
 		flags: {
-			...defaultConfig.flags,
+			...defaultConfigDev.flags,
 			captureErrors: false,
 		},
 		maskedfiles: ["inject.js", "scramjet.wasm.js"],

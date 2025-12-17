@@ -15,7 +15,7 @@ import {
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import { applyTheme } from "./errorpage/errorpage";
-import { chromeframe } from ".";
+import { chromeframe, wasm } from ".";
 import { setupContextMenu } from "./emulators/contextmenu";
 import { setupTitleWatcher } from "./emulators/titlewatcher";
 
@@ -104,8 +104,6 @@ export class ExecutionContextWrapper {
 	}
 
 	loadScramjet() {
-		setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
-		delete (self as any).WASM;
 		const transport = new LibcurlClient({ wisp: this.init.wisp });
 
 		this.client = new ScramjetClient(this.self, {
