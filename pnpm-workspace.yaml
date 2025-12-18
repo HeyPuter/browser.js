@@ -22,4 +22,4 @@ packages:
   - "packages/scramjet/packages/create-proxy-app"
 
 catalog:
-  "@mercuryworkshop/proxy-transports": 1.0.0
+  "@mercuryworkshop/proxy-transports": 1.0.2

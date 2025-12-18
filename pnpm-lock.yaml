@@ -7,8 +7,8 @@ settings:
 catalogs:
   default:
     '@mercuryworkshop/proxy-transports':
-      specifier: 1.0.0
-      version: 1.0.0
+      specifier: 1.0.2
+      version: 1.0.2
 
 importers:
 
@@ -238,7 +238,7 @@ importers:
         version: link:../scramjet/packages/libcurl-transport
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
-        version: 1.0.0
+        version: 1.0.2
       '@mercuryworkshop/rpc':
         specifier: workspace:*
         version: link:../scramjet/packages/rpc
@@ -334,6 +334,9 @@ importers:
       '@mercuryworkshop/libcurl-transport':
         specifier: workspace:*
         version: link:../libcurl-transport
+      '@mercuryworkshop/proxy-transports':
+        specifier: 'catalog:'
+        version: 1.0.2
       '@mercuryworkshop/rpc':
         specifier: workspace:*
         version: link:../rpc
@@ -345,7 +348,7 @@ importers:
     dependencies:
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
-        version: 1.0.0
+        version: 1.0.2
       dom-serializer:
         specifier: ^2.0.0
         version: 2.0.0
@@ -533,10 +536,13 @@ importers:
         version: 2.1.18-1
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
-        version: 1.0.0
+        version: 1.0.2
 
   packages/scramjet/packages/libcurl-transport:
     dependencies:
+      '@mercuryworkshop/proxy-transports':
+        specifier: 'catalog:'
+        version: 1.0.2
       libcurl.js:
         specifier: ^0.7.2
         version: 0.7.2
@@ -1841,8 +1847,8 @@ packages:
   '@mercuryworkshop/libcurl-transport@1.5.0':
     resolution: {integrity: sha512-FV3fFjJYoojmkolMESmZnWosz/tQ9AbVQurt6gcJX69BTvAXzjWf6ganpaeSvilQXVK59PDWyYT3gE0aShd12A==}
 
-  '@mercuryworkshop/proxy-transports@1.0.0':
-    resolution: {integrity: sha512-ZYb7ZhTocU5qCwuih05P/BTQZbFTm8oa8FRpZV7LVn9dVaZUe/Z0b2lLW+ZDvhDrs3cyDE9ESPdga4A9RKo/kA==}
+  '@mercuryworkshop/proxy-transports@1.0.2':
+    resolution: {integrity: sha512-zgD+JMYNSx8LxVLWwGPPVnoDHjoh1GqqwUJIjhIwCwhy+Z7g+MhmiTJvCcRPAo7qXXbqJwIrpBJduRSOrjMV7g==}
 
   '@mercuryworkshop/wisp-js@0.4.0':
     resolution: {integrity: sha512-rtUSxW8krWS5RGtcFomnoQl/9nrsDnUh7duPcJeQtIqnt5txB7AZJEa6N87CD7UXJzCZVijr1mUHwZy0kHJ+fQ==}
@@ -8152,7 +8158,7 @@ snapshots:
     dependencies:
       libcurl.js: 0.7.2
 
-  '@mercuryworkshop/proxy-transports@1.0.0': {}
+  '@mercuryworkshop/proxy-transports@1.0.2': {}
 
   '@mercuryworkshop/wisp-js@0.4.0':
     dependencies:
