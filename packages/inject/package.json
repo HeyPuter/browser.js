@@ -13,7 +13,7 @@
 	"packageManager": "pnpm@10.12.1",
 	"dependencies": {
 		"@mercuryworkshop/scramjet": "workspace:*",
-		"@mercuryworkshop/libcurl-transport": "workspace:*",
+		"@mercuryworkshop/libcurl-transport": "catalog:",
 		"@mercuryworkshop/rpc": "workspace:*",
 		"chobitsu": "workspace:*",
 		"html-to-image": "^1.11.13"

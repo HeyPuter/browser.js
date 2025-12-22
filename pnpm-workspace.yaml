@@ -14,7 +14,6 @@ packages:
   - "packages/scramjet/packages/controller"
   - "packages/scramjet/packages/scramjetserver"
   - "packages/scramjet/packages/epoxy-transport"
-  - "packages/scramjet/packages/libcurl-transport"
   - "packages/scramjet/packages/demo"
   - "packages/scramjet/packages/rewriter_demo"
   - "packages/scramjet/packages/rpc"

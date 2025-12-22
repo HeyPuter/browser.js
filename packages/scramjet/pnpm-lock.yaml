@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@mercuryworkshop/libcurl-transport':
+      specifier: 2.0.4
+      version: 2.0.4
     '@mercuryworkshop/proxy-transports':
       specifier: 1.0.2
       version: 1.0.2
@@ -42,9 +45,6 @@ importers:
 
   packages/controller:
     dependencies:
-      '@mercuryworkshop/libcurl-transport':
-        specifier: workspace:*
-        version: link:../libcurl-transport
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
         version: 1.0.2
@@ -94,15 +94,6 @@ importers:
       '@fastify/static':
         specifier: ^8.2.0
         version: 8.3.0
-      '@mercuryworkshop/bare-as-module3':
-        specifier: ^2.2.5
-        version: 2.2.5
-      '@mercuryworkshop/epoxy-transport':
-        specifier: ^2.1.28
-        version: 2.1.28
-      '@mercuryworkshop/libcurl-transport':
-        specifier: ^1.5.0
-        version: 1.5.0
       '@mercuryworkshop/wisp-js':
         specifier: ^0.4.0
         version: 0.4.0
@@ -215,8 +206,8 @@ importers:
   packages/demo:
     dependencies:
       '@mercuryworkshop/libcurl-transport':
-        specifier: workspace:*
-        version: link:../libcurl-transport
+        specifier: 'catalog:'
+        version: 2.0.4
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
         version: link:../core
@@ -248,15 +239,6 @@ importers:
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
         version: 1.0.2
-
-  packages/libcurl-transport:
-    dependencies:
-      '@mercuryworkshop/proxy-transports':
-        specifier: 'catalog:'
-        version: 1.0.2
-      libcurl.js:
-        specifier: ^0.7.2
-        version: 0.7.2
 
   packages/rewriter_demo:
     dependencies:
@@ -805,17 +787,11 @@ packages:
   '@material/material-color-utilities@0.3.0':
     resolution: {integrity: sha512-ztmtTd6xwnuh2/xu+Vb01btgV8SQWYCaK56CkRK8gEkWe5TuDyBcYJ0wgkMRn+2VcE9KUmhvkz+N9GHrqw/C0g==}
 
-  '@mercuryworkshop/bare-as-module3@2.2.5':
-    resolution: {integrity: sha512-KWlMVJoJ3h1ya3chlpzIyQrt01rSU21AU1vBsGUrhZngCVTs9SIMGMqBx61TM0gWtEUogYFfU5U0UF1XCYeUHQ==}
-
   '@mercuryworkshop/epoxy-tls@2.1.18-1':
     resolution: {integrity: sha512-2N1BYn/+FJxIbRw+sipbl3mQPinRflqQDB9HGAXJEVj4Ok4FIlTlS4fO2cpXKEq5yoD3oaKb8GyNaQfndNui9w==}
 
-  '@mercuryworkshop/epoxy-transport@2.1.28':
-    resolution: {integrity: sha512-lv/Kfdn37y8ZCXQaIT3Ebj4OSztBqeXdbR9rchbHQBKIw/fNSQJLGNBHV5ScXSzqt7NCwv8ZiZx7urRyk7Ua/Q==}
-
-  '@mercuryworkshop/libcurl-transport@1.5.0':
-    resolution: {integrity: sha512-FV3fFjJYoojmkolMESmZnWosz/tQ9AbVQurt6gcJX69BTvAXzjWf6ganpaeSvilQXVK59PDWyYT3gE0aShd12A==}
+  '@mercuryworkshop/libcurl-transport@2.0.4':
+    resolution: {integrity: sha512-4iQVJ381Z27LZ00h+wo8BP7E1+zfp/gsGH8NZfvxKn77hSfZQ7yUGIRLmYfo4XpfACuB2oy3OvGOtAvnA+2WPQ==}
 
   '@mercuryworkshop/proxy-transports@1.0.2':
     resolution: {integrity: sha512-zgD+JMYNSx8LxVLWwGPPVnoDHjoh1GqqwUJIjhIwCwhy+Z7g+MhmiTJvCcRPAo7qXXbqJwIrpBJduRSOrjMV7g==}
@@ -2784,8 +2760,8 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
-  libcurl.js@0.7.2:
-    resolution: {integrity: sha512-qz77Fn3sCbZ9vSWnIHt1cLfO76813FaHxk6BJrzIgKmfXy//hf0FVNN15ALT6Yhszk5Wu2/ENlIJ+4TYUOskLQ==}
+  libcurl.js@0.7.4:
+    resolution: {integrity: sha512-UpvVirvATP7fD0t4rnsxVRuUpPVIo2QvWj4+5JrMsd1KSEvYkON36+COOPAl88hPlGJddk+DfZRvyF7KG7YcSA==}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -4688,19 +4664,11 @@ snapshots:
 
   '@material/material-color-utilities@0.3.0': {}
 
-  '@mercuryworkshop/bare-as-module3@2.2.5':
-    dependencies:
-      typescript: 5.9.3
-
   '@mercuryworkshop/epoxy-tls@2.1.18-1': {}
 
-  '@mercuryworkshop/epoxy-transport@2.1.28':
+  '@mercuryworkshop/libcurl-transport@2.0.4':
     dependencies:
-      '@mercuryworkshop/epoxy-tls': 2.1.18-1
-
-  '@mercuryworkshop/libcurl-transport@1.5.0':
-    dependencies:
-      libcurl.js: 0.7.2
+      libcurl.js: 0.7.4
 
   '@mercuryworkshop/proxy-transports@1.0.2': {}
 
@@ -6875,7 +6843,7 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
 
-  libcurl.js@0.7.2: {}
+  libcurl.js@0.7.4: {}
 
   light-my-request@6.6.0:
     dependencies:
