@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@mercuryworkshop/epoxy-transport':
+      specifier: 3.0.0
+      version: 3.0.0
     '@mercuryworkshop/libcurl-transport':
       specifier: 2.0.4
       version: 2.0.4
@@ -234,8 +237,8 @@ importers:
         specifier: ^8.0.13
         version: 8.0.13
       '@mercuryworkshop/epoxy-transport':
-        specifier: workspace:*
-        version: link:../scramjet/packages/epoxy-transport
+        specifier: 'catalog:'
+        version: 3.0.0
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.4
@@ -519,15 +522,6 @@ importers:
       vite-plugin-static-copy:
         specifier: ^3.1.4
         version: 3.1.4(vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(terser@5.43.1)(yaml@2.8.1))
-
-  packages/scramjet/packages/epoxy-transport:
-    dependencies:
-      '@mercuryworkshop/epoxy-tls':
-        specifier: 2.1.18-1
-        version: 2.1.18-1
-      '@mercuryworkshop/proxy-transports':
-        specifier: 'catalog:'
-        version: 1.0.2
 
   packages/scramjet/packages/rewriter_demo:
     dependencies:
@@ -1817,8 +1811,11 @@ packages:
   '@material/material-color-utilities@0.3.0':
     resolution: {integrity: sha512-ztmtTd6xwnuh2/xu+Vb01btgV8SQWYCaK56CkRK8gEkWe5TuDyBcYJ0wgkMRn+2VcE9KUmhvkz+N9GHrqw/C0g==}
 
-  '@mercuryworkshop/epoxy-tls@2.1.18-1':
-    resolution: {integrity: sha512-2N1BYn/+FJxIbRw+sipbl3mQPinRflqQDB9HGAXJEVj4Ok4FIlTlS4fO2cpXKEq5yoD3oaKb8GyNaQfndNui9w==}
+  '@mercuryworkshop/epoxy-tls@2.1.19-1':
+    resolution: {integrity: sha512-lF3WVDmKDWfClgFaDm1OAGI6PStcUUKUjNh2AJbfmLXEGh+dT4nvsuTY2QGRImnajCboIRyrpx9eGNY0egZSVg==}
+
+  '@mercuryworkshop/epoxy-transport@3.0.0':
+    resolution: {integrity: sha512-B1jyar2MoZEaINoIWjXpFN2bgBtdwvDnrDQDPRpwVtoIyAEOOczhCynwdiYS1988qaROhEuWsXv32h/R4X8phA==}
 
   '@mercuryworkshop/libcurl-transport@2.0.4':
     resolution: {integrity: sha512-4iQVJ381Z27LZ00h+wo8BP7E1+zfp/gsGH8NZfvxKn77hSfZQ7yUGIRLmYfo4XpfACuB2oy3OvGOtAvnA+2WPQ==}
@@ -8120,7 +8117,11 @@ snapshots:
 
   '@material/material-color-utilities@0.3.0': {}
 
-  '@mercuryworkshop/epoxy-tls@2.1.18-1': {}
+  '@mercuryworkshop/epoxy-tls@2.1.19-1': {}
+
+  '@mercuryworkshop/epoxy-transport@3.0.0':
+    dependencies:
+      '@mercuryworkshop/epoxy-tls': 2.1.19-1
 
   '@mercuryworkshop/libcurl-transport@2.0.4':
     dependencies:

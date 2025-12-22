@@ -3,7 +3,6 @@ packages:
   - "packages/bootstrap"
   - "packages/controller"
   - "packages/scramjetserver"
-  - "packages/epoxy-transport"
   - "packages/demo"
   - "packages/rewriter_demo"
   - "packages/rpc"
@@ -13,3 +12,4 @@ packages:
 catalog:
   "@mercuryworkshop/proxy-transports": 1.0.2
   "@mercuryworkshop/libcurl-transport": 2.0.4
+  "@mercuryworkshop/epoxy-transport": 3.0.0

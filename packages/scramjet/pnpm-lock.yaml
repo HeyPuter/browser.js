@@ -231,15 +231,6 @@ importers:
         specifier: ^3.1.4
         version: 3.1.4(vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(yaml@2.8.1))
 
-  packages/epoxy-transport:
-    dependencies:
-      '@mercuryworkshop/epoxy-tls':
-        specifier: 2.1.18-1
-        version: 2.1.18-1
-      '@mercuryworkshop/proxy-transports':
-        specifier: 'catalog:'
-        version: 1.0.2
-
   packages/rewriter_demo:
     dependencies:
       '@mercuryworkshop/scramjet':
@@ -786,9 +777,6 @@ packages:
 
   '@material/material-color-utilities@0.3.0':
     resolution: {integrity: sha512-ztmtTd6xwnuh2/xu+Vb01btgV8SQWYCaK56CkRK8gEkWe5TuDyBcYJ0wgkMRn+2VcE9KUmhvkz+N9GHrqw/C0g==}
-
-  '@mercuryworkshop/epoxy-tls@2.1.18-1':
-    resolution: {integrity: sha512-2N1BYn/+FJxIbRw+sipbl3mQPinRflqQDB9HGAXJEVj4Ok4FIlTlS4fO2cpXKEq5yoD3oaKb8GyNaQfndNui9w==}
 
   '@mercuryworkshop/libcurl-transport@2.0.4':
     resolution: {integrity: sha512-4iQVJ381Z27LZ00h+wo8BP7E1+zfp/gsGH8NZfvxKn77hSfZQ7yUGIRLmYfo4XpfACuB2oy3OvGOtAvnA+2WPQ==}
@@ -4663,8 +4651,6 @@ snapshots:
       - supports-color
 
   '@material/material-color-utilities@0.3.0': {}
-
-  '@mercuryworkshop/epoxy-tls@2.1.18-1': {}
 
   '@mercuryworkshop/libcurl-transport@2.0.4':
     dependencies:
