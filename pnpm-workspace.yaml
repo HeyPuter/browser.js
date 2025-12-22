@@ -22,3 +22,4 @@ packages:
 
 catalog:
   "@mercuryworkshop/proxy-transports": 1.0.2
+  "@mercuryworkshop/libcurl-transport": 2.0.4
