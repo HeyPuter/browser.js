@@ -1,0 +1,46 @@
+import { ScramjetClient } from "@client/index";
+
+export default function (client: ScramjetClient, _self: Self) {
+	client.Trap("PerformanceEntry.prototype.name", {
+		get(ctx) {
+			// name is going to be a url typically
+			const name = ctx.get() as string;
+
+			if (name && name.startsWith(client.context.prefix.href)) {
+				return client.unrewriteUrl(name);
+			}
+
+			return name;
+		},
+	});
+
+	const filterEntries = (entries: PerformanceEntry[]) => {
+		return entries.filter((entry) => {
+			for (const file of client.config.maskedfiles) {
+				if (entry.name.endsWith(file)) {
+					return false;
+				}
+			}
+
+			return true;
+		});
+	};
+
+	client.Proxy(
+		[
+			"Performance.prototype.getEntries",
+			"Performance.prototype.getEntriesByType",
+			"Performance.prototype.getEntriesByName",
+			"PerformanceObserverEntryList.prototype.getEntries",
+			"PerformanceObserverEntryList.prototype.getEntriesByType",
+			"PerformanceObserverEntryList.prototype.getEntriesByName",
+		],
+		{
+			apply(ctx) {
+				const entries = ctx.call() as PerformanceEntry[];
+
+				return ctx.return(filterEntries(entries));
+			},
+		}
+	);
+}
