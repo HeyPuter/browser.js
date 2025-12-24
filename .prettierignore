@@ -2,7 +2,6 @@ pnpm-lock.yaml
 dist/
 rewriter/
 playwright/
-.rslib/
 external/
 
 packages/cdp
