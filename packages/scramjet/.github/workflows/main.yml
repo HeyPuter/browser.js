@@ -227,19 +227,11 @@ jobs:
       - name: Install Playwright Chromium
         if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
-        working-directory: packages/core
+        working-directory: packages/runway
 
-      - name: Run Playwright tests
-        run: pnpm test:integration
-        working-directory: packages/core
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-test-results
-          path: packages/core/blob-report/*
-          if-no-files-found: error
+      - name: Run Runway tests
+        run: pnpm test
+        working-directory: packages/runway
 
   rewritertests:
     name: "Run Rewriter Tests"
