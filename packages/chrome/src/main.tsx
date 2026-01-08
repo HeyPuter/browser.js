@@ -8,7 +8,7 @@ import { initBrowser } from "./Browser";
 let app = document.getElementById("app")!;
 import { Shell } from "./components/Shell";
 import { App } from "./App";
-import { css } from "dreamland/core";
+import { createState, css } from "dreamland/core";
 import { setWispUrl } from "./proxy/wisp";
 
 if (import.meta.env.VITE_PUTER_BRANDING) {
@@ -111,3 +111,7 @@ export async function mount(): Promise<HTMLElement> {
 		throw e;
 	}
 }
+
+mount().then((r) => {
+	document.querySelector("#app")!.replaceWith(r);
+});

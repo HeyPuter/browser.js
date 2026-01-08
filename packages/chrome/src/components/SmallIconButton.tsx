@@ -1,14 +1,16 @@
 import type { IconifyIcon } from "@iconify/types";
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { Icon } from "./Icon";
 
-export function SmallIconButton(props: {
-	click: (e: MouseEvent) => void;
-	icon: IconifyIcon;
-}) {
+export function SmallIconButton(
+	this: FC<{
+		click: (e: MouseEvent) => void;
+		icon: IconifyIcon;
+	}>
+) {
 	return (
-		<button on:click={props.click}>
-			<Icon icon={props.icon}></Icon>
+		<button on:click={this.click}>
+			<Icon icon={this.icon}></Icon>
 		</button>
 	);
 }

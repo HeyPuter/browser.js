@@ -1,4 +1,4 @@
-import { createDelegate, css, type ComponentContext } from "dreamland/core";
+import { createDelegate, css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab";
 import { isFirefox } from "../../utils";
 
@@ -8,14 +8,13 @@ export let lastX;
 export const fastClose = createDelegate<void>();
 
 export function TabTooltip(
-	props: {
+	this: FC<{
 		active: boolean;
 		animate: boolean;
 		tab: Tab;
-	},
-	cx: ComponentContext
+	}>
 ) {
-	let wasActive = props.active;
+	let wasActive = this.active;
 
 	const duration = 150;
 	const visible = {
@@ -31,27 +30,27 @@ export function TabTooltip(
 	fastClose.listen(() => {
 		if (isClosing) {
 			// instantly finish any current animations
-			let animations = cx.root.getAnimations();
+			let animations = this.root.getAnimations();
 			for (let anim of animations) {
 				anim.finish();
 			}
 		}
 	});
 
-	use(props.active).listen((active) => {
+	use(this.active).listen((active) => {
 		if (active && !wasActive) {
 			wasActive = true;
 			activeTooltips++;
 
-			let x = cx.root.getBoundingClientRect().left;
+			let x = this.root.getBoundingClientRect().left;
 
-			if (props.animate) {
+			if (this.animate) {
 				let shift = lastX - x;
-				cx.root.animate([hidden, visible], {
+				this.root.animate([hidden, visible], {
 					duration: 0,
 					fill: "forwards",
 				});
-				cx.root.animate(
+				this.root.animate(
 					[
 						{ transform: `translateX(${shift}px)` },
 						{ transform: "translateX(0px)" },
@@ -61,9 +60,9 @@ export function TabTooltip(
 						easing: "ease-out",
 					}
 				);
-				props.animate = false;
+				this.animate = false;
 			} else {
-				cx.root.animate([hidden, visible], {
+				this.root.animate([hidden, visible], {
 					duration,
 					fill: "forwards",
 				});
@@ -72,7 +71,7 @@ export function TabTooltip(
 		} else if (!active && wasActive) {
 			wasActive = false;
 			isClosing = true;
-			cx.root.animate([visible, hidden], {
+			this.root.animate([visible, hidden], {
 				duration,
 				fill: "forwards",
 			}).onfinish = () => {
@@ -84,17 +83,17 @@ export function TabTooltip(
 	return (
 		<div>
 			<div class="text">
-				<span class="title">{use(props.tab.title)}</span>
-				<span class="hostname">{use(props.tab.url.hostname)}</span>
+				<span class="title">{use(this.tab.title)}</span>
+				<span class="hostname">{use(this.tab.url.hostname)}</span>
 			</div>
 			{isFirefox ? (
 				<div
-					style={use`background-image: -moz-element(#tab${props.tab.id})`}
+					style={use`background-image: -moz-element(#tab${this.tab.id})`}
 					class="img"
 				></div>
 			) : (
-				use(props.tab.screenshot).andThen(
-					<img src={use(props.tab.screenshot)} class="img" />
+				use(this.tab.screenshot).and(
+					<img src={use(this.tab.screenshot)} class="img" />
 				)
 			)}
 		</div>

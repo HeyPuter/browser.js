@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { trimUrl } from "../components/Omnibar/utils";
@@ -7,7 +7,7 @@ import { defaultFaviconUrl } from "../assets/favicon";
 import { Icon } from "../components/Icon";
 import { iconSearch } from "../icons";
 
-export function NewTabPage(props: { tab: Tab }) {
+export function NewTabPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<div class="topbar">

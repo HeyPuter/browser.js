@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { browser } from "../Browser";
 import { Icon } from "./Icon";
 import { closeMenu } from "./Menu";
@@ -31,20 +31,38 @@ export function DownloadsPopup() {
 						</div>
 						<div class="contents">
 							<span>{b.filename}</span>
-							{use(b.progressbytes).andThen(
-								<span class="data">
-									{use(b.progressbytes).map((s) => formatBytes(s!))}/
-									{formatBytes(b.size)}
-								</span>
-							)}
 							{use(b.progressbytes)
-								.map((b) => !b)
-								.andThen(<span class="data">{formatBytes(b.size)}</span>)}
+								.and(
+									<span class="data">
+										{use(b.progressbytes).map((s) => formatBytes(s!))}/
+										{formatBytes(b.size)}
+									</span>
+								)
+								.or(<span class="data">{formatBytes(b.size)}</span>)}
 						</div>
 						<div class="buttoniconcontainer">
 							{use(b.progress)
-								.map((b) => !b)
-								.andThen(
+								.and(
+									<>
+										<Button
+											variant="icon"
+											on:click={() => {
+												b.pause!();
+											}}
+										>
+											<Icon icon={iconPause}></Icon>
+										</Button>
+										<Button
+											variant="icon"
+											on:click={() => {
+												b.cancel!();
+											}}
+										>
+											<Icon icon={iconClose}></Icon>
+										</Button>
+									</>
+								)
+								.or(
 									<>
 										<Button variant="icon">
 											<Icon icon={iconFolder}></Icon>
@@ -54,28 +72,8 @@ export function DownloadsPopup() {
 										</Button>
 									</>
 								)}
-							{use(b.progress).andThen(
-								<>
-									<Button
-										variant="icon"
-										on:click={() => {
-											b.pause!();
-										}}
-									>
-										<Icon icon={iconPause}></Icon>
-									</Button>
-									<Button
-										variant="icon"
-										on:click={() => {
-											b.cancel!();
-										}}
-									>
-										<Icon icon={iconClose}></Icon>
-									</Button>
-								</>
-							)}
 						</div>
-						{use(b.progress).andThen(
+						{use(b.progress).and(
 							<progress value={use(b.progress).map((p) => p || 0)} max="1">
 								50%
 							</progress>

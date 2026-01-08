@@ -1,48 +1,50 @@
-import { css, type Stateful } from "dreamland/core";
+import { css, type FC, type Stateful } from "dreamland/core";
 import { Icon } from "./Icon";
 import { browser, type BookmarkEntry } from "../Browser";
 import { Input } from "./Input";
 import { closeMenu } from "./Menu";
 import { Button } from "./Button";
 
-export function BookmarkPopup(props: {
-	bookmark: Stateful<BookmarkEntry>;
-	new: boolean;
-}) {
+export function BookmarkPopup(
+	this: FC<{
+		bookmark: Stateful<BookmarkEntry>;
+		new: boolean;
+	}>
+) {
 	return (
 		<div>
-			<div class="title">{props.new ? "Add Bookmark" : "Edit Bookmark"}</div>
+			<div class="title">{this.new ? "Add Bookmark" : "Edit Bookmark"}</div>
 
 			<div class="field">
-				<Input label="Title" value={use(props.bookmark.title)} />
+				<Input label="Title" value={use(this.bookmark.title)} />
 			</div>
 			<div class="field">
-				<Input label="URL" value={use(props.bookmark.url)} />
+				<Input label="URL" value={use(this.bookmark.url)} />
 			</div>
 			<div class="actions">
 				<Button
 					on:click={() => {
-						if (!props.new) {
+						if (!this.new) {
 							browser.bookmarks = browser.bookmarks.filter(
-								(b) => b !== props.bookmark
+								(b) => b !== this.bookmark
 							);
 						}
 						closeMenu();
 					}}
 				>
-					{props.new ? "Cancel" : "Delete"}
+					{this.new ? "Cancel" : "Delete"}
 				</Button>
 				<Button
 					variant="primary"
 					on:click={() => {
-						if (props.new) {
-							browser.bookmarks = [props.bookmark, ...browser.bookmarks];
+						if (this.new) {
+							browser.bookmarks = [this.bookmark, ...browser.bookmarks];
 						}
 
 						closeMenu();
 					}}
 				>
-					{props.new ? "Add" : "Save"}
+					{this.new ? "Add" : "Save"}
 				</Button>
 			</div>
 		</div>

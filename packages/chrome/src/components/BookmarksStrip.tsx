@@ -1,13 +1,13 @@
-import { createState, css, type ComponentContext } from "dreamland/core";
+import { createState, css, type FC } from "dreamland/core";
 import { Icon } from "./Icon";
 import { iconAdd, iconOpen, iconLink, iconBrush, iconTrash } from "../icons";
 import { browser, type BookmarkEntry } from "../Browser";
 import { createMenu, createMenuCustom, setContextMenu } from "./Menu";
 import { BookmarkPopup } from "./BookmarkPopup";
 
-export function BookmarksStrip(props: {}, cx: ComponentContext) {
-	cx.mount = () => {
-		setContextMenu(cx.root, [
+export function BookmarksStrip(this: FC<{}>) {
+	this.cx.mount = () => {
+		setContextMenu(this.root, [
 			{
 				label: "Add Bookmark",
 				icon: iconAdd,

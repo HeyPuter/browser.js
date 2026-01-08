@@ -1,4 +1,4 @@
-import type { ComponentContext } from "dreamland/core";
+import type { FC } from "dreamland/core";
 import { css } from "dreamland/core";
 import { TabStrip } from "./components/TabStrip/TabStrip";
 import { browser } from "./Browser";
@@ -8,11 +8,13 @@ import { Omnibar } from "./components/Omnibar/Omnibar";
 import { getTheme } from "./themes";
 import { contexts } from "./proxy/scramjet";
 
-export function App(props: {}, cx: ComponentContext) {
+export function App(this: FC<{}>) {
 	const applyTheme = () => {
 		const appearance = browser.settings.appearance;
 		const themeId = browser.settings.themeId;
 		const theme = getTheme(themeId);
+
+		console.log("applyin");
 
 		// Determine if we should use light mode
 		let isLight = false;
@@ -51,7 +53,7 @@ export function App(props: {}, cx: ComponentContext) {
 	use(browser.settings.appearance).listen(applyTheme);
 	use(browser.settings.themeId).listen(applyTheme);
 
-	cx.mount = () => {
+	this.cx.mount = () => {
 		applyTheme();
 	};
 
@@ -70,9 +72,9 @@ export function App(props: {}, cx: ComponentContext) {
 			<Omnibar tab={use(browser.activetab)} />
 			{use(browser.activetab.url, browser.settings.showBookmarksBar)
 				.map(([u, pinned]) => pinned || u.href === "puter://newtab")
-				.andThen(<BookmarksStrip />)}
+				.and(<BookmarksStrip />)}
 			<div class="separator"></div>
-			{cx.children}
+			{this.children}
 		</div>
 	);
 }

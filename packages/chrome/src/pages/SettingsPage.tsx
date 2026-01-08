@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css, type Component, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import type { IconifyIcon } from "@iconify/types";
 import { versionInfo } from "@mercuryworkshop/scramjet";
@@ -19,8 +19,7 @@ import {
 } from "../icons";
 
 export function SettingsPage(
-	this: { selected: string; searchQuery: string },
-	props: { tab: Tab }
+	this: FC<{ tab: Tab }, { selected: string; searchQuery: string }>
 ) {
 	this.selected = "general";
 	this.searchQuery = "";

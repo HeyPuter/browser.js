@@ -5,7 +5,7 @@ import {
 	iconDuplicate,
 	iconRefresh,
 } from "../../icons";
-import { css, type ComponentContext } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { Icon } from "../Icon";
 import { memoize } from "../../memoize";
 import { OmnibarButton } from "../Omnibar/OmnibarButton";
@@ -29,22 +29,23 @@ type VisualTab = {
 	pos: number;
 };
 export function TabStrip(
-	this: {
-		visualtabs: VisualTab[];
-		container: HTMLElement;
-		leftEl: HTMLElement;
-		rightEl: HTMLElement;
-		afterEl: HTMLElement;
+	this: FC<
+		{
+			tabs: Tab[];
+			activetab: Tab;
+			destroyTab: (tab: Tab) => void;
+			addTab: () => void;
+		},
+		{
+			visualtabs: VisualTab[];
+			container: HTMLElement;
+			leftEl: HTMLElement;
+			rightEl: HTMLElement;
+			afterEl: HTMLElement;
 
-		currentlydragging: number;
-	},
-	s: {
-		tabs: Tab[];
-		activetab: Tab;
-		destroyTab: (tab: Tab) => void;
-		addTab: () => void;
-	},
-	cx: ComponentContext
+			currentlydragging: number;
+		}
+	>
 ) {
 	this.currentlydragging = -1;
 	this.visualtabs = [];
@@ -190,8 +191,8 @@ export function TabStrip(
 
 		calcDragPos(e, tab);
 
-		if (s.activetab != tab.tab) {
-			s.activetab = tab.tab;
+		if (this.activetab != tab.tab) {
+			this.activetab = tab.tab;
 			markDirty();
 		}
 	};
@@ -199,17 +200,18 @@ export function TabStrip(
 	const transitionend = () => {
 		transitioningTabs--;
 		if (transitioningTabs == 0) {
-			s.tabs = s.tabs;
+			this.tabs = this.tabs;
 		}
 
 		this.afterEl.style.transition = "";
 	};
 
-	use(s.tabs).listen(() => {
+	use(this.tabs).listen(() => {
+		console.log("new tabs", this.tabs);
 		let newvisualtabs: VisualTab[] = [];
 
-		for (let index = 0; index < s.tabs.length; index++) {
-			let tab = s.tabs[index];
+		for (let index = 0; index < this.tabs.length; index++) {
+			let tab = this.tabs[index];
 
 			let visualtab = this.visualtabs.find((t) => t.tab === tab);
 
@@ -218,10 +220,10 @@ export function TabStrip(
 					<DragTab
 						id={tab.id}
 						tab={tab}
-						active={use(s.activetab).map((x) => x === tab)}
+						active={use(this.activetab).map((x) => x === tab)}
 						mousedown={(e) => mouseDown(e, visualtab!)}
 						destroy={() => {
-							s.destroyTab(tab);
+							this.destroyTab(tab);
 						}}
 						transitionend={transitionend}
 					/>
@@ -271,21 +273,21 @@ export function TabStrip(
 		setTimeout(() => layoutTabs(true), 10);
 	});
 
-	cx.mount = () => {
+	this.cx.mount = () => {
 		requestAnimationFrame(() => layoutTabs(false));
 		window.addEventListener("resize", () => layoutTabs(false));
 
-		setContextMenu(cx.root, [
+		setContextMenu(this.root, [
 			{
 				label: "New Tab",
 				icon: iconNew,
 				action: () => {
-					s.addTab();
+					this.addTab();
 				},
 			},
 		]);
 
-		s.tabs = s.tabs;
+		this.tabs = this.tabs;
 	};
 
 	return (
@@ -300,7 +302,7 @@ export function TabStrip(
 					e.stopPropagation();
 				}}
 			>
-				<OmnibarButton icon={iconAdd} click={s.addTab}></OmnibarButton>
+				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
 			</div>
 			<div class="extra right" this={use(this.rightEl)}></div>
 		</div>

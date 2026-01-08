@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { type OmniboxResult, AVAILABLE_SEARCH_ENGINES } from "./suggestions";
 import { iconSearch, iconTrendingUp } from "../../icons";
 import { browser } from "../../Browser";
@@ -20,20 +20,22 @@ const renderResultHighlight = (title: string, inputValue: string) => {
 	return <span style="font-weight: normal; opacity: 0.7;">{title}</span>;
 };
 
-export function Suggestion(props: {
-	item: OmniboxResult;
-	input: HTMLInputElement;
-	focused: boolean;
+export function Suggestion(
+	this: FC<{
+		item: OmniboxResult;
+		input: HTMLInputElement;
+		focused: boolean;
 
-	onClick: (e: MouseEvent) => void;
-}) {
-	let item = props.item;
+		onClick: (e: MouseEvent) => void;
+	}>
+) {
+	let item = this.item;
 
 	return (
 		<div
 			class="overflowitem"
-			on:click={props.onClick}
-			class:focused={use(props.focused)}
+			on:click={this.onClick}
+			class:focused={use(this.focused)}
 			title={item.url.href}
 		>
 			<div class="result-icon">
@@ -57,7 +59,7 @@ export function Suggestion(props: {
 				{item.kind !== "directsearch"
 					? (item.title && (
 							<span class="description">
-								{renderResultHighlight(item.title, props.input.value)}
+								{renderResultHighlight(item.title, this.input.value)}
 							</span>
 						)) || <span class="description">{trimUrl(item.url)}</span>
 					: null}

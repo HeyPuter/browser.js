@@ -2,7 +2,7 @@ import {
 	createDelegate,
 	css,
 	Pointer,
-	type ComponentContext,
+	type FC,
 	type DLElement,
 } from "dreamland/core";
 import { browser } from "../Browser";
@@ -23,17 +23,18 @@ export type PositionConstraints = {
 };
 
 export function Menu(
-	this: {
-		closing: boolean;
-		x: number;
-		y: number;
-	},
-	s: {
-		position: PositionConstraints;
-		items?: MenuItem[];
-		custom?: HTMLElement;
-	},
-	cx: ComponentContext
+	this: FC<
+		{
+			position: PositionConstraints;
+			items?: MenuItem[];
+			custom?: HTMLElement;
+		},
+		{
+			closing: boolean;
+			x: number;
+			y: number;
+		}
+	>
 ) {
 	this.closing = true;
 	requestAnimationFrame(() => {
@@ -51,15 +52,15 @@ export function Menu(
 		window.removeEventListener("contextmenu", ev, { capture: true });
 
 		this.closing = true;
-		cx.root.addEventListener("transitionend", () => {
-			cx.root.remove();
+		this.root.addEventListener("transitionend", () => {
+			this.root.remove();
 		});
 	};
 	closeMenu.listen(close);
 
 	const ev = (e: MouseEvent) => {
 		// Don't close if the click is over the menu
-		if (cx.root.contains(e.target as Node)) {
+		if (this.root.contains(e.target as Node)) {
 			return;
 		}
 
@@ -68,24 +69,24 @@ export function Menu(
 		e.preventDefault();
 	};
 
-	cx.mount = () => {
+	this.cx.mount = () => {
 		lock();
-		document.body.appendChild(cx.root);
-		const { width, height } = cx.root.getBoundingClientRect();
+		document.body.appendChild(this.root);
+		const { width, height } = this.root.getBoundingClientRect();
 		const docWidth = document.documentElement.clientWidth;
 		const docHeight = document.documentElement.clientHeight;
 		const padding = emToPx(1);
 
-		if (s.position.left !== undefined) {
-			this.x = s.position.left;
-		} else if (s.position.right !== undefined) {
-			this.x = s.position.right - width;
+		if (this.position.left !== undefined) {
+			this.x = this.position.left;
+		} else if (this.position.right !== undefined) {
+			this.x = this.position.right - width;
 		}
 
-		if (s.position.top !== undefined) {
-			this.y = s.position.top;
-		} else if (s.position.bottom !== undefined) {
-			this.y = s.position.bottom - height;
+		if (this.position.top !== undefined) {
+			this.y = this.position.top;
+		} else if (this.position.bottom !== undefined) {
+			this.y = this.position.bottom - height;
 		}
 
 		const maxX = docWidth - width - padding;
@@ -100,7 +101,7 @@ export function Menu(
 			capture: true,
 		});
 
-		cx.root.addEventListener("click", (e) => {
+		this.root.addEventListener("click", (e) => {
 			e.stopPropagation();
 		});
 	};
@@ -109,8 +110,8 @@ export function Menu(
 			style={use`--x: ${this.x}px; --y: ${this.y}px;`}
 			class:closing={use(this.closing)}
 		>
-			{s.items
-				? use(s.items).mapEach((item) =>
+			{this.items
+				? use(this.items).mapEach((item) =>
 						item == "-" ? (
 							<div class="separator" />
 						) : item.checkbox ? (
@@ -147,7 +148,7 @@ export function Menu(
 							</button>
 						)
 					)
-				: s.custom}
+				: this.custom}
 		</div>
 	);
 }

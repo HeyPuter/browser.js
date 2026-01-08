@@ -1,4 +1,4 @@
-import { css, createDelegate, type ComponentContext } from "dreamland/core";
+import { css, createDelegate, type FC } from "dreamland/core";
 import {
 	iconBack,
 	iconForwards,
@@ -37,12 +37,12 @@ Spacer.style = css`
 	}
 `;
 
-export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
+export function Omnibar(this: FC<{ tab: Tab }>) {
 	const selectContent = createDelegate<void>();
 
 	animateDownloadFly.listen(async () => {
 		await new Promise((r) => setTimeout(r, 10));
-		let fly: HTMLElement = cx.root.querySelector(".downloadfly")!;
+		let fly: HTMLElement = this.root.querySelector(".downloadfly")!;
 		fly.addEventListener(
 			"transitionend",
 			() => {
@@ -58,7 +58,10 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 	const historyMenu = (e: MouseEvent, states: HistoryState[]) => {
 		if (states.length > 0) {
 			createMenu(
-				{ left: e.clientX, top: cx.root.clientTop + cx.root.clientHeight * 2 },
+				{
+					left: e.clientX,
+					top: this.root.clientTop + this.root.clientHeight * 2,
+				},
 				[
 					...states.map((st) => ({
 						label: st.title || "New Tab",
@@ -97,7 +100,7 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 		const { right } = downloadsButton.getBoundingClientRect();
 		createMenuCustom(
 			{
-				top: cx.root.clientTop + cx.root.clientHeight * 2,
+				top: this.root.clientTop + this.root.clientHeight * 2,
 				right,
 			},
 			<DownloadsPopup></DownloadsPopup>
@@ -108,8 +111,8 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 		<div>
 			<OmnibarButton
 				tooltip="Go back one page (Alt+Left Arrow)"
-				active={use(s.tab.canGoBack)}
-				click={() => s.tab.back()}
+				active={use(this.tab.canGoBack)}
+				click={() => this.tab.back()}
 				icon={iconBack}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -122,8 +125,8 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Go forward one page (Alt+Right Arrow)"
-				active={use(s.tab.canGoForward)}
-				click={() => s.tab.forward()}
+				active={use(this.tab.canGoForward)}
+				click={() => this.tab.forward()}
 				icon={iconForwards}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -137,16 +140,16 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Refresh current page (Ctrl+R)"
-				click={() => s.tab.reload()}
+				click={() => this.tab.reload()}
 				icon={iconRefresh}
 			></OmnibarButton>
 			<Spacer></Spacer>
-			<Omnibox selectContent={selectContent} url={use(s.tab.url)}></Omnibox>
+			<Omnibox selectContent={selectContent} url={use(this.tab.url)}></Omnibox>
 			<Spacer></Spacer>
 			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
 			{use(browser.sessionDownloadHistory)
 				.map((arr) => arr.length > 0)
-				.andThen(
+				.and(
 					<div style="position: relative">
 						{downloadsButton}
 
@@ -164,7 +167,10 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 				icon={iconMore}
 				click={(e: MouseEvent) => {
 					createMenu(
-						{ left: e.x, top: cx.root.clientTop + cx.root.clientHeight * 2 },
+						{
+							left: e.x,
+							top: this.root.clientTop + this.root.clientHeight * 2,
+						},
 						[
 							{
 								label: "New Tab",

@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { Favicon } from "../Favicon";
 import { Icon } from "../Icon";
 import { SiteOptionsButton } from "./SiteOptionsButton";
@@ -7,88 +7,92 @@ import { splitUrl } from "../../utils";
 import { OmnibarButton } from "./OmnibarButton";
 import { BookmarkButton } from "./BookmarkButton";
 
-export function UrlInput(props: {
-	active: boolean;
-	favicon: string | null;
-	url: URL;
-	value: string;
-	input: HTMLInputElement;
+export function UrlInput(
+	this: FC<{
+		active: boolean;
+		favicon: string | null;
+		url: URL;
+		value: string;
+		input: HTMLInputElement;
 
-	onkeydown?: (e: KeyboardEvent) => void;
-	onkeyup?: (e: KeyboardEvent) => void;
-	oninput?: (e: InputEvent) => void;
-	doSearch?: () => void;
-}) {
+		onkeydown?: (e: KeyboardEvent) => void;
+		onkeyup?: (e: KeyboardEvent) => void;
+		oninput?: (e: InputEvent) => void;
+		doSearch?: () => void;
+	}>
+) {
 	return (
-		<div class:active={use(props.active)}>
+		<div class:active={use(this.active)}>
 			<div class="lefticon">
-				{use(props.active).andThen(
-					use(props.favicon).andThen(
-						<Favicon url={props.favicon}></Favicon>,
-						<Icon icon={iconSearch}></Icon>
-					),
-					<SiteOptionsButton></SiteOptionsButton>
-				)}
+				{use(this.active)
+					.and(
+						use(this.favicon)
+							.and(<Favicon url={this.favicon}></Favicon>)
+							.or(<Icon icon={iconSearch}></Icon>)
+					)
+					.or(<SiteOptionsButton></SiteOptionsButton>)}
 			</div>
-			{use(props.active).andThen(
+			{use(this.active).and(
 				<input
 					spellcheck="false"
-					this={use(props.input)}
-					value={use(props.value)}
+					this={use(this.input)}
+					value={use(this.value)}
 					on:keydown={(e: KeyboardEvent) => {
-						props.onkeydown?.(e);
+						this.onkeydown?.(e);
 					}}
 					on:keyup={(e: KeyboardEvent) => {
-						props.onkeyup?.(e);
+						this.onkeyup?.(e);
 					}}
 					on:input={(e: InputEvent) => {
-						props.oninput?.(e);
+						this.oninput?.(e);
 					}}
 				></input>
 			)}
-			{use(props.active, props.url)
+			{use(this.active, this.url)
 				.map(([active, url]) => !active && url.href != "puter://newtab")
-				.andThen(
+				.and(
 					<span class="inactiveurl">
-						{use(props.url)
+						{use(this.url)
 							.map((u) => u.protocol === "puter:")
-							.andThen(
+							.and(
 								<>
 									<span class="subdomain">puter://</span>
 									<span class="domain">
-										{use(props.url).map((t) => t.hostname)}
+										{use(this.url).map((t) => t.hostname)}
 									</span>
 									<span class="rest">
-										{use(props.url).map((t) => t.pathname + t.search + t.hash)}
+										{use(this.url).map((t) => t.pathname + t.search + t.hash)}
 									</span>
-								</>,
+								</>
+							)
+							.or(
 								<>
 									<span class="subdomain">
-										{use(props.url).map((t) => splitUrl(t)[0])}
+										{use(this.url).map((t) => splitUrl(t)[0])}
 									</span>
 									<span class="domain">
-										{use(props.url).map((t) => splitUrl(t)[1])}
+										{use(this.url).map((t) => splitUrl(t)[1])}
 									</span>
 									<span class="rest">
-										{use(props.url).map((t) => splitUrl(t)[2])}
+										{use(this.url).map((t) => splitUrl(t)[2])}
 									</span>
 								</>
 							)}
 					</span>
 				)}
-			{use(props.active, props.url)
+			{use(this.active, this.url)
 				.map(([active, url]) => !active && url.href == "puter://newtab")
-				.andThen(
+				.and(
 					<span class="placeholder">Search with Google or enter address</span>
 				)}
 
-			{use(props.active)
-				.map((a) => !a)
-				.andThen(<BookmarkButton url={use(props.url)}></BookmarkButton>)}
-			{use(props.active).andThen(
+			{use(this.active).or(
+				<BookmarkButton url={use(this.url)}></BookmarkButton>
+			)}
+			{use(this.active).and(
 				<OmnibarButton
 					click={(e: MouseEvent) => {
-						props.doSearch?.();
+						this.doSearch?.();
 						e.stopPropagation();
 						e.preventDefault();
 					}}

@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { iconLink, iconClose, iconFolder } from "../icons";
@@ -6,7 +6,7 @@ import { Icon } from "../components/Icon";
 import { formatBytes } from "../utils";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export function DownloadsPage(props: { tab: Tab }) {
+export function DownloadsPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<nav>

@@ -1,4 +1,4 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { createMenuCustom } from "../Menu";
 import { SiteInformationPopup } from "../SiteInformationPopup";
 import { browser } from "../../Browser";

@@ -2,7 +2,7 @@ import {
 	createDelegate,
 	createState,
 	css,
-	type ComponentContext,
+	type FC,
 	type Delegate,
 } from "dreamland/core";
 import { iconSearch, iconForwards, iconTrendingUp } from "../../icons";
@@ -29,12 +29,9 @@ import { requestUnfocusFrames } from "../Shell";
 
 export const focusOmnibox = createDelegate<void>();
 
-function InactiveBar(props: { subtle: boolean; active: boolean }) {
+function InactiveBar(this: FC<{ subtle: boolean; active: boolean }>) {
 	return (
-		<div
-			class:subtle={use(props.subtle)}
-			class:active={use(props.active)}
-		></div>
+		<div class:subtle={use(this.subtle)} class:active={use(this.active)}></div>
 	);
 }
 InactiveBar.style = css`
@@ -53,24 +50,25 @@ InactiveBar.style = css`
 `;
 
 export function Omnibox(
-	this: {
-		value: string;
-		realvalue: string;
-		active: boolean;
-		justselected: boolean;
-		subtleinput: boolean;
-		focusindex: number;
-		searchSuggestions: OmniboxResult[];
-		trendingSuggestions: OmniboxResult[];
-		input: HTMLInputElement;
+	this: FC<
+		{
+			url: URL;
+			selectContent: Delegate<void>;
+		},
+		{
+			value: string;
+			realvalue: string;
+			active: boolean;
+			justselected: boolean;
+			subtleinput: boolean;
+			focusindex: number;
+			searchSuggestions: OmniboxResult[];
+			trendingSuggestions: OmniboxResult[];
+			input: HTMLInputElement;
 
-		suggestionDenied: boolean;
-	},
-	props: {
-		url: URL;
-		selectContent: Delegate<void>;
-	},
-	cx: ComponentContext
+			suggestionDenied: boolean;
+		}
+	>
 ) {
 	this.focusindex = 0;
 	this.searchSuggestions = [];
@@ -79,12 +77,12 @@ export function Omnibox(
 
 	const [lock, unlock] = requestUnfocusFrames();
 
-	cx.mount = () => {
-		setContextMenu(cx.root, [
+	this.cx.mount = () => {
+		setContextMenu(this.root, [
 			{
 				label: "Select All",
 				action: () => {
-					props.selectContent();
+					this.selectContent();
 				},
 			},
 		]);
@@ -196,10 +194,10 @@ export function Omnibox(
 		document.body.addEventListener("click", handleClickOutside);
 		document.body.addEventListener("auxclick", handleClickOutside);
 
-		if (props.url.href == "puter://newtab") {
+		if (this.url.href == "puter://newtab") {
 			this.value = "";
 		} else {
-			this.value = trimUrl(props.url);
+			this.value = trimUrl(this.url);
 		}
 
 		this.input.focus();
@@ -239,7 +237,7 @@ export function Omnibox(
 		navTo(selected.url);
 	};
 
-	props.selectContent.listen(() => {
+	this.selectContent.listen(() => {
 		activate();
 	});
 
@@ -298,7 +296,7 @@ export function Omnibox(
 				))}
 				{use(this.trendingSuggestions)
 					.map((s) => s.length > 0)
-					.andThen(<div class="spacertext">Trending Searches</div>)}
+					.and(<div class="spacertext">Trending Searches</div>)}
 				{use(this.trendingSuggestions).mapEach((item) => (
 					<Suggestion
 						item={item}
@@ -317,7 +315,7 @@ export function Omnibox(
 			<UrlInput
 				active={use(this.active)}
 				input={use(this.input)}
-				url={use(props.url)}
+				url={use(this.url)}
 				value={use(this.value)}
 				favicon={use(this.focusindex, this.searchSuggestions).map(() =>
 					this.focusindex > 0 &&
@@ -355,17 +353,17 @@ export function Omnibox(
 					if (!this.justselected) return;
 
 					// if the user didn't modify anything
-					if (this.input.value == trimUrl(props.url)) {
+					if (this.input.value == trimUrl(this.url)) {
 						// insert the untrimmed version
-						this.input.value = props.url.href;
+						this.input.value = this.url.href;
 					}
 
 					if (e.key == "ArrowLeft") {
 						// move the cursor to the start
-						if (props.url.protocol == "puter:") {
+						if (this.url.protocol == "puter:") {
 							this.input.setSelectionRange(0, 0);
 						} else {
-							let schemelen = props.url.protocol.length + 2;
+							let schemelen = this.url.protocol.length + 2;
 							this.input.setSelectionRange(schemelen, schemelen);
 						}
 					}

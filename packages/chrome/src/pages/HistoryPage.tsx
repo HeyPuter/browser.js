@@ -1,9 +1,9 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
 import { defaultFaviconUrl } from "../assets/favicon";
 
-export function HistoryPage(props: { tab: Tab }) {
+export function HistoryPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<nav>

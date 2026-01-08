@@ -1,24 +1,26 @@
 import type { IconifyIcon } from "@iconify/types";
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { Icon } from "../Icon";
 
-export function OmnibarButton(props: {
-	icon: IconifyIcon;
-	click?: (e: MouseEvent) => void;
-	rightclick?: (e: MouseEvent) => void;
-	active?: boolean;
-	tooltip?: string;
-}) {
-	props.active ??= true;
+export function OmnibarButton(
+	this: FC<{
+		icon: IconifyIcon;
+		click?: (e: MouseEvent) => void;
+		rightclick?: (e: MouseEvent) => void;
+		active?: boolean;
+		tooltip?: string;
+	}>
+) {
+	this.active ??= true;
 	return (
 		<button
-			disabled={use(props.active).map((x) => (x ? undefined : true))}
-			class:active={use(props.active)}
-			on:click={(e: MouseEvent) => props.click?.(e)}
-			on:contextmenu={(e: MouseEvent) => props.rightclick?.(e)}
-			title={props.tooltip}
+			disabled={use(this.active).map((x) => (x ? undefined : true))}
+			class:active={use(this.active)}
+			on:click={(e: MouseEvent) => this.click?.(e)}
+			on:contextmenu={(e: MouseEvent) => this.rightclick?.(e)}
+			title={this.tooltip}
 		>
-			<Icon icon={use(props.icon)} />
+			<Icon icon={use(this.icon)} />
 		</button>
 	);
 }

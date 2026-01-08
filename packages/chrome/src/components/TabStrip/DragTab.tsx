@@ -1,4 +1,4 @@
-import { css, type ComponentContext } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab";
 import { setContextMenu } from "../Menu";
 import { iconClose, iconDuplicate, iconNew, iconRefresh } from "../../icons";
@@ -7,54 +7,55 @@ import { Icon } from "../Icon";
 import { activeTooltips, fastClose, TabTooltip } from "./TabTooltip";
 
 export function DragTab(
-	this: {
-		tooltipActive: boolean;
-		tooltipAnimate: boolean;
-	},
-	props: {
-		active: boolean;
-		id: number;
-		tab: Tab;
-		mousedown: (e: MouseEvent) => void;
-		destroy: () => void;
-		transitionend: () => void;
-	},
-	cx: ComponentContext
+	this: FC<
+		{
+			active: boolean;
+			id: number;
+			tab: Tab;
+			mousedown: (e: MouseEvent) => void;
+			destroy: () => void;
+			transitionend: () => void;
+		},
+		{
+			tooltipActive: boolean;
+			tooltipAnimate: boolean;
+		}
+	>
 ) {
 	this.tooltipActive = false;
-	cx.mount = () => {
-		setContextMenu(cx.root, [
+	this.cx.mount = () => {
+		setContextMenu(this.root, [
 			{
 				label: "New tab to the right",
 				icon: iconNew,
 				action: () => {
-					browser.newTabRight(props.tab);
+					browser.newTabRight(this.tab);
 				},
 			},
 			{
 				label: "Reload",
 				icon: iconRefresh,
 				action: () => {
-					props.tab.frame.reload();
+					this.tab.frame.reload();
 				},
 			},
 			{
 				label: "Duplicate",
 				icon: iconDuplicate,
 				action: () => {
-					browser.newTabRight(props.tab, props.tab.url);
+					browser.newTabRight(this.tab, this.tab.url);
 				},
 			},
 			{
 				label: "Close Tab",
 				icon: iconClose,
 				action: () => {
-					props.destroy();
+					this.destroy();
 				},
 			},
 		]);
 
-		cx.root.animate(
+		this.root.animate(
 			[
 				{
 					width: "0px",
@@ -74,23 +75,23 @@ export function DragTab(
 		<div
 			style="z-index: 0;"
 			class="tab"
-			data-id={props.id}
+			data-id={this.id}
 			on:transitionend={() => {
-				cx.root.style.transition = "";
-				cx.root.style.zIndex = "0";
-				props.transitionend();
+				this.root.style.transition = "";
+				this.root.style.zIndex = "0";
+				this.transitionend();
 			}}
 		>
 			<div
 				class="hover-area"
 				on:mousedown={(e: MouseEvent) => {
-					props.mousedown(e);
+					this.mousedown(e);
 					e.stopPropagation();
 					e.preventDefault();
 				}}
 				on:auxclick={(e: MouseEvent) => {
 					if (e.button === 1) {
-						props.destroy();
+						this.destroy();
 					}
 				}}
 				on:contextmenu={() => {
@@ -98,7 +99,7 @@ export function DragTab(
 					this.tooltipActive = false;
 				}}
 				on:mouseenter={() => {
-					forceScreenshot(props.tab);
+					forceScreenshot(this.tab);
 					if (hoverTimeout) clearTimeout(hoverTimeout);
 
 					if (activeTooltips > 0) {
@@ -114,7 +115,7 @@ export function DragTab(
 				}}
 				on:mouseleave={(e: MouseEvent) => {
 					const relatedTarget = e.relatedTarget as Node | null;
-					if (relatedTarget && cx.root.contains(relatedTarget)) {
+					if (relatedTarget && this.root.contains(relatedTarget)) {
 						// don't dismiss if hovering over the close button, even though that takes focus away from hover-area
 						return;
 					}
@@ -123,19 +124,19 @@ export function DragTab(
 				}}
 			></div>
 			<TabTooltip
-				tab={props.tab}
+				tab={this.tab}
 				active={use(this.tooltipActive)}
 				animate={use(this.tooltipAnimate)}
 			/>
 			<div class="dragroot" style="position: unset;">
-				<div class={use(props.active).map((x) => `main ${x ? "active" : ""}`)}>
-					{use(props.tab.icon).andThen(<img src={use(props.tab.icon)} />)}
-					<span>{use(props.tab.title)}</span>
+				<div class={use(this.active).map((x) => `main ${x ? "active" : ""}`)}>
+					{use(this.tab.icon).and(<img src={use(this.tab.icon)} />)}
+					<span>{use(this.tab.title)}</span>
 					<button
 						class="close"
 						on:click={(e: MouseEvent) => {
 							e.stopPropagation();
-							props.destroy();
+							this.destroy();
 						}}
 						on:contextmenu={(e: MouseEvent) => {
 							e.preventDefault();
