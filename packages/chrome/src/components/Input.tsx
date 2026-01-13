@@ -18,27 +18,18 @@ export function Input(
 		"on:keyup"?: (e: KeyboardEvent) => void;
 	}>
 ) {
-	const handleInput = (e: Event) => {
-		// keep the original behavior: assign into the passed `value` (may be a Pointer)
-		(this.value as any) = (e.target as HTMLInputElement).value;
-
-		if (this["on:input"]) {
-			this["on:input"](e);
-		}
-	};
-
 	return (
 		<div class={`input-container ${this.class || ""}`}>
 			{this.label && <label>{this.label}</label>}
 			<input
 				type={this.type || "text"}
-				value={typeof this.value === "object" ? use(this.value) : this.value}
+				value={use(this.value)}
 				placeholder={this.placeholder}
 				autocomplete={this.autocomplete}
 				required={this.required}
 				disabled={this.disabled}
 				autofocus={this.autofocus}
-				on:input={handleInput}
+				on:input={this["on:input"] as any}
 				on:focus={this["on:focus"] as any}
 				on:blur={this["on:blur"] as any}
 				on:keydown={this["on:keydown"] as any}

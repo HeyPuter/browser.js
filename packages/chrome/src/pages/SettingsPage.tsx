@@ -16,6 +16,7 @@ import {
 	iconExtension,
 	iconPrivacy,
 	iconAbout,
+	iconError,
 } from "../icons";
 
 export function SettingsPage(
@@ -39,10 +40,6 @@ export function SettingsPage(
 		);
 	};
 
-	const handleSearch = (e: Event) => {
-		this.searchQuery = (e.target as HTMLInputElement).value.toLowerCase();
-	};
-
 	return (
 		<div class="settings-page">
 			<div class="sidebar">
@@ -59,8 +56,7 @@ export function SettingsPage(
 				<div class="search-container">
 					<Input
 						placeholder="Search settings..."
-						value={this.searchQuery}
-						on:input={handleSearch}
+						value={use(this.searchQuery)}
 					/>
 				</div>
 				<div class="settings-content">

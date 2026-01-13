@@ -5,7 +5,7 @@ import { trimUrl } from "../components/Omnibar/utils";
 import { createMenu } from "../components/Menu";
 import { defaultFaviconUrl } from "../assets/favicon";
 import { Icon } from "../components/Icon";
-import { iconSearch } from "../icons";
+import { iconLink, iconOpen, iconSearch } from "../icons";
 
 export function NewTabPage(this: FC<{ tab: Tab }>) {
 	return (
@@ -44,10 +44,12 @@ export function NewTabPage(this: FC<{ tab: Tab }>) {
 								createMenu({ left: e.clientX, top: e.clientY }, [
 									{
 										label: "Open",
+										icon: iconLink,
 										action: () => browser.activetab.pushNavigate(entry.url),
 									},
 									{
 										label: "Open in New Tab",
+										icon: iconOpen,
 										action: () => browser.newTab(entry.url),
 									},
 								]);

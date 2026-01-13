@@ -1,5 +1,5 @@
 import { css, type FC } from "dreamland/core";
-import type { Tab } from "../Tab";
+import { type Tab } from "../Tab";
 import { splitUrl } from "../utils";
 
 import { iconClose, iconTrash, iconSettings } from "../icons";
