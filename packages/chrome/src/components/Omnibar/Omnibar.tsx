@@ -11,6 +11,7 @@ import {
 	iconTime,
 	iconInfo,
 	iconSettings,
+	iconError,
 } from "../../icons";
 import { createMenu, createMenuCustom } from "../Menu";
 import { OmnibarButton } from "./OmnibarButton";
@@ -21,9 +22,10 @@ import { Icon } from "../Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";
 
 import type { HistoryState } from "../../History";
-import { isPuter } from "../../main";
+import { isPuter, puterBranding } from "../../main";
 import { DownloadsPopup } from "../DownloadsPopup";
 import { CircularProgress } from "./CircularProgress";
+import { ReportBrokenSiteModal } from "../ReportBrokenSiteModal";
 
 export const animateDownloadFly = createDelegate<void>();
 export const showDownloadsPopup = createDelegate<void>();
@@ -202,6 +204,16 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 								},
 								icon: iconInfo,
 							},
+
+							puterBranding && browser.activetab.url.protocol !== "puter:"
+								? {
+										label: "Report Broken Site",
+										action: () => {
+											<ReportBrokenSiteModal onClose={() => {}} />;
+										},
+										icon: iconError,
+									}
+								: null,
 							{
 								label: "Settings",
 								action: () => {
@@ -220,7 +232,7 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 										},
 									]
 								: []),
-						]
+						].filter((x) => x !== null) as any
 					);
 					e.stopPropagation();
 				}}

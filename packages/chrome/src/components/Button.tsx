@@ -5,7 +5,7 @@ export function Button(
 		"on:click"?: (e: any) => void;
 		disabled?: boolean;
 		variant?: "primary" | "secondary" | "icon";
-		children: any;
+		children?: any;
 	}>
 ) {
 	return (

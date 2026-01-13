@@ -112,7 +112,9 @@ export function Menu(
 		>
 			{this.items
 				? use(this.items).mapEach((item) =>
-						item == "-" ? (
+						item == null ? (
+							""
+						) : item == "-" ? (
 							<div class="separator" />
 						) : item.checkbox ? (
 							<button

@@ -58,3 +58,6 @@ export { default as iconTrendingUp } from "@ktibow/iconset-ion/trending-up";
 export { default as iconShield } from "@ktibow/iconset-ion/shield-checkmark-outline";
 // alias used in codebase
 export { default as iconPrivacy } from "@ktibow/iconset-ion/shield-checkmark-outline";
+
+export { default as iconError } from "@ktibow/iconset-ion/alert-circle-outline";
+export { default as iconCheckmark } from "@ktibow/iconset-ion/checkmark-circle-outline";
