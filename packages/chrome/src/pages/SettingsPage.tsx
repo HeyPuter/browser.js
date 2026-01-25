@@ -1,13 +1,13 @@
-import { css, type Component } from "dreamland/core";
+import { css, type Component, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import type { IconifyIcon } from "@iconify/types";
 import { versionInfo } from "@mercuryworkshop/scramjet";
-import { Icon } from "../components/Icon";
+import { Icon } from "@components/Icon";
 import { browser } from "../Browser";
-import { Checkbox } from "../components/Checkbox";
-import { Button } from "../components/Button";
-import { Input } from "../components/Input";
-import { AVAILABLE_SEARCH_ENGINES } from "../components/Omnibar/suggestions";
+import { Checkbox } from "@components/Checkbox";
+import { Button } from "@components/Button";
+import { Input } from "@components/Input";
+import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
 import { THEMES } from "../themes";
 
 import {
@@ -16,11 +16,11 @@ import {
 	iconExtension,
 	iconPrivacy,
 	iconAbout,
+	iconError,
 } from "../icons";
 
 export function SettingsPage(
-	this: { selected: string; searchQuery: string },
-	props: { tab: Tab }
+	this: FC<{ tab: Tab }, { selected: string; searchQuery: string }>
 ) {
 	this.selected = "general";
 	this.searchQuery = "";
@@ -40,10 +40,6 @@ export function SettingsPage(
 		);
 	};
 
-	const handleSearch = (e: Event) => {
-		this.searchQuery = (e.target as HTMLInputElement).value.toLowerCase();
-	};
-
 	return (
 		<div class="settings-page">
 			<div class="sidebar">
@@ -60,8 +56,7 @@ export function SettingsPage(
 				<div class="search-container">
 					<Input
 						placeholder="Search settings..."
-						value={this.searchQuery}
-						on:input={handleSearch}
+						value={use(this.searchQuery)}
 					/>
 				</div>
 				<div class="settings-content">

@@ -212,7 +212,7 @@ const Scopes = {
 			const tab = browser.newTab(new URL("https://google.com/"));
 			const sessionid = server.initSession(tab);
 
-			await tab.waitForChobitsuInit;
+			await tab.waitForInit;
 			server.emit<Protocol.Target.AttachedToTargetEvent>(
 				"Target.attachedToTarget",
 				{

@@ -17,7 +17,10 @@ import { RpcHelper } from "@mercuryworkshop/rpc";
 import { applyTheme } from "./errorpage/errorpage";
 import { chromeframe, wasm } from ".";
 import { setupContextMenu } from "./emulators/contextmenu";
+import { setupHistoryEmulation } from "./emulators/history";
 import { setupTitleWatcher } from "./emulators/titlewatcher";
+import { setupAnchorHandler } from "./emulators/anchors";
+import { setupWindowOpen } from "./emulators/windowopen";
 
 function findSequence(
 	top: Window,
@@ -39,8 +42,8 @@ function findSequence(
 // const realFetch = fetch;
 
 export class ExecutionContextWrapper {
-	public rpc: RpcHelper<Framebound, Chromebound>;
-	public client: ScramjetClient;
+	public rpc!: RpcHelper<Framebound, Chromebound>;
+	public client!: ScramjetClient;
 	private cookieJar = new CookieJar();
 	constructor(
 		public self: typeof globalThis,
@@ -64,7 +67,11 @@ export class ExecutionContextWrapper {
 					const popStateEvent = new PopStateEvent("popstate", { state });
 					window.dispatchEvent(popStateEvent);
 				},
-				fetchBlob: async (url) => {
+				fetchBlob: async (
+					url
+				): Promise<
+					[{ body: ArrayBuffer; contentType: string }, Transferable[]]
+				> => {
 					const response = await realFetch(url);
 					const ab = await response.arrayBuffer();
 					return [
@@ -94,9 +101,12 @@ export class ExecutionContextWrapper {
 
 		setupTitleWatcher(this);
 		setupContextMenu(this);
-		// setupHistoryEmulation();
+		setupHistoryEmulation(this);
+		setupAnchorHandler(this);
+		setupWindowOpen(this);
 		// inform	chrome of the current url
 		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
+
 		this.rpc.call("load", {
 			url: this.client.url.href,
 			sequence: findSequence(top!, self as any)!,

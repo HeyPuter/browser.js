@@ -1,8 +1,8 @@
-import { css } from "dreamland/core";
-import { createMenuCustom } from "../Menu";
-import { SiteInformationPopup } from "../SiteInformationPopup";
+import { css, type FC } from "dreamland/core";
+import { createMenuCustom } from "@components/Menu";
+import { SiteInformationPopup } from "@components/SiteInformationPopup";
 import { browser } from "../../Browser";
-import { Icon } from "../Icon";
+import { Icon } from "@components/Icon";
 import { emToPx } from "../../utils";
 import { iconOptions } from "../../icons";
 

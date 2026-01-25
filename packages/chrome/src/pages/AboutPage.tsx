@@ -1,8 +1,8 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { versionInfo } from "@mercuryworkshop/scramjet";
 
-export function AboutPage(props: { tab: Tab }) {
+export function AboutPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<div class="main">

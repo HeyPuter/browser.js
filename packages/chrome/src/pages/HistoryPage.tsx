@@ -1,9 +1,9 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab";
 import { browser } from "../Browser";
-import { defaultFaviconUrl } from "../assets/favicon";
+import { Favicon } from "@components/Favicon";
 
-export function HistoryPage(props: { tab: Tab }) {
+export function HistoryPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<nav>
@@ -20,7 +20,7 @@ export function HistoryPage(props: { tab: Tab }) {
 							}}
 						>
 							<span class="inner">
-								<img src={entry.favicon || defaultFaviconUrl} alt="favicon" />
+								<Favicon url={entry.favicon} size="medium"></Favicon>
 								<span class="title">{entry.title || entry.url.href}</span>
 								<span class="url">{entry.url.hostname}</span>
 							</span>
@@ -56,6 +56,9 @@ HistoryPage.style = css`
 		margin: 0;
 		width: 100%;
 		padding-right: 1.75em;
+		overflow-y: scroll;
+		width: 100%;
+		flex: 1;
 	}
 	.entry {
 		width: 100%;

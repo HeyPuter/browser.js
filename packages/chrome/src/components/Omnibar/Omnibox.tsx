@@ -1,40 +1,23 @@
-import {
-	createDelegate,
-	createState,
-	css,
-	type ComponentContext,
-	type Delegate,
-} from "dreamland/core";
-import { iconSearch, iconForwards, iconTrendingUp } from "../../icons";
-import { Icon } from "../Icon";
-import { OmnibarButton } from "./OmnibarButton";
-import { setContextMenu } from "../Menu";
-import { defaultFaviconUrl } from "../../assets/favicon";
+import { createDelegate, css, type FC, type Delegate } from "dreamland/core";
+import { setContextMenu } from "@components/Menu";
 import { browser } from "../../Browser";
-import { emToPx, splitUrl } from "../../utils";
+import { INTERNAL_URL_PROTOCOL } from "../../consts";
 import {
 	fetchGoogleTrending,
 	fetchSuggestions,
 	trendingCached,
 	type OmniboxResult,
-	type TrendingQuery,
 } from "./suggestions";
 import { trimUrl } from "./utils";
-import { BookmarkButton } from "./BookmarkButton";
-import { SiteOptionsButton } from "./SiteOptionsButton";
-import { Favicon } from "../Favicon";
-import { UrlInput } from "./UrlInput";
-import { Suggestion } from "./Suggestion";
-import { requestUnfocusFrames } from "../Shell";
+import { UrlInput } from "@components/Omnibar/UrlInput";
+import { Suggestion } from "@components/Omnibar/Suggestion";
+import { requestUnfocusFrames } from "@components/Shell";
 
 export const focusOmnibox = createDelegate<void>();
 
-function InactiveBar(props: { subtle: boolean; active: boolean }) {
+function InactiveBar(this: FC<{ subtle: boolean; active: boolean }>) {
 	return (
-		<div
-			class:subtle={use(props.subtle)}
-			class:active={use(props.active)}
-		></div>
+		<div class:subtle={use(this.subtle)} class:active={use(this.active)}></div>
 	);
 }
 InactiveBar.style = css`
@@ -53,24 +36,25 @@ InactiveBar.style = css`
 `;
 
 export function Omnibox(
-	this: {
-		value: string;
-		realvalue: string;
-		active: boolean;
-		justselected: boolean;
-		subtleinput: boolean;
-		focusindex: number;
-		searchSuggestions: OmniboxResult[];
-		trendingSuggestions: OmniboxResult[];
-		input: HTMLInputElement;
+	this: FC<
+		{
+			url: URL;
+			selectContent: Delegate<void>;
+		},
+		{
+			value: string;
+			realvalue: string;
+			active: boolean;
+			justselected: boolean;
+			subtleinput: boolean;
+			focusindex: number;
+			searchSuggestions: OmniboxResult[];
+			trendingSuggestions: OmniboxResult[];
+			input: HTMLInputElement;
 
-		suggestionDenied: boolean;
-	},
-	props: {
-		url: URL;
-		selectContent: Delegate<void>;
-	},
-	cx: ComponentContext
+			suggestionDenied: boolean;
+		}
+	>
 ) {
 	this.focusindex = 0;
 	this.searchSuggestions = [];
@@ -79,12 +63,12 @@ export function Omnibox(
 
 	const [lock, unlock] = requestUnfocusFrames();
 
-	cx.mount = () => {
-		setContextMenu(cx.root, [
+	this.cx.mount = () => {
+		setContextMenu(this.root, [
 			{
 				label: "Select All",
 				action: () => {
-					props.selectContent();
+					this.selectContent();
 				},
 			},
 		]);
@@ -102,8 +86,6 @@ export function Omnibox(
 		}, 10);
 	});
 
-	let timeout: number | null = null;
-
 	use(this.realvalue).listen(() => {
 		if (!this.realvalue) {
 			this.searchSuggestions = [];
@@ -113,76 +95,85 @@ export function Omnibox(
 		// if the user is actually trying to search something we can kill the trending suggestions
 		this.trendingSuggestions = [];
 
-		if (timeout) clearTimeout(timeout);
-		timeout = setTimeout(() => {
-			fetchSuggestions(this.realvalue, this.suggestionDenied, (results) => {
-				this.searchSuggestions = results;
+		fetchSuggestions(this.realvalue, this.suggestionDenied, (results) => {
+			this.searchSuggestions = results;
 
-				const firstResult = results[0];
-				if (!firstResult) return;
-				if (firstResult.kind === "search") {
-					if (!firstResult.title) return;
-					if (this.realvalue.length >= firstResult.title.length) return;
-					if (
-						!firstResult.title
-							.toLowerCase()
-							.startsWith(this.realvalue.toLowerCase())
-					)
-						return;
+			const firstResult = results[0];
+			if (!firstResult) return;
+			if (firstResult.kind === "search") {
+				if (!firstResult.title) return;
+				if (this.realvalue.length >= firstResult.title.length) return;
+				if (
+					!firstResult.title
+						.toLowerCase()
+						.startsWith(this.realvalue.toLowerCase())
+				)
+					return;
 
-					let currentCursor = this.input.selectionStart || 0;
+				let currentCursor = this.input.selectionStart || 0;
 
-					this.input.setSelectionRange(
-						currentCursor,
-						currentCursor + firstResult.title.length
-					);
-					this.value = firstResult.title;
-					this.input.setSelectionRange(
-						currentCursor,
-						currentCursor + firstResult.title.length
-					);
-				} else {
-					if (!firstResult.url) return;
+				this.input.setSelectionRange(
+					currentCursor,
+					currentCursor + firstResult.title.length
+				);
+				this.value = firstResult.title;
+				this.input.setSelectionRange(
+					currentCursor,
+					currentCursor + firstResult.title.length
+				);
+			} else {
+				if (!firstResult.url) return;
 
-					// todo support http:example.com
-					let normalizedUrl =
-						this.realvalue.startsWith("http://") ||
-						this.realvalue.startsWith("https://")
-							? firstResult.url.href
-							: trimUrl(firstResult.url);
+				// todo support http:example.com
+				let normalizedUrl =
+					this.realvalue.startsWith("http://") ||
+					this.realvalue.startsWith("https://")
+						? firstResult.url.href
+						: trimUrl(firstResult.url);
 
-					if (normalizedUrl.endsWith("/") && !this.realvalue.endsWith("/")) {
-						normalizedUrl = normalizedUrl.slice(0, -1);
-					}
-					if (this.realvalue.length >= normalizedUrl.length) return;
-					if (
-						!normalizedUrl
-							.toLowerCase()
-							.startsWith(this.realvalue.toLowerCase())
-					)
-						return;
-
-					let currentCursor = this.input.selectionStart || 0;
-
-					this.input.setSelectionRange(
-						currentCursor,
-						currentCursor + normalizedUrl.length
-					);
-					this.value = normalizedUrl;
-					this.input.setSelectionRange(
-						currentCursor,
-						currentCursor + normalizedUrl.length
-					);
+				if (normalizedUrl.endsWith("/") && !this.realvalue.endsWith("/")) {
+					normalizedUrl = normalizedUrl.slice(0, -1);
 				}
-			});
-			this.suggestionDenied = false;
-		}, 100);
+				if (this.realvalue.length >= normalizedUrl.length) return;
+				if (
+					!normalizedUrl.toLowerCase().startsWith(this.realvalue.toLowerCase())
+				)
+					return;
+
+				let currentCursor = this.input.selectionStart || 0;
+
+				this.input.setSelectionRange(
+					currentCursor,
+					currentCursor + normalizedUrl.length
+				);
+				this.value = normalizedUrl;
+				this.input.setSelectionRange(
+					currentCursor,
+					currentCursor + normalizedUrl.length
+				);
+			}
+		});
+		this.suggestionDenied = false;
+	});
+
+	use(this.url.href).listen((url) => {
+		// when the url changes, clear whatever text the user might have had in the search box
+		this.value = "";
+		// also set realvalue to clear the search results
+		this.realvalue = "";
 	});
 
 	const activate = () => {
 		this.subtleinput = false;
 		this.active = true;
 		lock();
+
+		// empty value == just represent the url
+		if (this.value == "") {
+			if (this.url.href != `${INTERNAL_URL_PROTOCOL}//newtab`) {
+				this.realvalue = this.value = trimUrl(this.url);
+			}
+		}
 
 		const handleClickOutside = (e: MouseEvent) => {
 			this.active = false;
@@ -196,31 +187,30 @@ export function Omnibox(
 		document.body.addEventListener("click", handleClickOutside);
 		document.body.addEventListener("auxclick", handleClickOutside);
 
-		if (props.url.href == "puter://newtab") {
-			this.value = "";
-		} else {
-			this.value = trimUrl(props.url);
-		}
-
 		this.input.focus();
 		this.input.select();
 		this.justselected = true;
 		this.input.scrollLeft = 0;
 
-		fetchGoogleTrending().then(() => {
-			// pick a random 3 from the cache
-			this.trendingSuggestions = trendingCached!
-				.sort(() => 0.5 - Math.random())
-				.slice(0, 3)
-				.map((t) => ({
-					kind: "trending",
-					title: t.title,
-					url: new URL(
-						`https://www.google.com/search?q=${encodeURIComponent(t.title)}`
-					),
-					favicon: "https://www.google.com/favicon.ico",
-				}));
-		});
+		if (this.url.href === `${INTERNAL_URL_PROTOCOL}//newtab`) {
+			// don't clutter the results if not on a newtab page
+			fetchGoogleTrending().then(() => {
+				// pick a random 3 from the cache
+				this.trendingSuggestions = trendingCached!
+					.sort(() => 0.5 - Math.random())
+					.slice(0, 3)
+					.map((t) => ({
+						kind: "trending",
+						title: t.title,
+						url: new URL(
+							`https://www.google.com/search?q=${encodeURIComponent(t.title)}`
+						),
+						favicon: "https://www.google.com/favicon.ico",
+					}));
+			});
+		} else {
+			this.trendingSuggestions = [];
+		}
 	};
 
 	const navTo = (url: URL) => {
@@ -239,7 +229,7 @@ export function Omnibox(
 		navTo(selected.url);
 	};
 
-	props.selectContent.listen(() => {
+	this.selectContent.listen(() => {
 		activate();
 	});
 
@@ -298,7 +288,7 @@ export function Omnibox(
 				))}
 				{use(this.trendingSuggestions)
 					.map((s) => s.length > 0)
-					.andThen(<div class="spacertext">Trending Searches</div>)}
+					.and(<div class="spacertext">Trending Searches</div>)}
 				{use(this.trendingSuggestions).mapEach((item) => (
 					<Suggestion
 						item={item}
@@ -317,7 +307,7 @@ export function Omnibox(
 			<UrlInput
 				active={use(this.active)}
 				input={use(this.input)}
-				url={use(props.url)}
+				url={use(this.url)}
 				value={use(this.value)}
 				favicon={use(this.focusindex, this.searchSuggestions).map(() =>
 					this.focusindex > 0 &&
@@ -355,17 +345,17 @@ export function Omnibox(
 					if (!this.justselected) return;
 
 					// if the user didn't modify anything
-					if (this.input.value == trimUrl(props.url)) {
+					if (this.input.value == trimUrl(this.url)) {
 						// insert the untrimmed version
-						this.input.value = props.url.href;
+						this.input.value = this.url.href;
 					}
 
 					if (e.key == "ArrowLeft") {
 						// move the cursor to the start
-						if (props.url.protocol == "puter:") {
+						if (this.url.protocol == INTERNAL_URL_PROTOCOL) {
 							this.input.setSelectionRange(0, 0);
 						} else {
-							let schemelen = props.url.protocol.length + 2;
+							let schemelen = this.url.protocol.length + 2;
 							this.input.setSelectionRange(schemelen, schemelen);
 						}
 					}

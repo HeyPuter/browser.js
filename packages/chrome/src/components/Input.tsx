@@ -1,46 +1,39 @@
-import { css, type Pointer } from "dreamland/core";
+import { css, type FC, type Pointer } from "dreamland/core";
 
-export function Input(s: {
-	value: Pointer<string> | string;
-	label?: string;
-	placeholder?: string;
-	type?: string;
-	autocomplete?: string;
-	required?: boolean;
-	disabled?: boolean;
-	autofocus?: boolean;
-	class?: string;
-	"on:input"?: (e: Event) => void;
-	"on:focus"?: (e: FocusEvent) => void;
-	"on:blur"?: (e: FocusEvent) => void;
-	"on:keydown"?: (e: KeyboardEvent) => void;
-	"on:keyup"?: (e: KeyboardEvent) => void;
-}) {
-	const handleInput = (e: Event) => {
-		// keep the original behavior: assign into the passed `value` (may be a Pointer)
-		(s.value as any) = (e.target as HTMLInputElement).value;
-
-		if (s["on:input"]) {
-			s["on:input"](e);
-		}
-	};
-
+export function Input(
+	this: FC<{
+		value: Pointer<string> | string;
+		label?: string;
+		placeholder?: string;
+		type?: string;
+		autocomplete?: string;
+		required?: boolean;
+		disabled?: boolean;
+		autofocus?: boolean;
+		class?: string;
+		"on:input"?: (e: Event) => void;
+		"on:focus"?: (e: FocusEvent) => void;
+		"on:blur"?: (e: FocusEvent) => void;
+		"on:keydown"?: (e: KeyboardEvent) => void;
+		"on:keyup"?: (e: KeyboardEvent) => void;
+	}>
+) {
 	return (
-		<div class={`input-container ${s.class || ""}`}>
-			{s.label && <label>{s.label}</label>}
+		<div class={`input-container ${this.class || ""}`}>
+			{this.label && <label>{this.label}</label>}
 			<input
-				type={s.type || "text"}
-				value={typeof s.value === "object" ? use(s.value) : s.value}
-				placeholder={s.placeholder}
-				autocomplete={s.autocomplete}
-				required={s.required}
-				disabled={s.disabled}
-				autofocus={s.autofocus}
-				on:input={handleInput}
-				on:focus={s["on:focus"] as any}
-				on:blur={s["on:blur"] as any}
-				on:keydown={s["on:keydown"] as any}
-				on:keyup={s["on:keyup"] as any}
+				type={this.type || "text"}
+				value={use(this.value)}
+				placeholder={this.placeholder}
+				autocomplete={this.autocomplete}
+				required={this.required}
+				disabled={this.disabled}
+				autofocus={this.autofocus}
+				on:input={this["on:input"] as any}
+				on:focus={this["on:focus"] as any}
+				on:blur={this["on:blur"] as any}
+				on:keydown={this["on:keydown"] as any}
+				on:keyup={this["on:keyup"] as any}
 			/>
 		</div>
 	);
