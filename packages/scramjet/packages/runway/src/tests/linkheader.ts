@@ -90,4 +90,41 @@ export default [
 			});
 		},
 	}),
+	serverTest({
+		name: "linkheader-next-prev-xhr",
+		start: async (server, port) => {
+			const link = `<http://localhost:${port}/page2>; rel="next", <http://localhost:${port}/page0>; rel="prev"`;
+			server.on("request", (req, res) => {
+				if (req.url === "/") {
+					res.writeHead(200, {
+						"Content-Type": "text/html",
+					});
+					res.end(`
+                    <script>
+                        const xhr = new XMLHttpRequest();
+                        xhr.open("GET", "/page1");
+                        xhr.onload = () => {
+                            let next = xhr.getResponseHeader("Link");
+                            const expected = '${link}';
+                            if (next === expected) {
+                                __testPass("next link header is correct (xhr)");
+                            } else {
+                                __testFail("next link header is incorrect (xhr)", { actual: next, expected: expected });
+                            }
+                        };
+                        xhr.send();
+                    </script>
+                    `);
+				} else if (req.url === "/page1") {
+					res.writeHead(200, {
+						Link: link,
+					});
+					res.end("Page 1");
+				} else {
+					res.writeHead(404);
+					res.end("Not found");
+				}
+			});
+		},
+	}),
 ];
