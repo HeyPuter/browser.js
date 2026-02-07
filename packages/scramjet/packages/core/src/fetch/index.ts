@@ -21,7 +21,7 @@ import { rewriteCss } from "@rewriters/css";
 import { rewriteWorkers } from "@rewriters/worker";
 import { ScramjetConfig } from "@/types";
 import DomHandler from "domhandler";
-import { guessCharset } from "./charsetGuess";
+import { sniffEncoding } from "./charsetGuess";
 
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
@@ -665,15 +665,17 @@ async function rewriteBody(
 		case "document":
 			if (response.headers.get("content-type")?.startsWith("text/html")) {
 				const buf = await response.arrayBuffer();
-				const preliminaryDecode = new TextDecoder("utf-8").decode(buf);
-				const charset = guessCharset(
+				const bytes = new Uint8Array(buf);
+				const preliminaryDecode = new TextDecoder("utf-8").decode(bytes);
+				const encoding = sniffEncoding(
+					bytes,
 					response.headers.get("content-type"),
 					preliminaryDecode
 				);
 				const htmlContent =
-					charset.toLowerCase() === "utf-8"
+					encoding === "UTF-8"
 						? preliminaryDecode
-						: new TextDecoder(charset).decode(buf);
+						: new TextDecoder(encoding).decode(bytes);
 
 				return rewriteHtml(
 					htmlContent,

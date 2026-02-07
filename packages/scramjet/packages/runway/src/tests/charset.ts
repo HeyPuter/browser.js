@@ -61,7 +61,7 @@ export default [
 		},
 	}),
 
-	// Test: iso-8859-1 charset in header with actual iso-8859-1 encoded content
+	// Test: iso-8859-1 charset in header (WHATWG resolves to windows-1252)
 	serverTest({
 		name: "charset-iso-8859-1-header",
 		js: `
@@ -72,7 +72,7 @@ export default [
 			server.on("request", (req, res) => {
 				if (req.url === "/" || req.url === "/common.js" || req.url === "/script.js") return;
 				res.writeHead(200, { "Content-Type": "text/html; charset=iso-8859-1" });
-				// Encode in iso-8859-1: é = 0xe9, ö = 0xf6
+				// Encode in iso-8859-1/windows-1252: é = 0xe9, ö = 0xf6
 				const body = Buffer.from(
 					'<!DOCTYPE html><html><head><script src="/common.js"></script></head><body><span id="test">h\xe9llo w\xf6rld</span><script src="/script.js"></script></body></html>',
 					"latin1"
@@ -110,6 +110,26 @@ export default [
 				if (req.url === "/" || req.url === "/common.js" || req.url === "/script.js") return;
 				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
 				res.end(`<!DOCTYPE html><html><head><meta charset="iso-8859-1"><script src="/common.js"></script></head><body><span id="test">héllo wörld</span><script src="/script.js"></script></body></html>`);
+			});
+		},
+	}),
+
+	// Test: UTF-8 BOM (byte order mark) takes highest priority per WHATWG
+	serverTest({
+		name: "charset-utf8-bom",
+		js: `
+			assertEqual(document.getElementById("test").textContent, "héllo wörld", "UTF-8 BOM should decode correctly");
+		`,
+		start: async (server, port) => {
+			server.on("request", (req, res) => {
+				if (req.url === "/" || req.url === "/common.js" || req.url === "/script.js") return;
+				// No charset in header, no meta — BOM alone should trigger UTF-8
+				res.writeHead(200, { "Content-Type": "text/html" });
+				const html = `<!DOCTYPE html><html><head><script src="/common.js"></script></head><body><span id="test">héllo wörld</span><script src="/script.js"></script></body></html>`;
+				// Prepend UTF-8 BOM (EF BB BF)
+				const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+				const body = Buffer.concat([bom, Buffer.from(html, "utf-8")]);
+				res.end(body);
 			});
 		},
 	}),
