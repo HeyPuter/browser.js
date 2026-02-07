@@ -20,6 +20,7 @@ import { rewriteCss } from "@rewriters/css";
 import { rewriteWorkers } from "@rewriters/worker";
 import { ScramjetConfig } from "@/types";
 import DomHandler from "domhandler";
+import { guessCharset } from "./charsetGuess";
 
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
@@ -670,22 +671,19 @@ async function rewriteBody(
 		case "iframe":
 		case "document":
 			if (response.headers.get("content-type")?.startsWith("text/html")) {
-				// note from percs: i think this has the potential to be slow asf, but for right now its fine (we should probably look for a better solution)
-				// another note from percs: regex seems to be broken, gonna comment this out
-				/*
-        const buf = await response.arrayBuffer();
-        const decode = new TextDecoder("utf-8").decode(buf);
-        const charsetHeader = response.headers.get("content-type");
-        const charset =
-          charsetHeader?.split("charset=")[1] ||
-          decode.match(/charset=([^"]+)/)?.[1] ||
-          "utf-8";
-        const htmlContent = charset
-          ? new TextDecoder(charset).decode(buf)
-          : decode;
-        */
+				const buf = await response.arrayBuffer();
+				const preliminaryDecode = new TextDecoder("utf-8").decode(buf);
+				const charset = guessCharset(
+					response.headers.get("content-type"),
+					preliminaryDecode
+				);
+				const htmlContent =
+					charset.toLowerCase() === "utf-8"
+						? preliminaryDecode
+						: new TextDecoder(charset).decode(buf);
+
 				return rewriteHtml(
-					await response.text(),
+					htmlContent,
 					handler.context,
 					parsed.meta,
 					true,

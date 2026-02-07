@@ -51,7 +51,12 @@
 	"license": "MIT",
 	"ava": {
 		"files": [
-			"tests/ci/**/*.js"
+			"tests/ci/**/*.js",
+			"tests/ci/**/*.ts"
+		],
+		"nodeArguments": [
+			"--experimental-strip-types",
+			"--no-warnings"
 		],
 		"verbose": true
 	},
