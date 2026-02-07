@@ -3,6 +3,7 @@ import { browser } from "./Browser";
 import { StatefulClass } from "./StatefulClass";
 import type { Tab } from "./Tab";
 import { markDirty } from "./storage";
+import { INTERNAL_URL_PROTOCOL } from "./consts";
 
 // history api emulation
 export class HistoryState extends StatefulClass {
@@ -93,7 +94,8 @@ export class History {
 		const hstate = new HistoryState({ url, state, title });
 		if (virtual) hstate.virtual = true;
 
-		if (url.href != "puter://newtab") browser.globalhistory.push(hstate);
+		if (url.href != `${INTERNAL_URL_PROTOCOL}//newtab`)
+			browser.globalhistory.push(hstate);
 		this.states.push(hstate);
 		this.index++;
 

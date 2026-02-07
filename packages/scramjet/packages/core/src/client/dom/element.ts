@@ -521,14 +521,18 @@ export default function (client: ScramjetClient, self: typeof window) {
 		],
 		{
 			get(ctx) {
+				if (client.meta.base.origin === "https://accounts.google.com") {
+					// botguard bullshittery
+					return null;
+				}
+
 				const realwin = ctx.get() as Window;
 				if (!realwin) return realwin;
 
 				try {
 					if (!(SCRAMJETCLIENT in realwin)) {
 						// hook the iframe before the client can start to steal globals out of it
-						const newclient = new ScramjetClient(realwin, client.init);
-						newclient.hook();
+						client.init.hookSubcontext(realwin, ctx.this);
 					}
 				} catch {
 					// cross-origin iframe, can't do anything here
@@ -556,8 +560,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 				if (!realwin) return realwin;
 
 				if (!(SCRAMJETCLIENT in realwin)) {
-					const newclient = new ScramjetClient(realwin, client.init);
-					newclient.hook();
+					client.init.hookSubcontext(realwin, ctx.this);
 				}
 
 				return realwin.document;

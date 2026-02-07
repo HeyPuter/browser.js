@@ -2,6 +2,7 @@ import { createDelegate, createState } from "dreamland/core";
 import { StatefulClass } from "./StatefulClass";
 import { browser } from "./Browser";
 import { History, type SerializedHistory } from "./History";
+import { INTERNAL_URL_PROTOCOL } from "./consts";
 import { NewTabPage } from "./pages/NewTabPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { AboutPage } from "./pages/AboutPage";
@@ -9,9 +10,8 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { ProxyFrame } from "./proxy/ProxyFrame";
-import { defaultFaviconUrl } from "./assets/favicon";
 
-const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
+// const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
 
 export type SerializedTab = {
 	id: number;
@@ -44,10 +44,11 @@ export class Tab extends StatefulClass {
 
 	sendToChobitsu: ((message: string) => void) | null = null;
 	onChobitsuMessage: ((message: string) => void) | null = null;
-	waitForChobitsuInit: Promise<void>;
+	waitForInit: Promise<void>;
+	private initResolve!: () => void;
 
 	constructor(
-		public url: URL = new URL("puter://newtab"),
+		public url: URL = new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
 		public id = idcnt++
 	) {
 		super(createState(Object.create(Tab.prototype)));
@@ -63,9 +64,8 @@ export class Tab extends StatefulClass {
 
 		this.icon = null;
 
-		let resolver: () => void;
-		this.waitForChobitsuInit = new Promise((resolve) => {
-			resolver = resolve;
+		this.waitForInit = new Promise((resolve) => {
+			this.initResolve = resolve;
 		});
 
 		// addHistoryListeners(frame, this);
@@ -155,7 +155,7 @@ export class Tab extends StatefulClass {
 	// only caller should be history.ts for this
 	_directnavigate(url: URL) {
 		this.url = url;
-		if (url.protocol == "puter:") {
+		if (url.protocol == INTERNAL_URL_PROTOCOL) {
 			switch (url.host) {
 				case "newtab":
 					this.history.current().title = this.title = "New Tab";
@@ -183,7 +183,7 @@ export class Tab extends StatefulClass {
 			}
 		} else {
 			// placeholder title until the page fills in
-			this.title = url.href;
+			this.history.current().title = this.title = url.href;
 
 			// if (!navigator.serviceWorker.controller) {
 			// 	serviceWorkerReady.then(() => {
@@ -196,6 +196,7 @@ export class Tab extends StatefulClass {
 	}
 
 	initialLoad() {
+		this.initResolve();
 		this.internalpage = null;
 	}
 

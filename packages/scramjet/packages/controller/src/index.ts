@@ -11,10 +11,10 @@ import {
 	type WebSocketMessage,
 } from "./types";
 import {
-	BareClient,
-	type BareResponseFetch,
-	type BareTransport,
-} from "@mercuryworkshop/bare-mux-custom";
+	BareCompatibleClient,
+	BareResponse,
+	type ProxyTransport,
+} from "@mercuryworkshop/proxy-transports";
 
 const cookieJar = new $scramjet.CookieJar();
 
@@ -26,19 +26,15 @@ type Config = {
 	prefix: string;
 };
 
-fetch("/scramjet/scramjet.wasm.wasm").then(async (resp) => {
-	$scramjet.setWasm(await resp.arrayBuffer());
-});
-
 export const config: Config = {
 	prefix: "/~/sj/",
 	virtualWasmPath: "scramjet.wasm.js",
 	injectPath: "/controller/controller.inject.js",
 	scramjetPath: "/scramjet/scramjet.js",
-	wasmPath: "/scramjet/scramjet.wasm.wasm",
+	wasmPath: "/scramjet/scramjet.wasm",
 };
 
-const cfg = {
+const defaultCfg = {
 	flags: {
 		...$scramjet.defaultConfig.flags,
 		allowFailedIntercepts: true,
@@ -68,19 +64,34 @@ const codecDecode = (url: string) => {
 
 type ControllerInit = {
 	serviceworker: ServiceWorker;
-	transport: BareTransport;
+	transport: ProxyTransport;
 };
+
+let wasmAlreadyFetched = false;
+
+async function loadScramjetWasm() {
+	if (wasmAlreadyFetched) {
+		return;
+	}
+
+	let resp = await fetch(config.wasmPath);
+	$scramjet.setWasm(await resp.arrayBuffer());
+	wasmAlreadyFetched = true;
+}
+
 export class Controller {
 	id: string;
 	prefix: string;
 	frames: Frame[] = [];
 	cookieJar = new $scramjet.CookieJar();
+	flags: typeof defaultCfg.flags = { ...defaultCfg.flags };
 
 	rpc: RpcHelper<Controllerbound, SWbound>;
-	private ready: Promise<void>;
+	private ready: Promise<[void, void]>;
 	private readyResolve!: () => void;
+	public isReady: boolean = false;
 
-	transport: BareTransport;
+	transport: ProxyTransport;
 
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
@@ -107,7 +118,7 @@ export class Controller {
 
 						let payload = "";
 						payload +=
-							"console.warn('WTF'); if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
+							"if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
 						payload += `self.WASM = '${b64}';`;
 						wasmPayload = payload;
 					}
@@ -117,20 +128,15 @@ export class Controller {
 							body: wasmPayload,
 							status: 200,
 							statusText: "OK",
-							headers: {
-								"Content-Type": ["application/javascript"],
-							},
+							headers: [["Content-Type", "application/javascript"]],
 						},
 						[],
 					];
 				}
 
-				let sjheaders = new $scramjet.ScramjetHeaders();
-				for (let [k, v] of Object.entries(data.initialHeaders)) {
-					for (let vv of v) {
-						sjheaders.set(k, vv);
-					}
-				}
+				let sjheaders = $scramjet.ScramjetHeaders.fromRawHeaders(
+					data.initialHeaders
+				);
 
 				const fetchresponse = await frame.fetchHandler.handleFetch({
 					initialHeaders: sjheaders,
@@ -151,7 +157,7 @@ export class Controller {
 						body: fetchresponse.body,
 						status: fetchresponse.status,
 						statusText: fetchresponse.statusText,
-						headers: fetchresponse.headers,
+						headers: fetchresponse.headers.toRawHeaders(),
 					},
 					fetchresponse.body instanceof ReadableStream ||
 					fetchresponse.body instanceof ArrayBuffer
@@ -185,10 +191,11 @@ export class Controller {
 							new URL(url),
 							protocols,
 							requestHeaders,
-							(protocol) => {
+							(protocol, extensions) => {
 								resolve({
 									result: "success",
 									protocol: protocol,
+									extensions: extensions,
 								});
 							},
 							(data) => {
@@ -253,9 +260,12 @@ export class Controller {
 		this.id = makeId();
 		this.prefix = config.prefix + this.id + "/";
 
-		this.ready = new Promise<void>((resolve) => {
-			this.readyResolve = resolve;
-		});
+		this.ready = Promise.all([
+			new Promise<void>((resolve) => {
+				this.readyResolve = resolve;
+			}),
+			loadScramjetWasm(),
+		]);
 
 		let channel = new MessageChannel();
 		this.rpc = new RpcHelper<Controllerbound, SWbound>(
@@ -282,14 +292,19 @@ export class Controller {
 	}
 
 	createFrame(element?: HTMLIFrameElement): Frame {
+		if (!this.ready) {
+			throw new Error(
+				"Controller is not ready! Try awaiting controller.wait()"
+			);
+		}
 		element ??= document.createElement("iframe");
 		const frame = new Frame(this, element);
 		this.frames.push(frame);
 		return frame;
 	}
 
-	wait(): Promise<void> {
-		return this.ready;
+	async wait(): Promise<void> {
+		await this.ready;
 	}
 }
 
@@ -297,9 +312,15 @@ function yieldGetInjectScripts(
 	cookieJar: ScramjetGlobal.CookieJar,
 	config: Config,
 	sjconfig: ScramjetGlobal.ScramjetConfig,
-	prefix: URL
+	prefix: URL,
+	codecEncode: (input: string) => string,
+	codecDecode: (input: string) => string
 ) {
-	return function getInjectScripts(meta, handler, script) {
+	let getInjectScripts: ScramjetGlobal.ScramjetInterface["getInjectScripts"] = (
+		meta,
+		handler,
+		script
+	) => {
 		return [
 			script(config.scramjetPath),
 			script(config.injectPath),
@@ -321,6 +342,7 @@ function yieldGetInjectScripts(
 			),
 		];
 	};
+	return getInjectScripts;
 }
 
 class Frame {
@@ -328,11 +350,13 @@ class Frame {
 	id: string;
 	prefix: string;
 
-	get context() {
+	get context(): ScramjetGlobal.ScramjetContext {
 		let sjcfg = {
 			...$scramjet.defaultConfig,
-			...cfg,
+			flags: this.controller.flags,
+			maskedfiles: defaultCfg.maskedfiles,
 		};
+
 		return {
 			cookieJar,
 			prefix: new URL(this.prefix, location.href),
@@ -341,8 +365,10 @@ class Frame {
 				getInjectScripts: yieldGetInjectScripts(
 					this.controller.cookieJar,
 					config,
-					{ ...$scramjet.defaultConfig, ...cfg },
-					new URL(this.prefix, location.href)
+					sjcfg,
+					new URL(this.prefix, location.href),
+					codecEncode,
+					codecDecode
 				),
 				getWorkerInjectScripts: (meta, type, script) => {
 					let str = "";
@@ -401,10 +427,10 @@ class Frame {
 			transport: controller.transport,
 			async sendSetCookie(url, cookie) {},
 			async fetchBlobUrl(url) {
-				return (await fetch(url)) as BareResponseFetch;
+				return BareResponse.fromNativeResponse(await fetch(url));
 			},
 			async fetchDataUrl(url) {
-				return (await fetch(url)) as BareResponseFetch;
+				return BareResponse.fromNativeResponse(await fetch(url));
 			},
 		});
 	}

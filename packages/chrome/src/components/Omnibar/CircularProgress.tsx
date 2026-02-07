@@ -1,24 +1,23 @@
-import { css, type ComponentContext } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 
 export function CircularProgress(
-	s: {
+	this: FC<{
 		progress: number;
 		size?: string;
 		strokeWidth?: string;
 		color?: string;
-	},
-	cx: ComponentContext
+	}>
 ) {
 	const radius = 100;
 	const circumference = 2 * Math.PI * radius;
 
-	use(s.progress).listen((p) => {
+	use(this.progress).listen((p) => {
 		if (p == 0) {
-			cx.root.classList.remove("visible");
+			this.root.classList.remove("visible");
 		} else {
-			cx.root.classList.add("visible");
+			this.root.classList.add("visible");
 
-			cx.root
+			this.root
 				.querySelector("circle.moving")!
 				.setAttribute("stroke-dashoffset", circumference * (1 - p) + "px");
 		}

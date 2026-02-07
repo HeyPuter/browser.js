@@ -6,7 +6,3 @@ test-results
 package-lock.json
 rebuild.sh
 .DS_STORE
-
-
-# Rslib (For global type generation)
-.rslib/

@@ -1,21 +1,20 @@
-import { type Component, type ComponentContext, css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 
 export function Button(
-	props: {
+	this: FC<{
 		"on:click"?: (e: any) => void;
 		disabled?: boolean;
 		variant?: "primary" | "secondary" | "icon";
-		children: any;
-	},
-	cx: ComponentContext
+		children?: any;
+	}>
 ) {
 	return (
 		<button
-			class={props.variant || ""}
-			disabled={use(props.disabled)}
-			on:click={props["on:click"] || (() => {})}
+			class={this.variant || ""}
+			disabled={use(this.disabled)}
+			on:click={this["on:click"] || (() => {})}
 		>
-			{cx.children}
+			{this.children}
 		</button>
 	);
 }

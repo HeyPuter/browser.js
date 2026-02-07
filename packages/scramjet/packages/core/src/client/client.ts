@@ -1,5 +1,8 @@
 type ScramjetFrame = any;
-import { BareClient, BareTransport } from "@mercuryworkshop/bare-mux-custom";
+import {
+	BareCompatibleClient,
+	ProxyTransport,
+} from "@mercuryworkshop/proxy-transports";
 import { SCRAMJETCLIENT, SCRAMJETFRAME } from "@/symbols";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
@@ -14,10 +17,11 @@ import { ScramjetConfig } from "@/types";
 
 export type ScramjetClientInit = {
 	context: ScramjetContext;
-	transport: BareTransport;
+	transport: ProxyTransport;
 	sendSetCookie: (url: URL, cookie: string) => Promise<void>;
 	shouldPassthroughWebsocket?: (url: string | URL) => boolean;
 	shouldBlockMessageEvent?: (ev: MessageEvent) => boolean;
+	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
 };
 
 type NativeStore = {
@@ -108,7 +112,7 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 export class ScramjetClient {
 	locationProxy: any;
 	serviceWorker: ServiceWorkerContainer;
-	bare: BareClient;
+	bare: BareCompatibleClient;
 
 	natives: NativeStore;
 	descriptors: DescriptorStore;
@@ -156,7 +160,7 @@ export class ScramjetClient {
 		this.box.registerClient(this, global as Self);
 
 		this.context = init.context;
-		this.bare = new BareClient(init.transport);
+		this.bare = new BareCompatibleClient(init.transport);
 
 		this.serviceWorker = this.global.navigator.serviceWorker;
 
@@ -484,17 +488,71 @@ export class ScramjetClient {
 			this.natives.store[name] = original;
 		}
 
-		this.RawProxy(target, prop, handler);
+		this.RawProxy(target, prop, handler, name);
 	}
-	RawProxy(target: any, prop: string, handler: Proxy) {
+	RawProxy(target: any, prop: string, handler: Proxy, debugname?: string) {
 		if (!target) return;
 		if (!prop) return;
 		if (!Reflect.has(target, prop)) return;
 
 		const value = Reflect.get(target, prop);
+		const originalDescriptor = Object.getOwnPropertyDescriptor(target, prop);
 		delete target[prop];
 
 		const h: ProxyHandler<any> = {};
+
+		let applyFn: typeof Reflect.apply;
+		let constructFn: typeof Reflect.construct;
+		if (this.flagEnabled("debugTrampolines")) {
+			let fnName: string;
+			if (debugname) {
+				fnName = debugname;
+			} else if (typeof value === "function" && value.name) {
+				fnName = `Function ${value.name} -> ${prop}`;
+			} else if (typeof value === "object" && value.constructor) {
+				fnName = `Object ${value.constructor.name} -> ${prop}`;
+			} else {
+				fnName = `${typeof value} -> ${prop}`;
+			}
+			let windowName = this.descriptors.get("window.name", this.global);
+			if (!windowName) windowName = "<unnamed window>";
+			let location = this.url.href;
+
+			// sanitize newlines just in case somehow
+			location = location.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+			windowName = windowName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+			fnName = fnName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+			let sourceURL = debugname ? `${debugname}.sj` : `rawproxy.sj`;
+
+			let { construct, apply } = this.natives.call(
+				"Function",
+				null,
+				`"use strict";
+
+// SCRAMJET FUNCTION INTERCEPT
+// target: ${fnName}
+// frame: ${windowName}
+// location: ${location}
+
+function apply(fn, that, args) {
+	return Reflect.apply(fn, that, args);
+}
+
+function construct(fn, args, newTarget) {
+	return Reflect.construct(fn, args, newTarget);
+}
+
+return { apply, construct };
+
+//# sourceURL=${sourceURL}`
+			)();
+
+			applyFn = apply;
+			constructFn = construct;
+		} else {
+			applyFn = Reflect.apply;
+			constructFn = Reflect.construct;
+		}
 
 		if (handler.construct) {
 			h.construct = function (
@@ -516,7 +574,7 @@ export class ScramjetClient {
 					},
 					call: () => {
 						earlyreturn = true;
-						returnValue = Reflect.construct(ctx.fn, ctx.args, ctx.newTarget);
+						returnValue = constructFn(ctx.fn, ctx.args, ctx.newTarget);
 
 						return returnValue;
 					},
@@ -528,7 +586,7 @@ export class ScramjetClient {
 					return returnValue;
 				}
 
-				return Reflect.construct(ctx.fn, ctx.args, ctx.newTarget);
+				return constructFn(ctx.fn, ctx.args, ctx.newTarget);
 			};
 		}
 
@@ -548,7 +606,7 @@ export class ScramjetClient {
 					},
 					call: () => {
 						earlyreturn = true;
-						returnValue = Reflect.apply(ctx.fn, ctx.this, ctx.args);
+						returnValue = applyFn(ctx.fn, ctx.this, ctx.args);
 
 						return returnValue;
 					},
@@ -591,12 +649,18 @@ export class ScramjetClient {
 					return returnValue;
 				}
 
-				return Reflect.apply(ctx.fn, ctx.this, ctx.args);
+				return applyFn(ctx.fn, ctx.this, ctx.args);
 			};
 		}
 
 		h.getOwnPropertyDescriptor = getOwnPropertyDescriptorHandler;
-		target[prop] = new Proxy(value, h);
+		// Preserve original property descriptor (enumerable, configurable, etc.)
+		Object.defineProperty(target, prop, {
+			value: new Proxy(value, h),
+			writable: originalDescriptor?.writable ?? true,
+			enumerable: originalDescriptor?.enumerable ?? false,
+			configurable: originalDescriptor?.configurable ?? true,
+		});
 	}
 	Trap<T>(name: string | string[], descriptor: Trap<T>): PropertyDescriptor {
 		if (Array.isArray(name)) {

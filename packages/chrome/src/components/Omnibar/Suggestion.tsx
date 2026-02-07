@@ -1,9 +1,17 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import { type OmniboxResult, AVAILABLE_SEARCH_ENGINES } from "./suggestions";
-import { iconSearch, iconTrendingUp } from "../../icons";
+import {
+	iconSearch,
+	iconTrendingUp,
+	iconGlobe,
+	iconDesktop,
+	iconAbout,
+	iconLink,
+	iconCloud,
+} from "../../icons";
 import { browser } from "../../Browser";
-import { Icon } from "../Icon";
-import { Favicon } from "../Favicon";
+import { Icon } from "@components/Icon";
+import { Favicon } from "@components/Favicon";
 import { trimUrl } from "./utils";
 
 const renderResultHighlight = (title: string, inputValue: string) => {
@@ -20,20 +28,35 @@ const renderResultHighlight = (title: string, inputValue: string) => {
 	return <span style="font-weight: normal; opacity: 0.7;">{title}</span>;
 };
 
-export function Suggestion(props: {
-	item: OmniboxResult;
-	input: HTMLInputElement;
-	focused: boolean;
+export function Suggestion(
+	this: FC<{
+		item: OmniboxResult;
+		input: HTMLInputElement;
+		focused: boolean;
 
-	onClick: (e: MouseEvent) => void;
-}) {
-	let item = props.item;
+		onClick: (e: MouseEvent) => void;
+	}>
+) {
+	let item = this.item;
+
+	const getResultIcon = () => {
+		switch (item.directUrlType) {
+			case "ip":
+				return iconDesktop;
+			case "puter":
+				return iconGlobe;
+			case "about":
+				return iconAbout;
+			case "protocol":
+				return iconLink;
+		}
+	};
 
 	return (
 		<div
 			class="overflowitem"
-			on:click={props.onClick}
-			class:focused={use(props.focused)}
+			on:click={this.onClick}
+			class:focused={use(this.focused)}
 			title={item.url.href}
 		>
 			<div class="result-icon">
@@ -41,8 +64,12 @@ export function Suggestion(props: {
 					<Icon icon={iconSearch}></Icon>
 				) : item.kind === "trending" ? (
 					<Icon icon={iconTrendingUp}></Icon>
+				) : item.kind === "direct" &&
+				  item.directUrlType &&
+				  item.directUrlType !== "domain" ? (
+					<Icon icon={getResultIcon()!}></Icon>
 				) : (
-					<Favicon url={item.favicon}></Favicon>
+					<Favicon iconUrl={item.favicon} domain={item.url.hostname}></Favicon>
 				)}
 			</div>
 			<div
@@ -57,7 +84,7 @@ export function Suggestion(props: {
 				{item.kind !== "directsearch"
 					? (item.title && (
 							<span class="description">
-								{renderResultHighlight(item.title, props.input.value)}
+								{renderResultHighlight(item.title, this.input.value)}
 							</span>
 						)) || <span class="description">{trimUrl(item.url)}</span>
 					: null}
@@ -125,7 +152,7 @@ Suggestion.style = css`
 	.url,
 	.description {
 		text-overflow: ellipsis;
-		text-wrap: nowrap;
+		white-space: nowrap;
 		word-wrap: nowrap;
 		overflow: hidden;
 		line-height: 1.2;

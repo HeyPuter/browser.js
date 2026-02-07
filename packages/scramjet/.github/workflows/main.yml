@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     paths-ignore: &ci_ignore_paths
-      - ".github/workflows/**"
       - "assets/**"
       - "scripts/**"
       # Editor configs
@@ -21,6 +20,9 @@ on:
   pull_request:
     paths-ignore: *ci_ignore_paths
   workflow_dispatch:
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,8 +68,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -78,57 +78,38 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install
 
-      - name: Cache rewriter build artifacts
-        uses: actions/cache@v4
-        id: rewriter-cache
+      - name: Setup Rewriter Toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
         with:
-          path: |
-            rewriter/wasm/out
-            dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('rewriter/wasm/Cargo.toml', 'rewriter/wasm/src/**/*.rs', 'rewriter/wasm/build.sh') }}
-          restore-keys: |
-            rewriter-release-
-
-      - name: Cache Rust dependencies
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "rewriter"
-          cache-all-crates: true
-
-      - name: Install wbg
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: jetli/wasm-bindgen-action@v0.2.0
-        with:
-          version: "0.2.100"
-
-      - name: Setup Binaryen
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: Aandreba/setup-binaryen@v1.0.0
-        with:
-          token: ${{ github.token }}
-
-      - name: Setup wasm-snip
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        run: "cargo install --git https://github.com/r58playz/wasm-snip"
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
 
       - name: Pack Scramjet
         run: pnpm pack
+        working-directory: packages/core
 
-      - name: Upload Artifact (pnpm pack)
-        uses: actions/upload-artifact@v4
-        with:
-          name: packaged-scramjet
-          path: mercuryworkshop-scramjet-*.tgz
-
-      - name: Upload Artifact (dist)
+      - name: Upload Artifact (scramjet/core)
         uses: actions/upload-artifact@v4
         with:
           name: scramjet
           path: |
-            dist/*.js
-            dist/*.js.map
-            dist/*.wasm
+            packages/core/dist/*.js
+            packages/core/dist/*.js.map
+            packages/core/dist/*.wasm
+
+      - name: Upload Artifact (packaged)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scramjet-package
+          path: packages/core/mercuryworkshop-scramjet-*.tgz
+
+      - name: Upload Artifact (scramjet/controller)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scramjet-controller
+          path: |
+            packages/controller/dist/*
 
   package-validation:
     name: Validate Package Structure
@@ -141,8 +122,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -156,27 +135,31 @@ jobs:
       - name: Get artifacts
         uses: actions/download-artifact@v4
         with:
-          name: packaged-scramjet
-          path: .
+          name: scramjet-package
+          path: packages/core
 
       - name: Extract package
         run: tar xvf mercuryworkshop-scramjet-*.tgz package --strip-components=1
+        working-directory: packages/core
 
       - name: Run package validation tests
         run: pnpm test:package
+        working-directory: packages/core
+
   tests:
     name: Run Scramjet Tests
     runs-on: ubuntu-latest
     needs: [build, package-validation]
-
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: .playwright-browsers
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -187,17 +170,35 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Get artifacts
+      - name: Get artifacts (scramjet/core)
         uses: actions/download-artifact@v4
         with:
           name: scramjet
-          path: dist
+          path: packages/core/dist
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+      - name: Get artifacts (scramjet/controller)
+        uses: actions/download-artifact@v4
+        with:
+          name: scramjet-controller
+          path: packages/controller/dist
 
-      - name: Run Playwright tests
-        run: pnpm test:integration
+      - name: Cache Playwright browsers
+        id: pw-browsers-cache
+        uses: actions/cache@v4
+        with:
+          path: .playwright-browsers
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright Chromium
+        if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/runway
+
+      - name: Run Runway tests
+        run: pnpm test
+        working-directory: packages/runway
 
   rewritertests:
     name: "Run Rewriter Tests"
@@ -210,25 +211,15 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache rewriter build artifacts
-        uses: actions/cache@v4
-        id: rewriter-cache
-        with:
-          path: |
-            rewriter/wasm/out
-            dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('rewriter/wasm/Cargo.toml', 'rewriter/wasm/src/**/*.rs', 'rewriter/wasm/build.sh') }}
-          restore-keys: |
-            rewriter-release-
-
-      - name: Cache Rust dependencies
+      - name: Cache Rust compilation
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "rewriter"
+          workspaces: "packages/core/rewriter -> target"
           cache-all-crates: true
+          shared-key: "rewriter"
 
       - name: Run Tests
-        run: cd rewriter/native && cargo test
+        run: cd packages/core/rewriter/native && cargo test
 
   upload:
     name: Upload release
@@ -291,11 +282,11 @@ jobs:
           name: packaged-scramjet
           path: .
 
-      - name: Extract package
-        run: tar xvf mercuryworkshop-scramjet-*.tgz package --strip-components=1
+      - name: Update npm
+        run: npm install -g npm@latest
 
       - name: Publish
-        run: npm publish --access public --no-git-checks
+        run: npm publish mercuryworkshop-scramjet-${{ needs.version-check.outputs.new_version }}.tgz --access public --no-git-checks
 
   pages:
     name: Upload to Github Pages
@@ -310,8 +301,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -326,46 +315,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: scramjet
-          path: dist
-
-      - name: Setup GitHub CLI
-        run: |
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Download existing TypeDoc history
-        run: bash ./ci/download-existing-docs.sh
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Build TypeDoc documentation with versioning
-        continue-on-error: true
-        run: bash ./ci/build-docs.sh
-
-      - name: Upload TypeDoc user-facing artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: typedoc-current
-          path: typedoc-*.tar.gz
-
-      - name: Upload TypeDoc dev-facing artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: typedoc-current-dev
-          path: typedoc-*.tar.gz-dev
+          path: ./packages/scramjet/dist
 
       - name: Build static assets
-        run: bash ./ci/build-static.sh
+        run: pnpm build
+        working-directory: packages/demo
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./staticbuild"
+          path: ./packages/demo/dist
 
       - name: Deploy to github
         id: deployment

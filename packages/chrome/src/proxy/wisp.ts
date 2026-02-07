@@ -1,11 +1,11 @@
 import {
-	BareClient,
-	type BareTransport,
-} from "@mercuryworkshop/bare-mux-custom";
+	BareCompatibleClient,
+	type ProxyTransport,
+} from "@mercuryworkshop/proxy-transports";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 
-export let bare: BareClient;
-export let transport: BareTransport;
+export let bare: BareCompatibleClient;
+export let transport: ProxyTransport;
 export let wispUrl: string;
 
 export function setWispUrl(wispurl: string) {
@@ -14,7 +14,7 @@ export function setWispUrl(wispurl: string) {
 	transport = new LibcurlClient({
 		wisp: wispurl,
 	});
-	bare = new BareClient(transport);
+	bare = new BareCompatibleClient(transport);
 }
 
 // if (import.meta.env.VITE_WISP_URL) {

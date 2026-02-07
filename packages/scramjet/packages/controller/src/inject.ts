@@ -3,10 +3,10 @@ import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
 
 import type {
-	BareHeaders,
-	BareTransport,
+	RawHeaders,
+	ProxyTransport,
 	TransferrableResponse,
-} from "@mercuryworkshop/bare-mux-custom";
+} from "@mercuryworkshop/proxy-transports";
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type {
@@ -25,7 +25,7 @@ const postMessage = (
 	MessagePort_postMessage.call(port, data, transfer as any);
 };
 
-class RemoteTransport implements BareTransport {
+class RemoteTransport implements ProxyTransport {
 	private readyResolve!: () => void;
 	private readyPromise: Promise<void> = new Promise((resolve) => {
 		this.readyResolve = resolve;
@@ -61,8 +61,8 @@ class RemoteTransport implements BareTransport {
 	connect(
 		url: URL,
 		protocols: string[],
-		requestHeaders: BareHeaders,
-		onopen: (protocol: string) => void,
+		requestHeaders: RawHeaders,
+		onopen: (protocol: string, extensions: string) => void,
 		onmessage: (data: Blob | ArrayBuffer | string) => void,
 		onclose: (code: number, reason: string) => void,
 		onerror: (error: string) => void
@@ -87,7 +87,7 @@ class RemoteTransport implements BareTransport {
 			.then((response) => {
 				console.log(response);
 				if (response.result === "success") {
-					onopen(response.protocol);
+					onopen(response.protocol, response.extensions);
 				} else {
 					onerror(response.error);
 				}
@@ -129,7 +129,7 @@ class RemoteTransport implements BareTransport {
 		remote: URL,
 		method: string,
 		body: BodyInit | null,
-		headers: BareHeaders,
+		headers: RawHeaders,
 		signal: AbortSignal | undefined
 	): Promise<TransferrableResponse> {
 		return await this.rpc.call("request", {
@@ -158,73 +158,89 @@ type Init = {
 		cookieJar: CookieJar,
 		config: Config,
 		sjconfig: ScramjetConfig,
-		prefix: URL
+		prefix: URL,
+		codecEncode: (input: string) => string,
+		codecDecode: (input: string) => string
 	) => any;
 	codecEncode: (input: string) => string;
 	codecDecode: (input: string) => string;
 };
 
-export function load({
-	config,
-	sjconfig,
-	cookies,
-	prefix,
-	yieldGetInjectScripts,
-	codecEncode,
-	codecDecode,
-}: Init) {
-	let client;
+export function load(init: Init) {
 	if (SCRAMJETCLIENT in globalThis) {
-		client = globalThis[SCRAMJETCLIENT];
-	} else {
-		setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
-		delete self.WASM;
+		return;
+	}
+	if (!("WASM" in self)) {
+		throw new Error("WASM not found in global scope!");
+	}
+	const wasm = Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0));
+	delete (self as any).WASM;
+	setWasm(wasm);
 
+	let context = new ExecutionContextWrapper(globalThis, init);
+}
+
+function createFrameId() {
+	return `${Array(8)
+		.fill(0)
+		.map(() => Math.floor(Math.random() * 36).toString(36))
+		.join("")}`;
+}
+
+class ExecutionContextWrapper {
+	client!: ScramjetGlobal.ScramjetClient;
+	cookieJar: CookieJar;
+	transport: RemoteTransport;
+
+	constructor(
+		public global: typeof globalThis,
+		public init: Init
+	) {
 		const channel = new MessageChannel();
-		const transport = new RemoteTransport(channel.port1);
+		this.transport = new RemoteTransport(channel.port1);
 		sw?.postMessage(
 			{
 				$sw$initRemoteTransport: {
 					port: channel.port2,
-					prefix: prefix.href,
+					prefix: this.init.prefix.href,
 				},
 			},
 			[channel.port2]
 		);
 
-		const cookieJar = new CookieJar();
-		cookieJar.load(cookies);
+		this.cookieJar = new CookieJar();
+		this.cookieJar.load(this.init.cookies);
 
-		const context = {
-			interface: {
-				getInjectScripts: yieldGetInjectScripts(
-					cookieJar,
-					config,
-					sjconfig,
-					prefix
-				),
-				codecEncode,
-				codecDecode,
-			},
-			prefix,
-			cookieJar,
-			config: sjconfig,
-		};
-		function createFrameId() {
-			return `${Array(8)
-				.fill(0)
-				.map(() => Math.floor(Math.random() * 36).toString(36))
-				.join("")}`;
-		}
+		this.injectScramjet();
+	}
 
-		const frame = globalThis.frameElement;
+	injectScramjet() {
+		const frame = this.global.frameElement as HTMLIFrameElement | null;
 		if (frame && !frame.name) {
 			frame.name = createFrameId();
 		}
 
-		client = new ScramjetClient(globalThis, {
+		const context: ScramjetGlobal.ScramjetContext = {
+			interface: {
+				getInjectScripts: this.init.yieldGetInjectScripts(
+					this.cookieJar,
+					this.init.config,
+					this.init.sjconfig,
+					this.init.prefix,
+					this.init.codecEncode,
+					this.init.codecDecode
+				),
+				codecEncode: this.init.codecEncode,
+				codecDecode: this.init.codecDecode,
+			},
+			config: this.init.sjconfig,
+			prefix: this.init.prefix,
+			cookieJar: this.cookieJar,
+		};
+
+		this.client = new ScramjetClient(this.global, {
 			context,
-			transport,
+			transport: this.transport,
 			sendSetCookie: async (url, cookie) => {
 				// sw.postMessage({
 				// 	$controller$setCookie: {
@@ -239,8 +255,12 @@ export function load({
 			shouldBlockMessageEvent(i) {
 				return false;
 			},
+			hookSubcontext: (frameself, frame) => {
+				const context = new ExecutionContextWrapper(frameself, this.init);
+				return context.client;
+			},
 		});
 
-		client.hook();
+		this.client.hook();
 	}
 }

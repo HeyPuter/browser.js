@@ -33,6 +33,7 @@ const cssloader = {
 	type: "asset/source",
 };
 const cdpConfig = defineConfig({
+	name: "cdp",
 	entry: join(cdpdir, "src/index.ts"),
 	devtool: "source-map",
 	target: "web",
@@ -61,8 +62,9 @@ const cdpConfig = defineConfig({
 	},
 });
 
-// inject
 const injectConfig = defineConfig({
+	name: "inject",
+	dependencies: process.env.SKIP_CORE ? [] : ["scramjet-iife"],
 	entry: join(injectdir, "src/index.ts"),
 	devtool: "source-map",
 	target: "web",

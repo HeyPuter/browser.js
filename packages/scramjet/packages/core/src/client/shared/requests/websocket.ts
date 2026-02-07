@@ -1,4 +1,4 @@
-import { type BareWebSocket } from "@mercuryworkshop/bare-mux-custom";
+import { type BareWebSocket } from "@mercuryworkshop/proxy-transports";
 import { ScramjetClient } from "@client/index";
 
 type FakeWebSocketState = {
@@ -37,6 +37,17 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 			Object.setPrototypeOf(fakeWebSocket, ctx.fn.prototype);
 			fakeWebSocket.constructor = ctx.fn;
 
+			// websockets can take relative URLs
+			let rawurl = new URL(ctx.args[0], client.url.href);
+			if (rawurl.protocol === "http:") {
+				rawurl = new URL("ws:" + rawurl.href.substring(rawurl.protocol.length));
+			} else if (rawurl.protocol === "https:") {
+				rawurl = new URL(
+					"wss:" + rawurl.href.substring(rawurl.protocol.length)
+				);
+			}
+			let url = rawurl.href;
+
 			const trustEvent = (ev: Event) =>
 				new Proxy(ev, {
 					get(target, prop) {
@@ -46,20 +57,15 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 					},
 				});
 
-			const barews = client.bare.createWebSocket(
-				ctx.args[0],
-				ctx.args[1],
-				null,
-				{
-					"User-Agent": self.navigator.userAgent,
-					Origin: client.url.origin,
-				}
-			);
+			const barews = client.bare.createWebSocket(url, ctx.args[1], [
+				["User-Agent", self.navigator.userAgent],
+				["Origin", client.url.origin],
+			]);
 
 			const state: FakeWebSocketState = {
 				extensions: "",
 				protocol: "",
-				url: ctx.args[0],
+				url,
 				binaryType: "blob",
 				barews,
 

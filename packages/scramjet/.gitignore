@@ -1,5 +1,7 @@
 meta.json
+node_modules
 packages/core/rewriter/target
 packages/core/rewriter/wasm/out
 packages/core/rewriter/*.js
 packages/core/blob-report
+dist

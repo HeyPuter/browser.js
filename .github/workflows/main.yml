@@ -18,6 +18,9 @@ on:
     paths-ignore: *ci_ignore_paths
   workflow_dispatch:
 
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -74,44 +77,12 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install
 
-      - name: Cache rewriter build artifacts
-        uses: actions/cache@v4
-        id: rewriter-cache
+      - name: Setup Rewriter Toolchain
+        uses: ./packages/scramjet/.github/actions/setup-rewriter-toolchain
         with:
-          path: |
-            packages/scramjet/packages/core/rewriter/wasm/out
-            packages/scramjet/packages/core/dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('packages/scramjet/packages/core/rewriter/**/Cargo.toml', 'packages/scramjet/packages/core/rewriter/**/*.rs', 'packages/scramjet/packages/core/rewriter/**/src/**/*.toml', 'packages/scramjet/packages/core/rewriter/**/src/**/*.json', 'packages/scramjet/packages/core/rewriter/**/src/**/*.md', 'packages/scramjet/packages/core/rewriter/**/*.sh') }}
-          restore-keys: |
-            rewriter-release-
-
-      - name: Cache Rust dependencies
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "rewriter"
-          cache-all-crates: true
-
-      - name: Install wbg
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: jetli/wasm-bindgen-action@v0.2.0
-        with:
-          version: "0.2.105"
-
-      - name: Setup Binaryen
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        uses: Aandreba/setup-binaryen@v1.0.0
-        with:
-          token: ${{ github.token }}
-
-      - name: Setup wasm-snip
-        if: steps.rewriter-cache.outputs.cache-hit != 'true'
-        run: "cargo install --git https://github.com/r58playz/wasm-snip"
-
-      - name: Build Scramjet (failing)
-        run: pnpm build
-        continue-on-error: true
-        working-directory: packages/scramjet/packages/core
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/scramjet/packages/core/rewriter
+          github-token: ${{ github.token }}
 
       - name: Pack Scramjet
         run: pnpm pack
@@ -202,15 +173,6 @@ jobs:
           name: scramjet
           path: packages/scramjet/packages/core/dist
 
-      - name: Get cached rewriter build
-        uses: actions/cache/restore@v4
-        id: rewriter-cache
-        with:
-          path: |
-            packages/scramjet/packages/core/rewriter/wasm/out
-            packages/scramjet/packages/core/dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('packages/scramjet/packages/core/rewriter/**/Cargo.toml', 'packages/scramjet/packages/core/rewriter/**/*.rs', 'packages/scramjet/packages/core/rewriter/**/src/**/*.toml', 'packages/scramjet/packages/core/rewriter/**/src/**/*.json', 'packages/scramjet/packages/core/rewriter/**/src/**/*.md', 'packages/scramjet/packages/core/rewriter/**/*.sh') }}
-
       - name: Get artifacts (scramjet/controller)
         uses: actions/download-artifact@v4
         with:
@@ -229,20 +191,11 @@ jobs:
       - name: Install Playwright Chromium
         if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
-        working-directory: packages/scramjet/packages/core
+        working-directory: packages/scramjet/packages/runway
 
-      - name: Run Playwright tests
-        run: pnpm test:integration
-        working-directory: packages/scramjet/packages/core
-      
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-test-results
-          path: packages/scramjet/packages/core/blob-report/*
-          if-no-files-found: error
-
+      - name: Run Runway tests
+        run: pnpm test
+        working-directory: packages/scramjet/packages/runway
 
   rewritertests:
     name: Run Rewriter Tests
@@ -255,22 +208,12 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache rewriter build artifacts
-        uses: actions/cache@v4
-        id: rewriter-cache
-        with:
-          path: |
-            packages/scramjet/packages/core/rewriter/wasm/out
-            packages/scramjet/packages/core/dist/scramjet.wasm.wasm
-          key: rewriter-release-${{ hashFiles('packages/scramjet/packages/core/rewriter/**/Cargo.toml', 'packages/scramjet/packages/core/rewriter/**/*.rs', 'packages/scramjet/packages/core/rewriter/**/src/**/*.toml', 'packages/scramjet/packages/core/rewriter/**/src/**/*.json', 'packages/scramjet/packages/core/rewriter/**/src/**/*.md', 'packages/scramjet/packages/core/rewriter/**/*.sh') }}
-          restore-keys: |
-            rewriter-release-
-
-      - name: Cache Rust dependencies
+      - name: Cache Rust compilation
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "rewriter"
+          workspaces: "packages/scramjet/packages/core/rewriter -> target"
           cache-all-crates: true
+          shared-key: "rewriter"
 
       - name: Run Tests
         run: cargo test
@@ -341,7 +284,7 @@ jobs:
       - name: Build Frontend
         run: |
           SKIP_CORE=1 pnpm build
-          VITE_PUTER_BRANDING=1 VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
+          VITE_SENTRY_URL="https://js.sentry-cdn.com/89b0486bec1f3d54d07953d81a046161.min.js" VITE_PUTER_BRANDING=1 VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
 
       - name: Upload Artifact (dist)
         uses: actions/upload-artifact@v4

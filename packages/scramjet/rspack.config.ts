@@ -2,6 +2,10 @@ import { defineConfig } from "@rspack/cli";
 import { rspack, type RspackOptions } from "@rspack/core";
 import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
 import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 function nodeExternals({ context, request }, callback) {
 	if (!/^(\.|\/)/.test(request)) {
@@ -39,7 +43,7 @@ const bootstrapdir = join(__dirname, "packages/bootstrap");
 const sjpackagemeta = JSON.parse(
 	await readFile(join(scramjetdir, "package.json"), "utf-8")
 );
-const wasmPath = join(scramjetdir, "dist/scramjet.wasm.wasm");
+const wasmPath = join(scramjetdir, "dist/scramjet.wasm");
 let wasmB64: string;
 const wasmBuf = await readFile(wasmPath);
 wasmB64 = wasmBuf.toString("base64");
@@ -114,9 +118,10 @@ const createGenericConfig = (options) => {
 
 // Common configuration options for scramjet builds
 const createScramjetConfig = (options) => {
-	const { entry, output, rewriterWasm, extraConfig = {} } = options;
+	const { entry, output, rewriterWasm, extraConfig = {}, name } = options;
 
 	return createGenericConfig({
+		name,
 		entry,
 		resolve: {
 			alias: {
@@ -180,8 +185,77 @@ const createScramjetConfig = (options) => {
 	});
 };
 
+// Custom plugin to generate TypeScript declarations
+class TypeScriptDeclarationsPlugin {
+	dir: string;
+	tsconfigName: string;
+	useAlias: boolean;
+	tempDir: string;
+
+	constructor(
+		dir: string,
+		tempDir: string,
+		tsconfigName: string = "tsconfig.types.json",
+		useAlias: boolean = true
+	) {
+		this.dir = dir;
+		this.tempDir = tempDir;
+		this.tsconfigName = tsconfigName;
+		this.useAlias = useAlias;
+	}
+
+	apply(compiler) {
+		compiler.hooks.afterEmit.tap("TypeScriptDeclarationsPlugin", () => {
+			(async () => {
+				try {
+					console.log(`Generating TypeScript declarations for ${this.dir}...`);
+					try {
+						const { stdout, stderr } = await execAsync(
+							`pnpm exec tsc --project ${this.tsconfigName}`,
+							{ cwd: this.dir }
+						);
+						if (stdout) console.log(stdout);
+						if (stderr && !stderr.includes("TS")) console.error(stderr);
+					} catch (tscError: any) {
+						// tsc exits with error code if there are TS errors, but still generates files
+						// Only log if it's not a TypeScript compilation error
+						if (tscError.code !== 2) {
+							throw tscError;
+						}
+						// if (tscError.stdout) console.log(tscError.stdout);
+						// if (tscError.stderr) console.warn(tscError.stderr);
+					}
+
+					if (this.useAlias) {
+						const aliasResult = await execAsync(
+							`pnpm exec tsc-alias --project ${this.tsconfigName}`,
+							{ cwd: this.dir }
+						);
+						if (aliasResult.stdout) console.log(aliasResult.stdout);
+						if (aliasResult.stderr) console.error(aliasResult.stderr);
+					}
+
+					try {
+						await execAsync(`rm -rf ${this.tempDir}`, { cwd: this.dir });
+					} catch (e) {}
+
+					console.log(
+						`TypeScript declarations generated successfully for ${this.dir}`
+					);
+				} catch (error: any) {
+					console.error(
+						`Error generating TypeScript declarations for ${this.dir}:`,
+						error.message
+					);
+				}
+			})();
+		});
+	}
+}
+
 // IIFE build that does NOT bundle the wasm, exposes global $scramjet
 const iifeConfig = createScramjetConfig({
+	name: "scramjet-iife",
 	entry: {
 		main: join(scramjetdir, "src/index.ts"),
 	},
@@ -204,6 +278,7 @@ const iifeConfig = createScramjetConfig({
 
 // IIFE build that BUNDLES the wasm and exposes global $scramjet
 const iifeBundledConfig = createScramjetConfig({
+	name: "scramjet-iife-bundled",
 	entry: {
 		bundled: join(scramjetdir, "src/index.ts"),
 	},
@@ -226,6 +301,7 @@ const iifeBundledConfig = createScramjetConfig({
 
 // wasm bundled, esmodule
 const moduleBundledConfig = createScramjetConfig({
+	name: "scramjet-esmodule-bundled",
 	entry: {
 		bundle: join(scramjetdir, "src/index.ts"),
 	},
@@ -246,6 +322,7 @@ const moduleBundledConfig = createScramjetConfig({
 
 // no wasm bundled, esmodule
 const moduleConfig = createScramjetConfig({
+	name: "scramjet-esmodule",
 	entry: {
 		bundle: join(scramjetdir, "src/index.ts"),
 	},
@@ -266,11 +343,13 @@ const moduleConfig = createScramjetConfig({
 });
 
 const bootstrapConfig = createGenericConfig({
+	name: "scramjet-bootstrap",
 	entry: {
-		main: join(bootstrapdir, "src/index.ts"),
+		server: join(bootstrapdir, "src/server.ts"),
+		client: join(bootstrapdir, "src/client.ts"),
 	},
 	output: {
-		filename: "bootstrap.js",
+		filename: "bootstrap-[name].js",
 		path: join(bootstrapdir, "dist"),
 		iife: false,
 		libraryTarget: "module",
@@ -280,9 +359,30 @@ const bootstrapConfig = createGenericConfig({
 	},
 	target: "node",
 	externals: [nodeExternals],
+	plugins: [
+		new TypeScriptDeclarationsPlugin(
+			bootstrapdir,
+			"dist/temp-types-build",
+			"tsconfig.types.json",
+			false
+		),
+	],
+});
+
+const bootstrapStaticConfig = createGenericConfig({
+	name: "scramjet-bootstrap-static",
+	entry: {
+		static: join(bootstrapdir, "src/static.ts"),
+	},
+	output: {
+		filename: "bootstrap-[name].js",
+		path: join(bootstrapdir, "dist"),
+		iife: true,
+	},
 });
 
 const controllerConfig = createGenericConfig({
+	name: "scramjet-controller",
 	entry: {
 		api: join(controllerdir, "src/index.ts"),
 		inject: join(controllerdir, "src/inject.ts"),
@@ -297,21 +397,44 @@ const controllerConfig = createGenericConfig({
 			name: "$scramjetController",
 		},
 	},
+	plugins: [
+		new TypeScriptDeclarationsPlugin(
+			controllerdir,
+			"dist/temp-types-build",
+			"tsconfig.types.json",
+			false
+		),
+	],
 });
 
-const libcurldir = join(__dirname, "packages/libcurl-transport");
-const libcurlTransportConfig = createGenericConfig({
+// Type generation configuration
+const typeGenConfig = defineConfig({
+	context: scramjetdir,
 	entry: {
-		main: join(libcurldir, "index.ts"),
+		index: "./src/index.ts",
 	},
 	output: {
-		filename: "libcurl-transport.js",
-		path: join(libcurldir, "dist"),
-		iife: true,
-		library: {
-			type: "var",
-			name: "$libcurlTransport",
+		path: join(scramjetdir, "dist/temp-types-build"),
+		filename: "[name].js",
+	},
+	plugins: [
+		new TypeScriptDeclarationsPlugin(
+			scramjetdir,
+			"dist/temp-types-build",
+			"tsconfig.types.json",
+			true
+		),
+	],
+	resolve: {
+		extensions: [".ts", ".js"],
+		alias: {
+			"@rewriters": join(scramjetdir, "src/shared/rewriters"),
+			"@client": join(scramjetdir, "src/client"),
+			"@": join(scramjetdir, "src"),
 		},
+	},
+	module: {
+		rules: [tsloader],
 	},
 });
 
@@ -321,6 +444,7 @@ export default [
 	moduleConfig,
 	moduleBundledConfig,
 	bootstrapConfig,
+	bootstrapStaticConfig,
 	controllerConfig,
-	libcurlTransportConfig,
+	typeGenConfig,
 ];
