@@ -10,10 +10,10 @@ import rspackConfig from "./rspack.config.ts";
 import { server as wisp } from "@mercuryworkshop/wisp-js/server";
 import {
 	black,
-	logSuccess,
 	printBanner,
 	resetSuccessLog,
 	runRspack,
+	normalizeWebsocketUrl,
 } from "./packages/scramjet/devlib.ts";
 
 const image = await fs.readFile("./assets/icon.png");
@@ -38,7 +38,13 @@ const puterBranding = Boolean(process.env.VITE_PUTER_BRANDING);
 if (puterBranding) {
 	process.env.VITE_ISOLATION_ORIGIN ||= `https://puter.zone`;
 } else {
-	process.env.VITE_WISP_URL ||= `ws://localhost:${WISP_PORT}/`;
+	if (process.env.VITE_WISP_URL) {
+		process.env.VITE_WISP_URL = normalizeWebsocketUrl(
+			process.env.VITE_WISP_URL
+		);
+	} else {
+		process.env.VITE_WISP_URL = `ws://localhost:${WISP_PORT}/`;
+	}
 	process.env.VITE_ISOLATION_ORIGIN ||= `http://localhost:${ISOLATION_PORT}`;
 }
 
@@ -65,6 +71,9 @@ const server = await createServer({
 });
 
 await server.listen();
+
+wisp.options.allow_loopback_ips = true;
+wisp.options.allow_private_ips = true;
 
 const accent = (text: string) => chalk.hex("#4799f1").bold(text);
 const highlight = (text: string) => chalk.hex("#ffffff").bold(text);

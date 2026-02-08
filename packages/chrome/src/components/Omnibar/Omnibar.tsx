@@ -1,4 +1,4 @@
-import { css, createDelegate, type ComponentContext } from "dreamland/core";
+import { css, createDelegate, type FC } from "dreamland/core";
 import {
 	iconBack,
 	iconForwards,
@@ -11,19 +11,22 @@ import {
 	iconTime,
 	iconInfo,
 	iconSettings,
+	iconError,
 } from "../../icons";
-import { createMenu, createMenuCustom } from "../Menu";
-import { OmnibarButton } from "./OmnibarButton";
+import { createMenu, createMenuCustom } from "@components/Menu";
+import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
 import type { Tab } from "../../Tab";
-import { Omnibox } from "./Omnibox";
+import { Omnibox } from "@components/Omnibar/Omnibox";
 import { browser } from "../../Browser";
-import { Icon } from "../Icon";
+import { Icon } from "@components/Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";
 
 import type { HistoryState } from "../../History";
-import { isPuter } from "../../main";
-import { DownloadsPopup } from "../DownloadsPopup";
-import { CircularProgress } from "./CircularProgress";
+import { isPuter, puterBranding } from "../../main";
+import { DownloadsPopup } from "@components/DownloadsPopup";
+import { CircularProgress } from "@components/Omnibar/CircularProgress";
+import { ReportBrokenSiteModal } from "@components/ReportBrokenSiteModal";
+import { INTERNAL_URL_PROTOCOL } from "../../consts";
 
 export const animateDownloadFly = createDelegate<void>();
 export const showDownloadsPopup = createDelegate<void>();
@@ -37,12 +40,12 @@ Spacer.style = css`
 	}
 `;
 
-export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
+export function Omnibar(this: FC<{ tab: Tab }>) {
 	const selectContent = createDelegate<void>();
 
 	animateDownloadFly.listen(async () => {
 		await new Promise((r) => setTimeout(r, 10));
-		let fly: HTMLElement = cx.root.querySelector(".downloadfly")!;
+		let fly: HTMLElement = this.root.querySelector(".downloadfly")!;
 		fly.addEventListener(
 			"transitionend",
 			() => {
@@ -58,7 +61,10 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 	const historyMenu = (e: MouseEvent, states: HistoryState[]) => {
 		if (states.length > 0) {
 			createMenu(
-				{ left: e.clientX, top: cx.root.clientTop + cx.root.clientHeight * 2 },
+				{
+					left: e.clientX,
+					top: this.root.clientTop + this.root.clientHeight * 2,
+				},
 				[
 					...states.map((st) => ({
 						label: st.title || "New Tab",
@@ -75,7 +81,7 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 						icon: iconTime,
 						label: "Show Full History",
 						action: () => {
-							browser.newTab(new URL("puter://history"));
+							browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
 						},
 					},
 				]
@@ -97,7 +103,7 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 		const { right } = downloadsButton.getBoundingClientRect();
 		createMenuCustom(
 			{
-				top: cx.root.clientTop + cx.root.clientHeight * 2,
+				top: this.root.clientTop + this.root.clientHeight * 2,
 				right,
 			},
 			<DownloadsPopup></DownloadsPopup>
@@ -108,8 +114,8 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 		<div>
 			<OmnibarButton
 				tooltip="Go back one page (Alt+Left Arrow)"
-				active={use(s.tab.canGoBack)}
-				click={() => s.tab.back()}
+				active={use(this.tab.canGoBack)}
+				click={() => this.tab.back()}
 				icon={iconBack}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -122,8 +128,8 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Go forward one page (Alt+Right Arrow)"
-				active={use(s.tab.canGoForward)}
-				click={() => s.tab.forward()}
+				active={use(this.tab.canGoForward)}
+				click={() => this.tab.forward()}
 				icon={iconForwards}
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
@@ -137,16 +143,16 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 			></OmnibarButton>
 			<OmnibarButton
 				tooltip="Refresh current page (Ctrl+R)"
-				click={() => s.tab.reload()}
+				click={() => this.tab.reload()}
 				icon={iconRefresh}
 			></OmnibarButton>
 			<Spacer></Spacer>
-			<Omnibox selectContent={selectContent} url={use(s.tab.url)}></Omnibox>
+			<Omnibox selectContent={selectContent} url={use(this.tab.url)}></Omnibox>
 			<Spacer></Spacer>
 			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
 			{use(browser.sessionDownloadHistory)
 				.map((arr) => arr.length > 0)
-				.andThen(
+				.and(
 					<div style="position: relative">
 						{downloadsButton}
 
@@ -164,12 +170,18 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 				icon={iconMore}
 				click={(e: MouseEvent) => {
 					createMenu(
-						{ left: e.x, top: cx.root.clientTop + cx.root.clientHeight * 2 },
+						{
+							left: e.x,
+							top: this.root.clientTop + this.root.clientHeight * 2,
+						},
 						[
 							{
 								label: "New Tab",
 								action: () => {
-									browser.newTab(new URL("puter://newtab"), true);
+									browser.newTab(
+										new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+										true
+									);
 								},
 								icon: iconNew,
 							},
@@ -177,14 +189,16 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 							{
 								label: "History",
 								action: () => {
-									browser.newTab(new URL("puter://history"));
+									browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
 								},
 								icon: iconTime,
 							},
 							{
 								label: "Downloads",
 								action: () => {
-									browser.newTab(new URL("puter://downloads"));
+									browser.newTab(
+										new URL(`${INTERNAL_URL_PROTOCOL}//downloads`)
+									);
 								},
 								icon: iconDownload,
 							},
@@ -192,14 +206,25 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 							{
 								label: "About",
 								action: () => {
-									browser.newTab(new URL("puter://version"));
+									browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//version`));
 								},
 								icon: iconInfo,
 							},
+
+							puterBranding &&
+							browser.activetab.url.protocol !== INTERNAL_URL_PROTOCOL
+								? {
+										label: "Report Broken Site",
+										action: () => {
+											<ReportBrokenSiteModal onClose={() => {}} />;
+										},
+										icon: iconError,
+									}
+								: null,
 							{
 								label: "Settings",
 								action: () => {
-									browser.newTab(new URL("puter://settings"));
+									browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//settings`));
 								},
 								icon: iconSettings,
 							},
@@ -214,7 +239,7 @@ export function Omnibar(s: { tab: Tab }, cx: ComponentContext) {
 										},
 									]
 								: []),
-						]
+						].filter((x) => x !== null) as any
 					);
 					e.stopPropagation();
 				}}

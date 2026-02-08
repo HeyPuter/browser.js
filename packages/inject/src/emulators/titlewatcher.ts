@@ -33,22 +33,6 @@ export function setupTitleWatcher({ self, rpc }: ExecutionContextWrapper) {
 					loadAndSendData(iconhref);
 				}
 			}
-		} else {
-			if (cachedfaviconurl !== "/favicon.ico") {
-				// check if there's a favicon.ico
-				let img = new Image();
-				img.src = "/favicon.ico";
-				img.onload = () => {
-					if (img.width > 0 && img.height > 0) {
-						// it loads, send it
-						cachedfaviconurl = img.src;
-						loadAndSendData(img.src);
-					}
-				};
-				img.onerror = () => {
-					// nope...
-				};
-			}
 		}
 	});
 	observer.observe(self.document, {

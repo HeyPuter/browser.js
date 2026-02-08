@@ -1,4 +1,4 @@
-import { InjectScramjetInit } from "./types";
+import { FrameSequence, InjectScramjetInit } from "./types";
 
 import { SCRAMJETCLIENT, setWasm } from "@mercuryworkshop/scramjet";
 import { loadErrorPage } from "./errorpage/errorpage";
@@ -8,13 +8,20 @@ import { ExecutionContextWrapper } from "./context";
 export let chromeframe: Window;
 export let wasm: Uint8Array;
 
+export function reduceSequence(sequence: FrameSequence): Window | null {
+	return sequence.reduce<Window | null>((win, idx) => {
+		if (!win) return null;
+		return win.frames[idx];
+	}, self.top);
+}
+
 function $injectLoad(init: InjectScramjetInit) {
 	if (SCRAMJETCLIENT in globalThis) {
 		return;
 	}
 
 	if (init.sequence && !chromeframe) {
-		chromeframe = init.sequence.reduce((win, idx) => win!.frames[idx], top)!;
+		chromeframe = reduceSequence(init.sequence)!;
 		if (!chromeframe) {
 			throw new Error(
 				"Reducing InitSequence failed to yield valid frame! This is very bad."

@@ -64,7 +64,7 @@ const cdpConfig = defineConfig({
 
 const injectConfig = defineConfig({
 	name: "inject",
-	dependencies: ["scramjet-iife"],
+	dependencies: process.env.SKIP_CORE ? [] : ["scramjet-iife"],
 	entry: join(injectdir, "src/index.ts"),
 	devtool: "source-map",
 	target: "web",

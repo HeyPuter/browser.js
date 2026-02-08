@@ -56,7 +56,7 @@ import { bare, transport, wispUrl } from "./wisp";
 import { codecDecode, codecEncode } from "./codec";
 import { Controller, controllerForURL, makeId } from "./Controller";
 import type { Tab } from "../Tab";
-import { createMenu } from "../components/Menu";
+import { createMenu } from "@components/Menu";
 import { pageContextItems } from "./contextitems";
 import type { BodyType } from "../../../scramjet/packages/controller/src/types";
 import { getTheme } from "../themes";
@@ -77,7 +77,7 @@ function findSequence(
 	}
 }
 
-function reduceSequence(sequence: FrameSequence): Window | null {
+export function reduceSequence(sequence: FrameSequence): Window | null {
 	return sequence.reduce<Window | null>((win, idx) => {
 		if (!win) return null;
 		return win.frames[idx];
@@ -96,7 +96,6 @@ class ProxyFrameContext {
 			{
 				load: async ({ url, sequence }) => {
 					this.windowproxy = reduceSequence(sequence);
-					console.log("WP" + id, this.windowproxy);
 					tab =
 						browser.tabs.find(
 							(t) => t.frame.frame.contentWindow === this.windowproxy
@@ -153,6 +152,22 @@ class ProxyFrameContext {
 					if (tab) {
 						tab.history.replace(new URL(url), title, state, false);
 					}
+				},
+				newtab: async ({ url }) => {
+					const tab = browser.newTab(new URL(url));
+					await tab.waitForInit;
+					const seq = findSequence(
+						top!,
+						tab.frame.frame.contentWindow as Window
+					);
+					if (!seq) throw new Error("No sequence found for new tab");
+
+					return [
+						{
+							sequence: seq,
+						},
+						[],
+					];
 				},
 			},
 			id,

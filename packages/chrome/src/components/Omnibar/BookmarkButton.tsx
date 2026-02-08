@@ -1,20 +1,20 @@
-import { createState, css } from "dreamland/core";
-import { OmnibarButton } from "./OmnibarButton";
+import { createState, css, type FC } from "dreamland/core";
+import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
 import { browser } from "../../Browser";
-import { createMenuCustom } from "../Menu";
-import { BookmarkPopup } from "../BookmarkPopup";
+import { createMenuCustom } from "@components/Menu";
+import { BookmarkPopup } from "@components/BookmarkPopup";
 import { emToPx } from "../../utils";
 
 import { iconStar, iconStarFilled } from "../../icons";
-import { Icon } from "../Icon";
+import { Icon } from "@components/Icon";
 
-export function BookmarkButton(s: { url: URL }) {
+export function BookmarkButton(this: FC<{ url: URL }>) {
 	return (
 		<button
 			on:click={(e) => {
 				e.stopPropagation();
 				e.preventDefault();
-				let bookmark = browser.bookmarks.find((b) => b.url == s.url.href);
+				let bookmark = browser.bookmarks.find((b) => b.url == this.url.href);
 
 				let isnew = false;
 				if (!bookmark) {
@@ -36,8 +36,8 @@ export function BookmarkButton(s: { url: URL }) {
 			}}
 		>
 			<Icon
-				icon={use(browser.bookmarks, s.url).map(() =>
-					browser.bookmarks.some((b) => b.url == s.url.href)
+				icon={use(browser.bookmarks, this.url).map(() =>
+					browser.bookmarks.some((b) => b.url == this.url.href)
 						? iconStarFilled
 						: iconStar
 				)}

@@ -18,8 +18,10 @@ packages:
   - "packages/scramjet/packages/rpc"
   - "packages/scramjet/packages/typedoc"
   - "packages/scramjet/packages/create-proxy-app"
+  - "packages/scramjet/packages/runway"
 
 catalog:
   "@mercuryworkshop/proxy-transports": 1.0.2
-  "@mercuryworkshop/libcurl-transport": 2.0.4
+  "@mercuryworkshop/libcurl-transport": 2.0.5
+  "@mercuryworkshop/wisp-js": ^0.4.0
   "@mercuryworkshop/epoxy-transport": 3.0.0

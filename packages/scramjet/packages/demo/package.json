@@ -3,16 +3,17 @@
 	"version": "0.0.1",
 	"type": "module",
 	"packageManager": "pnpm@10.12.1",
+	"scripts": {
+		"build": "vite build"
+	},
+	"devDependencies": {
+		"vite": "^7.3.1",
+		"vite-plugin-static-copy": "^3.1.6"
+	},
 	"dependencies": {
 		"@mercuryworkshop/scramjet-controller": "workspace:*",
 		"@mercuryworkshop/scramjet": "workspace:*",
 		"@mercuryworkshop/libcurl-transport": "catalog:",
-		"@types/express": "^5.0.5",
-		"dreamland": "^0.1.2",
-		"express": "^5.1.0"
-	},
-	"devDependencies": {
-		"vite": "^7.1.12",
-		"vite-plugin-static-copy": "^3.1.4"
+		"dreamland": "^0.1.3"
 	}
 }

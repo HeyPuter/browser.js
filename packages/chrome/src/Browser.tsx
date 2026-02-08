@@ -4,16 +4,17 @@ import { Tab, type SerializedTab } from "./Tab";
 import { createDelegate } from "dreamland/core";
 import type { SerializedHistoryState } from "./History";
 import { HistoryState } from "./History";
-import { focusOmnibox } from "./components/Omnibar/Omnibox";
-import { type AVAILABLE_SEARCH_ENGINES } from "./components/Omnibar/suggestions";
+import { focusOmnibox } from "@components/Omnibar/Omnibox";
+import { type AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
+import { FAVICON_CACHE_TTL, INTERNAL_URL_PROTOCOL } from "./consts";
 
 import * as tldts from "tldts";
 import { isPuter } from "./main";
 import {
 	animateDownloadFly,
 	showDownloadsPopup,
-} from "./components/Omnibar/Omnibar";
-import type { RawDownload } from "./proxy/fetch";
+} from "@components/Omnibar/Omnibar";
+import type { RawDownload } from "./proxy/scramjet";
 import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
 import { getSerializedBrowserState, markDirty } from "./storage";
 import {
@@ -21,6 +22,7 @@ import {
 	type ThemeId,
 	DEFAULT_THEME_ID,
 } from "./themes";
+import { bare } from "./proxy/wisp";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 export const forceScreenshot = createDelegate<Tab>();
@@ -28,10 +30,18 @@ export const forceScreenshot = createDelegate<Tab>();
 
 export let browser: Browser;
 
+export type FaviconCacheEntry = {
+	domain: string;
+	iconUrl: string;
+	iconData: string;
+	timestamp: number;
+};
+
 export type SerializedBrowser = {
 	tabs: SerializedTab[];
 	globalhistory: SerializedHistoryState[];
 	globalDownloadHistory: DownloadEntry[];
+	faviconCache: FaviconCacheEntry[];
 	activetab: number;
 	bookmarks: BookmarkEntry[];
 	settings: Settings;
@@ -92,6 +102,12 @@ export class Browser extends StatefulClass {
 	sessionDownloadHistory: Stateful<DownloadEntry>[] = [];
 	globalDownloadHistory: Stateful<DownloadEntry>[] = [];
 
+	faviconCache: FaviconCacheEntry[] = [];
+	pendingFaviconRequests: Record<
+		string,
+		Promise<FaviconCacheEntry | null> | null
+	> = {};
+
 	cookieJar: CookieJar = new CookieJar();
 
 	downloadProgress = 0;
@@ -116,6 +132,99 @@ export class Browser extends StatefulClass {
 		// scramjet.addEventListener("download", (e) => {
 		// 	this.startDownload(e.download);
 		// });
+	}
+
+	private async __fetchFavicon(
+		hostname: string
+	): Promise<FaviconCacheEntry | null> {
+		const toDataUrl = async (res: Response) => {
+			const blob = await res.blob();
+			const iconData = await new Promise<string>((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onloadend = () => resolve(reader.result as string);
+				reader.onerror = reject;
+				reader.readAsDataURL(blob);
+			});
+			return iconData;
+		};
+
+		try {
+			// first do google favicon search
+			const url = `https://www.google.com/s2/favicons?domain=${hostname}`;
+			let res = await bare.fetch(url);
+			if (!res.ok) {
+				console.error(
+					"failed to fetch favicon from google",
+					url,
+					res.statusText
+				);
+				throw new Error(
+					`failed to fetch favicon from google: ${res.statusText}`
+				);
+			}
+			const iconData = await toDataUrl(res);
+			return {
+				domain: hostname,
+				iconUrl: url,
+				iconData,
+				timestamp: Date.now(),
+			};
+		} catch (e) {
+			console.error(e);
+		}
+
+		try {
+			// fall back to direct fetch
+			const url = `https://${hostname}/favicon.ico`;
+			let res = await bare.fetch(url);
+			if (!res.ok) {
+				console.error("failed to fetch favicon from", url, res.statusText);
+				throw new Error(`failed to fetch favicon from: ${res.statusText}`);
+			}
+			const iconData = await toDataUrl(res);
+			return {
+				domain: hostname,
+				iconUrl: url,
+				iconData,
+				timestamp: Date.now(),
+			};
+		} catch (e) {
+			console.error(e);
+		}
+
+		return null;
+	}
+
+	async _fetchFavicon(hostname: string): Promise<FaviconCacheEntry | null> {
+		let entry = this.faviconCache.find((e) => e.domain === hostname);
+		if (entry) {
+			if (entry.timestamp > Date.now() - FAVICON_CACHE_TTL) {
+				return entry;
+			}
+			console.log("favicon cache hit for", hostname, "but expired");
+			this.faviconCache = this.faviconCache.filter(
+				(e) => e.domain !== entry!.domain
+			);
+		}
+
+		const parsed = tldts.parse(hostname);
+		if (parsed.isIp || !parsed.isIcann || hostname === "localhost") {
+			// probably not a real domain, so don't try to fetch a favicon
+			return null;
+		}
+
+		return this.__fetchFavicon(hostname);
+	}
+
+	async fetchFavicon(hostname: string): Promise<FaviconCacheEntry | null> {
+		if (this.pendingFaviconRequests[hostname]) {
+			return this.pendingFaviconRequests[hostname]!;
+		}
+		let p = this._fetchFavicon(hostname);
+		this.pendingFaviconRequests[hostname] = p;
+		let result = await p;
+		this.pendingFaviconRequests[hostname] = null;
+		return result;
 	}
 
 	async startDownload(download: RawDownload) {
@@ -212,6 +321,7 @@ export class Browser extends StatefulClass {
 			settings: { ...this.settings },
 			globalDownloadHistory: this.globalDownloadHistory,
 			cookiedump: this.cookieJar.dump(),
+			faviconCache: this.faviconCache,
 		};
 	}
 	deserialize(de: SerializedBrowser) {
@@ -241,6 +351,7 @@ export class Browser extends StatefulClass {
 
 		this.settings = createState(settings);
 		this.cookieJar.load(de.cookiedump);
+		this.faviconCache = de.faviconCache;
 	}
 
 	newTab(url?: URL, focusomnibox: boolean = false, id?: number) {
@@ -270,7 +381,8 @@ export class Browser extends StatefulClass {
 
 		if (this.activetab === tab) {
 			this.activetab =
-				this.tabs[0] || browser.newTab(new URL("puter://newtab"), true);
+				this.tabs[0] ||
+				browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//newtab`), true);
 		}
 		popTab(tab);
 	}

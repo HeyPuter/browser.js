@@ -1,5 +1,5 @@
 {
-	"editor.formatOnSave": true,
+	"editor.formatOnSave": false,
 	"editor.defaultFormatter": "rvest.vs-code-prettier-eslint",
 	"prettier.useEditorConfig": true,
 	"typescript.preferences.includePackageJsonAutoImports": "off",
@@ -57,5 +57,9 @@
 	},
 	"[typescriptreact]": {
 		"editor.defaultFormatter": "vscode.typescript-language-features"
+	},
+	"search.exclude": {
+		"external/playwright": true,
+		"external/dreamlandjs": true
 	}
 }

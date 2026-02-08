@@ -1,15 +1,16 @@
 import { defineConfig } from "vite";
+import path from "path";
 
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { viteStaticCopy } from "vite-plugin-static-copy";
-import { cssHmrPlugin, ssr, jsxPlugin } from "dreamland/vite";
+import { jsxPlugin } from "dreamland/vite";
 
 export default defineConfig({
 	plugins: [
 		process.env.VITE_SINGLEFILE ? viteSingleFile() : null,
-		cssHmrPlugin(),
+		// cssHmrPlugin(),
 		jsxPlugin(),
-		ssr({ entry: "/src/main-server.ts" }),
+		// ssr({ entry: "/src/main-server.ts" }),
 		// viteStaticCopy({
 		// 	structured: false,
 		// 	targets: [
@@ -28,4 +29,9 @@ export default defineConfig({
 		// 	],
 		// }),
 	],
+	resolve: {
+		alias: {
+			"@components": path.resolve(__dirname, "./src/components"),
+		},
+	},
 });

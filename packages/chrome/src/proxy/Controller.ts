@@ -73,9 +73,7 @@ export class Controller {
 					{
 						status: 500,
 						statusText: "Internal Server Error",
-						headers: {
-							"Content-Type": "text/html",
-						},
+						headers: [["Content-Type", "text/html"]],
 						body: renderErrorPage(this, e),
 					},
 				];

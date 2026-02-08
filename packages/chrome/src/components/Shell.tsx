@@ -1,4 +1,4 @@
-import { createDelegate, css, type ComponentContext } from "dreamland/core";
+import { createDelegate, css, type FC } from "dreamland/core";
 import { browser } from "../Browser";
 import { forceScreenshot, popTab, pushTab } from "../Browser";
 import { takeScreenshotGDM } from "../screenshot";
@@ -21,11 +21,11 @@ export function requestUnfocusFrames(): [() => void, () => void] {
 	];
 }
 
-export function Shell(_, cx: ComponentContext) {
+export function Shell(this: FC<{}>) {
 	pushTab.listen((tab) => {
 		// paint the iframes
-		tab.frame.frame.classList.add(cx.id!);
-		// tab.devtoolsFrame.frame.classList.add(cx.id!);
+		tab.frame.frame.classList.add(this.cx.id!);
+		// tab.devtoolsFrame.frame.classList.add(this.cx.id!);
 
 		let mouseMoveListen = (e: MouseEvent) => {
 			tab.devtoolsWidth = window.innerWidth - e.clientX;
@@ -33,7 +33,7 @@ export function Shell(_, cx: ComponentContext) {
 
 		const [lock, unlock] = requestUnfocusFrames();
 
-		cx.root.appendChild(
+		this.root.appendChild(
 			<div
 				class="container"
 				data-tab={tab.id}
@@ -72,12 +72,12 @@ export function Shell(_, cx: ComponentContext) {
 		);
 	});
 	popTab.listen((tab) => {
-		const container = cx.root.querySelector(`[data-tab="${tab.id}"]`);
+		const container = this.root.querySelector(`[data-tab="${tab.id}"]`);
 		if (!container) throw new Error(`No container found for tab ${tab.id}`);
 		container.remove();
 	});
 	forceScreenshot.listen(async (tab) => {
-		const container = cx.root.querySelector(
+		const container = this.root.querySelector(
 			`[data-tab="${tab.id}"]`
 		) as HTMLElement;
 		if (!container) throw new Error(`No container found for tab ${tab.id}`);
@@ -90,14 +90,14 @@ export function Shell(_, cx: ComponentContext) {
 	});
 	setUnfocus.listen((unfocus) => {
 		if (unfocus) {
-			cx.root
+			this.root
 				.querySelectorAll(".mainframecontainer, .devtoolsframecontainer")
 				.forEach((el) => {
 					if (!(el instanceof HTMLElement)) return;
 					el.style.pointerEvents = "none";
 				});
 		} else {
-			cx.root
+			this.root
 				.querySelectorAll(".mainframecontainer, .devtoolsframecontainer")
 				.forEach((el) => {
 					if (!(el instanceof HTMLElement)) return;

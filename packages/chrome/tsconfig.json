@@ -20,7 +20,10 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
 		"jsx": "react-jsx",
-		"jsxImportSource": "dreamland"
+		"jsxImportSource": "dreamland",
+		"paths": {
+			"@components/*": ["./src/components/*"]
+		}
 	},
 	"include": ["src"]
 }

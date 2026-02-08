@@ -35,6 +35,14 @@ export type Chromebound = {
 			sequence: FrameSequence;
 		},
 	];
+	newtab: [
+		{
+			url: string;
+		},
+		{
+			sequence: FrameSequence;
+		},
+	];
 	history_pushState: [
 		{
 			state: any;

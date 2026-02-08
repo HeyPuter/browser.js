@@ -1,17 +1,19 @@
-import { css } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 
-export function Checkbox(props: {
-	value: boolean;
-	id?: string;
-	"on:change"?: (value: boolean) => void;
-}) {
+export function Checkbox(
+	this: FC<{
+		value: boolean;
+		id?: string;
+		"on:change"?: (value: boolean) => void;
+	}>
+) {
 	return (
 		<label>
 			<input
 				type="checkbox"
-				id={use(props.id)}
-				checked={use(props.value)}
-				onChange={(e) => props["on:change"]?.(e.target.checked)}
+				id={use(this.id)}
+				checked={use(this.value)}
+				onChange={(e) => this["on:change"]?.(e.target.checked)}
 			></input>
 		</label>
 	);
