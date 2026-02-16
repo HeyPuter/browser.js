@@ -142,7 +142,7 @@ async function waitForControllerOrReady(timeoutMs = 10000): Promise<void> {
 
 async function mount() {
 	try {
-		const root = <App></App>;
+		const root = <App />;
 		app.replaceWith(root);
 	} catch (e) {
 		let err = e as any;

@@ -246,7 +246,7 @@ export const App: Component<
 						inline={true}
 						onFlagsChange={(flags) => {
 							console.log("flags changed", flags);
-							Object.assign(controller.flags, flags);
+							Object.assign(controller.scramjetConfig.flags, flags);
 						}}
 					/>
 				</div>

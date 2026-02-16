@@ -139,10 +139,6 @@ class RemoteTransport implements ProxyTransport {
 			headers,
 		});
 	}
-
-	meta() {
-		return {};
-	}
 }
 
 const sw = navigator.serviceWorker.controller;
@@ -152,13 +148,13 @@ type Config = any;
 type Init = {
 	config: Config;
 	sjconfig: ScramjetConfig;
-	cookies: string;
 	prefix: URL;
+	cookies: string;
 	yieldGetInjectScripts: (
-		cookieJar: CookieJar,
 		config: Config,
 		sjconfig: ScramjetConfig,
 		prefix: URL,
+		cookieJar: CookieJar,
 		codecEncode: (input: string) => string,
 		codecDecode: (input: string) => string
 	) => any;
@@ -177,7 +173,7 @@ export function load(init: Init) {
 	delete (self as any).WASM;
 	setWasm(wasm);
 
-	let context = new ExecutionContextWrapper(globalThis, init);
+	const context = new ExecutionContextWrapper(globalThis, init);
 }
 
 function createFrameId() {
@@ -221,21 +217,21 @@ class ExecutionContextWrapper {
 		}
 
 		const context: ScramjetGlobal.ScramjetContext = {
+			config: this.init.sjconfig,
+			prefix: this.init.prefix,
+			cookieJar: this.cookieJar,
 			interface: {
 				getInjectScripts: this.init.yieldGetInjectScripts(
-					this.cookieJar,
 					this.init.config,
 					this.init.sjconfig,
 					this.init.prefix,
+					this.cookieJar,
 					this.init.codecEncode,
 					this.init.codecDecode
 				),
 				codecEncode: this.init.codecEncode,
 				codecDecode: this.init.codecDecode,
 			},
-			config: this.init.sjconfig,
-			prefix: this.init.prefix,
-			cookieJar: this.cookieJar,
 		};
 
 		this.client = new ScramjetClient(this.global, {
@@ -249,13 +245,13 @@ class ExecutionContextWrapper {
 				// 	}
 				// });
 			},
-			shouldPassthroughWebsocket: (url) => {
-				return url === "wss://anura.pro/";
-			},
-			shouldBlockMessageEvent(i) {
+			shouldPassthroughWebsocket: () => {
 				return false;
 			},
-			hookSubcontext: (frameself, frame) => {
+			shouldBlockMessageEvent: () => {
+				return false;
+			},
+			hookSubcontext: (frameself) => {
 				const context = new ExecutionContextWrapper(frameself, this.init);
 				return context.client;
 			},
