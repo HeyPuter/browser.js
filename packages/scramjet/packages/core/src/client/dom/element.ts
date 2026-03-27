@@ -611,10 +611,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("DOMParser.prototype.parseFromString", {
 		apply(ctx) {
-			if (
-				typeof ctx.args[1] === "string" &&
-				isHtmlMimeType(ctx.args[1])
-			) {
+			if (typeof ctx.args[1] === "string" && isHtmlMimeType(ctx.args[1])) {
 				try {
 					ctx.args[0] = rewriteHtml(ctx.args[0], client.context, client.meta, {
 						loadScripts: false,

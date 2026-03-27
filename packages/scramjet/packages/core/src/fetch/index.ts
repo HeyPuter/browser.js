@@ -785,11 +785,7 @@ async function rewriteBody(
 			if (response.ok) {
 				const ct = response.headers.get("content-type");
 				// don't rewrite invalid module scripts when the server declares a non-JS type
-				if (
-					parsed.scriptType === "module" &&
-					ct &&
-					!isJavascriptMimeType(ct)
-				) {
+				if (parsed.scriptType === "module" && ct && !isJavascriptMimeType(ct)) {
 					return response.body;
 				}
 
