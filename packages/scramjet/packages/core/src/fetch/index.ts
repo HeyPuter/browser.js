@@ -23,9 +23,12 @@ import { ScramjetConfig } from "@/types";
 import DomHandler from "domhandler";
 import { Tap, TapInstance } from "@/Tap";
 import { sniffEncoding } from "@/shared/sniffEncoding";
+import { isHtmlMimeType, isJavascriptMimeType } from "@/shared/mime";
 
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
+	rawReferrer: string | null;
+	rawReferrerPolicy: string | null;
 	destination: RequestDestination;
 	mode: RequestMode;
 	referrer: string;
@@ -114,7 +117,7 @@ function normalizeContentType(
 
 	const ct = headers.get("content-type");
 	if (!ct) return;
-	if (!ct.startsWith("text/html")) return;
+	if (!isHtmlMimeType(ct)) return;
 
 	headers.set("content-type", "text/html; charset=utf-8");
 }
@@ -220,7 +223,7 @@ async function doHandleFetch(
 		// await getMostRestrictiveSite(redirectUrl.toString(), newSiteDirective);
 
 		// ensure that ?type=module is not lost in a redirect
-		if (parsed.scriptType) {
+		if (parsed.scriptType === "module") {
 			const url = new URL(responseHeaders.get("location"));
 			url.searchParams.set("type", parsed.scriptType);
 			responseHeaders.set("location", url.href);
@@ -345,27 +348,52 @@ function rewriteRequestHeaders(
 ): ScramjetHeaders {
 	const headers = request.initialHeaders.clone();
 
-	if (
-		request.rawClientUrl &&
-		request.rawClientUrl.pathname.startsWith(handler.context.prefix.pathname)
-	) {
-		// TODO: i was against cors emulation but we might actually break stuff if we send full origin/referrer always
-		let clientURL = new URL(
-			unrewriteUrl(request.rawClientUrl, handler.context)
-		);
+	// const applyDefaultRefererPolicy = (referrerUrl: URL, targetUrl: URL) => {
+	// 	if (referrerUrl.origin === targetUrl.origin) {
+	// 		headers.set("Referer", referrerUrl.href);
+	// 	} else if (
+	// 		targetUrl.protocol === "http:" &&
+	// 		referrerUrl.protocol === "https:"
+	// 	) {
+	// 		headers.delete("Referer");
+	// raw
+	// 	} else {
+	// 		headers.set("Referer", new URL("/", referrerUrl.origin).href);
+	// 	}
+	// };
 
-		if (clientURL.protocol !== "http:" && clientURL.protocol !== "https:") {
-			// sites will explode if we send them a data url referer
-			clientURL = new URL("https://example.com/");
-		}
+	// if (
+	// 	request.rawClientUrl &&
+	// 	request.rawClientUrl.pathname.startsWith(handler.context.prefix.pathname)
+	// ) {
+	// 	// TODO: i was against cors emulation but we might actually break stuff if we send full origin/referrer always
+	// 	let clientURL = new URL(
+	// 		unrewriteUrl(request.rawClientUrl, handler.context)
+	// 	);
 
-		if (clientURL.toString().includes("youtube.com")) {
-			// console.log(headers);
-		} else {
-			// Force referrer to unsafe-url for all requests
-			headers.set("Referer", clientURL.href);
-			headers.set("Origin", clientURL.origin);
+	// 	if (clientURL.protocol !== "http:" && clientURL.protocol !== "https:") {
+	// 		// sites will explode if we send them a data url referer
+	// 		clientURL = new URL("https://example.com/");
+	// 	}
+
+	// 	if (clientURL.toString().includes("youtube.com")) {
+	// 	} else {
+	// 		// Emulate the browser's default strict-origin-when-cross-origin policy.
+	// 		applyDefaultRefererPolicy(clientURL, parsed.url);
+	// 		headers.set("Origin", clientURL.origin);
+	// 	}
+	// }
+
+	if (request.rawReferrer) {
+		const referrerUrl = new URL(request.rawReferrer);
+		// TODO don't use location here?
+		// if (referrerUrl.origin === location.origin) {
+		if (referrerUrl.pathname.startsWith(handler.context.prefix.pathname)) {
+			let unrewritten = new URL(unrewriteUrl(referrerUrl, handler.context));
+			// don't have any way of knowing what the referer policy is, assume it's origin
+			headers.set("Referer", `${unrewritten.origin}/`);
 		}
+		// }
 	}
 
 	const cookies = handler.context.cookieJar.getCookies(parsed.url, false);
@@ -718,6 +746,10 @@ export async function rewriteHeaders(
 		headers.set("Cross-Origin-Opener-Policy", "same-origin");
 	}
 
+	if (request.destination === "document" || request.destination === "iframe") {
+		headers.set("Referrer-Policy", "unsafe-url");
+	}
+
 	return headers;
 }
 
@@ -730,7 +762,7 @@ async function rewriteBody(
 	switch (request.destination) {
 		case "iframe":
 		case "document":
-			if (response.headers.get("content-type")?.startsWith("text/html")) {
+			if (isHtmlMimeType(response.headers.get("content-type") ?? "")) {
 				const buf = await response.arrayBuffer();
 				const bytes = new Uint8Array(buf);
 				const encoding = sniffEncoding(
@@ -749,13 +781,25 @@ async function rewriteBody(
 				return response.body;
 			}
 		case "script": {
-			return rewriteJs(
-				new Uint8Array(await response.arrayBuffer()),
-				response.url,
-				handler.context,
-				parsed.meta,
-				parsed.scriptType === "module"
-			) as unknown as ArrayBuffer;
+			// do not attempt to rewrite a 404 response
+			if (response.ok) {
+				// don't rewrite invalid module scripts
+				if (
+					parsed.scriptType === "module" &&
+					!isJavascriptMimeType(response.headers.get("content-type"))
+				) {
+					return response.body;
+				}
+
+				return rewriteJs(
+					new Uint8Array(await response.arrayBuffer()),
+					response.url,
+					handler.context,
+					parsed.meta,
+					parsed.scriptType === "module"
+				) as unknown as ArrayBuffer;
+			}
+			return response.body;
 		}
 		case "style":
 			return rewriteCss(await response.text(), handler.context, parsed.meta);
