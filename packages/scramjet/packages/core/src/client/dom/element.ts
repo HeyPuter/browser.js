@@ -5,6 +5,7 @@ import { rewriteJs } from "@rewriters/js";
 import { rewriteUrl, unrewriteUrl } from "@rewriters/url";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
+import { isHtmlMimeType } from "@/shared/mime";
 
 const encoder = new TextEncoder();
 function bytesToBase64(bytes: Uint8Array) {
@@ -610,7 +611,10 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("DOMParser.prototype.parseFromString", {
 		apply(ctx) {
-			if (ctx.args[1] === "text/html") {
+			if (
+				typeof ctx.args[1] === "string" &&
+				isHtmlMimeType(ctx.args[1])
+			) {
 				try {
 					ctx.args[0] = rewriteHtml(ctx.args[0], client.context, client.meta, {
 						loadScripts: false,

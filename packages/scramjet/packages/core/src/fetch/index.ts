@@ -783,10 +783,12 @@ async function rewriteBody(
 		case "script": {
 			// do not attempt to rewrite a 404 response
 			if (response.ok) {
-				// don't rewrite invalid module scripts
+				const ct = response.headers.get("content-type");
+				// don't rewrite invalid module scripts when the server declares a non-JS type
 				if (
 					parsed.scriptType === "module" &&
-					!isJavascriptMimeType(response.headers.get("content-type"))
+					ct &&
+					!isJavascriptMimeType(ct)
 				) {
 					return response.body;
 				}

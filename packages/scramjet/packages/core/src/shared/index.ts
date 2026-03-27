@@ -9,6 +9,7 @@ import { HtmlContext } from "@/shared/rewriters/html";
 export * from "./cookie";
 export * from "./headers";
 export * from "./htmlRules";
+export * from "./mime";
 export * from "./rewriters";
 export * from "./security";
 
