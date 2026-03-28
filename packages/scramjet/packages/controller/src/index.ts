@@ -88,6 +88,7 @@ export class Controller {
 	cookieJar = new $scramjet.CookieJar();
 	flags: typeof defaultCfg.flags = { ...defaultCfg.flags };
 	serviceWorkerController: ServiceWorker;
+	guardServiceWorkerRevive = true;
 
 	rpc: RpcHelper<Controllerbound, SWbound>;
 	private ready: Promise<[void, void]>;
@@ -104,6 +105,9 @@ export class Controller {
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
 			this.readyResolve();
+			setTimeout(() => {
+				this.guardServiceWorkerRevive = false;
+			}, 1000);
 		},
 		request: async (data) => {
 			try {
@@ -293,6 +297,11 @@ export class Controller {
 
 		navigator.serviceWorker.addEventListener("message", (e) => {
 			if (e.data.$controller$swrevive) {
+				// if we just spawned the service worker, it will send this even though it's not actually dead
+				// TODO: pretty jank, fix at some point
+				if (this.guardServiceWorkerRevive) {
+					return;
+				}
 				this.setupMessagePort();
 			}
 		});
