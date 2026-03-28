@@ -243,7 +243,11 @@ async function createTestPage(
 		} catch {
 			data = { message: payload, label: "default", value: payload };
 		}
-		if (expectedRunwayToken && data.__runwayToken !== expectedRunwayToken) {
+		if (
+			expectedRunwayToken &&
+			"__runwayToken" in data &&
+			data.__runwayToken !== expectedRunwayToken
+		) {
 			return;
 		}
 
@@ -590,6 +594,7 @@ async function main() {
 		1,
 		Number(process.env.RUNWAY_PARALLEL ?? parallelArg ?? 1)
 	);
+	const fastMode = process.env.RUNWAY_FAST === "1";
 
 	if (testFilter) {
 		console.log(`� Filter: "${testFilter}"`);
@@ -599,6 +604,9 @@ async function main() {
 	);
 	if (parallelism > 1) {
 		console.log(`🧵 Parallel workers: ${parallelism}\n`);
+	}
+	if (fastMode) {
+		console.log(`⚡ Fast mode: reusing one harness instance per worker\n`);
 	}
 
 	if (tests.length === 0) {
@@ -696,7 +704,7 @@ async function main() {
 					})
 				: null,
 		});
-		let scramjetBindingsInstalled = true;
+		let scramjetBindingsInstalled = fastMode ? true : true;
 		let testPages = await createPages(scramjetBindingsInstalled);
 		let needsReload = true;
 
@@ -706,12 +714,12 @@ async function main() {
 
 			const consistencyTracker = createConsistencyTracker(!test.scramjetOnly);
 			consistencyHandler = consistencyTracker.handle;
-			if (test.reloadHarness) {
+			if (!fastMode && test.reloadHarness) {
 				needsReload = true;
 			}
 
 			// Reload pages if needed (first run or after failure)
-			const desiredScramjetBindings = !test.topLevelScramjet;
+			const desiredScramjetBindings = fastMode ? true : !test.topLevelScramjet;
 			if (
 				needsReload ||
 				desiredScramjetBindings !== scramjetBindingsInstalled
@@ -856,7 +864,7 @@ async function main() {
 				ghaError(
 					`Test "${test.name}" failed: ${finalResult.message || "Unknown error"}`
 				);
-				needsReload = true; // Reload after failure
+				needsReload = !fastMode; // Reload after failure unless fast mode is reusing harnesses
 			} else {
 				console.log(`💥 error (${duration}ms)`);
 				if (finalResult.message) {
@@ -865,7 +873,7 @@ async function main() {
 				ghaError(
 					`Test "${test.name}" error: ${finalResult.message || "Unknown error"}`
 				);
-				needsReload = true; // Reload after error
+				needsReload = !fastMode; // Reload after error unless fast mode is reusing harnesses
 			}
 			ghaEndGroup();
 		}
