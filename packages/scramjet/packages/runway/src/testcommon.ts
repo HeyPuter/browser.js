@@ -14,6 +14,11 @@ export type TestContext = {
 export type Test = {
 	name: string;
 	port: number;
+	path?: string;
+	timeoutMs?: number;
+	reloadHarness?: boolean;
+	topLevelScramjet?: boolean;
+	warmProxiedNavigation?: boolean;
 	start: (ctx: {
 		pass: (message?: string, details?: any) => Promise<void>;
 		fail: (message?: string, details?: any) => Promise<void>;
