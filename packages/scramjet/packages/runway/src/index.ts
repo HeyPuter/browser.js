@@ -442,10 +442,11 @@ async function runTestOnHarness(
 	}
 
 	const runwayToken = crypto.randomUUID();
+	const testScheme = test.scheme ?? "http";
 	const testUrl = test.topLevelScramjet
-		? `http://localhost:${test.port}${test.path ?? "/"}`
+		? `${testScheme}://localhost:${test.port}${test.path ?? "/"}`
 		: appendRunwayToken(
-				`http://localhost:${test.port}${test.path ?? "/"}`,
+				`${testScheme}://localhost:${test.port}${test.path ?? "/"}`,
 				runwayToken,
 				test.name.startsWith("wpt-")
 			);

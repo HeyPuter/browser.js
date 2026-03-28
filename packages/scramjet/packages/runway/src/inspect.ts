@@ -168,7 +168,8 @@ async function main() {
 			);
 		}
 	} else {
-		const testUrl = `http://localhost:${firstTest.port}${firstTest.path ?? "/"}`;
+		const testScheme = firstTest.scheme ?? "http";
+		const testUrl = `${testScheme}://localhost:${firstTest.port}${firstTest.path ?? "/"}`;
 		console.log(`🚀 Navigating to test: ${testUrl}`);
 
 		if (firstTest.topLevelScramjet) {

@@ -14,6 +14,7 @@ export type TestContext = {
 export type Test = {
 	name: string;
 	port: number;
+	scheme?: "http" | "https";
 	path?: string;
 	timeoutMs?: number;
 	reloadHarness?: boolean;
@@ -32,7 +33,7 @@ export type Test = {
 	expectedOkCount?: number;
 };
 
-let nextPort = 9000;
+let nextPort = 10000 + Math.floor(Math.random() * 40000);
 
 export function basicTest(props: {
 	name: string;
