@@ -45,6 +45,10 @@ type TestRunResult = {
 	duration: number;
 };
 
+type ExpectedFailingTestsFile = {
+	tests: string[];
+};
+
 type HarnessKind = "scramjet" | "bare";
 
 type ConsistencyIssue = {
@@ -186,6 +190,36 @@ async function discoverTests(): Promise<Test[]> {
 		}
 	}
 	return tests;
+}
+
+async function loadExpectedFailingTests(
+	filePath: string
+): Promise<Set<string>> {
+	try {
+		const raw = await readFile(filePath, "utf-8");
+		const parsed = JSON.parse(raw) as ExpectedFailingTestsFile | string[];
+		if (Array.isArray(parsed)) {
+			return new Set(parsed.filter((value) => typeof value === "string"));
+		}
+		if (parsed && Array.isArray(parsed.tests)) {
+			return new Set(parsed.tests.filter((value) => typeof value === "string"));
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			throw error;
+		}
+	}
+	return new Set();
+}
+
+async function writeExpectedFailingTests(
+	filePath: string,
+	tests: string[]
+): Promise<void> {
+	const payload: ExpectedFailingTestsFile = {
+		tests: [...tests].sort(),
+	};
+	await writeFile(filePath, JSON.stringify(payload, null, 2) + "\n", "utf-8");
 }
 
 async function createTestPage(
@@ -595,6 +629,8 @@ async function main() {
 		Number(process.env.RUNWAY_PARALLEL ?? parallelArg ?? 1)
 	);
 	const fastMode = process.env.RUNWAY_FAST === "1";
+	const updateFailingTests = process.env.RUNWAY_UPDATE_FAILING === "1";
+	const failingTestsPath = path.join(__dirname, "..", "failing_tests.json");
 
 	if (testFilter) {
 		console.log(`� Filter: "${testFilter}"`);
@@ -607,6 +643,9 @@ async function main() {
 	}
 	if (fastMode) {
 		console.log(`⚡ Fast mode: reusing one harness instance per worker\n`);
+	}
+	if (updateFailingTests) {
+		console.log(`📝 Updating failing_tests.json from current run\n`);
 	}
 
 	if (tests.length === 0) {
@@ -1030,8 +1069,49 @@ async function main() {
 	console.log(
 		`\n✅ ${passed} passed | ❌ ${failed} failed | 💥 ${errors} errors\n`
 	);
+	const selectedTestNames = new Set(tests.map((test) => test.name));
+	const actualFailing = results
+		.filter((r) => r.result.status !== "pass")
+		.map((r) => r.test.name)
+		.sort();
 
-	process.exit(failed + errors > 0 ? 1 : 0);
+	if (updateFailingTests) {
+		await writeExpectedFailingTests(failingTestsPath, actualFailing);
+		console.log(
+			`📝 Wrote ${actualFailing.length} failing test(s) to ${path.relative(process.cwd(), failingTestsPath)}`
+		);
+		process.exit(0);
+	}
+
+	const allExpectedFailing = await loadExpectedFailingTests(failingTestsPath);
+	const expectedFailing = new Set(
+		[...allExpectedFailing].filter((name) => selectedTestNames.has(name))
+	);
+	const unexpectedFailing = actualFailing.filter(
+		(name) => !expectedFailing.has(name)
+	);
+	const noLongerFailing = [...expectedFailing]
+		.filter((name) => !actualFailing.includes(name))
+		.sort();
+
+	console.log("Expected failing diff:");
+	console.log(
+		`  expected=${expectedFailing.size} actual=${actualFailing.length} unexpected=${unexpectedFailing.length} fixed=${noLongerFailing.length}`
+	);
+	if (unexpectedFailing.length > 0) {
+		console.log("  unexpected failures:");
+		for (const name of unexpectedFailing) {
+			console.log(`    - ${name}`);
+		}
+	}
+	if (noLongerFailing.length > 0) {
+		console.log("  no longer failing:");
+		for (const name of noLongerFailing) {
+			console.log(`    - ${name}`);
+		}
+	}
+
+	process.exit(unexpectedFailing.length > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

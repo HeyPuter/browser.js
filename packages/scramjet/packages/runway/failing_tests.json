@@ -1,0 +1,26 @@
+{
+	"tests": [
+		"incumbent-window-open-cross-promise",
+		"incumbent-window-open-crossrealm",
+		"incumbent-window-open-eval",
+		"incumbent-window-open-eval-functioncall",
+		"incumbent-window-open-event-listener",
+		"incumbent-window-open-functioncall",
+		"incumbent-window-open-functionctor",
+		"incumbent-window-open-promise-cb",
+		"incumbent-window-open-settimeout-cb",
+		"incumbent-window-open-settimeout-cb-eval",
+		"referer-document-referrer-is-not-current-location",
+		"referer-iframe-document-cross-origin-uses-origin-only",
+		"referer-iframe-document-same-origin-uses-full-url",
+		"referer-iframe-request-same-origin-sends-full-url",
+		"wpt-referrer-policy-gen-iframe-http-rp-no-referrer-fetch-http-html",
+		"wpt-referrer-policy-gen-iframe-http-rp-same-origin-fetch-http-html",
+		"wpt-referrer-policy-gen-iframe-meta-same-origin-fetch-http-html",
+		"wpt-referrer-policy-gen-top-http-rp-no-referrer-fetch-http-html",
+		"wpt-referrer-policy-gen-top-http-rp-same-origin-fetch-http-html",
+		"wpt-referrer-policy-gen-top-meta-same-origin-fetch-http-html",
+		"wpt-referrer-policy-generic-inheritance-iframe-inheritance-about-blank-html",
+		"wpt-referrer-policy-generic-inheritance-iframe-inheritance-srcdoc-html"
+	]
+}
