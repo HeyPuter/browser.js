@@ -6,6 +6,7 @@ import { rewriteUrl, unrewriteUrl } from "@rewriters/url";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
 import { isHtmlMimeType } from "@/shared/mime";
+import { ForeignContext } from "@/shared/rewriters/html";
 
 const encoder = new TextEncoder();
 function bytesToBase64(bytes: Uint8Array) {
@@ -15,6 +16,35 @@ function bytesToBase64(bytes: Uint8Array) {
 
 	return btoa(binString);
 }
+
+export function foreignContextForElement(
+	client: ScramjetClient,
+	element: Element
+): ForeignContext {
+	if (client.box.instanceof(element, "SVGElement")) return "svg";
+	if (client.box.instanceof(element, "MathMLElement")) return "math";
+	return undefined;
+}
+
+// NOTE: NOT INCLUSIVE OF THE CURRENT ELEMENT
+export function insideForeignContext(
+	client: ScramjetClient,
+	element: Element | null
+): ForeignContext {
+	let current: Element | null = element.parentElement;
+
+	while (current) {
+		const context = foreignContextForElement(client, current);
+		if (context) return context;
+		// EXPLICITLY an html context, don't go up further
+		if (client.box.instanceof(current, "SVGForeignObjectElement"))
+			return undefined;
+		current = current.parentElement;
+	}
+
+	return undefined;
+}
+
 export default function (client: ScramjetClient, self: typeof window) {
 	const attrObject = {
 		nonce: [self.HTMLElement],
@@ -327,6 +357,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 						inline: true,
 						source: client.url.href,
 						apisource: "set Element.prototype.innerHTML",
+						foreignContext: foreignContextForElement(client, ctx.this),
 					});
 				} catch {
 					newval = value;
@@ -430,6 +461,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 					inline: true,
 					source: client.url.href,
 					apisource: "set Element.prototype.setHTMLUnsafe",
+					foreignContext: foreignContextForElement(client, ctx.this),
 				});
 			} catch {}
 		},
@@ -450,6 +482,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 						inline: true,
 						source: client.url.href,
 						apisource: "set Element.prototype.insertAdjacentHTML",
+						foreignContext: foreignContextForElement(client, ctx.this),
 					});
 				} catch {}
 		},
@@ -611,6 +644,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("DOMParser.prototype.parseFromString", {
 		apply(ctx) {
+			// TODO: what do we do if it's xml/svg?
 			if (typeof ctx.args[1] === "string" && isHtmlMimeType(ctx.args[1])) {
 				try {
 					ctx.args[0] = rewriteHtml(ctx.args[0], client.context, client.meta, {

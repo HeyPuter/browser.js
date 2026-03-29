@@ -10,6 +10,7 @@ import { htmlRules } from "@/shared/htmlRules";
 import { Tap } from "@/Tap";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 
+export type ForeignContext = "svg" | "math" | undefined;
 export type HtmlContext = {
 	// should we inject scramjet scripts at the top of the document?
 	loadScripts: boolean;
@@ -21,6 +22,7 @@ export type HtmlContext = {
 	apisource?: string;
 	// response headers for worker originating documents
 	headers?: RawHeaders;
+	foreignContext?: ForeignContext;
 };
 
 const encoder = new TextEncoder();
@@ -31,7 +33,10 @@ function rewriteHtmlInner(
 	htmlcontext: HtmlContext
 ) {
 	const handler = new DomHandler((err, dom) => dom);
-	const parser = new Parser(handler);
+	console.log(htmlcontext.foreignContext);
+	const parser = new Parser(handler, {
+		startingForeignContext: htmlcontext.foreignContext === "svg",
+	});
 
 	parser.write(html);
 	parser.end();

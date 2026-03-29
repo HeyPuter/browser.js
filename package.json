@@ -16,6 +16,14 @@
 		"format": "prettier --write .",
 		"preinstall": "npx only-allow pnpm"
 	},
+	"pnpm": {
+		"overrides": {
+			"htmlparser2": "10.1.0"
+		},
+		"patchedDependencies": {
+			"htmlparser2@10.1.0": "patches/htmlparser2@10.1.0.patch"
+		}
+	},
 	"devDependencies": {
 		"@mercuryworkshop/wisp-js": "catalog:",
 		"@rsdoctor/rspack-plugin": "^1.4.0",
