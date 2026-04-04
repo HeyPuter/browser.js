@@ -2,6 +2,7 @@ type ScramjetFrame = any;
 import {
 	BareCompatibleClient,
 	ProxyTransport,
+	RawHeaders,
 } from "@mercuryworkshop/proxy-transports";
 import { SCRAMJETCLIENT, SCRAMJETFRAME } from "@/symbols";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
@@ -13,6 +14,7 @@ import {
 	flagEnabled,
 	HtmlRewriterHooks,
 	ScramjetContext,
+	ScramjetHeaders,
 	ScramjetInterface,
 } from "@/shared";
 import { CookieJar } from "@/shared/cookie";
@@ -28,6 +30,8 @@ export type ScramjetClientInit = {
 	shouldPassthroughWebsocket?: (url: string | URL) => boolean;
 	shouldBlockMessageEvent?: (ev: MessageEvent) => boolean;
 	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
+	clientId: string;
+	initHeaders: RawHeaders;
 };
 
 type NativeStore = {
@@ -79,6 +83,17 @@ export type Trap<T> = {
 	get?: (ctx: TrapCtx<T>) => T;
 	set?: (ctx: TrapCtx<T>, v: T) => void;
 };
+
+function test<P extends string>(path: P): Traverse<typeof globalThis, P> {
+	return 0 as Traverse<typeof globalThis, P>;
+}
+// thank you psm <3
+type Traverse<
+	O extends Record<any, any>,
+	P extends string,
+> = P extends `${infer K}.${infer R}` ? Traverse<O[K], R> : O[P];
+
+test("Document.prototype.querySelector");
 
 function findBox(global: Window, seen: Window[]): SingletonBox | null {
 	if (seen.includes(global)) return null;
@@ -141,6 +156,10 @@ export class ScramjetClient {
 
 	context: ScramjetContext;
 
+	clientId: string;
+
+	initHeaders: ScramjetHeaders;
+
 	hooks = {
 		rewriter: {
 			html: Tap.create<HtmlRewriterHooks>(),
@@ -172,6 +191,8 @@ export class ScramjetClient {
 		this.box.registerClient(this, global as Self);
 
 		this.context = init.context;
+		this.clientId = init.clientId;
+		this.initHeaders = ScramjetHeaders.fromRawHeaders(init.initHeaders);
 		this.context.hooks = {
 			rewriter: this.hooks.rewriter,
 		};
@@ -388,6 +409,24 @@ export class ScramjetClient {
 
 					return frame.name;
 				}
+			},
+			clientId: this.clientId,
+			get refererPolicy(): string | undefined {
+				if (client.initHeaders.has("referer-policy")) {
+					return client.initHeaders.get("referer-policy");
+				}
+
+				// TODO: need to nullify the actual meta tag so it still sends unsafe-url
+				let meta = [
+					...document.querySelectorAll("meta[name='referrer-policy']"),
+					...document.querySelectorAll("meta[http-equiv='referrer-policy']"),
+				];
+				let last = meta[meta.length - 1];
+				if (last) {
+					return last.getAttribute("content");
+				}
+
+				return;
 			},
 		};
 		this.locationProxy = createLocationProxy(this, global);
@@ -768,8 +807,8 @@ return { apply, construct };
 		return oldDescriptor;
 	}
 
-	rewriteUrl(url: string | URL): string {
-		return rewriteUrl(url, this.context, this.meta);
+	rewriteUrl(url: string | URL, params?: Record<string, string>): string {
+		return rewriteUrl(url, this.context, this.meta, params);
 	}
 
 	unrewriteUrl(url: string | URL): string {

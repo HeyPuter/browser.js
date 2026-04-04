@@ -157,7 +157,6 @@ export class Controller {
 						: undefined,
 					rawUrl: new URL(data.rawUrl),
 					rawReferrer: data.rawReferrer,
-					rawReferrerPolicy: data.rawReferrerPolicy,
 					destination: data.destination,
 					method: data.method,
 					mode: data.mode,
@@ -404,7 +403,8 @@ function yieldGetInjectScripts(
 						yieldGetInjectScripts: ${yieldGetInjectScripts.toString()},
 						codecEncode: ${codecEncode.toString()},
 						codecDecode: ${codecDecode.toString()},
-						htmlcontext: ${JSON.stringify(htmlcontext)},
+						clientId: ${JSON.stringify(meta.clientId)},
+						initHeaders: ${JSON.stringify(htmlcontext.headers)},
 					})
 				`)
 			),

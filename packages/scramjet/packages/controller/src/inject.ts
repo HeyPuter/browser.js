@@ -164,6 +164,8 @@ type Init = {
 	) => any;
 	codecEncode: (input: string) => string;
 	codecDecode: (input: string) => string;
+	clientId: string;
+	initHeaders: RawHeaders;
 };
 
 export function load(init: Init) {
@@ -191,6 +193,7 @@ class ExecutionContextWrapper {
 	client!: ScramjetGlobal.ScramjetClient;
 	cookieJar: CookieJar;
 	transport: RemoteTransport;
+	clientId: string;
 
 	constructor(
 		public global: typeof globalThis,
@@ -210,6 +213,8 @@ class ExecutionContextWrapper {
 
 		this.cookieJar = new CookieJar();
 		this.cookieJar.load(this.init.cookies);
+
+		this.clientId = init.clientId;
 
 		this.injectScramjet();
 	}
@@ -259,6 +264,8 @@ class ExecutionContextWrapper {
 				const context = new ExecutionContextWrapper(frameself, this.init);
 				return context.client;
 			},
+			clientId: this.clientId,
+			initHeaders: this.init.initHeaders,
 		});
 
 		this.client.hook();

@@ -6,6 +6,8 @@ export type URLMeta = {
 	base: URL;
 	topFrameName?: string;
 	parentFrameName?: string;
+	clientId: string;
+	refererPolicy?: string;
 };
 
 let url_ctor = URL;
@@ -91,7 +93,8 @@ function dataToBlob(url: string) {
 export function rewriteUrl(
 	url: string | URL,
 	context: ScramjetContext,
-	meta: URLMeta
+	meta: URLMeta,
+	params?: Record<string, string>
 ) {
 	if (url instanceof URL) url = url.toString();
 
@@ -139,9 +142,16 @@ export function rewriteUrl(
 		const realHash = encodedHash ? "#" + encodedHash : "";
 		realUrl.hash = "";
 
+		const paramsInit = new URLSearchParams(params);
+		if (meta.clientId) paramsInit.append("cid", meta.clientId);
+		if (meta.refererPolicy) paramsInit.append("rfp", meta.refererPolicy);
+		let paramstring = "";
+		if (paramsInit.toString()) paramstring = "?" + paramsInit.toString();
+
 		return (
 			context.prefix.href +
 			context.interface.codecEncode(realUrl.href) +
+			paramstring +
 			realHash
 		);
 	}
@@ -171,6 +181,10 @@ export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 		if (!realUrl) return url;
 		if (realUrl.protocol != "http:" && realUrl.protocol != "https:") {
 			// custom protocol
+			return url;
+		}
+		if (!realUrl.href.startsWith(context.prefix.href)) {
+			dbg.error("unrewriteurl: unexpected url", url);
 			return url;
 		}
 		const decodedHash = context.interface.codecDecode(realUrl.hash.slice(1));

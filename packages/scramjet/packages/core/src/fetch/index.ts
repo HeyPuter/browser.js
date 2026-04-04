@@ -24,6 +24,7 @@ import DomHandler from "domhandler";
 import { Tap, TapInstance } from "@/Tap";
 import { sniffEncoding } from "@/shared/sniffEncoding";
 import { isHtmlMimeType, isJavascriptMimeType } from "@/shared/mime";
+import { generateClientId } from "@/shared/util";
 
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
@@ -47,6 +48,7 @@ export interface ScramjetFetchParsed {
 
 	meta: URLMeta;
 	scriptType: "module" | "regular";
+	referrerPolicy?: string;
 }
 
 export interface ScramjetFetchResponse {
@@ -193,7 +195,7 @@ async function doHandleFetch(
 	// set-cookie needs to take the raw headers. after this, we can flatten the headers into a ScramjetHeaders object
 	await handleCookies(handler, request, parsed, response.rawHeaders);
 
-	const responseHeaders = await rewriteHeaders(
+	const responseHeaders = await rewriteResponseHeaders(
 		handler,
 		request,
 		parsed,
@@ -204,23 +206,6 @@ async function doHandleFetch(
 		const redirectUrl = new URL(
 			unrewriteUrl(responseHeaders.get("location"), handler.context)
 		);
-
-		// await updateTracker(
-		// 	url.toString(),
-		// 	redirectUrl.toString(),
-		// 	responseHeaders["referrer-policy"]
-		// );
-
-		// const redirectMeta = {
-		// 	origin: redirectUrl,
-		// 	base: redirectUrl,
-		// };
-		// const newSiteDirective = await getSiteDirective(
-		// 	redirectMeta,
-		// 	parsed.url,
-		// 	bareClient
-		// );
-		// await getMostRestrictiveSite(redirectUrl.toString(), newSiteDirective);
 
 		// ensure that ?type=module is not lost in a redirect
 		if (parsed.scriptType === "module") {
@@ -238,11 +223,6 @@ async function doHandleFetch(
 		// the browser doesn't try to decode UTF-8 bytes with the original encoding.
 		normalizeContentType(request, responseHeaders);
 	}
-
-	// Clean up tracker if not a redirect
-	// if (!isRedirect(response)) {
-	// await cleanTracker(parsed.url.toString());
-	// }
 
 	let respcontext: typeof handler.hooks.fetch.response.context = {
 		request,
@@ -276,6 +256,8 @@ export function parseRequest(
 	let scriptType: "module" | "regular" = "regular";
 	let topFrameName: string | undefined;
 	let parentFrameName: string | undefined;
+	let clientId: string | undefined;
+	let referrerPolicy: string | undefined;
 	for (const [param, value] of [...request.rawUrl.searchParams.entries()]) {
 		switch (param) {
 			case "type":
@@ -288,6 +270,12 @@ export function parseRequest(
 				break;
 			case "parentFrame":
 				parentFrameName = value;
+				break;
+			case "cid":
+				clientId = value;
+				break;
+			case "referrerPolicy":
+				referrerPolicy = value;
 				break;
 			default:
 				dbg.warn(
@@ -317,18 +305,35 @@ export function parseRequest(
 		url.searchParams.set(param, value);
 	}
 
+	let documentFetch =
+		request.destination === "document" || request.destination === "iframe";
+	if (documentFetch || !clientId) {
+		if (
+			!documentFetch &&
+			(url.protocol === "https:" || url.protocol === "http:")
+		) {
+			console.error(
+				`no clientId provided for non-document/iframe fetch: ${request.rawUrl.href}`
+			);
+		}
+
+		clientId = generateClientId();
+	}
+
 	// TODO: figure out what origin and base actually mean
 	const meta: URLMeta = {
 		origin: url,
 		base: url,
 		topFrameName,
 		parentFrameName,
+		clientId,
 	};
 
 	const parsed: ScramjetFetchParsed = {
 		meta,
 		url,
 		scriptType,
+		referrerPolicy,
 	};
 
 	if (request.rawClientUrl) {
@@ -341,6 +346,66 @@ export function parseRequest(
 	return parsed;
 }
 
+function createReferrerString(
+	clientUrl: URL,
+	resource: URL,
+	policy: string | null
+): string {
+	policy ||= "strict-origin-when-cross-origin";
+	const originIsHttps = clientUrl.protocol === "https:";
+	const destIsHttps = resource.protocol === "https:";
+
+	// A "more private" request: https -> http
+	const isPotentialDowngrade = originIsHttps && !destIsHttps;
+
+	// Step 3: Determine if same-origin
+	const isSameOrigin =
+		clientUrl.protocol === resource.protocol &&
+		clientUrl.host === resource.host;
+
+	// Step 4: Strip referrer to just origin (scheme + host + port)
+	const referrerOrigin = clientUrl.origin; // e.g. "https://example.com"
+
+	const referrerUrl = new URL(clientUrl.href);
+	referrerUrl.hash = "";
+	const referrerUrlString = referrerUrl.href;
+
+	switch (policy) {
+		case "no-referrer":
+			return "";
+
+		case "no-referrer-when-downgrade":
+			if (isPotentialDowngrade) return "";
+			return referrerUrlString;
+
+		case "same-origin":
+			if (isSameOrigin) return referrerUrlString;
+			return "";
+
+		case "origin":
+			return referrerOrigin === "null" ? "" : referrerOrigin + "/";
+
+		case "strict-origin":
+			if (isPotentialDowngrade) return "";
+			return referrerOrigin === "null" ? "" : referrerOrigin + "/";
+
+		case "origin-when-cross-origin":
+			if (isSameOrigin) return referrerUrlString;
+			return referrerOrigin === "null" ? "" : referrerOrigin + "/";
+
+		case "strict-origin-when-cross-origin":
+			if (isSameOrigin) return referrerUrlString;
+			if (isPotentialDowngrade) return "";
+			return referrerOrigin === "null" ? "" : referrerOrigin + "/";
+
+		case "unsafe-url":
+			return referrerUrlString;
+
+		default:
+			return "";
+	}
+}
+
 function rewriteRequestHeaders(
 	request: ScramjetFetchRequest,
 	handler: ScramjetFetchHandler,
@@ -348,52 +413,18 @@ function rewriteRequestHeaders(
 ): ScramjetHeaders {
 	const headers = request.initialHeaders.clone();
 
-	// const applyDefaultRefererPolicy = (referrerUrl: URL, targetUrl: URL) => {
-	// 	if (referrerUrl.origin === targetUrl.origin) {
-	// 		headers.set("Referer", referrerUrl.href);
-	// 	} else if (
-	// 		targetUrl.protocol === "http:" &&
-	// 		referrerUrl.protocol === "https:"
-	// 	) {
-	// 		headers.delete("Referer");
-	// raw
-	// 	} else {
-	// 		headers.set("Referer", new URL("/", referrerUrl.origin).href);
-	// 	}
-	// };
-
-	// if (
-	// 	request.rawClientUrl &&
-	// 	request.rawClientUrl.pathname.startsWith(handler.context.prefix.pathname)
-	// ) {
-	// 	// TODO: i was against cors emulation but we might actually break stuff if we send full origin/referrer always
-	// 	let clientURL = new URL(
-	// 		unrewriteUrl(request.rawClientUrl, handler.context)
-	// 	);
-
-	// 	if (clientURL.protocol !== "http:" && clientURL.protocol !== "https:") {
-	// 		// sites will explode if we send them a data url referer
-	// 		clientURL = new URL("https://example.com/");
-	// 	}
-
-	// 	if (clientURL.toString().includes("youtube.com")) {
-	// 	} else {
-	// 		// Emulate the browser's default strict-origin-when-cross-origin policy.
-	// 		applyDefaultRefererPolicy(clientURL, parsed.url);
-	// 		headers.set("Origin", clientURL.origin);
-	// 	}
-	// }
-
 	if (request.rawReferrer) {
-		const referrerUrl = new URL(request.rawReferrer);
-		// TODO don't use location here?
-		// if (referrerUrl.origin === location.origin) {
-		if (referrerUrl.pathname.startsWith(handler.context.prefix.pathname)) {
-			let unrewritten = new URL(unrewriteUrl(referrerUrl, handler.context));
-			// don't have any way of knowing what the referer policy is, assume it's origin
-			headers.set("Referer", `${unrewritten.origin}/`);
+		const clientUrl = request.rawClientUrl || new URL(request.rawReferrer);
+		if (clientUrl.pathname.startsWith(handler.context.prefix.pathname)) {
+			let unrewritten = new URL(unrewriteUrl(clientUrl, handler.context));
+
+			const referer = createReferrerString(
+				unrewritten,
+				parsed.url,
+				request.rawReferrerPolicy
+			);
+			if (referer) headers.set("Referer", referer);
 		}
-		// }
 	}
 
 	const cookies = handler.context.cookieJar.getCookies(parsed.url, false);
@@ -402,98 +433,6 @@ function rewriteRequestHeaders(
 		headers.set("Cookie", cookies);
 	}
 
-	// // Check if we should emulate a top-level navigation
-	// let isTopLevelProxyNavigation = false;
-	// if (
-	// 	context.destination === "iframe" &&
-	// 	context.mode === "navigate" &&
-	// 	context.referrer &&
-	// 	context.referrer !== "no-referrer"
-	// ) {
-	// 	// Trace back through the referrer chain, checking if each was an iframe navigation using the clients, until we find a non-iframe parent on a non-proxy page
-	// 	let currentReferrer = context.referrer;
-	// 	const allClients = await self.clients.matchAll({ type: "window" });
-
-	// 	// Trace backwards
-	// 	while (currentReferrer) {
-	// 		if (!currentReferrer.includes(config.prefix)) {
-	// 			isTopLevelProxyNavigation = true;
-	// 			break;
-	// 		}
-
-	// 		// Find the parent for this iteration
-	// 		const parentChainClient = allClients.find(
-	// 			(c) => c.url === currentReferrer
-	// 		);
-
-	// 		// Get the next referrer policy that applies to this parent
-	// 		// eslint-disable-next-line no-await-in-loop
-	// 		const parentPolicyData = await getReferrerPolicy(currentReferrer);
-
-	// 		if (!parentPolicyData || !parentPolicyData.referrer) {
-	// 			// Check if this ends at the proxy origin
-	// 			if (parentChainClient && currentReferrer.startsWith(location.origin)) {
-	// 				isTopLevelProxyNavigation = true;
-	// 			}
-	// 			// Results are inclusive
-	// 			break;
-	// 		}
-
-	// 		// Check if this was an iframe navigation by looking at the client
-	// 		if (parentChainClient && parentChainClient.frameType === "nested") {
-	// 			// Continue checking the chain
-	// 			currentReferrer = parentPolicyData.referrer;
-	// 		} else {
-	// 			// Results are inclusive
-	// 			break;
-	// 		}
-	// 	}
-	// }
-
-	// if (isTopLevelProxyNavigation) {
-	// 	headers.set("Sec-Fetch-Dest", "document");
-	// 	headers.set("Sec-Fetch-Mode", "navigate");
-	// } else {
-	// 	// Convert empty destination to "empty" string per spec
-	// 	headers.set("Sec-Fetch-Dest", request.destination || "empty");
-	// 	headers.set("Sec-Fetch-Mode", request.mode);
-	// }
-
-	if (
-		parsed.url.href.includes("whatsapp.com") ||
-		parsed.url.href.includes("instagram.com") ||
-		parsed.url.href.includes("facebook.com") ||
-		parsed.url.href.includes("threads.com")
-	) {
-		headers.set("Sec-Fetch-Dest", "document");
-		headers.set("Sec-Fetch-Mode", request.mode);
-		headers.set("Sec-Fetch-Site", "none");
-	}
-	// let siteDirective = "none";
-	// if (
-	// 	request.referrer &&
-	// 	request.referrer !== "" &&
-	// 	request.referrer !== "no-referrer"
-	// ) {
-	// 	if (request.referrer.includes(config.prefix)) {
-	// 		const unrewrittenReferrer = unrewriteUrl(request.referrer);
-	// 		if (unrewrittenReferrer) {
-	// 			const referrerUrl = new URL(unrewrittenReferrer);
-	// 			siteDirective = await getSiteDirective(meta, referrerUrl, this.client);
-	// 		}
-	// 	}
-	// }
-
-	// await initializeTracker(
-	// 	url.toString(),
-	// 	request.referrer ? unrewriteUrl(request.referrer) : null,
-	// 	siteDirective
-	// );
-
-	// headers.set(
-	// 	"Sec-Fetch-Site",
-	// 	await getMostRestrictiveSite(url.toString(), siteDirective)
-	// );
 	return headers;
 }
 
@@ -608,7 +547,7 @@ function rewriteLinkHeader(
 	});
 }
 
-export async function rewriteHeaders(
+export async function rewriteResponseHeaders(
 	handler: ScramjetFetchHandler,
 	request: ScramjetFetchRequest,
 	parsed: ScramjetFetchParsed,
@@ -633,96 +572,6 @@ export async function rewriteHeaders(
 		let rewritten = rewriteLinkHeader(link, handler.context, parsed.meta);
 		headers.set("link", rewritten);
 	}
-
-	// Emulate the referrer policy to set it back to what it should've been without Force Referrer in place
-	if (typeof headers["referer"] === "string") {
-		const referrerUrl = new URL(headers["referer"]);
-		// const storedPolicyData = await getReferrerPolicy(referrerUrl.href);
-		// if (storedPolicyData) {
-		// 	const storedReferrerPolicy = storedPolicyData.policy
-		// 		.toLowerCase()
-		// 		.split(",")
-		// 		.map((rawDir) => rawDir.trim());
-		// 	if (
-		// 		storedReferrerPolicy.includes("no-referrer") ||
-		// 		(storedReferrerPolicy.includes("no-referrer-when-downgrade") &&
-		// 			parsed.meta.origin.protocol === "http:" &&
-		// 			referrerUrl.protocol === "https:")
-		// 	) {
-		// 		delete headers["referer"];
-		// 	} else if (storedReferrerPolicy.includes("origin")) {
-		// 		headers["referer"] = referrerUrl.origin;
-		// 	} else if (storedReferrerPolicy.includes("origin-when-cross-origin")) {
-		// 		if (referrerUrl.origin !== parsed.meta.origin.origin) {
-		// 			headers["referer"] = referrerUrl.origin;
-		// 		} else {
-		// 			headers["referer"] = referrerUrl.href;
-		// 		}
-		// 	} else if (storedReferrerPolicy.includes("same-origin")) {
-		// 		if (referrerUrl.origin === parsed.meta.origin.origin) {
-		// 			headers["referer"] = referrerUrl.href;
-		// 		} else {
-		// 			delete headers["referer"];
-		// 		}
-		// 	} else if (storedReferrerPolicy.includes("strict-origin")) {
-		// 		if (
-		// 			parsed.meta.origin.protocol === "http:" &&
-		// 			referrerUrl.protocol === "https:"
-		// 		) {
-		// 			delete headers["referer"];
-		// 		} else {
-		// 			headers["referer"] = referrerUrl.origin;
-		// 		}
-		// 	}
-		// 	// `strict-origin-when-cross-origin` is the default behavior anyway
-		// 	else {
-		if (referrerUrl.origin === parsed.meta.origin.origin) {
-			headers["referer"] = referrerUrl.href;
-		} else if (
-			parsed.meta.origin.protocol === "http:" &&
-			referrerUrl.protocol === "https:"
-		) {
-			delete headers["referer"];
-		} else {
-			headers["referer"] = referrerUrl.origin;
-		}
-		// }
-		// }
-	}
-	if (headers.has("sec-fetch-dest") && headers.get("sec-fetch-dest") === "") {
-		headers["sec-fetch-dest"] = "empty";
-	}
-
-	if (
-		headers.has("sec-fetch-site") &&
-		headers.get("sec-fetch-site") !== "none"
-	) {
-		if (headers.has("referer")) {
-			// headers["sec-fetch-site"] = await getSiteDirective(
-			// 	meta,
-			// 	new URL(headers["referer"]),
-			// 	client
-			// );
-		} else {
-			console.warn(
-				"Missing referrer header; can't rewrite sec-fetch-site properly. Falling back to unsafe deletion."
-			);
-			headers.delete("sec-fetch-site");
-		}
-	}
-
-	// const isNavigationRequest =
-	// 	context.mode === "navigate" &&
-	// 	["document", "iframe"].includes(context.destination);
-
-	// Store referrer policy from navigation responses for Force Referrer
-	// if (isNavigationRequest && headers["referrer-policy"] && context.referrer) {
-	// 	await storeReferrerPolicy(
-	// 		parsed.url.href,
-	// 		headers["referrer-policy"],
-	// 		context.referrer
-	// 	);
-	// }
 
 	if (headers.get("accept") === "text/event-stream") {
 		headers.set("content-type", "text/event-stream");

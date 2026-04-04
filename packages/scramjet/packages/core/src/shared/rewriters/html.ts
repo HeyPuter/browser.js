@@ -33,7 +33,6 @@ function rewriteHtmlInner(
 	htmlcontext: HtmlContext
 ) {
 	const handler = new DomHandler((err, dom) => dom);
-	console.log(htmlcontext.foreignContext);
 	const parser = new Parser(handler, {
 		startingForeignContext: htmlcontext.foreignContext === "svg",
 	});
