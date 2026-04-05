@@ -249,7 +249,6 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 				stack: ${JSON.stringify(error.stack)},
 				theme: ${JSON.stringify(theme)},
 			});
-			document.currentScript.remove();
 		</script>
 	`;
 }
@@ -275,7 +274,7 @@ export function createFetchHandler(controller: Controller) {
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
 			});
-			document.currentScript.remove();
+			document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 		`;
 
 		return [
@@ -430,11 +429,7 @@ async function makeWasmResponse() {
 				.join("")
 		);
 
-		let payload = "";
-		payload +=
-			"if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
-		payload += `self.WASM = '${b64}';`;
-		wasmPayload = payload;
+		wasmPayload = `self.WASM = '${b64}';`;
 	}
 
 	return {

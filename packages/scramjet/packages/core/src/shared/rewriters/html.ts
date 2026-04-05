@@ -109,7 +109,8 @@ function rewriteHtmlInner(
 	let isQuirky = detectQuirks();
 
 	if (htmlcontext.loadScripts) {
-		const script = (src: string) => new Element("script", { src });
+		const script = (src: string) =>
+			new Element("script", { src, "scramjet-injected": "true" });
 		const injectScripts = context.interface.getInjectScripts(
 			meta,
 			handler,
