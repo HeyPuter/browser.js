@@ -9,7 +9,12 @@ import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
 import { NavigateEvent } from "@client/events";
-import { rewriteUrl, unrewriteUrl, type URLMeta } from "@rewriters/url";
+import {
+	rewriteUrl,
+	RewriteUrlOptions,
+	unrewriteUrl,
+	type URLMeta,
+} from "@rewriters/url";
 import {
 	flagEnabled,
 	HtmlRewriterHooks,
@@ -22,6 +27,7 @@ import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
 import { ScramjetConfig } from "@/types";
 import { Tap } from "@/Tap";
+import { TrackedHistoryState } from "@/fetch";
 
 export type ScramjetClientInit = {
 	context: ScramjetContext;
@@ -32,6 +38,7 @@ export type ScramjetClientInit = {
 	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
 	clientId: string;
 	initHeaders: RawHeaders;
+	history: TrackedHistoryState[];
 };
 
 type NativeStore = {
@@ -160,6 +167,8 @@ export class ScramjetClient {
 
 	initHeaders: ScramjetHeaders;
 
+	history: TrackedHistoryState[];
+
 	hooks = {
 		rewriter: {
 			html: Tap.create<HtmlRewriterHooks>(),
@@ -193,6 +202,7 @@ export class ScramjetClient {
 		this.context = init.context;
 		this.clientId = init.clientId;
 		this.initHeaders = ScramjetHeaders.fromRawHeaders(init.initHeaders);
+		this.history = init.history;
 		this.context.hooks = {
 			rewriter: this.hooks.rewriter,
 		};
@@ -517,7 +527,9 @@ export class ScramjetClient {
 		}
 		if (ev.defaultPrevented) return;
 
-		this.global.location.href = this.rewriteUrl(ev.url);
+		this.global.location.href = this.rewriteUrl(ev.url, {
+			navigateType: "location",
+		});
 	}
 
 	// below are the utilities for proxying and trapping dom APIs
@@ -807,8 +819,8 @@ return { apply, construct };
 		return oldDescriptor;
 	}
 
-	rewriteUrl(url: string | URL, params?: Record<string, string>): string {
-		return rewriteUrl(url, this.context, this.meta, params);
+	rewriteUrl(url: string | URL, options?: RewriteUrlOptions): string {
+		return rewriteUrl(url, this.context, this.meta, options);
 	}
 
 	unrewriteUrl(url: string | URL): string {

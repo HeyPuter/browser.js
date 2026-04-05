@@ -405,6 +405,7 @@ function yieldGetInjectScripts(
 						codecDecode: ${codecDecode.toString()},
 						clientId: ${JSON.stringify(meta.clientId)},
 						initHeaders: ${JSON.stringify(htmlcontext.headers)},
+						history: ${JSON.stringify(htmlcontext.history)},
 					})
 				`)
 			),

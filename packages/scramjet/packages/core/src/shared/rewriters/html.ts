@@ -9,6 +9,7 @@ import { ScramjetContext } from "@/shared";
 import { htmlRules } from "@/shared/htmlRules";
 import { Tap } from "@/Tap";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
+import { TrackedHistoryState } from "@/fetch";
 
 export type ForeignContext = "svg" | "math" | undefined;
 export type HtmlContext = {
@@ -23,6 +24,7 @@ export type HtmlContext = {
 	// response headers for worker originating documents
 	headers?: RawHeaders;
 	foreignContext?: ForeignContext;
+	history?: TrackedHistoryState[];
 };
 
 const encoder = new TextEncoder();

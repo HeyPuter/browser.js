@@ -10,7 +10,9 @@ export const htmlRules: {
 }[] = [
 	{
 		fn: (value, context, meta) => {
-			return rewriteUrl(value, context, meta);
+			return rewriteUrl(value, context, meta, {
+				navigateType: "location",
+			});
 		},
 
 		// url rewrites
@@ -24,7 +26,9 @@ export const htmlRules: {
 	},
 	{
 		fn: (value, context, meta) => {
-			let url = rewriteUrl(value, context, meta);
+			let url = rewriteUrl(value, context, meta, {
+				newClient: true,
+			});
 			// if (meta.topFrameName)
 			// 	url += `?topFrame=${meta.topFrameName}&parentFrame=${meta.parentFrameName}`;
 

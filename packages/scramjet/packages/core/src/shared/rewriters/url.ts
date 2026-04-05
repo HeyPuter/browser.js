@@ -90,11 +90,23 @@ function dataToBlob(url: string) {
 	return { blob, objectUrl };
 }
 
+// user: manually triggered navigation
+// link: link clicked by the user. still user initiated, but doesn't wipe
+// location: location = ...
+export type NavigationType = "user" | "link" | "location";
+export type RewriteUrlOptions = {
+	referrerPolicyOverride?: string;
+	moduleType?: string;
+	navigateType?: NavigationType;
+	// is this an iframe, where we would want to create a new client
+	newClient?: boolean;
+};
+
 export function rewriteUrl(
 	url: string | URL,
 	context: ScramjetContext,
 	meta: URLMeta,
-	params?: Record<string, string>
+	options?: RewriteUrlOptions
 ) {
 	if (url instanceof URL) url = url.toString();
 
@@ -142,9 +154,21 @@ export function rewriteUrl(
 		const realHash = encodedHash ? "#" + encodedHash : "";
 		realUrl.hash = "";
 
-		const paramsInit = new URLSearchParams(params);
-		if (meta.clientId) paramsInit.append("cid", meta.clientId);
-		if (meta.refererPolicy) paramsInit.append("rfp", meta.refererPolicy);
+		const paramsInit = new URLSearchParams();
+		if (meta.clientId && !options?.newClient) {
+			paramsInit.append("cid", meta.clientId);
+		}
+
+		if (options?.referrerPolicyOverride) {
+			paramsInit.append("rfp", options.referrerPolicyOverride);
+		} else if (meta.refererPolicy) {
+			paramsInit.append("rfp", meta.refererPolicy);
+		}
+
+		if (options?.moduleType) {
+			paramsInit.append("type", options.moduleType);
+		}
+
 		let paramstring = "";
 		if (paramsInit.toString()) paramstring = "?" + paramsInit.toString();
 
@@ -159,11 +183,6 @@ export function rewriteUrl(
 
 export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 	if (url instanceof URL) url = url.toString();
-	// remove query string
-	// if (url.includes("?")) {
-	// 	url = url.split("?")[0];
-	// }
-
 	if (url.startsWith("javascript:")) {
 		//TODO
 		return url;
@@ -190,6 +209,10 @@ export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 		const decodedHash = context.interface.codecDecode(realUrl.hash.slice(1));
 		const realHash = decodedHash ? "#" + decodedHash : "";
 		realUrl.hash = "";
+
+		for (const [key, _value] of realUrl.searchParams) {
+			realUrl.searchParams.delete(key);
+		}
 
 		return context.interface.codecDecode(
 			realUrl.href.slice(context.prefix.href.length) + realHash

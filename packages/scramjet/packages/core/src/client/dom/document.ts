@@ -1,5 +1,6 @@
 import { rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
+import { createReferrerString } from "@/fetch/headers";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const tostring = String;
@@ -31,7 +32,15 @@ export default function (client: ScramjetClient, _self: Self) {
 
 	client.Trap("Document.prototype.referrer", {
 		get() {
-			return client.url.toString();
+			if (!client.history) return "";
+			if (client.history.length < 2) return "";
+			let lastState = client.history[client.history.length - 2];
+			let referrerURL = new URL(lastState.url);
+			return createReferrerString(
+				referrerURL,
+				client.url,
+				lastState.refererPolicy
+			);
 		},
 	});
 
