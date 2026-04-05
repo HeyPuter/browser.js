@@ -21,7 +21,6 @@ import { doHandleFetch } from "./fetch";
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
 	rawReferrer: string | null;
-	rawReferrerPolicy: string | null;
 	destination: RequestDestination;
 	mode: RequestMode;
 	referrer: string;

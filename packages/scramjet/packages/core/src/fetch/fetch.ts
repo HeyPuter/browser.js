@@ -43,7 +43,7 @@ export async function doHandleFetch(
 		parsed.trackedClient.history.push({
 			url: parsed.url.href,
 			refererPolicy: ScramjetHeaders.fromRawHeaders(response.rawHeaders).get(
-				"referer-policy"
+				"referrer-policy"
 			),
 		});
 	}
@@ -179,7 +179,7 @@ export function parseRequest(
 			case "cid":
 				clientId = value;
 				break;
-			case "referrerPolicy":
+			case "rfp":
 				referrerPolicy = value;
 				break;
 			default:
@@ -234,6 +234,7 @@ export function parseRequest(
 		topFrameName,
 		parentFrameName,
 		clientId,
+		referrerPolicy: referrerPolicy,
 	};
 
 	const parsed: ScramjetFetchParsed = {

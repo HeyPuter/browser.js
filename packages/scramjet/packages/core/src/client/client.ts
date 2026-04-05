@@ -421,9 +421,9 @@ export class ScramjetClient {
 				}
 			},
 			clientId: this.clientId,
-			get refererPolicy(): string | undefined {
-				if (client.initHeaders.has("referer-policy")) {
-					return client.initHeaders.get("referer-policy");
+			get referrerPolicy(): string | undefined {
+				if (client.initHeaders.has("referrer-policy")) {
+					return client.initHeaders.get("referrer-policy");
 				}
 
 				// TODO: need to nullify the actual meta tag so it still sends unsafe-url

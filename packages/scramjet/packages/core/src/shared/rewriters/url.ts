@@ -7,7 +7,7 @@ export type URLMeta = {
 	topFrameName?: string;
 	parentFrameName?: string;
 	clientId: string;
-	refererPolicy?: string;
+	referrerPolicy?: string;
 };
 
 let url_ctor = URL;
@@ -163,8 +163,8 @@ export function rewriteUrl(
 
 		if (options?.referrerPolicyOverride) {
 			paramsInit.append("rfp", options.referrerPolicyOverride);
-		} else if (meta.refererPolicy) {
-			paramsInit.append("rfp", meta.refererPolicy);
+		} else if (meta.referrerPolicy) {
+			paramsInit.append("rfp", meta.referrerPolicy);
 		}
 
 		if (options?.moduleType) {

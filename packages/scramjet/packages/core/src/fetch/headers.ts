@@ -113,6 +113,7 @@ export function rewriteRequestHeaders(
 	parsed: ScramjetFetchParsed
 ): ScramjetHeaders {
 	const headers = request.initialHeaders.clone();
+	headers.delete("Referer");
 
 	if (request.rawReferrer) {
 		const clientUrl = request.rawClientUrl || new URL(request.rawReferrer);
@@ -122,7 +123,7 @@ export function rewriteRequestHeaders(
 			const referer = createReferrerString(
 				unrewritten,
 				parsed.url,
-				request.rawReferrerPolicy
+				parsed.referrerPolicy ?? null
 			);
 			if (referer) headers.set("Referer", referer);
 		}
