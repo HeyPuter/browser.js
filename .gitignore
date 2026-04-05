@@ -8,3 +8,5 @@ rebuild.sh
 .DS_STORE
 
 packages/scramjet/packages/runway/coverage
+packages/scramjet/packages/runway/src/tests/wpt/vendored/fetch/metadata/generated/
+packages/scramjet/packages/runway/src/tests/wpt/vendored/referrer-policy/gen/
