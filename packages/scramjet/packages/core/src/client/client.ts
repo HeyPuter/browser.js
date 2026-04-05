@@ -40,6 +40,18 @@ type DescriptorStore = {
 	get: (target: string, that: any) => any;
 	set: (target: string, that: any, value: any) => void;
 };
+type Traverse<
+	O extends Record<any, any>,
+	P extends string,
+> = P extends `${infer K}.${infer R}` ? Traverse<O[K], R> : O[P];
+type GlobalTraverse<P extends string> = Traverse<
+	typeof globalThis & Record<string, any>,
+	P
+>;
+// https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
+type IfEquals<T, U, Y = unknown, N = never> =
+	(<G>() => G extends T ? 1 : 2) extends <G>() => G extends U ? 1 : 2 ? Y : N;
+
 //eslint-disable-next-line
 export type AnyFunction = Function;
 
@@ -53,17 +65,34 @@ export type ScramjetModule = {
 	default: (client: ScramjetClient, self: typeof globalThis) => void;
 };
 
-export type ProxyCtx = {
-	fn: AnyFunction;
+export type ProxyCtx<T extends string, U extends "construct" | "apply"> = {
+	fn: GlobalTraverse<T>;
 	this: any;
-	args: any[];
-	newTarget: AnyFunction;
-	return: (r: any) => void;
-	call: () => any;
+	args: IfEquals<
+		U,
+		"construct",
+		ConstructorParameters<GlobalTraverse<T>>,
+		Parameters<GlobalTraverse<T>>
+	>;
+	newTarget: IfEquals<U, "construct", GlobalTraverse<T>, null>;
+	return: (
+		r: IfEquals<
+			U,
+			"construct",
+			InstanceType<GlobalTraverse<T>>,
+			ReturnType<GlobalTraverse<T>>
+		>
+	) => void;
+	call: () => IfEquals<
+		U,
+		"construct",
+		InstanceType<GlobalTraverse<T>>,
+		ReturnType<GlobalTraverse<T>>
+	>;
 };
-export type Proxy = {
-	construct?(ctx: ProxyCtx): any;
-	apply?(ctx: ProxyCtx): any;
+export type Proxy<T extends string> = {
+	construct?(ctx: ProxyCtx<T, "construct">): any;
+	apply?(ctx: ProxyCtx<T, "apply">): any;
 };
 
 export type TrapCtx<T> = {
@@ -113,6 +142,8 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 			if (b) return b;
 		} catch {}
 	}
+
+	return null;
 }
 
 export class ScramjetClient {
@@ -406,8 +437,8 @@ export class ScramjetClient {
 			// we're in a subframe, recurse upward until we find one
 			let currentwin = this.global.window;
 			while (currentwin.parent !== currentwin) {
-				let currentclient = currentwin[SCRAMJETCLIENT];
-				let currentFrame = currentclient.descriptors.get(
+				const currentclient = currentwin[SCRAMJETCLIENT];
+				const currentFrame = currentclient.descriptors.get(
 					"window.frameElement",
 					currentwin
 				);
@@ -484,8 +515,12 @@ export class ScramjetClient {
 	// below are the utilities for proxying and trapping dom APIs
 	// you don't have to understand this it just makes the rest easier
 	// i'll document it eventually
-
-	Proxy(name: string | string[], handler: Proxy) {
+	Proxy<T extends string>(name: T, handler: Proxy<T>): void;
+	Proxy<const T extends readonly string[]>(
+		name: T,
+		handler: Proxy<T[number]>
+	): void;
+	Proxy(name: string | string[], handler: Proxy<any>): void {
 		if (Array.isArray(name)) {
 			for (const n of name) {
 				this.Proxy(n, handler);
@@ -498,6 +533,7 @@ export class ScramjetClient {
 		const prop = split.pop();
 		const target = split.reduce((a, b) => a?.[b], this.global);
 		if (!target) return;
+		if (!prop) return;
 
 		if (!(name in this.natives.store)) {
 			const original = Reflect.get(target, prop);
@@ -506,7 +542,7 @@ export class ScramjetClient {
 
 		this.RawProxy(target, prop, handler, name);
 	}
-	RawProxy(target: any, prop: string, handler: Proxy, debugname?: string) {
+	RawProxy(target: any, prop: string, handler: Proxy<any>, debugname?: string) {
 		if (!target) return;
 		if (!prop) return;
 		if (!Reflect.has(target, prop)) return;
@@ -538,9 +574,9 @@ export class ScramjetClient {
 			location = location.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 			windowName = windowName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 			fnName = fnName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-			let sourceURL = debugname ? `${debugname}.sj` : `rawproxy.sj`;
+			const sourceURL = debugname ? `${debugname}.sj` : "rawproxy.sj";
 
-			let { construct, apply } = this.natives.call(
+			const { construct, apply } = this.natives.call(
 				"Function",
 				null,
 				`"use strict";
@@ -579,7 +615,7 @@ return { apply, construct };
 				let returnValue: any = undefined;
 				let earlyreturn = false;
 
-				const ctx: ProxyCtx = {
+				const ctx = {
 					fn: constructor,
 					this: null,
 					args,
@@ -611,7 +647,7 @@ return { apply, construct };
 				let returnValue: any = undefined;
 				let earlyreturn = false;
 
-				const ctx: ProxyCtx = {
+				const ctx = {
 					fn,
 					this: that,
 					args,
@@ -630,7 +666,7 @@ return { apply, construct };
 
 				const pst = Error.prepareStackTrace;
 
-				let client = this;
+				const client = this;
 				Error.prepareStackTrace = function (err, s) {
 					if (
 						s[0].getFileName() &&
