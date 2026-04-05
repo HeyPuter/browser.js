@@ -61,7 +61,6 @@ async function init() {
 				transport,
 			});
 			await controller.ready;
-			console.log(controller);
 			interstitial.close();
 			return;
 		}
