@@ -346,7 +346,15 @@ function mimeTypeForPath(filePath: string) {
 
 async function loadGeneratedPages() {
 	const generatedRoot = path.join(vendorRoot, "fetch/metadata/generated");
-	const entries = await fs.readdir(generatedRoot, { withFileTypes: true });
+	let entries;
+	try {
+		entries = await fs.readdir(generatedRoot, { withFileTypes: true });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return [];
+		}
+		throw error;
+	}
 	return entries
 		.filter((entry) => entry.isFile())
 		.map((entry) => `fetch/metadata/generated/${entry.name}`)

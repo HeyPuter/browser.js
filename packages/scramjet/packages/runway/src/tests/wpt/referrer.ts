@@ -311,8 +311,15 @@ async function collectVendoredWptPages() {
 		}
 	}
 
-	for (const root of REFERRER_GENERATED_ROOTS) {
-		await walk(vendorRoot, path.join(vendorRoot, root));
+	try {
+		for (const root of REFERRER_GENERATED_ROOTS) {
+			await walk(vendorRoot, path.join(vendorRoot, root));
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return [];
+		}
+		throw error;
 	}
 
 	pages.push(...REFERRER_INHERITANCE_PAGES);
