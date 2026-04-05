@@ -103,7 +103,7 @@ export const CDP_INIT_SCRIPT = `
 			const evalFn = window.__eval || window.eval;
 			const realtop = evalFn("top");
 			const reallocation = evalFn("location");
-			const realparent = evalFn("parent");
+			const realparent = evalFn("top");
 			const realeval = evalFn;
 			assert(global !== realtop, "top was leaked");
 			assert(global !== reallocation, "location was leaked");
