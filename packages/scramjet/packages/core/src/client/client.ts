@@ -428,6 +428,7 @@ export class ScramjetClient {
 
 				// TODO: need to nullify the actual meta tag so it still sends unsafe-url
 				let meta = [
+					...document.querySelectorAll("meta[name='referrer']"),
 					...document.querySelectorAll("meta[name='referrer-policy']"),
 					...document.querySelectorAll("meta[http-equiv='referrer-policy']"),
 				];
