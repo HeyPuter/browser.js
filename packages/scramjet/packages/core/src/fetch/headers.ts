@@ -146,16 +146,13 @@ export function createReferrerString(
 	const originIsHttps = clientUrl.protocol === "https:";
 	const destIsHttps = resource.protocol === "https:";
 
-	// A "more private" request: https -> http
 	const isPotentialDowngrade = originIsHttps && !destIsHttps;
 
-	// Step 3: Determine if same-origin
 	const isSameOrigin =
 		clientUrl.protocol === resource.protocol &&
 		clientUrl.host === resource.host;
 
-	// Step 4: Strip referrer to just origin (scheme + host + port)
-	const referrerOrigin = clientUrl.origin; // e.g. "https://example.com"
+	const referrerOrigin = clientUrl.origin;
 
 	const referrerUrl = new URL(clientUrl.href);
 	referrerUrl.hash = "";

@@ -28,9 +28,9 @@ export const htmlRules: {
 		fn: (value, context, meta) => {
 			let url = rewriteUrl(value, context, meta, {
 				newClient: true,
+				topFrame: meta.topFrameName,
+				parentFrame: meta.parentFrameName,
 			});
-			// if (meta.topFrameName)
-			// 	url += `?topFrame=${meta.topFrameName}&parentFrame=${meta.parentFrameName}`;
 
 			return url;
 		},

@@ -33,7 +33,6 @@ export async function rewriteBody(
 				);
 				const htmlContent = new TextDecoder(encoding).decode(bytes);
 
-				console.log(parsed.trackedClient);
 				return rewriteHtml(htmlContent, handler.context, parsed.meta, {
 					loadScripts: true,
 					inline: true,

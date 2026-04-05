@@ -100,6 +100,8 @@ export type RewriteUrlOptions = {
 	navigateType?: NavigationType;
 	// is this an iframe, where we would want to create a new client
 	newClient?: boolean;
+	topFrame?: string;
+	parentFrame?: string;
 };
 
 export function rewriteUrl(
@@ -167,6 +169,13 @@ export function rewriteUrl(
 
 		if (options?.moduleType) {
 			paramsInit.append("type", options.moduleType);
+		}
+
+		if (options?.topFrame) {
+			paramsInit.append("topFrame", options.topFrame);
+		}
+		if (options?.parentFrame) {
+			paramsInit.append("parentFrame", options.parentFrame);
 		}
 
 		let paramstring = "";

@@ -273,7 +273,6 @@ class ExecutionContextWrapper {
 			initHeaders: this.init.initHeaders,
 			history: this.init.history,
 		});
-		console.log(this.init);
 
 		this.client.hook();
 	}
