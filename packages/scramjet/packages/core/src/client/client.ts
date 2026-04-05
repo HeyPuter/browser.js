@@ -95,18 +95,18 @@ export type Proxy<T extends string> = {
 	apply?(ctx: ProxyCtx<T, "apply">): any;
 };
 
-export type TrapCtx<T> = {
+export type TrapCtx<T extends string> = {
 	this: any;
-	get: () => T;
-	set: (v: T) => void;
+	get: () => GlobalTraverse<T>;
+	set: (v: GlobalTraverse<T>) => void;
 };
-export type Trap<T> = {
+export type Trap<T extends string> = {
 	writable?: boolean;
 	value?: any;
 	enumerable?: boolean;
 	configurable?: boolean;
-	get?: (ctx: TrapCtx<T>) => T;
-	set?: (ctx: TrapCtx<T>, v: T) => void;
+	get?: (ctx: TrapCtx<T>) => GlobalTraverse<T>;
+	set?: (ctx: TrapCtx<T>, v: GlobalTraverse<T>) => void;
 };
 
 function findBox(global: Window, seen: Window[]): SingletonBox | null {
@@ -615,7 +615,7 @@ return { apply, construct };
 				let returnValue: any = undefined;
 				let earlyreturn = false;
 
-				const ctx = {
+				const ctx: ProxyCtx<any, "construct"> = {
 					fn: constructor,
 					this: null,
 					args,
@@ -647,7 +647,7 @@ return { apply, construct };
 				let returnValue: any = undefined;
 				let earlyreturn = false;
 
-				const ctx = {
+				const ctx: ProxyCtx<any, "apply"> = {
 					fn,
 					this: that,
 					args,
@@ -717,7 +717,12 @@ return { apply, construct };
 			configurable: originalDescriptor?.configurable ?? true,
 		});
 	}
-	Trap<T>(name: string | string[], descriptor: Trap<T>): PropertyDescriptor {
+	Trap<T extends string>(name: T, handler: Trap<T>): void;
+	Trap<const T extends readonly string[]>(
+		name: T,
+		handler: Trap<T[number]>
+	): void;
+	Trap(name: string | string[], descriptor: Trap<any>): void {
 		if (Array.isArray(name)) {
 			for (const n of name) {
 				this.Trap(n, descriptor);
@@ -730,6 +735,7 @@ return { apply, construct };
 		const prop = split.pop();
 		const target = split.reduce((a, b) => a?.[b], this.global);
 		if (!target) return;
+		if (!prop) return;
 
 		const original = this.natives.call(
 			"Object.getOwnPropertyDescriptor",
@@ -739,13 +745,9 @@ return { apply, construct };
 		);
 		this.descriptors.store[name] = original;
 
-		return this.RawTrap(target, prop, descriptor);
+		this.RawTrap(target, prop, descriptor);
 	}
-	RawTrap<T>(
-		target: any,
-		prop: string,
-		descriptor: Trap<T>
-	): PropertyDescriptor {
+	RawTrap(target: any, prop: string, descriptor: Trap<any>) {
 		if (!target) return;
 		if (!prop) return;
 		if (!Reflect.has(target, prop)) return;
@@ -757,12 +759,12 @@ return { apply, construct };
 			prop
 		);
 
-		const ctx: TrapCtx<T> = {
+		const ctx: TrapCtx<any> = {
 			this: null,
 			get: function () {
 				return oldDescriptor && oldDescriptor.get.call(this.this);
 			},
-			set: function (v: T) {
+			set: function (v: any) {
 				// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 				oldDescriptor && oldDescriptor.set.call(this.this, v);
 			},
@@ -783,7 +785,7 @@ return { apply, construct };
 		}
 
 		if (descriptor.set) {
-			desc.set = function (v: T) {
+			desc.set = function (v: any) {
 				ctx.this = this;
 
 				descriptor.set(ctx, v);
@@ -800,8 +802,6 @@ return { apply, construct };
 			desc.configurable = oldDescriptor.configurable;
 
 		Object.defineProperty(target, prop, desc);
-
-		return oldDescriptor;
 	}
 
 	rewriteUrl(url: string | URL): string {
