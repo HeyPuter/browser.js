@@ -113,6 +113,8 @@ export function rewriteRequestHeaders(
 	parsed: ScramjetFetchParsed
 ): ScramjetHeaders {
 	const headers = request.initialHeaders.clone();
+
+	// avoid leaking the scramjet referer
 	headers.delete("Referer");
 
 	const clientUrl =
@@ -120,7 +122,10 @@ export function rewriteRequestHeaders(
 			? parsed.referrerSourceUrl
 			: request.rawClientUrl ||
 				(request.rawReferrer ? new URL(request.rawReferrer) : undefined);
+
 	if (clientUrl) {
+		headers.set("Origin", clientUrl.origin);
+
 		if (clientUrl.pathname.startsWith(handler.context.prefix.pathname)) {
 			let unrewritten = new URL(unrewriteUrl(clientUrl, handler.context));
 
