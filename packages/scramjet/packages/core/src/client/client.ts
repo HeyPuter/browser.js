@@ -91,17 +91,6 @@ export type Trap<T> = {
 	set?: (ctx: TrapCtx<T>, v: T) => void;
 };
 
-function test<P extends string>(path: P): Traverse<typeof globalThis, P> {
-	return 0 as Traverse<typeof globalThis, P>;
-}
-// thank you psm <3
-type Traverse<
-	O extends Record<any, any>,
-	P extends string,
-> = P extends `${infer K}.${infer R}` ? Traverse<O[K], R> : O[P];
-
-test("Document.prototype.querySelector");
-
 function findBox(global: Window, seen: Window[]): SingletonBox | null {
 	if (seen.includes(global)) return null;
 	seen.push(global);
