@@ -40,6 +40,7 @@ type DescriptorStore = {
 	get: (target: string, that: any) => any;
 	set: (target: string, that: any, value: any) => void;
 };
+// thank you psm (https://github.com/psmpm) <3
 type Traverse<
 	O extends Record<any, any>,
 	P extends string,
