@@ -56,9 +56,12 @@ export async function doHandleFetch(
 	);
 
 	if (isRedirect(response)) {
-		const redirectUrl = new URL(
-			unrewriteUrl(responseHeaders.get("location"), handler.context)
-		);
+		const location = new URL(responseHeaders.get("location"));
+		const referer = newheaders.get("Referer");
+		// when going through a redirect, we need to hold on to the original referer, because it can change origins during a redirect
+		// easiest way of accomplishing this is just tacking on an extra query parameter that's read below
+		location.searchParams.set("rfs", referer ?? "");
+		responseHeaders.set("location", location.href);
 
 		// ensure that ?type=module is not lost in a redirect
 		if (parsed.scriptType === "module") {
@@ -163,6 +166,7 @@ export function parseRequest(
 	let parentFrameName: string | undefined;
 	let clientId: string | undefined;
 	let referrerPolicy: string | undefined;
+	let referrerSourceUrl: URL | null | undefined;
 	for (const [param, value] of [...request.rawUrl.searchParams.entries()]) {
 		switch (param) {
 			case "type":
@@ -181,6 +185,9 @@ export function parseRequest(
 				break;
 			case "rfp":
 				referrerPolicy = value;
+				break;
+			case "rfs":
+				referrerSourceUrl = value ? new URL(value) : null;
 				break;
 			default:
 				dbg.warn(
@@ -242,6 +249,7 @@ export function parseRequest(
 		url,
 		scriptType,
 		referrerPolicy,
+		referrerSourceUrl,
 		trackedClient: clientId ? handler.trackedClients.get(clientId) : undefined,
 	};
 

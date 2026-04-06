@@ -36,6 +36,7 @@ export interface ScramjetFetchRequest {
 export interface ScramjetFetchParsed {
 	url: URL;
 	clientUrl?: URL;
+	referrerSourceUrl?: URL | null;
 
 	meta: URLMeta;
 	scriptType: "module" | "regular";

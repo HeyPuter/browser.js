@@ -115,13 +115,24 @@ export function rewriteRequestHeaders(
 	const headers = request.initialHeaders.clone();
 	headers.delete("Referer");
 
-	if (request.rawReferrer) {
-		const clientUrl = request.rawClientUrl || new URL(request.rawReferrer);
+	const clientUrl =
+		parsed.referrerSourceUrl !== undefined
+			? parsed.referrerSourceUrl
+			: request.rawClientUrl ||
+				(request.rawReferrer ? new URL(request.rawReferrer) : undefined);
+	if (clientUrl) {
 		if (clientUrl.pathname.startsWith(handler.context.prefix.pathname)) {
 			let unrewritten = new URL(unrewriteUrl(clientUrl, handler.context));
 
 			const referer = createReferrerString(
 				unrewritten,
+				parsed.url,
+				parsed.referrerPolicy ?? null
+			);
+			if (referer) headers.set("Referer", referer);
+		} else {
+			const referer = createReferrerString(
+				clientUrl,
 				parsed.url,
 				parsed.referrerPolicy ?? null
 			);
