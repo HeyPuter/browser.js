@@ -1,6 +1,15 @@
 import { ScramjetContext } from "@/shared";
 import { rewriteJs } from "@rewriters/js";
 
+import {
+	TextEncoder_encode,
+	_URL,
+	_URLSearchParams,
+	atob,
+	String,
+	URL_createObjectURL,
+} from "../snapshot";
+
 export type URLMeta = {
 	origin: URL;
 	base: URL;
@@ -10,12 +19,9 @@ export type URLMeta = {
 	referrerPolicy?: string;
 };
 
-let url_ctor = URL;
-let url_createObjectURL = URL.createObjectURL;
-
 function tryCanParseURL(url: string, origin?: string | URL): URL | null {
 	try {
-		return new url_ctor(url, origin);
+		return new _URL(url, origin);
 	} catch {
 		return null;
 	}
@@ -26,7 +32,7 @@ export function rewriteBlob(
 	context: ScramjetContext,
 	meta: URLMeta
 ) {
-	const blob = new url_ctor(url.substring("blob:".length));
+	const blob = new _URL(url.substring("blob:".length));
 
 	return "blob:" + meta.origin.origin + blob.pathname;
 }
@@ -36,7 +42,7 @@ export function unrewriteBlob(
 	context: ScramjetContext,
 	meta: URLMeta
 ) {
-	const blob = new url_ctor(url.substring("blob:".length));
+	const blob = new _URL(url.substring("blob:".length));
 
 	return "blob:" + context.prefix.origin + blob.pathname;
 }
@@ -82,11 +88,11 @@ function dataToBlob(url: string) {
 		} catch {
 			// If decode fails, fall back to raw data.
 		}
-		bytes = new TextEncoder().encode(decoded);
+		bytes = TextEncoder_encode(decoded);
 	}
 
 	const blob = new Blob([bytes], { type });
-	const objectUrl = url_createObjectURL(blob);
+	const objectUrl = URL_createObjectURL(blob);
 	return { blob, objectUrl };
 }
 
@@ -110,7 +116,7 @@ export function rewriteUrl(
 	meta: URLMeta,
 	options?: RewriteUrlOptions
 ) {
-	if (url instanceof URL) url = url.toString();
+	url = String(url);
 
 	if (url.startsWith("javascript:")) {
 		return (
@@ -156,7 +162,7 @@ export function rewriteUrl(
 		const realHash = encodedHash ? "#" + encodedHash : "";
 		realUrl.hash = "";
 
-		const paramsInit = new URLSearchParams();
+		const paramsInit = new _URLSearchParams();
 		if (meta.clientId && !options?.newClient) {
 			paramsInit.append("cid", meta.clientId);
 		}
@@ -191,7 +197,7 @@ export function rewriteUrl(
 }
 
 export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
-	if (url instanceof URL) url = url.toString();
+	url = String(url);
 	if (url.startsWith("javascript:")) {
 		//TODO
 		return url;

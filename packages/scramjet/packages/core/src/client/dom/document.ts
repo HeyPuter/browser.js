@@ -1,6 +1,6 @@
 import { rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
-import { createReferrerString } from "@/fetch/headers";
+import { createReferrerString } from "@/fetch/util";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const tostring = String;
