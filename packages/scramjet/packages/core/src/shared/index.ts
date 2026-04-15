@@ -2,8 +2,7 @@ import { ScramjetConfig, ScramjetFlags, ScramjetVersionInfo } from "@/types";
 import DomHandler, { Element } from "domhandler";
 import { URLMeta } from "@rewriters/url";
 import { CookieJar } from "./cookie";
-import { Tap, TapInstance } from "@/Tap";
-import { ScramjetFetchParsed, ScramjetFetchRequest } from "@/fetch";
+import { TapInstance } from "@/Tap";
 import { HtmlContext } from "@/shared/rewriters/html";
 import { _RegExp } from "./snapshot";
 

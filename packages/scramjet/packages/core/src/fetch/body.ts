@@ -32,7 +32,7 @@ export async function rewriteBody(
 					bytes,
 					response.headers.get("content-type")
 				);
-				const htmlContent = new TextDecoder(encoding).decode(bytes);
+				const htmlContent = new _TextDecoder(encoding).decode(bytes);
 
 				return rewriteHtml(htmlContent, handler.context, parsed.meta, {
 					loadScripts: true,

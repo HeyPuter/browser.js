@@ -34,8 +34,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		get() {
 			if (!client.history) return "";
 			if (client.history.length < 2) return "";
-			let lastState = client.history[client.history.length - 2];
-			let referrerURL = new URL(lastState.url);
+			const lastState = client.history[client.history.length - 2];
+			const referrerURL = new URL(lastState.url);
 			return createReferrerString(
 				referrerURL,
 				client.url,

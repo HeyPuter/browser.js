@@ -26,9 +26,9 @@ function rewriteJsWasm(
 	meta: URLMeta,
 	module: boolean
 ): RewriterResult {
-	let [rewriter, ret] = getRewriter(context, meta);
+	const [rewriter, ret] = getRewriter(context, meta);
 
-	let flagsobj = {};
+	const flagsobj = {};
 	for (const flag of Object_keys(context.config.flags)) {
 		flagsobj[flag] = flagEnabled(flag as any, context, meta.base);
 	}

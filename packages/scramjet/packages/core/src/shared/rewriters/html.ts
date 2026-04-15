@@ -1,10 +1,9 @@
-import { ElementType, Handler, Parser } from "htmlparser2";
+import { ElementType, Parser } from "htmlparser2";
 import { ChildNode, DomHandler, Element, Comment } from "domhandler";
 import render from "dom-serializer";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import { rewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
-import { CookieJar } from "@/shared/cookie";
 import { ScramjetContext } from "@/shared";
 import { htmlRules } from "@/shared/htmlRules";
 import { Tap } from "@/Tap";
@@ -16,11 +15,11 @@ import {
 	Object_entries,
 	JSON_parse,
 	JSON_stringify,
-	_URL,
 	TextEncoder_encode,
 	Array_from,
 	String_fromCodePoint,
 	btoa,
+	_URL,
 } from "@/shared/snapshot";
 
 export type ForeignContext = "svg" | "math" | undefined;
@@ -118,7 +117,7 @@ function rewriteHtmlInner(
 		}
 	}
 
-	let isQuirky = detectQuirks();
+	const isQuirky = detectQuirks();
 
 	if (htmlcontext.loadScripts) {
 		const script = (src: string) =>
@@ -147,7 +146,7 @@ function rewriteHtmlInner(
 		}
 	}
 
-	let props: typeof context.hooks.rewriter.html.post.props = {};
+	const props: typeof context.hooks.rewriter.html.post.props = {};
 	Tap.dispatch(
 		context.hooks!.rewriter.html.post,
 		{
@@ -232,7 +231,7 @@ function traverseParsedHtml(
 	meta: URLMeta
 ) {
 	if (node.name === "base" && node.attribs.href !== undefined) {
-		meta.base = new URL(node.attribs.href, meta.origin);
+		meta.base = new _URL(node.attribs.href, meta.origin);
 	}
 
 	if (node.attribs) {
@@ -283,7 +282,7 @@ function traverseParsedHtml(
 		node.attribs.type === "importmap" &&
 		node.children[0] !== undefined
 	) {
-		let json = node.children[0].data;
+		const json = node.children[0].data;
 		try {
 			const map = JSON_parse(json);
 			if (map.imports) {

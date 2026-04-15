@@ -1,12 +1,13 @@
-import { type BareWebSocket } from "@mercuryworkshop/proxy-transports";
+import { type BareCompatibleWebSocket } from "@mercuryworkshop/proxy-transports";
 import { ScramjetClient } from "@client/index";
+import { Object_setPrototypeOf } from "@/shared/snapshot";
 
 type FakeWebSocketState = {
 	extensions: string;
 	protocol: string;
 	url: string;
 	binaryType: string;
-	barews: BareWebSocket;
+	barews: BareCompatibleWebSocket;
 
 	onclose?: (ev: CloseEvent) => any;
 	onerror?: (ev: Event) => any;
@@ -17,7 +18,7 @@ type FakeWebSocketStreamState = {
 	extensions: string;
 	protocol: string;
 	url: string;
-	barews: BareWebSocket;
+	barews: BareCompatibleWebSocket;
 
 	opened: any;
 	closed: any;
@@ -34,7 +35,7 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 				return ctx.return(client.natives.construct("WebSocket", ...ctx.args));
 			}
 			const fakeWebSocket = new EventTarget() as WebSocket;
-			Object.setPrototypeOf(fakeWebSocket, ctx.fn.prototype);
+			Object_setPrototypeOf(fakeWebSocket, ctx.fn.prototype);
 			fakeWebSocket.constructor = ctx.fn;
 
 			// websockets can take relative URLs
@@ -46,7 +47,7 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 					"wss:" + rawurl.href.substring(rawurl.protocol.length)
 				);
 			}
-			let url = rawurl.href;
+			const url = rawurl.href;
 
 			const trustEvent = (ev: Event) =>
 				new Proxy(ev, {

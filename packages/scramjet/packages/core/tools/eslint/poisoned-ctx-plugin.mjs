@@ -17,6 +17,25 @@ function unwrapTS(node) {
 	return node;
 }
 
+function getTSExpressionContainer(node) {
+	let current = node;
+	while (current.parent) {
+		const parent = current.parent;
+		if (
+			(parent.type === "TSAsExpression" ||
+				parent.type === "TSNonNullExpression" ||
+				parent.type === "TSSatisfiesExpression" ||
+				parent.type === "TSTypeAssertion") &&
+			parent.expression === current
+		) {
+			current = parent;
+			continue;
+		}
+		break;
+	}
+	return current;
+}
+
 function isCtxIdentifier(node, contextParamNames) {
 	const u = unwrapTS(node);
 	return u.type === "Identifier" && contextParamNames.has(u.name);
@@ -43,6 +62,13 @@ function isCtxGetCallExpression(node, contextParamNames) {
 		return false;
 	}
 	return true;
+}
+
+function isDirectCtxArgElement(node, contextParamNames) {
+	const n = unwrapTS(node);
+	if (n.type !== "MemberExpression" || n.optional) return false;
+	const object = unwrapTS(n.object);
+	return isDirectCtxRealmMember(object, contextParamNames);
 }
 
 function isInterceptorFunction(node, contextParamNames) {
@@ -124,6 +150,63 @@ function isBenignNullishCompare(node) {
 	return false;
 }
 
+function isSnapshotStringCallCallee(node, snapshotStringNames) {
+	const callee = unwrapTS(node);
+	return callee.type === "Identifier" && snapshotStringNames.has(callee.name);
+}
+
+function isClientBoxInstanceofCallCallee(node) {
+	const callee = unwrapTS(node);
+	if (
+		callee.type !== "MemberExpression" ||
+		callee.optional ||
+		callee.computed
+	) {
+		return false;
+	}
+	if (
+		callee.property.type !== "Identifier" ||
+		callee.property.name !== "instanceof"
+	) {
+		return false;
+	}
+	const object = unwrapTS(callee.object);
+	if (
+		object.type !== "MemberExpression" ||
+		object.optional ||
+		object.computed
+	) {
+		return false;
+	}
+	if (object.property.type !== "Identifier" || object.property.name !== "box") {
+		return false;
+	}
+	const base = unwrapTS(object.object);
+	return base.type === "Identifier" && base.name === "client";
+}
+
+function isAllowedPoisonSink(node, contextParamNames, snapshotStringNames) {
+	const candidate = getTSExpressionContainer(node);
+	const parent = candidate.parent;
+	if (!parent || parent.type !== "CallExpression") return false;
+	if (!parent.arguments.includes(candidate)) return false;
+
+	if (
+		isSnapshotStringCallCallee(parent.callee, snapshotStringNames) &&
+		(isDirectCtxRealmMember(node, contextParamNames) ||
+			isDirectCtxArgElement(node, contextParamNames))
+	) {
+		return true;
+	}
+
+	return (
+		parent.arguments[0] === candidate &&
+		isClientBoxInstanceofCallCallee(parent.callee) &&
+		(isDirectCtxRealmMember(node, contextParamNames) ||
+			isDirectCtxArgElement(node, contextParamNames))
+	);
+}
+
 const poisonedCtxPlugin = {
 	rules: {
 		"no-poisoned-ctx-value": {
@@ -157,6 +240,25 @@ const poisonedCtxPlugin = {
 			},
 			create(context) {
 				const sourceCode = context.sourceCode;
+				const snapshotStringNames = new Set();
+				for (const node of sourceCode.ast.body) {
+					if (
+						node.type !== "ImportDeclaration" ||
+						typeof node.source.value !== "string" ||
+						!/(^|\/)snapshot$/.test(node.source.value)
+					) {
+						continue;
+					}
+					for (const specifier of node.specifiers) {
+						if (
+							specifier.type === "ImportSpecifier" &&
+							specifier.imported.type === "Identifier" &&
+							specifier.imported.name === "String"
+						) {
+							snapshotStringNames.add(specifier.local.name);
+						}
+					}
+				}
 				const contextParamNames = new Set(
 					context.options[0]?.contextParamNames ?? ["ctx"]
 				);
@@ -285,6 +387,11 @@ const poisonedCtxPlugin = {
 						if (isDirectAssignmentTarget(node)) return;
 						if (isBenignPoisonRead(node)) return;
 						if (isBenignNullishCompare(node)) return;
+						if (
+							isAllowedPoisonSink(node, contextParamNames, snapshotStringNames)
+						) {
+							return;
+						}
 						if (
 							node.parent?.type === "MemberExpression" &&
 							node.parent.object === node

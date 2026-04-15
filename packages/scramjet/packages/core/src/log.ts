@@ -1,6 +1,6 @@
 // import { flagEnabled } from "@/shared";
 import type { URLMeta } from "@rewriters/url";
-import { Performance_now } from "./shared/snapshot";
+import { Error, Math_min, Performance_now } from "@/shared/snapshot";
 
 const logfuncs = {
 	// eslint-disable-next-line scramjet-core/no-globals
@@ -25,7 +25,7 @@ export default {
 			stack.shift();
 
 			let fmt = "";
-			for (let i = 1; i < Math.min(2, stack.length); i++) {
+			for (let i = 1; i < Math_min(2, stack.length); i++) {
 				if (stack[i].getFunctionName()) {
 					// const f = stack[i].getThis()?.constructor?.name;
 					// if (f) fmt += `${f}.`

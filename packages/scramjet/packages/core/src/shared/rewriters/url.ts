@@ -11,15 +11,15 @@ import {
 } from "../snapshot";
 
 export type URLMeta = {
-	origin: URL;
-	base: URL;
+	origin: _URL;
+	base: _URL;
 	topFrameName?: string;
 	parentFrameName?: string;
 	clientId: string;
 	referrerPolicy?: string;
 };
 
-function tryCanParseURL(url: string, origin?: string | URL): URL | null {
+function tryCanParseURL(url: string, origin?: string | URL): _URL | null {
 	try {
 		return new _URL(url, origin);
 	} catch {
@@ -40,7 +40,7 @@ export function rewriteBlob(
 export function unrewriteBlob(
 	url: string,
 	context: ScramjetContext,
-	meta: URLMeta
+	_meta: URLMeta
 ) {
 	const blob = new _URL(url.substring("blob:".length));
 
@@ -137,7 +137,7 @@ export function rewriteUrl(
 		// there's an okayish workaround which is just Pretending It's a Blob
 		// TODO: this leaks memory
 		if (url.length + context.prefix.href.length + BUFFER > URL_MAX_LENGTH) {
-			let { objectUrl } = dataToBlob(url);
+			const { objectUrl } = dataToBlob(url);
 			return context.prefix.href + rewriteBlob(objectUrl, context, meta);
 		}
 
