@@ -12,6 +12,8 @@
 		"build:dreamland": "cd external/dreamlandjs && pnpm build",
 		"build:chrome": "cd packages/chrome && pnpm build",
 		"dev": "node --no-warnings=ExperimentalWarning devserver.ts",
+		"eslint": "node scripts/eslint-cli.mjs",
+		"lint": "pnpm eslint .",
 		"watch": "rspack build --watch",
 		"format": "prettier --write .",
 		"preinstall": "npx only-allow pnpm"
@@ -25,6 +27,8 @@
 		}
 	},
 	"devDependencies": {
+		"@eslint/eslintrc": "^3.3.5",
+		"@eslint/js": "^10.0.1",
 		"@mercuryworkshop/wisp-js": "catalog:",
 		"@rsdoctor/rspack-plugin": "^1.4.0",
 		"@rspack/cli": "^1.5.8",

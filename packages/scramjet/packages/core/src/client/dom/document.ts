@@ -1,6 +1,7 @@
 import { IncrementalHtmlRewriter, rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
 import { createReferrerString } from "@/fetch/headers";
+import { String, _URL } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const tostring = String;
@@ -32,7 +33,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		["Document.prototype.querySelector", "Document.prototype.querySelectorAll"],
 		{
 			apply(ctx) {
-				ctx.args[0] = tostring(ctx.args[0]).replace(
+				ctx.args[0] = String(ctx.args[0]).replace(
 					/((?:^|\s)\b\w+\[(?:src|href|data-href))[\^]?(=['"]?(?:https?[:])?\/\/)/,
 					"$1*$2"
 				);
@@ -57,8 +58,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		get() {
 			if (!client.history) return "";
 			if (client.history.length < 2) return "";
-			let lastState = client.history[client.history.length - 2];
-			let referrerURL = new URL(lastState.url);
+			const lastState = client.history[client.history.length - 2];
+			const referrerURL = new _URL(lastState.url);
 			return createReferrerString(
 				referrerURL,
 				client.url,
@@ -87,7 +88,7 @@ export default function (client: ScramjetClient, _self: Self) {
 					client.natives.call("Document.prototype.write", ctx.this, remaining);
 				}
 			} finally {
-				resetDocumentWriter(ctx.this as Document);
+				resetDocumentWriter(ctx.this);
 			}
 		},
 	});
