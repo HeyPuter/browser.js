@@ -15,6 +15,7 @@ import {
 	rewriteWorkers,
 } from "@/shared";
 import { sniffEncoding } from "@/shared/sniffEncoding";
+import { _TextDecoder } from "@/shared/snapshot";
 
 export async function rewriteBody(
 	handler: ScramjetFetchHandler,

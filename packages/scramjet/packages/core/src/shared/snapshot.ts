@@ -110,6 +110,12 @@ export const _TextEncoder = makeWrap(globalThis.TextEncoder);
 export type _TextEncoder = Wrapped<TextEncoder>;
 
 export function makeWrap<T extends object>(source: T): Wrapped<T> {
+	// Constructable builtins like Set/Map/URL need to retain their [[Construct]]
+	// behavior; cloning them into plain objects breaks `new _Set(...)`.
+	if (typeof source === "function") {
+		return new Proxy(source, {}) as Wrapped<T>;
+	}
+
 	function getAllPropertyDescriptors(obj: object) {
 		const descriptors: PropertyDescriptorMap = {};
 
