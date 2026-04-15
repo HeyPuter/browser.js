@@ -27,7 +27,7 @@ export function argdbg(arg, recurse = []) {
 	}
 }
 
-export default function (client: ScramjetClient, self: typeof globalThis) {
+export default function (client: ScramjetClient, self: GlobalThis) {
 	const warn = console.warn;
 	self.$scramerr = function scramerr(e) {
 		warn("CAUGHT ERROR", e);

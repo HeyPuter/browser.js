@@ -1,6 +1,6 @@
 import { type BareCompatibleWebSocket } from "@mercuryworkshop/proxy-transports";
 import { ScramjetClient } from "@client/index";
-import { Object_setPrototypeOf } from "@/shared/snapshot";
+import { Object_setPrototypeOf, Reflect_get } from "@/shared/snapshot";
 
 type FakeWebSocketState = {
 	extensions: string;
@@ -25,7 +25,7 @@ type FakeWebSocketStreamState = {
 	readable: ReadableStream;
 	writable: WritableStream;
 };
-export default function (client: ScramjetClient, self: typeof globalThis) {
+export default function (client: ScramjetClient, self: GlobalThis) {
 	const socketmap: WeakMap<WebSocket, FakeWebSocketState> = new WeakMap();
 	const socketstreammap: WeakMap<object, FakeWebSocketStreamState> =
 		new WeakMap();
@@ -54,7 +54,7 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 					get(target, prop) {
 						if (prop === "isTrusted") return true;
 
-						return Reflect.get(target, prop);
+						return Reflect_get(target, prop);
 					},
 				});
 
@@ -96,13 +96,13 @@ export default function (client: ScramjetClient, self: typeof globalThis) {
 					if (state.binaryType === "blob") {
 						payload = new Blob([payload]);
 					} else {
-						Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+						Object_setPrototypeOf(payload, ArrayBuffer.prototype);
 					}
 				} else if ("arrayBuffer" in payload) {
 					// blob, convert to arraybuffer if neccesary.
 					if (state.binaryType === "arraybuffer") {
 						payload = await payload.arrayBuffer();
-						Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+						Object_setPrototypeOf(payload, ArrayBuffer.prototype);
 					}
 				}
 

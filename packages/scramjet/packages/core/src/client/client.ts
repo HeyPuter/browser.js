@@ -70,8 +70,7 @@ type Traverse<
 	P extends string,
 > = P extends `${infer K}.${infer R}` ? Traverse<O[K], R> : O[P];
 type GlobalTraverse<P extends string> = Traverse<
-	// eslint-disable-next-line scramjet-core/no-globals
-	typeof globalThis & Record<string, any>,
+	GlobalThis & Record<string, any>,
 	P
 >;
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
@@ -89,14 +88,9 @@ type ProxyApplyThis<T extends string> =
 
 export type ScramjetModule = {
 	enabled: (client: ScramjetClient) => boolean | undefined;
-	disabled: (
-		client: ScramjetClient,
-		// eslint-disable-next-line scramjet-core/no-globals
-		self: typeof globalThis
-	) => void | undefined;
+	disabled: (client: ScramjetClient, self: GlobalThis) => void | undefined;
 	order: number | undefined;
-	// eslint-disable-next-line scramjet-core/no-globals
-	default: (client: ScramjetClient, self: typeof globalThis) => void;
+	default: (client: ScramjetClient, self: GlobalThis) => void;
 };
 
 export type ProxyCtx<
@@ -222,7 +216,7 @@ export class ScramjetClient {
 	};
 
 	constructor(
-		public global: typeof globalThis,
+		public global: GlobalThis,
 		public init: ScramjetClientInit
 	) {
 		if (SCRAMJETCLIENT in global) {

@@ -2,10 +2,7 @@ import { ScramjetClient } from "@client/index";
 import { UrlChangeEvent } from "@client/events";
 import { iswindow } from "@client/entry";
 
-export function createLocationProxy(
-	client: ScramjetClient,
-	self: typeof globalThis
-) {
+export function createLocationProxy(client: ScramjetClient, self: GlobalThis) {
 	const Location = iswindow ? self.Location : self.WorkerLocation;
 	// location cannot be Proxy()d
 	const fakeLocation: any = {};

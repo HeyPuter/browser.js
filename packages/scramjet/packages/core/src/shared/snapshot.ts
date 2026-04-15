@@ -63,6 +63,8 @@ export const Promise_reject = globalThis.Promise.reject;
 export const Promise_allSettled = globalThis.Promise.allSettled;
 export const Promise_any = globalThis.Promise.any;
 
+export const Symbol_for = globalThis.Symbol.for;
+
 declare const WrappedBrand: unique symbol;
 
 type WrappedInstance<T> = T extends object ? Wrapped<T> : T;

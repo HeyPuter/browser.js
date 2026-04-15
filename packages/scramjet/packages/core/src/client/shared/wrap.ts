@@ -4,9 +4,9 @@ import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
 import { indirectEval } from "@client/shared/eval";
 
-export function createWrapFn(client: ScramjetClient, self: typeof globalThis) {
-	let wrappedParent: typeof globalThis | null = null;
-	let wrappedTop: typeof globalThis | null = null;
+export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
+	let wrappedParent: GlobalThis | null = null;
+	let wrappedTop: GlobalThis | null = null;
 	if (iswindow) {
 		try {
 			if (SCRAMJETCLIENT in self.parent) {
@@ -54,7 +54,7 @@ export function createWrapFn(client: ScramjetClient, self: typeof globalThis) {
 }
 
 export const order = 4;
-export default function (client: ScramjetClient, self: typeof globalThis) {
+export default function (client: ScramjetClient, self: GlobalThis) {
 	Object.defineProperty(self, client.config.globals.wrapfn, {
 		value: client.wrapfn,
 		writable: false,
