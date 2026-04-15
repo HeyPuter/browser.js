@@ -1,5 +1,6 @@
 import { flagEnabled } from "@/shared";
 import { ScramjetClient } from "@client/index";
+import { Reflect_apply } from "@/shared/snapshot";
 
 export const enabled = (client: ScramjetClient) =>
 	client.flagEnabled("captureErrors");
@@ -46,7 +47,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				ctx.args[0] = new Proxy(ctx.args[0], {
 					apply(target, that, args) {
 						// console.warn("CAUGHT PROMISE REJECTION", args);
-						return Reflect.apply(target, that, args);
+						return Reflect_apply(target, that, args);
 					},
 				});
 		},
