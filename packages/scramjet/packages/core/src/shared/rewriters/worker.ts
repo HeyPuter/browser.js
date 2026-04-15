@@ -23,7 +23,7 @@ export function rewriteWorkers(
 	let str = context.interface.getWorkerInjectScripts(meta, type, script);
 
 	let rewritten = rewriteJs(js, url, context, meta, module);
-	if (rewritten instanceof Uint8Array) {
+	if (typeof rewritten !== "string") {
 		rewritten = TextDecoder_decode(rewritten);
 	}
 

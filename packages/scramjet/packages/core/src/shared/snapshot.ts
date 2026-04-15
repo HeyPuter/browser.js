@@ -2,6 +2,7 @@
 // this is NOT a place for putting dom apis
 
 export const String = globalThis.String;
+export const Number = globalThis.Number;
 export const String_fromCodePoint = globalThis.String.fromCodePoint;
 export const String_fromCharCode = globalThis.String.fromCharCode;
 

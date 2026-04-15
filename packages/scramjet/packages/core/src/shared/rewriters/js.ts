@@ -6,6 +6,7 @@ import {
 	Array_from,
 	TextDecoder_decode,
 	_RegExp,
+	_Uint8Array,
 	Object_keys,
 	Performance_now,
 } from "../snapshot";
@@ -117,7 +118,7 @@ export function rewriteJs(
 				pushmap(Array_from(res.map), res.tag);
 			} else {
 				// TODO: how do we check instanceof here?
-				if (newjs instanceof Uint8Array) {
+				if (typeof newjs !== "string") {
 					newjs = TextDecoder_decode(newjs);
 				}
 				const sourcemapfn = `${context.config.globals.pushsourcemapfn}([${res.map.join(",")}], "${res.tag}");`;
@@ -144,7 +145,7 @@ export function rewriteJs(
 			"failed rewriting js for",
 			url || "(unknown)",
 			err.message,
-			js instanceof Uint8Array ? textDecoder.decode(js) : js
+			typeof js !== "string" ? TextDecoder_decode(js) : js
 		);
 		if (flagEnabled("allowInvalidJs", context, meta.base)) {
 			return js;
