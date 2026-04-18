@@ -11,10 +11,6 @@ export default function (client: ScramjetClient, _self: Self) {
 	}
 
 	function getDocumentWriter(document: Document) {
-		if (document.readyState !== "loading") {
-			resetDocumentWriter(document);
-		}
-
 		let writer = client.box.writeRewriters.get(document);
 		if (!writer) {
 			writer = new IncrementalHtmlRewriter(client.context, client.meta, {
@@ -44,7 +40,13 @@ export default function (client: ScramjetClient, _self: Self) {
 	client.Proxy("Document.prototype.write", {
 		apply(ctx) {
 			const writer = getDocumentWriter(ctx.this);
-			ctx.args = [writer.write(ctx.args.join(""))];
+			ctx.return(
+				client.natives.call(
+					"Document.prototype.write",
+					ctx.this,
+					writer.write(ctx.args.join(""))
+				)
+			);
 		},
 	});
 
@@ -71,7 +73,13 @@ export default function (client: ScramjetClient, _self: Self) {
 	client.Proxy("Document.prototype.writeln", {
 		apply(ctx) {
 			const writer = getDocumentWriter(ctx.this);
-			ctx.args = [writer.write(ctx.args.join("") + "\n")];
+			ctx.return(
+				client.natives.call(
+					"Document.prototype.write",
+					ctx.this,
+					writer.write(ctx.args.join("") + "\n")
+				)
+			);
 		},
 	});
 
