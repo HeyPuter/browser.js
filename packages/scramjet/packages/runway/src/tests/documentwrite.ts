@@ -49,6 +49,53 @@ export default [
 			);
 		`,
 	}),
+	basicTest({
+		name: "documentwrite-close-flushes-buffered-tail",
+		js: `
+			const doc = document.implementation.createHTMLDocument();
+			doc.write("<!doctype html><body><div>hello");
+			doc.write("</div><span>tail");
+			doc.close();
+
+			assertEqual(
+				doc.body.innerHTML,
+				"<div>hello</div><span>tail</span>",
+				"document.close should flush any remaining buffered HTML"
+			);
+		`,
+	}),
+	basicTest({
+		name: "documentwrite-open-resets-partial-stream",
+		js: `
+			const doc = document.implementation.createHTMLDocument();
+			doc.write("<!doctype html><body><div cl");
+			doc.open();
+			doc.write("<!doctype html><body><p>reset</p>");
+			doc.close();
+
+			assertEqual(
+				doc.body.innerHTML,
+				"<p>reset</p>",
+				"document.open should discard the previous incremental write state"
+			);
+		`,
+	}),
+	basicTest({
+		name: "documentwrite-empty-call-preserves-parser-state",
+		js: `
+			const doc = document.implementation.createHTMLDocument();
+			doc.write("<!doctype html><body><div cl");
+			doc.write("");
+			doc.write('ass="ok">hello</div>');
+			doc.close();
+
+			assertEqual(
+				doc.body.innerHTML,
+				'<div class="ok">hello</div>',
+				"empty document.write calls should not disturb streaming parser state"
+			);
+		`,
+	}),
 	htmlTest({
 		name: "documentwrite-script-insertion-point",
 		html: `<!DOCTYPE html>
