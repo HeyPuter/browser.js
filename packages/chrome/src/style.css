@@ -48,8 +48,11 @@ body {
 	);
 
 	--accent-dark: color-mix(in srgb, var(--tab_line) 85%, black);
+	--accent-30: color-mix(in oklab, var(--tab_line) 30%, transparent);
+	--accent-25: color-mix(in oklab, var(--tab_line) 25%, transparent);
 	--accent-20: color-mix(in oklab, var(--tab_line) 20%, transparent);
 	--accent-15: color-mix(in oklab, var(--tab_line) 15%, transparent);
+	--accent-10: color-mix(in oklab, var(--tab_line) 10%, transparent);
 
 	--font: "Inter", system-ui, sans-serif;
 	--radius: 0.5em;

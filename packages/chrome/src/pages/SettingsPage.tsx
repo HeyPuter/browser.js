@@ -15,6 +15,7 @@ import {
 	iconExtension,
 	iconPrivacy,
 	iconAbout,
+	iconBrush,
 	iconError,
 } from "../icons";
 import { settingsService } from "..";
@@ -46,6 +47,7 @@ export function SettingsPage(
 				<h1>Settings</h1>
 				<nav class="navigation">
 					{button("general", iconSettings, "General")}
+					{button("appearance", iconBrush, "Appearance")}
 					{button("search", iconSearch, "Search")}
 					{button("privacy", iconPrivacy, "Privacy & Security")}
 					{button("extensions", iconExtension, "Extensions")}
@@ -54,10 +56,7 @@ export function SettingsPage(
 			</div>
 			<div class="content">
 				<div class="search-container">
-					<Input
-						placeholder="Search settings..."
-						value={use(this.searchQuery)}
-					/>
+					<Input placeholder="Search" value={use(this.searchQuery)} />
 				</div>
 				<div class="settings-content">
 					<h1>
@@ -69,107 +68,6 @@ export function SettingsPage(
 					{use(this.selected).map((selected) =>
 						selected === "general" ? (
 							<div class="settings-tab">
-								<section class="setting-section">
-									<div class="section-header">
-										<h3>Appearance</h3>
-										<p class="description">
-											Customize how the browser looks and feels
-										</p>
-									</div>
-									<div class="section-content">
-										<div class="setting-group">
-											<h4>Page Appearance</h4>
-											<div class="radio-group">
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-system"
-														name="appearance"
-														value="system"
-														checked={
-															settingsService.settings.appearance === "system"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "system";
-														}}
-													/>
-													<label for="appearance-system">System Default</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-dark"
-														name="appearance"
-														value="dark"
-														checked={
-															settingsService.settings.appearance === "dark"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "dark";
-														}}
-													/>
-													<label for="appearance-dark">Dark</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-light"
-														name="appearance"
-														value="light"
-														checked={
-															settingsService.settings.appearance === "light"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "light";
-														}}
-													/>
-													<label for="appearance-light">Light</label>
-												</div>
-											</div>
-										</div>
-
-										<div class="setting-group">
-											<h4>Color Theme</h4>
-											<p class="description">
-												Choose your preferred color scheme
-											</p>
-											<div class="theme-grid">
-												{THEMES.map((theme) => (
-													<div
-														class="theme-card"
-														class:selected={use(
-															settingsService.settings.themeId
-														).map((id) => id === theme.id)}
-														on:click={() => {
-															settingsService.settings.themeId = theme.id;
-														}}
-													>
-														<div class="theme-preview">
-															<div
-																class="preview-toolbar"
-																style={`background: ${theme.preview.toolbar};`}
-															>
-																<div
-																	class="preview-field"
-																	style={`background: ${theme.preview.field};`}
-																></div>
-																<div
-																	class="preview-accent"
-																	style={`background: ${theme.preview.accent};`}
-																></div>
-															</div>
-														</div>
-														<div class="theme-info">
-															<h5>{theme.name}</h5>
-															<p>{theme.description}</p>
-														</div>
-													</div>
-												))}
-											</div>
-										</div>
-									</div>
-								</section>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Startup</h3>
@@ -229,6 +127,157 @@ export function SettingsPage(
 												<label for="show-bookmarks-bar">
 													Always show bookmarks bar
 												</label>
+											</div>
+										</div>
+									</div>
+								</section>
+							</div>
+						) : null
+					)}
+
+					{/* Appearance Tab */}
+					{use(this.selected).map((selected) =>
+						selected === "appearance" ? (
+							<div class="settings-tab">
+								<section class="setting-section">
+									<div class="section-content">
+										<div class="section-header">
+											<h3>Page Appearance</h3>
+											<p class="description">
+												Control the appearance of websites you visit.
+											</p>
+										</div>
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-system"
+														name="appearance"
+														value="system"
+														checked={
+															settingsService.settings.appearance === "system"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "system";
+														}}
+													/>
+													<label for="appearance-system">System Default</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-dark"
+														name="appearance"
+														value="dark"
+														checked={
+															settingsService.settings.appearance === "dark"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "dark";
+														}}
+													/>
+													<label for="appearance-dark">Dark</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-light"
+														name="appearance"
+														value="light"
+														checked={
+															settingsService.settings.appearance === "light"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "light";
+														}}
+													/>
+													<label for="appearance-light">Light</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-content">
+										<div class="setting-group">
+											<h3>Browser Theme</h3>
+											<p class="description">
+												Customize the look of the browser.
+											</p>
+											<br />
+											<h4>Dark</h4>
+											<div class="theme-grid">
+												{THEMES.filter(
+													(theme) => theme.appearance === "dark"
+												).map((theme) => (
+													<div
+														class="theme-card"
+														class:selected={use(
+															settingsService.settings.themeId
+														).map((id) => id === theme.id)}
+														on:click={() => {
+															settingsService.settings.themeId = theme.id;
+														}}
+													>
+														<div class="theme-preview">
+															<div
+																class="preview-toolbar"
+																style={`background: ${theme.preview.toolbar};`}
+															>
+																<div
+																	class="preview-field"
+																	style={`background: ${theme.preview.field};`}
+																></div>
+																<div
+																	class="preview-accent"
+																	style={`background: ${theme.preview.accent};`}
+																></div>
+															</div>
+														</div>
+														<div class="theme-info">
+															<h5>{theme.name}</h5>
+															<p>{theme.description}</p>
+														</div>
+													</div>
+												))}
+											</div>
+											<br />
+											<h4>Light</h4>
+											<div class="theme-grid">
+												{THEMES.filter(
+													(theme) => theme.appearance === "light"
+												).map((theme) => (
+													<div
+														class="theme-card"
+														class:selected={use(
+															settingsService.settings.themeId
+														).map((id) => id === theme.id)}
+														on:click={() => {
+															settingsService.settings.themeId = theme.id;
+														}}
+													>
+														<div class="theme-preview">
+															<div
+																class="preview-toolbar"
+																style={`background: ${theme.preview.toolbar};`}
+															>
+																<div
+																	class="preview-field"
+																	style={`background: ${theme.preview.field};`}
+																></div>
+																<div
+																	class="preview-accent"
+																	style={`background: ${theme.preview.accent};`}
+																></div>
+															</div>
+														</div>
+														<div class="theme-info">
+															<h5>{theme.name}</h5>
+															<p>{theme.description}</p>
+														</div>
+													</div>
+												))}
 											</div>
 										</div>
 									</div>
@@ -497,14 +546,14 @@ SettingsPage.style = css`
 
 	h1 {
 		font-size: 1.5rem;
-		font-weight: 600;
-		margin-bottom: 1.5rem;
+		font-weight: 700;
+		margin-bottom: 2rem;
 	}
 
 	h2 {
 		font-size: 1.3rem;
-		font-weight: 600;
-		margin-bottom: 1.5rem;
+		font-weight: 650;
+		margin-bottom: 1.75rem;
 		color: var(--ntp_text);
 	}
 
@@ -512,10 +561,18 @@ SettingsPage.style = css`
 		font-size: 1.1rem;
 		font-weight: 600;
 		color: var(--ntp_text);
+		margin-bottom: 0.75rem;
 	}
 
 	h4 {
 		font-size: 0.95rem;
+		font-weight: 550;
+		color: var(--ntp_text);
+		margin-bottom: 0.75rem;
+	}
+
+	h5 {
+		font-size: 0.9rem;
 		font-weight: 500;
 		color: var(--ntp_text);
 		margin-bottom: 0.5rem;
@@ -550,7 +607,10 @@ SettingsPage.style = css`
 		padding: 0.75rem 1rem;
 		border-radius: 6px;
 		cursor: pointer;
-		transition: background-color 0.2s ease;
+		transition:
+			background-color 0.05s ease-out,
+			color 0.05s ease-out,
+			font-weight 0.1s ease-out;
 		font-size: 0.95rem;
 		color: var(--toolbar_text);
 	}
@@ -560,9 +620,9 @@ SettingsPage.style = css`
 	}
 
 	.nav-button.active {
-		background: var(--accent-15);
+		background: var(--accent-10);
 		color: var(--tab_line);
-		font-weight: 500;
+		font-weight: 600;
 	}
 
 	.content {
@@ -637,7 +697,7 @@ SettingsPage.style = css`
 
 	.settings-content {
 		flex: 1;
-		padding: 1.5rem 2rem 2rem;
+		padding: 1rem 2rem 2rem;
 		overflow-y: auto;
 	}
 	.settings-content h1 {
