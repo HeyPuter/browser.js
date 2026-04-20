@@ -141,6 +141,7 @@ NewTabPage.style = css`
 		background: none;
 		border: none;
 		color: var(--ntp_text);
+		font-family: var(--font);
 	}
 
 	.suggestions {

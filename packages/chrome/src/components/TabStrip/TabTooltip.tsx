@@ -103,17 +103,17 @@ TabTooltip.style = css`
 	:scope {
 		pointer-events: none;
 		position: absolute;
-		top: calc(var(--tab-height) + 0.25em);
-		left: 0;
+		top: calc(var(--tab-height) + var(--tab-padding));
+		left: -1px;
 		z-index: 1000;
 		background: var(--popup);
 		border: 1px solid var(--popup_border);
-		border-radius: 4px;
+		border-radius: var(--radius);
 		width: 17em;
 		gap: 0.25em;
 		flex-direction: column;
 		opacity: 0;
-		border-radius: 4px;
+		border-radius: var(--radius);
 	}
 	.text {
 		padding: 0.5em;

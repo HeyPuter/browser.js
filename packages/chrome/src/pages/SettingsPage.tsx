@@ -21,9 +21,8 @@ import {
 import { settingsService } from "..";
 
 export function SettingsPage(
-	this: FC<{ tab: Tab }, { selected: string; searchQuery: string }>
+	this: FC<{ tab: Tab; selected: string }, { searchQuery: string }>
 ) {
-	this.selected = "general";
 	this.searchQuery = "";
 
 	const button = (id: string, icon: IconifyIcon, name: string) => {
@@ -33,6 +32,8 @@ export function SettingsPage(
 				class:active={use(this.selected).map((s) => s === id)}
 				on:click={() => {
 					this.selected = id;
+					// this.tab.url = new URL(`puter://settings/${id}`);
+					this.tab.history.push(new URL(`puter://settings/${id}`));
 				}}
 			>
 				<Icon icon={icon} />
@@ -40,6 +41,10 @@ export function SettingsPage(
 			</div>
 		);
 	};
+
+	use(this.selected).listen((s) => {
+		console.log("Selected settings category:", s);
+	});
 
 	return (
 		<div class="settings-page">
@@ -140,13 +145,13 @@ export function SettingsPage(
 						selected === "appearance" ? (
 							<div class="settings-tab">
 								<section class="setting-section">
+									<div class="section-header">
+										<h3>Page Appearance</h3>
+										<p class="description">
+											Control the appearance of websites you visit.
+										</p>
+									</div>
 									<div class="section-content">
-										<div class="section-header">
-											<h3>Page Appearance</h3>
-											<p class="description">
-												Control the appearance of websites you visit.
-											</p>
-										</div>
 										<div class="setting-group">
 											<div class="radio-group">
 												<div class="radio-option">
@@ -199,12 +204,73 @@ export function SettingsPage(
 									</div>
 								</section>
 								<section class="setting-section">
+									<div class="section-header">
+										<h3>UI Density</h3>
+										<p class="description">
+											Adjust the spacing and sizing of UI elements.
+										</p>
+									</div>
 									<div class="section-content">
 										<div class="setting-group">
-											<h3>Browser Theme</h3>
-											<p class="description">
-												Customize the look of the browser.
-											</p>
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-dense"
+														name="ui-dense"
+														value="compact"
+														checked={
+															settingsService.settings.uiProfile === "compact"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "compact";
+														}}
+													/>
+													<label for="ui-dense">Compact</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-default"
+														name="ui-dense"
+														value="default"
+														checked={
+															settingsService.settings.uiProfile === "default"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "default";
+														}}
+													/>
+													<label for="ui-default">Comfortable</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-sparse"
+														name="ui-dense"
+														value="touch"
+														checked={
+															settingsService.settings.uiProfile === "touch"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "touch";
+														}}
+													/>
+													<label for="ui-sparse">Cozy</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-header">
+										<h3>Browser Theme</h3>
+										<p class="description">
+											Customize the look of the browser.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
 											<br />
 											<h4>Dark</h4>
 											<div class="theme-grid">
@@ -418,7 +484,9 @@ export function SettingsPage(
 											<div class="extension-item">
 												<div class="extension-info">
 													<div class="extension-icon">
-														<Icon icon={iconExtension} />
+														<span class="icon-inner">
+															<Icon icon={iconExtension} />
+														</span>
 													</div>
 													<div class="extension-details">
 														<h4>No extensions installed</h4>
@@ -450,8 +518,10 @@ export function SettingsPage(
 												(enabled) =>
 													enabled && (
 														<div class="dev-buttons">
-															<Button>Load Unpacked</Button>
-															<Button>Pack Extension</Button>
+															<Button variant="primary">Load Unpacked</Button>
+															<Button variant="secondary">
+																Pack Extension
+															</Button>
 														</div>
 													)
 											)}
@@ -481,7 +551,7 @@ export function SettingsPage(
 													Scramjet Version: {versionInfo.version} (
 													{versionInfo.build})
 												</p>
-												<p>© 2025 Puter Technologies</p>
+												<p>© {__COPYRIGHT_YEAR__} Puter Technologies</p>
 											</div>
 										</div>
 									</div>
@@ -605,7 +675,7 @@ SettingsPage.style = css`
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.75rem 1rem;
-		border-radius: 6px;
+		border-radius: var(--radius);
 		cursor: pointer;
 		transition:
 			background-color 0.05s ease-out,
@@ -796,7 +866,7 @@ SettingsPage.style = css`
 
 	.select-input {
 		padding: 0.5rem;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
 		color: var(--toolbar_field_text);
@@ -815,7 +885,7 @@ SettingsPage.style = css`
 		border: 1px solid var(--ntp-text-20);
 		color: var(--toolbar_field_text);
 		padding: 0.5rem 1rem;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		font-size: 0.9rem;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -852,12 +922,20 @@ SettingsPage.style = css`
 	}
 
 	.extension-icon {
-		width: 2.5rem;
-		height: 2.5rem;
+		width: 3.25rem;
+		height: 3.25rem;
 		font-size: 2.25rem;
 		border-radius: 6px;
 		background: var(--ntp-text-10);
 		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.extension-icon .icon-inner {
+		transform: translate(2px, 2px);
+		transform-origin: top right;
 	}
 
 	.extension-details h4 {
@@ -940,7 +1018,7 @@ SettingsPage.style = css`
 	}
 
 	.theme-card {
-		border-radius: 8px;
+		border-radius: var(--radius);
 		overflow: hidden;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -967,7 +1045,7 @@ SettingsPage.style = css`
 
 	.preview-toolbar {
 		flex: 1;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		padding: 0.5rem;
 		display: flex;
 		gap: 0.5rem;

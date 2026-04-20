@@ -140,7 +140,14 @@ export class Tab extends StatefulClass {
 					break;
 				case "settings":
 					this.history.current().title = this.title = "Settings";
-					this.internalpage = <SettingsPage tab={this} />;
+					this.internalpage = (
+						<SettingsPage
+							tab={this}
+							selected={
+								url.pathname.length > 1 ? url.pathname.slice(1) : "general"
+							}
+						/>
+					);
 					break;
 				case "downloads":
 					this.history.current().title = this.title = "Downloads";

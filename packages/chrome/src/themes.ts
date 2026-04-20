@@ -136,12 +136,12 @@ export const THEMES: readonly ThemeDefinition[] = [
 			toolbar_field: "#131719",
 			toolbar_field_text: "#eaf2f7",
 			tab_line: "#5bb4f4",
-			popup: "#131719",
+			popup: "#1a1f23",
+			popup_border: "#3c4046",
 			popup_text: "#eaf2f7",
 			icons: "#eaf2f7",
 			ntp_background: "#0c0f13",
 			ntp_text: "#eaf2f7",
-			popup_border: "#303337",
 			toolbar_top_separator: "#131719",
 			tab_loading: "#5bb4f4",
 		},
@@ -210,7 +210,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "catppuccin-mocha",
 		name: "Catppuccin Mocha",
 		appearance: "dark",
-		description: "Muted mauve surfaces with soft lavender highlights.",
+		description: "A soothing dark pastel theme.",
 		preview: {
 			toolbar: "#1e1e2e",
 			field: "#181825",
@@ -239,7 +239,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "catppuccin-macchiato",
 		name: "Catppuccin Macchiato",
 		appearance: "dark",
-		description: "Warm rosewater tones with pink accents.",
+		description: "A lighter variant of the Mocha theme with more contrast.",
 		preview: {
 			toolbar: "#24273a",
 			field: "#1e2030",
@@ -268,7 +268,8 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "catppuccin-frappe",
 		name: "Catppuccin Frappé",
 		appearance: "dark",
-		description: "Cool blue-gray with vibrant mauve highlights.",
+		description:
+			"An even lighter variant of the Mocha theme with more contrast and brighter accents.",
 		preview: {
 			toolbar: "#303446",
 			field: "#292c3c",
@@ -297,7 +298,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "catppuccin-latte",
 		name: "Catppuccin Latte",
 		appearance: "light",
-		description: "Soft latte with warm lavender accents.",
+		description: "A soothing light pastel theme.",
 		preview: {
 			toolbar: "#e6e9ef",
 			field: "#eff1f5",

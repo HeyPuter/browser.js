@@ -81,7 +81,7 @@ BookmarkPopup.style = css`
 	button {
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
-		border-radius: 4px;
+		border-radius: var(--radius);
 		padding: 0.5em 1em;
 		font-size: 0.9em;
 		cursor: pointer;
@@ -96,6 +96,6 @@ BookmarkPopup.style = css`
 		border-color: var(--tab_line);
 	}
 	button.accent:hover {
-		background: var(--accent-dark);
+		background: var(--accent-shade-15);
 	}
 `;

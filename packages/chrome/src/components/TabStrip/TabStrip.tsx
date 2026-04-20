@@ -298,7 +298,6 @@ export function TabStrip(
 }
 TabStrip.style = css`
 	:scope {
-		--tab-padding: 4px;
 		background: var(--frame);
 		padding: var(--tab-padding) 12px;
 		height: calc(var(--tab-height) + calc(var(--tab-padding) * 2));

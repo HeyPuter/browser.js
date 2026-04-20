@@ -29,6 +29,9 @@ export default defineConfig({
 		// 	],
 		// }),
 	],
+	define: {
+		__COPYRIGHT_YEAR__: JSON.stringify(new Date().getFullYear()),
+	},
 	resolve: {
 		alias: {
 			"@components": path.resolve(__dirname, "./src/components"),

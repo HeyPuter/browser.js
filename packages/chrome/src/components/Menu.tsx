@@ -152,14 +152,14 @@ Menu.style = css`
 		position: absolute;
 		top: var(--y);
 		left: var(--x);
-		background-color: var(--frame);
+		background-color: var(--popup);
 		border: 1px solid var(--popup_border);
-		border-radius: 4px;
+		border-radius: var(--radius);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		z-index: 1000;
 		display: flex;
 		flex-direction: column;
-		min-width: 10em;
+		min-width: 15em;
 		overflow: hidden;
 
 		transition:
@@ -179,7 +179,7 @@ Menu.style = css`
 		background: none;
 		border: none;
 		font-size: 0.8em;
-		padding: 1em;
+		padding: 0.75em 1.25em;
 		text-align: left;
 		color: var(--toolbar_text);
 

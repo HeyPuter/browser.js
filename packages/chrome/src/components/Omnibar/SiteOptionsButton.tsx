@@ -37,7 +37,7 @@ SiteOptionsButton.style = css`
 		outline: none;
 		border: none;
 		color: var(--toolbar_text);
-		font-size: 1em;
+		font-size: calc(var(--omnibar-height) / 2.5);
 		padding: 0.1em;
 		border-radius: 0.2em;
 		display: flex;

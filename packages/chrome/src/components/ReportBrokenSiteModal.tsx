@@ -219,7 +219,7 @@ ReportBrokenSiteModal.style = css`
 		border: 1px solid var(--popup_border);
 		color: var(--toolbar_text);
 		padding: 0.5em;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		resize: none;
 		font-family: inherit;
 	}

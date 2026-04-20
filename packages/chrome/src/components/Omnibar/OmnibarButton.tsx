@@ -33,9 +33,9 @@ OmnibarButton.style = css`
 		justify-content: center;
 		padding: 0.25em;
 
-		font-size: 1.15em;
+		font-size: calc(var(--omnibar-height) * 0.475);
 		color: var(--icons);
-		border-radius: 0.2em;
+		border-radius: var(--radius);
 
 		opacity: 0.4;
 	}

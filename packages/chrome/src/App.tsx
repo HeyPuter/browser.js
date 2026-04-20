@@ -48,6 +48,15 @@ export function App(
 
 	applyTheme();
 
+	const applyProfile = () => {
+		const profile = settingsService.settings.uiProfile;
+		document.body.classList.toggle("ui-compact", profile === "compact");
+		document.body.classList.toggle("ui-touch", profile === "touch");
+		document.body.classList.toggle("ui-default", profile === "default");
+	};
+
+	applyProfile();
+
 	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const handleThemeChange = () => {
 		if (settingsService.settings.appearance === "system") {
@@ -59,6 +68,8 @@ export function App(
 
 	use(settingsService.settings.appearance).listen(applyTheme);
 	use(settingsService.settings.themeId).listen(applyTheme);
+
+	use(settingsService.settings.uiProfile).listen(applyProfile);
 
 	this.cx.mount = () => {
 		applyTheme();

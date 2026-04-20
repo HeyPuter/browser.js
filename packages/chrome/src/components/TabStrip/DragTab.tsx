@@ -186,7 +186,7 @@ DragTab.style = css`
 
 		color: var(--tab_background_text);
 
-		border-radius: 4px;
+		border-radius: var(--radius);
 		padding: 7px 8px;
 
 		background: var(--background_tab_inactive);

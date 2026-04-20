@@ -10,6 +10,7 @@ import { Service } from "./Service";
 
 export type Settings = {
 	appearance: AppearancePreference;
+	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
@@ -24,6 +25,7 @@ export type Settings = {
 
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
+	uiProfile: "default",
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
 	defaultZoom: 100,
@@ -40,6 +42,7 @@ export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
 		themeId: ThemeId;
+		uiProfile: "default" | "compact" | "touch";
 		startupPage: "new-tab" | "continue";
 		defaultZoom: number;
 		showBookmarksBar: boolean;
@@ -75,6 +78,7 @@ export class SettingsService extends Service {
 			settings: {
 				appearance: this.settings.appearance,
 				themeId: this.settings.themeId,
+				uiProfile: this.settings.uiProfile,
 				startupPage: this.settings.startupPage,
 				defaultZoom: this.settings.defaultZoom,
 				showBookmarksBar: this.settings.showBookmarksBar,

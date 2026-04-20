@@ -208,7 +208,7 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 								label: "About",
 								action: () => {
 									tabsService.newTab(
-										new URL(`${INTERNAL_URL_PROTOCOL}//version`)
+										new URL(`${INTERNAL_URL_PROTOCOL}//settings/about`)
 									);
 								},
 								icon: iconInfo,
@@ -258,7 +258,7 @@ Omnibar.style = css`
 		background: var(--toolbar);
 		display: flex;
 		padding: 0 7px 0 7px;
-		height: 2.5em;
+		height: var(--omnibar-height);
 		align-items: center;
 		position: relative;
 		gap: 0.2em;

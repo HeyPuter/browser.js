@@ -47,15 +47,33 @@ body {
 		transparent
 	);
 
-	--accent-dark: color-mix(in srgb, var(--tab_line) 85%, black);
+	--accent-75: color-mix(in oklab, var(--tab_line) 75%, transparent);
+	--accent-50: color-mix(in oklab, var(--tab_line) 50%, transparent);
+	--accent-40: color-mix(in oklab, var(--tab_line) 40%, transparent);
 	--accent-30: color-mix(in oklab, var(--tab_line) 30%, transparent);
 	--accent-25: color-mix(in oklab, var(--tab_line) 25%, transparent);
 	--accent-20: color-mix(in oklab, var(--tab_line) 20%, transparent);
 	--accent-15: color-mix(in oklab, var(--tab_line) 15%, transparent);
 	--accent-10: color-mix(in oklab, var(--tab_line) 10%, transparent);
 
-	--font: "Inter", system-ui, sans-serif;
-	--radius: 0.5em;
+	--accent-tint-10: color-mix(in oklab, white 10%, var(--tab_line));
+	--accent-tint-20: color-mix(in oklab, white 20%, var(--tab_line));
+	--accent-tint-35: color-mix(in oklab, white 35%, var(--tab_line));
+	--accent-tint-50: color-mix(in oklab, white 50%, var(--tab_line));
+
+	--accent-shade-5: color-mix(in oklab, black 5%, var(--tab_line));
+	--accent-shade-10: color-mix(in oklab, black 10%, var(--tab_line));
+	--accent-shade-15: color-mix(in oklab, black 15%, var(--tab_line));
+	--accent-shade-20: color-mix(in oklab, black 20%, var(--tab_line));
+	--accent-shade-25: color-mix(in oklab, black 25%, var(--tab_line));
+	--accent-shade-30: color-mix(in oklab, black 30%, var(--tab_line));
+	--accent-shade-40: color-mix(in oklab, black 40%, var(--tab_line));
+	--accent-shade-50: color-mix(in oklab, black 50%, var(--tab_line));
+
+	--radius: 5px;
+	--tab-height: 2.2rem;
+	--omnibar-height: 2.6rem;
+	--tab-padding: 5px;
 
 	font-family: var(--font);
 	color: var(--toolbar_text);
@@ -64,13 +82,17 @@ body {
 	color-scheme: dark;
 }
 
+::selection {
+	background: var(--accent-30);
+}
+
 body.light-mode {
 	color-scheme: light;
 }
 
 :root {
-	font-family: "Inter", system-ui, sans-serif;
-	--tab-height: 37px;
+	--font: "Inter", system-ui, sans-serif;
+	font-family: var(--font);
 
 	--toolbarbutton-hover-background: color-mix(
 		in srgb,
@@ -82,6 +104,20 @@ body.light-mode {
 		currentColor 30%,
 		transparent
 	);
+}
+
+body.ui-compact {
+	--tab-height: 1.8rem;
+	--omnibar-height: 2.25rem;
+	--radius: 4px;
+	--tab-padding: 5px;
+}
+
+body.ui-touch {
+	--tab-height: 2.5rem;
+	--omnibar-height: 2.8rem;
+	--radius: 8px;
+	--tab-padding: 7px;
 }
 
 * {
