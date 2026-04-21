@@ -6,6 +6,8 @@ declare const $scramjet: typeof ScramjetGlobal;
 export const Plugin = $scramjet.Plugin;
 
 import {
+	type SerializedCookieSyncEntry,
+	type CookieSyncOptions,
 	type TransportToController,
 	type Controllerbound,
 	type ControllerToTransport,
@@ -41,6 +43,116 @@ const defaultCfg = {
 	},
 	maskedfiles: ["inject.js", "scramjet.wasm.js"],
 };
+
+type PersistedCookieState = {
+	updatedAt: number;
+	cookies: string;
+};
+
+const COOKIE_DB_NAME = "__scramjet_controller";
+const COOKIE_STORE_NAME = "state";
+const COOKIE_STATE_KEY = "cookies";
+const BROADCASTCHANNEL_NAME = "__scramjet_controller_channel";
+
+let cookieDbPromise: Promise<IDBDatabase> | null = null;
+
+function parsePersistedCookieState(
+	value: unknown
+): PersistedCookieState | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as PersistedCookieState).updatedAt !== "number" ||
+		!Number.isFinite((value as PersistedCookieState).updatedAt) ||
+		typeof (value as PersistedCookieState).cookies !== "string"
+	) {
+		return null;
+	}
+
+	return value as PersistedCookieState;
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () =>
+			reject(request.error ?? new Error("IndexedDB request failed"));
+	});
+}
+
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onabort = () =>
+			reject(transaction.error ?? new Error("IndexedDB transaction aborted"));
+		transaction.onerror = () =>
+			reject(transaction.error ?? new Error("IndexedDB transaction failed"));
+	});
+}
+
+function openCookieDatabase(): Promise<IDBDatabase> {
+	if (cookieDbPromise) {
+		return cookieDbPromise;
+	}
+
+	cookieDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open(COOKIE_DB_NAME, 1);
+		request.onupgradeneeded = () => {
+			const db = request.result;
+			if (!db.objectStoreNames.contains(COOKIE_STORE_NAME)) {
+				db.createObjectStore(COOKIE_STORE_NAME);
+			}
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () =>
+			reject(request.error ?? new Error("Failed to open cookie database"));
+	});
+
+	return cookieDbPromise;
+}
+
+async function readPersistedCookieState(): Promise<PersistedCookieState | null> {
+	try {
+		const db = await openCookieDatabase();
+		const transaction = db.transaction(COOKIE_STORE_NAME, "readonly");
+		const store = transaction.objectStore(COOKIE_STORE_NAME);
+		const value = await requestToPromise(store.get(COOKIE_STATE_KEY));
+		await transactionToPromise(transaction);
+		return parsePersistedCookieState(value);
+	} catch (error) {
+		console.error("Failed to read persisted controller cookies:", error);
+		return null;
+	}
+}
+
+async function writePersistedCookieState(
+	cookies: string,
+	currentUpdatedAt: number
+): Promise<number> {
+	try {
+		const db = await openCookieDatabase();
+		const transaction = db.transaction(COOKIE_STORE_NAME, "readwrite");
+		const store = transaction.objectStore(COOKIE_STORE_NAME);
+		const existing = parsePersistedCookieState(
+			await requestToPromise(store.get(COOKIE_STATE_KEY))
+		);
+		const updatedAt = Math.max(
+			Date.now(),
+			currentUpdatedAt + 1,
+			(existing?.updatedAt ?? 0) + 1
+		);
+		const state: PersistedCookieState = {
+			updatedAt,
+			cookies,
+		};
+		store.put(state, COOKIE_STATE_KEY);
+		await transactionToPromise(transaction);
+		return updatedAt;
+	} catch (error) {
+		console.error("Failed to persist controller cookies:", error);
+		return currentUpdatedAt;
+	}
+}
 
 const frames: Record<string, Frame> = {};
 
@@ -84,20 +196,36 @@ export class Controller {
 	prefix: string;
 	frames: Frame[] = [];
 	cookieJar = new $scramjet.CookieJar();
+	private cookieUpdatedAt = 0;
 	flags: typeof defaultCfg.flags = { ...defaultCfg.flags };
 	serviceWorkerController: ServiceWorker;
 	guardServiceWorkerRevive = true;
 
 	rpc: RpcHelper<Controllerbound, SWbound>;
-	private ready: Promise<[void, void]>;
+	private ready: Promise<void>;
 	private readyResolve!: () => void;
 	public isReady: boolean = false;
 
 	transport: ProxyTransport;
+	private cookieSyncPromise: Promise<void> | null = null;
+	private cookieSyncDirty = true;
+	private cookieSyncChannel = new BroadcastChannel(BROADCASTCHANNEL_NAME);
 
 	private port: MessagePort | null = null;
 	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
 		this.rpc.recieve(e.data);
+	};
+	private onCookieSyncMessage = (event: MessageEvent) => {
+		const updatedAt =
+			typeof event.data === "object" && event.data !== null
+				? (event.data as { updatedAt?: unknown }).updatedAt
+				: undefined;
+		if (typeof updatedAt !== "number" || updatedAt <= this.cookieUpdatedAt) {
+			return;
+		}
+
+		this.cookieSyncDirty = true;
+		void this.syncCookiesFromStorage(false, true);
 	};
 
 	private methods: MethodsDefinition<Controllerbound> = {
@@ -109,6 +237,8 @@ export class Controller {
 		},
 		request: async (data) => {
 			try {
+				await this.syncCookiesFromStorage();
+
 				const path = new URL(data.rawUrl).pathname;
 				const frame = this.frames.find((f) => path.startsWith(f.prefix));
 				if (!frame) throw new Error("No frame found for request");
@@ -189,16 +319,14 @@ export class Controller {
 						);
 						return [response, [response.body]];
 					},
-					sendSetCookie: async ({ url, cookie }) => {
-						if (typeof url !== "string" || typeof cookie !== "string") {
-							return;
+					sendSetCookie: async ({ cookies, options }) => {
+						await this.syncCookiesFromStorage(true);
+						if (options?.clear) {
+							this.cookieJar.clear();
 						}
-
-						try {
-							this.cookieJar.setCookies(cookie, new URL(url));
-						} catch {
-							// ignore malformed cookie sync payloads
-						}
+						this.applyCookieSyncEntries(cookies);
+						await this.persistCookies();
+						await this.propagateCookieSync(cookies, options);
 					},
 					connect: async ({ url, protocols, requestHeaders, port }) => {
 						let resolve: (arg: TransportToController["connect"][1]) => void;
@@ -270,7 +398,6 @@ export class Controller {
 			};
 			rpc.call("ready", undefined, []);
 		},
-		sendSetCookie: async ({ url, cookie }) => {},
 	};
 
 	constructor(public init: ControllerInit) {
@@ -284,7 +411,8 @@ export class Controller {
 				this.readyResolve = resolve;
 			}),
 			loadScramjetWasm(),
-		]);
+			this.syncCookiesFromStorage(true),
+		]).then(() => undefined);
 
 		this.rpc = new RpcHelper<Controllerbound, SWbound>(
 			this.methods,
@@ -297,6 +425,10 @@ export class Controller {
 			}
 		);
 
+		this.cookieSyncChannel.addEventListener(
+			"message",
+			this.onCookieSyncMessage
+		);
 		this.setupMessagePort();
 
 		navigator.serviceWorker.addEventListener("message", (e) => {
@@ -305,21 +437,15 @@ export class Controller {
 				typeof e.data.$controller$setCookie === "object"
 			) {
 				const payload = e.data.$controller$setCookie as {
-					url?: string;
-					cookie?: string;
+					cookies?: SerializedCookieSyncEntry[];
+					options?: CookieSyncOptions;
 					id?: string;
 				};
 
-				if (
-					typeof payload.url === "string" &&
-					typeof payload.cookie === "string"
-				) {
-					try {
-						this.cookieJar.setCookies(payload.cookie, new URL(payload.url));
-					} catch {
-						// ignore malformed sync payloads
-					}
+				if (payload.options?.clear) {
+					this.cookieJar.clear();
 				}
+				this.applyCookieSyncEntries(payload.cookies);
 
 				if (typeof payload.id === "string") {
 					this.serviceWorkerController.postMessage({
@@ -368,6 +494,144 @@ export class Controller {
 			},
 			[channel.port2]
 		);
+	}
+
+	private applyCookieSyncEntries(
+		cookies: SerializedCookieSyncEntry[] | undefined
+	) {
+		if (!Array.isArray(cookies)) {
+			return;
+		}
+
+		for (const entry of cookies) {
+			if (typeof entry?.url !== "string" || typeof entry.cookie !== "string") {
+				continue;
+			}
+
+			try {
+				this.cookieJar.setCookies(entry.cookie, new URL(entry.url));
+			} catch {
+				// ignore malformed sync payloads
+			}
+		}
+	}
+
+	private createCookieSyncEntry(
+		cookie: ScramjetGlobal.Cookie
+	): SerializedCookieSyncEntry | null {
+		if (!cookie.domain || !cookie.name) {
+			return null;
+		}
+
+		const hostname = cookie.domain.replace(/^\./, "");
+		if (!hostname) {
+			return null;
+		}
+
+		const path = cookie.path && cookie.path.startsWith("/") ? cookie.path : "/";
+		const parts = [`${cookie.name}=${cookie.value}`];
+
+		if (!cookie.hostOnly) {
+			parts.push(`Domain=${cookie.domain}`);
+		}
+		parts.push(`Path=${path}`);
+		if (cookie.expires) {
+			parts.push(`Expires=${cookie.expires}`);
+		}
+		if (cookie.secure) {
+			parts.push("Secure");
+		}
+		if (cookie.httpOnly) {
+			parts.push("HttpOnly");
+		}
+		if (cookie.sameSite) {
+			parts.push(`SameSite=${cookie.sameSite}`);
+		}
+
+		return {
+			url: `https://${hostname}${path}`,
+			cookie: parts.join("; "),
+		};
+	}
+
+	private getCookieSyncEntries(): SerializedCookieSyncEntry[] {
+		try {
+			const parsed = JSON.parse(this.cookieJar.dump()) as Record<
+				string,
+				ScramjetGlobal.Cookie
+			>;
+			return Object.values(parsed)
+				.map((cookie) => this.createCookieSyncEntry(cookie))
+				.filter(
+					(cookie): cookie is SerializedCookieSyncEntry => cookie !== null
+				);
+		} catch (error) {
+			console.error("Failed to serialize controller cookies for sync:", error);
+			return [];
+		}
+	}
+
+	async propagateCookieSync(
+		cookies: SerializedCookieSyncEntry[],
+		options: CookieSyncOptions = {}
+	): Promise<void> {
+		if (!this.port) {
+			return;
+		}
+
+		await this.rpc.call("sendSetCookie", {
+			cookies,
+			options,
+		});
+	}
+
+	private async syncCookiesFromStorage(
+		force = false,
+		propagate = false
+	): Promise<void> {
+		if (!force && !this.cookieSyncDirty) {
+			return;
+		}
+
+		if (this.cookieSyncPromise) {
+			return this.cookieSyncPromise;
+		}
+
+		this.cookieSyncPromise = (async () => {
+			const persisted = await readPersistedCookieState();
+			let didUpdate = false;
+			if (persisted && persisted.updatedAt > this.cookieUpdatedAt) {
+				this.cookieJar.load(persisted.cookies);
+				this.cookieUpdatedAt = persisted.updatedAt;
+				didUpdate = true;
+			}
+			if (didUpdate && propagate) {
+				await this.propagateCookieSync(this.getCookieSyncEntries(), {
+					clear: true,
+				});
+			}
+			this.cookieSyncDirty = false;
+		})().finally(() => {
+			this.cookieSyncPromise = null;
+		});
+
+		return this.cookieSyncPromise;
+	}
+
+	async persistCookies(): Promise<void> {
+		const updatedAt = await writePersistedCookieState(
+			this.cookieJar.dump(),
+			this.cookieUpdatedAt
+		);
+		if (updatedAt <= this.cookieUpdatedAt) {
+			return;
+		}
+
+		this.cookieUpdatedAt = updatedAt;
+		this.cookieSyncDirty = false;
+		this.cookieSyncChannel.postMessage({
+			updatedAt,
+		});
 	}
 
 	createFrame(element?: HTMLIFrameElement): Frame {
@@ -534,12 +798,15 @@ export class Frame {
 			crossOriginIsolated: self.crossOriginIsolated,
 			context: this.context,
 			transport: controller.transport,
-			async sendSetCookie(url, cookie, destination) {
-				await controller.rpc.call("sendSetCookie", {
-					url: url.href,
-					cookie,
-					destination,
-				});
+			async sendSetCookie(cookies, options) {
+				await controller.persistCookies();
+				await controller.propagateCookieSync(
+					cookies.map(({ url, cookie }) => ({
+						url: url.href,
+						cookie,
+					})),
+					options
+				);
 			},
 			async fetchBlobUrl(url) {
 				return BareResponse.fromNativeResponse(await fetch(url));

@@ -1,4 +1,5 @@
 import type { RawHeaders } from "@mercuryworkshop/proxy-transports";
+import type { CookieSyncOptions } from "@mercuryworkshop/scramjet";
 
 export type BodyType =
 	| string
@@ -27,24 +28,22 @@ export type TransferResponse = {
 	statusText: string;
 };
 
+export type SerializedCookieSyncEntry = {
+	url: string;
+	cookie: string;
+};
+
 export type Controllerbound = {
 	ready: [];
 	request: [TransferRequest, TransferResponse];
-	sendSetCookie: [
-		{
-			url: string;
-			cookie: string;
-		},
-	];
 	initRemoteTransport: [MessagePort];
 };
 
 export type SWbound = {
 	sendSetCookie: [
 		{
-			url: string;
-			cookie: string;
-			destination?: RequestDestination;
+			cookies: SerializedCookieSyncEntry[];
+			options?: CookieSyncOptions;
 		},
 	];
 };
@@ -62,8 +61,8 @@ export type TransportToController = {
 	];
 	sendSetCookie: [
 		{
-			url: string;
-			cookie: string;
+			cookies: SerializedCookieSyncEntry[];
+			options?: CookieSyncOptions;
 		},
 	];
 	connect: [

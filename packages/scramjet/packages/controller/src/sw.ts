@@ -49,7 +49,7 @@ class ControllerReference {
 	) {
 		this.rpc = new RpcHelper(
 			{
-				sendSetCookie: async ({ url, cookie, destination }) => {
+				sendSetCookie: async ({ cookies, options }) => {
 					const clients = await self.clients.matchAll();
 					const ids: string[] = [];
 					const promises: Promise<string>[] = [];
@@ -59,15 +59,16 @@ class ControllerReference {
 					// inject.ts loaded yet to ack, so awaiting would deadlock. Broadcast
 					// so any already-loaded clients can update their jars, but don't wait.
 					const isNavigation =
-						destination === "document" || destination === "iframe";
+						options?.destination === "document" ||
+						options?.destination === "iframe";
 
 					for (const client of clients) {
 						const id = makeId();
 						ids.push(id);
 						client.postMessage({
 							$controller$setCookie: {
-								url,
-								cookie,
+								cookies,
+								options,
 								id,
 							},
 						});
@@ -95,7 +96,7 @@ class ControllerReference {
 									);
 									console.error(
 										`timed out waiting for set cookie response (deadlock?): ` +
-											`url=${url} clients=${clients.length} ` +
+											`cookies=${cookies.length} clients=${clients.length} ` +
 											`pending=${pending.length}/${ids.length} ` +
 											`clientUrls=${clients.map((c) => c.url).join(",")}`
 									);

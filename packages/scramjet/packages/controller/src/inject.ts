@@ -14,6 +14,8 @@ import type {
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type {
+	SerializedCookieSyncEntry,
+	CookieSyncOptions,
 	ControllerToTransport,
 	TransportToController,
 	WebSocketMessage,
@@ -143,10 +145,16 @@ class RemoteTransport implements ProxyTransport {
 		});
 	}
 
-	async sendSetCookie(url: URL, cookie: string): Promise<void> {
+	async sendSetCookie(
+		cookies: Array<{ url: URL; cookie: string }>,
+		options: CookieSyncOptions = {}
+	): Promise<void> {
 		await this.rpc.call("sendSetCookie", {
-			url: url.href,
-			cookie,
+			cookies: cookies.map(({ url, cookie }) => ({
+				url: url.href,
+				cookie,
+			})),
+			options,
 		});
 	}
 
@@ -246,19 +254,29 @@ class ExecutionContextWrapper {
 			}
 
 			const payload = event.data.$controller$setCookie as {
-				url?: string;
-				cookie?: string;
+				cookies?: SerializedCookieSyncEntry[];
+				options?: CookieSyncOptions;
 				id?: string;
 			};
 
-			if (
-				typeof payload.url === "string" &&
-				typeof payload.cookie === "string"
-			) {
-				try {
-					this.cookieJar.setCookies(payload.cookie, new URL(payload.url));
-				} catch {
-					// ignore malformed cookie sync payloads
+			if (payload.options?.clear) {
+				this.cookieJar.clear();
+			}
+
+			if (Array.isArray(payload.cookies)) {
+				for (const cookie of payload.cookies) {
+					if (
+						typeof cookie?.url !== "string" ||
+						typeof cookie.cookie !== "string"
+					) {
+						continue;
+					}
+
+					try {
+						this.cookieJar.setCookies(cookie.cookie, new URL(cookie.url));
+					} catch {
+						console.error("Failed to set cookie", cookie);
+					}
 				}
 			}
 
@@ -307,8 +325,8 @@ class ExecutionContextWrapper {
 		this.client = new ScramjetClient(this.global, {
 			context,
 			transport: this.transport,
-			sendSetCookie: async (url, cookie) => {
-				await this.transport.sendSetCookie(url, cookie);
+			sendSetCookie: async (cookies, options) => {
+				await this.transport.sendSetCookie(cookies, options);
 			},
 			shouldPassthroughWebsocket: (url) => {
 				return url === "wss://anura.pro/";

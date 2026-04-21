@@ -7,7 +7,12 @@ export default function (client: ScramjetClient, self: Self) {
 		},
 		set(ctx, value: string) {
 			client.context.cookieJar.setCookies(value, client.url);
-			client.init.sendSetCookie(client.url, value);
+			client.init.sendSetCookie([
+				{
+					url: client.url,
+					cookie: value,
+				},
+			]);
 		},
 	});
 

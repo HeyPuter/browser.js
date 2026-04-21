@@ -49,15 +49,24 @@ export interface ScramjetFetchResponse {
 	statusText: string;
 }
 
+export type CookieSyncEntry = {
+	url: URL;
+	cookie: string;
+};
+
+export type CookieSyncOptions = {
+	clear?: boolean;
+	destination?: RequestDestination;
+};
+
 export type FetchHandlerInit = {
 	transport: ProxyTransport;
 	context: ScramjetContext;
 	crossOriginIsolated?: boolean;
 
 	sendSetCookie: (
-		url: URL,
-		cookie: string,
-		destination?: RequestDestination
+		cookies: CookieSyncEntry[],
+		options?: CookieSyncOptions
 	) => Promise<void>;
 	fetchDataUrl(dataUrl: string): Promise<BareResponse>;
 	fetchBlobUrl(blobUrl: string): Promise<BareResponse>;
@@ -93,9 +102,8 @@ export class ScramjetFetchHandler extends EventTarget {
 	public fetchDataUrl: (dataUrl: string) => Promise<Response>;
 	public fetchBlobUrl: (blobUrl: string) => Promise<Response>;
 	public sendSetCookie: (
-		url: URL,
-		cookie: string,
-		destination?: RequestDestination
+		cookies: CookieSyncEntry[],
+		options?: CookieSyncOptions
 	) => Promise<void>;
 
 	constructor(init: FetchHandlerInit) {

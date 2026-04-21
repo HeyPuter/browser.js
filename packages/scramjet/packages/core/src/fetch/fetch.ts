@@ -389,16 +389,23 @@ async function handleCookies(
 	parsed: ScramjetFetchParsed,
 	rawHeaders: RawHeaders
 ) {
+	const cookies = [];
+
 	for (const [key, value] of rawHeaders) {
 		if (key.toLowerCase() !== "set-cookie") continue;
 
 		handler.context.cookieJar.setCookies(value, parsed.url);
-		const promise = handler.sendSetCookie(
-			parsed.url,
-			value,
-			request.destination
-		);
-		// TODO: batch this
-		await promise;
+		cookies.push({
+			url: parsed.url,
+			cookie: value,
+		});
 	}
+
+	if (cookies.length === 0) {
+		return;
+	}
+
+	await handler.sendSetCookie(cookies, {
+		destination: request.destination,
+	});
 }
