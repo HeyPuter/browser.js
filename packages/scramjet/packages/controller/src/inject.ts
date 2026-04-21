@@ -259,23 +259,27 @@ class ExecutionContextWrapper {
 				id?: string;
 			};
 
-			if (payload.options?.clear) {
-				this.cookieJar.clear();
-			}
+			if (typeof payload.options?.dump === "string") {
+				this.cookieJar.load(payload.options.dump);
+			} else {
+				if (payload.options?.clear) {
+					this.cookieJar.clear();
+				}
 
-			if (Array.isArray(payload.cookies)) {
-				for (const cookie of payload.cookies) {
-					if (
-						typeof cookie?.url !== "string" ||
-						typeof cookie.cookie !== "string"
-					) {
-						continue;
-					}
+				if (Array.isArray(payload.cookies)) {
+					for (const cookie of payload.cookies) {
+						if (
+							typeof cookie?.url !== "string" ||
+							typeof cookie.cookie !== "string"
+						) {
+							continue;
+						}
 
-					try {
-						this.cookieJar.setCookies(cookie.cookie, new URL(cookie.url));
-					} catch {
-						console.error("Failed to set cookie", cookie);
+						try {
+							this.cookieJar.setCookies(cookie.cookie, new URL(cookie.url));
+						} catch {
+							console.error("Failed to set cookie", cookie);
+						}
 					}
 				}
 			}

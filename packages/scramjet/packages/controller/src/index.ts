@@ -111,7 +111,7 @@ function openCookieDatabase(): Promise<IDBDatabase> {
 	return cookieDbPromise;
 }
 
-async function readPersistedCookieState(): Promise<PersistedCookieState | null> {
+async function readCookieState(): Promise<PersistedCookieState | null> {
 	try {
 		const db = await openCookieDatabase();
 		const transaction = db.transaction(COOKIE_STORE_NAME, "readonly");
@@ -125,7 +125,7 @@ async function readPersistedCookieState(): Promise<PersistedCookieState | null> 
 	}
 }
 
-async function writePersistedCookieState(
+async function writeCookieState(
 	cookies: string,
 	currentUpdatedAt: number
 ): Promise<number> {
@@ -225,7 +225,7 @@ export class Controller {
 		}
 
 		this.cookieSyncDirty = true;
-		void this.syncCookiesFromStorage(false, true);
+		void this.loadSavedCookies();
 	};
 
 	private methods: MethodsDefinition<Controllerbound> = {
@@ -237,7 +237,8 @@ export class Controller {
 		},
 		request: async (data) => {
 			try {
-				await this.syncCookiesFromStorage();
+				// doesn't actually *load* every request, but hold up requests until the promise finishes
+				await this.loadSavedCookies();
 
 				const path = new URL(data.rawUrl).pathname;
 				const frame = this.frames.find((f) => path.startsWith(f.prefix));
@@ -320,7 +321,7 @@ export class Controller {
 						return [response, [response.body]];
 					},
 					sendSetCookie: async ({ cookies, options }) => {
-						await this.syncCookiesFromStorage(true);
+						await this.loadSavedCookies(true);
 						if (options?.clear) {
 							this.cookieJar.clear();
 						}
@@ -411,7 +412,7 @@ export class Controller {
 				this.readyResolve = resolve;
 			}),
 			loadScramjetWasm(),
-			this.syncCookiesFromStorage(true),
+			this.loadSavedCookies(true),
 		]).then(() => undefined);
 
 		this.rpc = new RpcHelper<Controllerbound, SWbound>(
@@ -442,10 +443,14 @@ export class Controller {
 					id?: string;
 				};
 
-				if (payload.options?.clear) {
-					this.cookieJar.clear();
+				if (typeof payload.options?.dump === "string") {
+					this.cookieJar.load(payload.options.dump);
+				} else {
+					if (payload.options?.clear) {
+						this.cookieJar.clear();
+					}
+					this.applyCookieSyncEntries(payload.cookies);
 				}
-				this.applyCookieSyncEntries(payload.cookies);
 
 				if (typeof payload.id === "string") {
 					this.serviceWorkerController.postMessage({
@@ -496,6 +501,7 @@ export class Controller {
 		);
 	}
 
+	// TODO: should this be a method on the cookie jar?
 	private applyCookieSyncEntries(
 		cookies: SerializedCookieSyncEntry[] | undefined
 	) {
@@ -508,66 +514,7 @@ export class Controller {
 				continue;
 			}
 
-			try {
-				this.cookieJar.setCookies(entry.cookie, new URL(entry.url));
-			} catch {
-				// ignore malformed sync payloads
-			}
-		}
-	}
-
-	private createCookieSyncEntry(
-		cookie: ScramjetGlobal.Cookie
-	): SerializedCookieSyncEntry | null {
-		if (!cookie.domain || !cookie.name) {
-			return null;
-		}
-
-		const hostname = cookie.domain.replace(/^\./, "");
-		if (!hostname) {
-			return null;
-		}
-
-		const path = cookie.path && cookie.path.startsWith("/") ? cookie.path : "/";
-		const parts = [`${cookie.name}=${cookie.value}`];
-
-		if (!cookie.hostOnly) {
-			parts.push(`Domain=${cookie.domain}`);
-		}
-		parts.push(`Path=${path}`);
-		if (cookie.expires) {
-			parts.push(`Expires=${cookie.expires}`);
-		}
-		if (cookie.secure) {
-			parts.push("Secure");
-		}
-		if (cookie.httpOnly) {
-			parts.push("HttpOnly");
-		}
-		if (cookie.sameSite) {
-			parts.push(`SameSite=${cookie.sameSite}`);
-		}
-
-		return {
-			url: `https://${hostname}${path}`,
-			cookie: parts.join("; "),
-		};
-	}
-
-	private getCookieSyncEntries(): SerializedCookieSyncEntry[] {
-		try {
-			const parsed = JSON.parse(this.cookieJar.dump()) as Record<
-				string,
-				ScramjetGlobal.Cookie
-			>;
-			return Object.values(parsed)
-				.map((cookie) => this.createCookieSyncEntry(cookie))
-				.filter(
-					(cookie): cookie is SerializedCookieSyncEntry => cookie !== null
-				);
-		} catch (error) {
-			console.error("Failed to serialize controller cookies for sync:", error);
-			return [];
+			this.cookieJar.setCookies(entry.cookie, new URL(entry.url));
 		}
 	}
 
@@ -585,10 +532,7 @@ export class Controller {
 		});
 	}
 
-	private async syncCookiesFromStorage(
-		force = false,
-		propagate = false
-	): Promise<void> {
+	private async loadSavedCookies(force = false): Promise<void> {
 		if (!force && !this.cookieSyncDirty) {
 			return;
 		}
@@ -598,16 +542,13 @@ export class Controller {
 		}
 
 		this.cookieSyncPromise = (async () => {
-			const persisted = await readPersistedCookieState();
-			let didUpdate = false;
+			const persisted = await readCookieState();
 			if (persisted && persisted.updatedAt > this.cookieUpdatedAt) {
 				this.cookieJar.load(persisted.cookies);
 				this.cookieUpdatedAt = persisted.updatedAt;
-				didUpdate = true;
-			}
-			if (didUpdate && propagate) {
-				await this.propagateCookieSync(this.getCookieSyncEntries(), {
+				await this.propagateCookieSync([], {
 					clear: true,
+					dump: persisted.cookies,
 				});
 			}
 			this.cookieSyncDirty = false;
@@ -619,7 +560,7 @@ export class Controller {
 	}
 
 	async persistCookies(): Promise<void> {
-		const updatedAt = await writePersistedCookieState(
+		const updatedAt = await writeCookieState(
 			this.cookieJar.dump(),
 			this.cookieUpdatedAt
 		);

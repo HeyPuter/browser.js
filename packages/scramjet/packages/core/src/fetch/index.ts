@@ -56,6 +56,7 @@ export type CookieSyncEntry = {
 
 export type CookieSyncOptions = {
 	clear?: boolean;
+	dump?: string;
 	destination?: RequestDestination;
 };
 
