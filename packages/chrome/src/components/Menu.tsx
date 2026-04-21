@@ -26,6 +26,8 @@ export function Menu(
 			closing: boolean;
 			x: number;
 			y: number;
+			transformOriginX: string;
+			transformOriginY: string;
 		}
 	>
 ) {
@@ -35,6 +37,8 @@ export function Menu(
 	});
 	this.x = 0;
 	this.y = 0;
+	this.transformOriginX = "left";
+	this.transformOriginY = "top";
 
 	const [lock, unlock] = requestUnfocusFrames();
 
@@ -84,8 +88,14 @@ export function Menu(
 
 		const maxX = docWidth - width - padding;
 		const maxY = docHeight - height - padding;
-		if (this.x > maxX) this.x = maxX;
-		if (this.y > maxY) this.y = maxY;
+		if (this.x > maxX) {
+			this.x = maxX;
+			this.transformOriginX = "right";
+		}
+		if (this.y > maxY) {
+			this.y = maxY;
+			this.transformOriginY = "bottom";
+		}
 		if (this.x < padding) this.x = padding;
 		if (this.y < padding) this.y = padding;
 
@@ -100,7 +110,7 @@ export function Menu(
 	};
 	return (
 		<div
-			style={use`--x: ${this.x}px; --y: ${this.y}px;`}
+			style={use`--x: ${this.x}px; --y: ${this.y}px; --transform-origin-x: ${this.transformOriginX}; --transform-origin-y: ${this.transformOriginY};`}
 			class:closing={use(this.closing)}
 		>
 			{this.items
@@ -163,16 +173,17 @@ Menu.style = css`
 		overflow: hidden;
 
 		transition:
-			opacity 0.15s ease,
-			transform 0.15s ease;
+			opacity 0.1s ease,
+			transform 0.12s cubic-bezier(0.35, 0.15, 0, 1.8);
 		opacity: 1;
-		transform: scale(100%);
+		transform: scaleX(100%) scaleY(100%);
+		transform-origin: var(--transform-origin-x) var(--transform-origin-y);
 	}
 	.separator {
 		border-top: 1px solid var(--text-20);
 	}
 	:scope.closing {
-		transform: scale(95%);
+		transform: scaleX(95%) scaleY(87%);
 		opacity: 0;
 	}
 	.item {

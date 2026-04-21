@@ -13,6 +13,7 @@ type VisualTab = {
 	dragoffset: number;
 	dragpos: number;
 	startdragpos: number;
+	closing: boolean;
 
 	width: number;
 	pos: number;
@@ -43,7 +44,10 @@ export function TabStrip(
 
 	const TAB_PADDING = 6;
 	const TAB_MAX_SIZE = 231;
-	const TAB_TRANSITION = "250ms ease";
+	// Reorder/move animation for tabs and trailing controls in the strip.
+	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
+	const TAB_STAGGER_STEP = 18;
+	const TAB_STAGGER_MAX = 144;
 
 	let transitioningTabs = 0;
 
@@ -76,11 +80,15 @@ export function TabStrip(
 
 	const getTabWidth = () => {
 		let total = getRootWidth();
+		const visibleTabCount = this.visualtabs.filter(
+			(tab) => !tab.closing
+		).length;
+		const count = Math.max(visibleTabCount, 1);
 
 		// remove padding
-		total -= TAB_PADDING * (this.visualtabs.length - 1);
+		total -= TAB_PADDING * (count - 1);
 
-		const each = total / this.visualtabs.length;
+		const each = total / count;
 
 		return Math.min(TAB_MAX_SIZE, Math.floor(each));
 	};
@@ -105,24 +113,52 @@ export function TabStrip(
 
 		let dragpos = -1;
 		let currpos = getLayoutStart();
+		let staggerIndex = 0;
+		let movedTabs = 0;
 		for (const tab of this.visualtabs) {
+			if (tab.closing) {
+				// Closing tabs animate their own width; keep their current transform while
+				// siblings/new-tab button reflow into post-close slots.
+				const tabPos = tab.dragpos != -1 ? tab.dragpos : tab.pos;
+				tab.root.style.transform = `translateX(${tabPos}px)`;
+				tab.pos = tabPos;
+				continue;
+			}
+
 			tab.root.style.width = width + "px";
 
 			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
+			// Moves each tab horizontally to its computed slot.
 			tab.root.style.transform = `translateX(${tabPos}px)`;
 			if (transition && tab.dragpos == -1 && tab.pos != tabPos) {
-				tab.root.style.transition = `transform ${TAB_TRANSITION}`;
-				this.afterEl.style.transition = `transform ${TAB_TRANSITION}`;
+				const delay = Math.min(
+					staggerIndex * TAB_STAGGER_STEP,
+					TAB_STAGGER_MAX
+				);
+				// Animates tab movement when tabs are inserted/removed/reordered.
+				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
 				transitioningTabs++;
+				movedTabs++;
 			}
 			dragpos = Math.max(dragpos, tab.dragpos + width + TAB_PADDING);
 
 			tab.pos = tabPos;
 			tab.width = width;
 			currpos += width + TAB_PADDING;
+			staggerIndex++;
+		}
+
+		if (transition && movedTabs > 0) {
+			const afterDelay = Math.min(
+				staggerIndex * TAB_STAGGER_STEP,
+				TAB_STAGGER_MAX
+			);
+			// Animate trailing "after" area (new-tab button container) with stagger too.
+			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
 		}
 
 		const afterpos = Math.max(dragpos, currpos);
+		// Moves the trailing control area to stay after the last tab.
 		this.afterEl.style.transform = `translateX(${afterpos}px)`;
 	};
 
@@ -187,12 +223,11 @@ export function TabStrip(
 	};
 
 	const transitionend = () => {
-		transitioningTabs--;
+		transitioningTabs = Math.max(transitioningTabs - 1, 0);
 		if (transitioningTabs == 0) {
+			this.afterEl.style.transition = "";
 			this.tabs = this.tabs;
 		}
-
-		this.afterEl.style.transition = "";
 	};
 
 	use(this.tabs).listen(() => {
@@ -222,6 +257,7 @@ export function TabStrip(
 					dragoffset: -1,
 					dragpos: -1,
 					startdragpos: -1,
+					closing: false,
 					width: 0,
 					pos: getLayoutStart() + index * (getTabWidth() + TAB_PADDING),
 				};
@@ -233,7 +269,9 @@ export function TabStrip(
 		for (let vtab of this.visualtabs) {
 			if (!newvisualtabs.includes(vtab)) {
 				let indexof = this.visualtabs.indexOf(vtab);
+				vtab.closing = true;
 				newvisualtabs.splice(indexof, 0, vtab);
+				// Close-tab animation: collapses tab width to 0 before removal from DOM list.
 				let anim = vtab.root.animate(
 					[
 						{},
@@ -242,7 +280,8 @@ export function TabStrip(
 						},
 					],
 					{
-						duration: 100,
+						duration: 150,
+						easing: "cubic-bezier(.29,.44,.3,.94)",
 						fill: "forwards",
 					}
 				);
@@ -302,7 +341,6 @@ TabStrip.style = css`
 		padding: var(--tab-padding) 12px;
 		height: calc(var(--tab-height) + calc(var(--tab-padding) * 2));
 		z-index: 2;
-
 		position: relative;
 	}
 

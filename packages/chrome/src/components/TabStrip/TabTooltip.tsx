@@ -16,14 +16,15 @@ export function TabTooltip(
 ) {
 	let wasActive = this.active;
 
-	const duration = 150;
+	const duration = 125;
+	const curve = "cubic-bezier(.35,.15,0,1.5)";
 	const visible = {
 		opacity: "1",
-		transform: "scale(100%)",
+		transform: "scaleX(100%) scaleY(100%)",
 	};
 	const hidden = {
 		opacity: "0",
-		transform: "scale(95%)",
+		transform: "scaleX(95%) scaleY(87%)",
 	};
 
 	let isClosing = false;
@@ -46,24 +47,28 @@ export function TabTooltip(
 
 			if (this.animate) {
 				let shift = lastX - x;
+				// Instantly applies the hidden->visible visual state (opacity + scale) before slide alignment.
 				this.root.animate([hidden, visible], {
 					duration: 0,
 					fill: "forwards",
 				});
+				// Reposition animation between adjacent tab tooltips: translateX from previous tooltip X to current X.
 				this.root.animate(
 					[
 						{ transform: `translateX(${shift}px)` },
 						{ transform: "translateX(0px)" },
 					],
 					{
-						duration: 300,
-						easing: "ease-out",
+						duration: 150,
+						easing: "cubic-bezier(.45,.25,0,1.09)",
 					}
 				);
 				this.animate = false;
 			} else {
+				// Standard tooltip enter animation: fades in and scales from 95% -> 100%.
 				this.root.animate([hidden, visible], {
 					duration,
+					easing: curve,
 					fill: "forwards",
 				});
 			}
@@ -71,8 +76,10 @@ export function TabTooltip(
 		} else if (!active && wasActive) {
 			wasActive = false;
 			isClosing = true;
+			// Tooltip exit animation: fades out and scales down from 100% -> 95%.
 			this.root.animate([visible, hidden], {
 				duration,
+				easing: curve,
 				fill: "forwards",
 			}).onfinish = () => {
 				isClosing = false;
@@ -109,25 +116,28 @@ TabTooltip.style = css`
 		background: var(--popup);
 		border: 1px solid var(--popup_border);
 		border-radius: var(--radius);
-		width: 17em;
+		width: 18em;
 		gap: 0.25em;
 		flex-direction: column;
 		opacity: 0;
 		border-radius: var(--radius);
 	}
 	.text {
-		padding: 0.5em;
+		padding: 0.75em 0.67em;
 		display: flex;
 		flex-direction: column;
-		gap: 0.1em;
+		gap: 0.25em;
 	}
 	.title {
-		overflow: hidden;
+		overflow: clip visible;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+		font-size: 0.9em;
+		font-weight: 500;
 	}
 	.hostname {
-		font-size: 12px;
+		font-size: 0.7em;
+		color: var(--text-60);
 	}
 
 	.img {
