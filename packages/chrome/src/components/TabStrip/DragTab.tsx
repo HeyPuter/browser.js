@@ -106,7 +106,6 @@ export function DragTab(
 					this.tooltipActive = false;
 				}}
 				on:mouseenter={() => {
-					// forceScreenshot(this.tab);
 					if (hoverTimeout) clearTimeout(hoverTimeout);
 
 					if (activeTooltips > 0) {
@@ -121,13 +120,10 @@ export function DragTab(
 					}
 				}}
 				on:mouseleave={(e: MouseEvent) => {
-					const relatedTarget = e.relatedTarget as Node | null;
-					if (relatedTarget && this.root.contains(relatedTarget)) {
-						// don't dismiss if hovering over the close button, even though that takes focus away from hover-area
-						return;
-					}
 					if (hoverTimeout) clearTimeout(hoverTimeout);
-					this.tooltipActive = false;
+					hoverTimeout = setTimeout(() => {
+						this.tooltipActive = false;
+					}, 2);
 				}}
 			></div>
 			<TabTooltip
@@ -149,13 +145,21 @@ export function DragTab(
 							e.preventDefault();
 							e.stopPropagation();
 						}}
+						on:mouseleave={(e: MouseEvent) => {
+							e.stopPropagation();
+							hoverTimeout = window.setTimeout(() => {
+								this.tooltipActive = false;
+							}, 2);
+						}}
+						on:mouseenter={(e: MouseEvent) => {
+							e.stopPropagation();
+							if (hoverTimeout) clearTimeout(hoverTimeout);
+							this.tooltipActive = true;
+						}}
 					>
 						<Icon icon={iconClose} />
 					</button>
 				</div>
-				{/* <div class="belowcontainer">
-						{use(s.active).andThen(<div class="below"></div>)}
-					</div> */}
 			</div>
 		</div>
 	);
