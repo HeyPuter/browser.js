@@ -25,7 +25,7 @@ overrides:
 patchedDependencies:
   htmlparser2@10.1.0:
     hash: 877b1aac8618ae08930989fc63ca67b685da4f9c58ec2bfd1a51747a8c5357a2
-    path: patches/htmlparser2@10.1.0.patch
+    path: packages/scramjet/patches/htmlparser2@10.1.0.patch
 
 importers:
 

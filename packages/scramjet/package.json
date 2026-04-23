@@ -16,7 +16,7 @@
 			"htmlparser2": "10.1.0"
 		},
 		"patchedDependencies": {
-			"htmlparser2@10.1.0": "../../patches/htmlparser2@10.1.0.patch"
+			"htmlparser2@10.1.0": "./patches/htmlparser2@10.1.0.patch"
 		}
 	},
 	"devDependencies": {
