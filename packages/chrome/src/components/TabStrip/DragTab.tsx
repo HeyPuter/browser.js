@@ -121,6 +121,8 @@ export function DragTab(
 				}}
 				on:mouseleave={(e: MouseEvent) => {
 					if (hoverTimeout) clearTimeout(hoverTimeout);
+					// really short timeout to allow transitioning from close button to main tab region.
+					// see the listeners on the close button for details
 					hoverTimeout = setTimeout(() => {
 						this.tooltipActive = false;
 					}, 2);
@@ -145,8 +147,11 @@ export function DragTab(
 							e.preventDefault();
 							e.stopPropagation();
 						}}
+						// part that prevents the tooltip from closing when hovering over the close button
 						on:mouseleave={(e: MouseEvent) => {
 							e.stopPropagation();
+							// set a really short timeout to prevent the tooltip from closing immediately.
+							// if going from close button to main tab region, it should stay open for a bit. see line 124
 							hoverTimeout = window.setTimeout(() => {
 								this.tooltipActive = false;
 							}, 2);
@@ -154,6 +159,7 @@ export function DragTab(
 						on:mouseenter={(e: MouseEvent) => {
 							e.stopPropagation();
 							if (hoverTimeout) clearTimeout(hoverTimeout);
+							// set tooltip to active
 							this.tooltipActive = true;
 						}}
 					>
