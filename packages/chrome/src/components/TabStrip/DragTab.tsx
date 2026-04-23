@@ -159,7 +159,13 @@ export function DragTab(
 						on:mouseenter={(e: MouseEvent) => {
 							e.stopPropagation();
 							if (hoverTimeout) clearTimeout(hoverTimeout);
-							// set tooltip to active
+							// set tooltip to active.
+							//
+							// unfortunately whenever you hover over the close button before
+							// the 500ms timeout (L117) it'll just instantly show the tooltip
+							//
+							// it's really icky but its the best thing i could think of that
+							// doesn't bring back the "stuck tooltips" bug
 							this.tooltipActive = true;
 						}}
 					>
