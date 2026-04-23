@@ -1,11 +1,5 @@
-import type {
-	CookieJar as CookieJarType,
-	ScramjetConfig,
-	TrackedHistoryState,
-} from "@mercuryworkshop/scramjet";
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
-
 import type {
 	RawHeaders,
 	ProxyTransport,
@@ -15,7 +9,6 @@ import type {
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type {
 	SerializedCookieSyncEntry,
-	CookieSyncOptions,
 	ControllerToTransport,
 	TransportToController,
 	WebSocketMessage,
@@ -147,7 +140,7 @@ class RemoteTransport implements ProxyTransport {
 
 	async sendSetCookie(
 		cookies: Array<{ url: URL; cookie: string }>,
-		options: CookieSyncOptions = {}
+		options: ScramjetGlobal.CookieSyncOptions = {}
 	): Promise<void> {
 		await this.rpc.call("sendSetCookie", {
 			cookies: cookies.map(({ url, cookie }) => ({
@@ -166,14 +159,14 @@ const { SCRAMJETCLIENT, ScramjetClient, CookieJar, setWasm, generateClientId } =
 type Config = any;
 type Init = {
 	config: Config;
-	sjconfig: ScramjetConfig;
+	sjconfig: ScramjetGlobal.ScramjetConfig;
 	prefix: URL;
 	cookies: string;
 	yieldGetInjectScripts: (
 		config: Config,
-		sjconfig: ScramjetConfig,
+		sjconfig: ScramjetGlobal.ScramjetConfig,
 		prefix: URL,
-		cookieJar: CookieJarType,
+		cookieJar: ScramjetGlobal.CookieJar,
 		codecEncode: (input: string) => string,
 		codecDecode: (input: string) => string
 	) => any;
@@ -181,7 +174,7 @@ type Init = {
 	codecDecode: (input: string) => string;
 	clientId: string;
 	initHeaders: RawHeaders;
-	history: TrackedHistoryState[];
+	history: ScramjetGlobal.TrackedHistoryState[];
 };
 
 export function load(init: Init) {
@@ -203,7 +196,7 @@ export function load(init: Init) {
 	delete (self as any).WASM;
 	setWasm(wasm);
 
-	const context = new ExecutionContextWrapper(globalThis, init);
+	new ExecutionContextWrapper(globalThis, init);
 }
 
 function createFrameId() {
@@ -215,7 +208,7 @@ function createFrameId() {
 
 class ExecutionContextWrapper {
 	client!: ScramjetGlobal.ScramjetClient;
-	cookieJar: CookieJarType;
+	cookieJar: ScramjetGlobal.CookieJar;
 	transport: RemoteTransport;
 	clientId: string;
 	private handleServiceWorkerCookieMessage: (event: MessageEvent) => void;
@@ -251,7 +244,7 @@ class ExecutionContextWrapper {
 
 			const payload = event.data.$controller$setCookie as {
 				cookies?: SerializedCookieSyncEntry[];
-				options?: CookieSyncOptions;
+				options?: ScramjetGlobal.CookieSyncOptions;
 				id?: string;
 			};
 

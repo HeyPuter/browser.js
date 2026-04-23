@@ -1,28 +1,26 @@
 import { type MethodsDefinition, RpcHelper } from "@mercuryworkshop/rpc";
-import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
-declare const $scramjet: typeof ScramjetGlobal;
-
-export const Plugin = $scramjet.Plugin;
-
-import {
-	type SerializedCookieSyncEntry,
-	type CookieSyncOptions,
-	type TransportToController,
-	type Controllerbound,
-	type ControllerToTransport,
-	type SWbound,
-	type WebSocketMessage,
-} from "./types";
 import {
 	BareResponse,
 	type ProxyTransport,
 } from "@mercuryworkshop/proxy-transports";
+import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
+declare const $scramjet: typeof ScramjetGlobal;
+export const Plugin = $scramjet.Plugin;
+
+import type {
+	SerializedCookieSyncEntry,
+	TransportToController,
+	Controllerbound,
+	ControllerToTransport,
+	SWbound,
+	WebSocketMessage,
+} from "./types";
 
 type Config = {
 	prefix: string;
 	scramjetPath: string;
-	wasmPath: string;
 	injectPath: string;
+	wasmPath: string;
 	virtualWasmPath: string;
 	codec: Record<"encode" | "decode", (input: string) => string>;
 };
@@ -30,8 +28,8 @@ type Config = {
 export const config: Config = {
 	prefix: "/~/sj/",
 	scramjetPath: "/scramjet/scramjet.js",
-	wasmPath: "/scramjet/scramjet.wasm",
 	injectPath: "/controller/controller.inject.js",
+	wasmPath: "/scramjet/scramjet.wasm",
 	virtualWasmPath: "scramjet.wasm.js",
 	codec: {
 		encode: (url: string) => {
@@ -200,12 +198,12 @@ type ControllerInit = {
 };
 
 export class Controller {
+	id: string;
 	config: Config;
 	scramjetConfig: ScramjetGlobal.ScramjetConfig;
-	id: string;
 	prefix: string;
-	frames: Frame[] = [];
 	cookieJar = new $scramjet.CookieJar();
+	frames: Frame[] = [];
 	private cookieUpdatedAt = 0;
 	serviceWorkerController: ServiceWorker;
 	guardServiceWorkerRevive = true;
@@ -411,11 +409,10 @@ export class Controller {
 	};
 
 	constructor(public init: ControllerInit) {
+		this.id = makeId();
 		this.config = deepMerge(config, init.config);
 		this.scramjetConfig = deepMerge($scramjet.defaultConfig, scramjetConfig);
 		this.scramjetConfig = deepMerge(this.scramjetConfig, init.scramjetConfig);
-		this.transport = init.transport;
-		this.id = makeId();
 		this.prefix = this.config.prefix + this.id + "/";
 		this.serviceWorkerController = init.serviceworker;
 
@@ -437,6 +434,7 @@ export class Controller {
 				this.port.postMessage(data, transfer);
 			}
 		);
+		this.transport = init.transport;
 
 		this.cookieSyncChannel.addEventListener(
 			"message",
@@ -451,7 +449,7 @@ export class Controller {
 			) {
 				const payload = e.data.$controller$setCookie as {
 					cookies?: SerializedCookieSyncEntry[];
-					options?: CookieSyncOptions;
+					options?: ScramjetGlobal.CookieSyncOptions;
 					id?: string;
 				};
 
@@ -501,7 +499,7 @@ export class Controller {
 		this.serviceWorkerController.postMessage(
 			{
 				$controller$init: {
-					prefix: this.config.prefix + this.id,
+					prefix: this.prefix,
 					id: this.id,
 				},
 			},
@@ -528,7 +526,7 @@ export class Controller {
 
 	async propagateCookieSync(
 		cookies: SerializedCookieSyncEntry[],
-		options: CookieSyncOptions = {}
+		options: ScramjetGlobal.CookieSyncOptions = {}
 	): Promise<void> {
 		if (!this.port) {
 			return;
@@ -641,7 +639,7 @@ function yieldGetInjectScripts(
 						config: ${JSON.stringify(config)},
 						sjconfig: ${JSON.stringify(sjconfig)},
 						prefix: new URL("${prefix.href}"),
-						cookies: ${cookieJar.dump()},
+						cookies: ${JSON.stringify(cookieJar.dump())},
 						yieldGetInjectScripts: ${yieldGetInjectScripts.toString()},
 						codecEncode: ${codecEncode.toString()},
 						codecDecode: ${codecDecode.toString()},
@@ -697,12 +695,12 @@ export class Frame {
 						const prefix = new URL("${this.prefix}", location.href);
 
 						const context = {
+							config: sjconfig,
+							prefix,
 							interface: {
 								codecEncode: ${this.controller.config.codec.encode.toString()},
 								codecDecode: ${this.controller.config.codec.decode.toString()},
 							},
-							prefix,
-							config: sjconfig
 						};
 
 						const client = new ScramjetClient(globalThis, {

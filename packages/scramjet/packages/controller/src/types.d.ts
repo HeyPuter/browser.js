@@ -1,5 +1,4 @@
 import type { RawHeaders } from "@mercuryworkshop/proxy-transports";
-import type { CookieSyncOptions } from "@mercuryworkshop/scramjet";
 
 export type BodyType =
 	| string

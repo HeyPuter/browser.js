@@ -1,6 +1,9 @@
 import { css } from "dreamland/core";
 import { App } from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
+import type * as ScramjetControllerGlobal from "@mercuryworkshop/scramjet-controller";
+declare const $scramjetController: typeof ScramjetControllerGlobal;
+const { Controller } = $scramjetController;
 import { demoSettingsDefaults } from "./demoSettings";
 
 let transport = new LibcurlClient({
@@ -40,8 +43,7 @@ LoadInterstitial.style = css`
 	}
 `;
 
-const { Controller } = $scramjetController;
-export let controller;
+let controller: ScramjetControllerGlobal.Controller;
 
 export async function swapTransport(wispUrl: string) {
 	const nextTransport = new LibcurlClient({
@@ -70,19 +72,6 @@ async function init() {
 
 	try {
 		const registration = await navigator.serviceWorker.register("./sw.js");
-
-		// If already controlled or active, don't block the UI.
-		const earlySw = navigator.serviceWorker.controller ?? registration.active;
-		if (earlySw) {
-			interstitial.$.state.status = "Service worker active";
-			controller = new Controller({
-				serviceworker: earlySw,
-				transport,
-			});
-			await controller.ready;
-			interstitial.close();
-			return;
-		}
 
 		// Non-blocking progress updates on state transitions.
 		const updateStatus = (sw: ServiceWorker | null) => {
@@ -127,7 +116,7 @@ async function init() {
 			serviceworker: readySw,
 			transport,
 		});
-		await controller.ready;
+		await controller.wait();
 		console.log(controller);
 		interstitial.$.state.status = "Controller initialized";
 		interstitial.close();
@@ -180,3 +169,4 @@ async function mount() {
 }
 
 init().then(() => mount());
+export { controller };
