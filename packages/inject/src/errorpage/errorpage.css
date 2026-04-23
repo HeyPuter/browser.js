@@ -1,3 +1,31 @@
+:root {
+	/* Fallbacks from themes.ts DEFAULT_THEME_ID (dark) */
+	--bg: #0c0f13;
+	--text: #eaf2f7;
+	--toolbar_field: #131719;
+	--toolbar_field_text: #eaf2f7;
+	--tab_line: #5bb4f4;
+
+	/* Local derived utility tokens used by error page + buttons */
+	--radius: 5px;
+	--font:
+		"Inter", "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans",
+		"Helvetica Neue", Arial, sans-serif;
+	--muted: color-mix(in srgb, var(--text) 62%, var(--bg));
+
+	--text-5: color-mix(in srgb, var(--text) 5%, transparent);
+	--text-8: color-mix(in srgb, var(--text) 8%, transparent);
+	--text-10: color-mix(in srgb, var(--text) 10%, transparent);
+	--text-15: color-mix(in srgb, var(--text) 15%, transparent);
+	--text-20: color-mix(in srgb, var(--text) 20%, transparent);
+	--text-40: color-mix(in srgb, var(--text) 40%, transparent);
+
+	--accent-shade-5: color-mix(in srgb, var(--tab_line) 95%, black);
+	--accent-shade-10: color-mix(in srgb, var(--tab_line) 90%, black);
+	--accent-shade-20: color-mix(in srgb, var(--tab_line) 80%, black);
+	--accent-shade-25: color-mix(in srgb, var(--tab_line) 75%, black);
+}
+
 html,
 body {
 	height: 100%;
@@ -7,24 +35,27 @@ body {
 	font-family: var(--font);
 	overflow: hidden;
 }
+
 .wrapper {
-	height: 100%;
-	display: flex;
-	align-items: flex-start;
-	justify-content: center;
-	padding: 120px 20px 20px 20px;
-	overflow: auto;
+	min-height: 100%;
+	display: grid;
+	place-items: center;
+	padding: 24px;
+	box-sizing: border-box;
 }
 
 .errpage {
-	max-width: 920px;
+	max-width: 900px;
 	width: 100%;
 	display: flex;
-	flex-direction: row;
-	gap: 28px;
+	gap: 24px;
 	align-items: flex-start;
+	background: color-mix(in srgb, var(--toolbar_field) 55%, transparent);
+	border: 1px solid var(--text-15);
+	border-radius: calc(var(--radius) * 1.5);
+	padding: 24px;
+	box-sizing: border-box;
 }
-
 .err-graphic {
 	flex: 0 0 120px;
 	display: flex;
@@ -63,14 +94,28 @@ body {
 .err-message {
 	margin: 0 0 16px 0;
 	padding: 10px 14px;
+	padding-left: 16px;
 	background: color-mix(in srgb, var(--muted) 6%, transparent);
-	border-left: 2px solid color-mix(in srgb, var(--muted) 30%, transparent);
-	border-radius: 4px;
+	border-radius: var(--radius);
+	overflow: hidden;
 	color: var(--muted);
 	font-size: 13px;
+	position: relative;
 	font-family:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
 	word-break: break-word;
+}
+
+.err-message::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--muted);
+	border-top-left-radius: var(--radius);
+	border-bottom-left-radius: var(--radius);
 }
 
 .controls {
@@ -80,28 +125,73 @@ body {
 	flex-wrap: wrap;
 	margin-bottom: 14px;
 }
+
 .btn {
-	padding: 10px 16px;
-	border-radius: 8px;
-	font-weight: 600;
-	border: none;
+	color: inherit;
+	background: var(--toolbar_field);
+	border: 1px solid var(--text-20);
+	border-radius: var(--radius);
+	padding: 0.5em 1em;
+	font-size: 0.9em;
 	cursor: pointer;
-	font-size: 14px;
+	color: var(--toolbar_field_text);
+	font: inherit;
 }
+
+.btn:hover {
+	background: var(--text-10);
+	background-image: radial-gradient(
+		70% 80% at 50% 100%,
+		var(--text-8),
+		var(--text-5)
+	);
+}
+
 .btn-primary {
-	background: var(--button-bg);
-	color: var(--button-text);
-	box-shadow: 0 2px 0 rgba(0, 0, 0, 0.06);
+	background-color: var(--tab_line);
+	background-image: radial-gradient(
+		70% 80% at 50% 100%,
+		var(--tab_line),
+		var(--accent-shade-20)
+	);
+	box-shadow: inset 0px 0.05em 0.025em rgb(255 255 255 / 30%);
+	text-shadow: 0 0.055em 0.05em var(--accent-shade-20);
+	color: white;
+	font-weight: 500;
+	border-color: var(--tab_line);
 }
-.btn-link {
-	background: color-mix(in srgb, currentColor 5%, transparent);
-	color: var(--muted);
-	border: 1px solid transparent;
+
+.btn-primary:hover {
+	background-color: var(--accent-shade-10);
+	background-image: radial-gradient(
+		70% 80% at 50% 100%,
+		var(--accent-shade-5),
+		var(--accent-shade-25)
+	);
+	filter: saturate(1.1);
 }
+
+.btn:disabled,
+.btn[disabled] {
+	opacity: 0.6;
+	cursor: not-allowed;
+	pointer-events: none;
+	background: var(--toolbar_field);
+	color: var(--text-40);
+	border-color: var(--text-20);
+}
+
+.btn:disabled:hover,
+.btn[disabled]:hover {
+	background: var(--toolbar_field);
+}
+
 .details {
+	display: none;
 	margin-top: 8px;
 	background: transparent;
-	border: 1px dashed color-mix(in srgb, var(--muted) 22%, transparent);
+	border: 1px dashed var(--muted);
+	opacity: 0.78;
 	padding: 10px;
 	border-radius: 6px;
 	font-family:

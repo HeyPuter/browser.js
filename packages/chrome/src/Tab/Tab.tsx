@@ -1,6 +1,6 @@
 import { createDelegate, createState } from "dreamland/core";
 import { StatefulClass } from "../util/StatefulClass";
-import { History } from "./History";
+import { History, type SerializedHistory } from "./History";
 import { INTERNAL_URL_PROTOCOL } from "../consts";
 import { NewTabPage } from "../pages/NewTabPage";
 import { PlaygroundPage } from "../pages/PlaygroundPage";
@@ -12,6 +12,14 @@ import { ProxyFrame } from "../proxy/ProxyFrame";
 import { uuid } from "../util";
 import { mountedPromise } from "../App";
 // const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
+
+export type SerializedTab = {
+	title: string | null;
+	url: string;
+	id: string;
+	icon: string | null;
+	history: SerializedHistory;
+};
 
 export class Tab extends StatefulClass {
 	title: string | null = null;
@@ -44,19 +52,26 @@ export class Tab extends StatefulClass {
 	waitForInit: Promise<void>;
 	private initResolve!: () => void;
 
-	constructor(init: Partial<Tab>) {
+	constructor(init: Partial<Tab>, history?: SerializedHistory) {
 		super();
 		Object.assign(this, init);
 		this.url ??= new URL(`${INTERNAL_URL_PROTOCOL}//newtab`);
 		this.id ??= uuid("tab-");
 
 		this.frame = new ProxyFrame();
-		this.history = new History(this);
+		this.history = new History(this, history);
+		this.own(this.history);
 		this.waitForInit = new Promise((resolve) => {
 			this.initResolve = resolve;
 		});
 		mountedPromise.then(() => {
-			this.history.push(this.url, undefined);
+			if (history) {
+				// restore from serialized state
+				this._directnavigate(this.url);
+			} else {
+				// was just created
+				this.history.push(this.url, undefined);
+			}
 		});
 
 		const lerp = (a: number, b: number, t: number) => a * (1 - t) + b * t;
@@ -79,6 +94,27 @@ export class Tab extends StatefulClass {
 				}
 			}
 		}, 16);
+	}
+
+	serialize(): SerializedTab {
+		return {
+			title: this.title,
+			url: this.url.href,
+			id: this.id,
+			icon: this.icon,
+			history: this.history.serialize(),
+		};
+	}
+	static deserialize(data: SerializedTab): Tab {
+		return new Tab(
+			{
+				title: data.title,
+				url: new URL(data.url),
+				id: data.id,
+				icon: data.icon,
+			},
+			data.history
+		);
 	}
 
 	// only caller should be history.ts for this
@@ -104,7 +140,14 @@ export class Tab extends StatefulClass {
 					break;
 				case "settings":
 					this.history.current().title = this.title = "Settings";
-					this.internalpage = <SettingsPage tab={this} />;
+					this.internalpage = (
+						<SettingsPage
+							tab={this}
+							selected={
+								url.pathname.length > 1 ? url.pathname.slice(1) : "general"
+							}
+						/>
+					);
 					break;
 				case "downloads":
 					this.history.current().title = this.title = "Downloads";
@@ -116,6 +159,7 @@ export class Tab extends StatefulClass {
 
 			// if (!navigator.serviceWorker.controller) {
 			// 	serviceWorkerReady.then(() => {
+			console.warn("navigating to", url);
 			this.frame.go(url);
 			// 	});
 			// } else {

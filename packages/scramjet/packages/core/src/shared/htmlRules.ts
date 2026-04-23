@@ -1,8 +1,9 @@
-import { CookieJar } from "@/shared/cookie";
 import { rewriteCss } from "@rewriters/css";
 import { rewriteHtml, rewriteSrcset } from "@rewriters/html";
 import { rewriteUrl, unrewriteBlob, URLMeta } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
+import { generateClientId } from "@/shared/util";
+import { _URL } from "./snapshot";
 
 export const htmlRules: {
 	[key: string]: "*" | string[] | ((...any: any[]) => string | null);
@@ -10,11 +11,13 @@ export const htmlRules: {
 }[] = [
 	{
 		fn: (value, context, meta) => {
-			return rewriteUrl(value, context, meta);
+			return rewriteUrl(value, context, meta, {
+				navigateType: "location",
+			});
 		},
 
 		// url rewrites
-		src: ["embed", "script", "img", "frame", "source", "input", "track"],
+		src: ["embed", "script", "img", "frame", "input", "track"],
 		href: ["a", "link", "area", "use", "image"],
 		data: ["object"],
 		action: ["form"],
@@ -24,9 +27,11 @@ export const htmlRules: {
 	},
 	{
 		fn: (value, context, meta) => {
-			let url = rewriteUrl(value, context, meta);
-			// if (meta.topFrameName)
-			// 	url += `?topFrame=${meta.topFrameName}&parentFrame=${meta.parentFrameName}`;
+			const url = rewriteUrl(value, context, meta, {
+				newClient: true,
+				topFrame: meta.topFrameName,
+				parentFrame: meta.parentFrameName,
+			});
 
 			return url;
 		},
@@ -34,7 +39,7 @@ export const htmlRules: {
 	},
 	{
 		// is this a good idea?
-		fn: (value, context, meta) => {
+		fn: (_value, _context, _meta) => {
 			return null;
 		},
 		sandbox: ["iframe"],
@@ -49,7 +54,7 @@ export const htmlRules: {
 
 			return rewriteUrl(value, context, meta);
 		},
-		src: ["video", "audio"],
+		src: ["video", "audio", "source"],
 	},
 	{
 		fn: () => "",
@@ -78,10 +83,19 @@ export const htmlRules: {
 				context,
 				{
 					// for srcdoc origin is the origin of the page that the iframe is on. base and path get dropped
-					origin: new URL(meta.origin.origin),
-					base: new URL(meta.origin.origin),
+					origin: new _URL(meta.origin.origin),
+					base: new _URL(meta.origin.origin),
+					clientId: generateClientId(),
+					topFrameName: meta.topFrameName,
+					parentFrameName: meta.parentFrameName,
+					referrerPolicy: meta.referrerPolicy,
 				},
-				true
+				{
+					loadScripts: true,
+					inline: true,
+					source: meta.origin.href,
+					apisource: "set HTMLIFrameElement.prototype.srcdoc",
+				}
 			),
 
 		// srcdoc

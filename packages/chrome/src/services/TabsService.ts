@@ -1,5 +1,5 @@
 import { createDelegate } from "dreamland/core";
-import { Tab } from "../Tab/Tab.tsx";
+import { Tab, type SerializedTab } from "../Tab/Tab.tsx";
 import { Service } from "./Service.ts";
 import { INTERNAL_URL_PROTOCOL } from "../consts.ts";
 // TODO: centralize this to one place somehow
@@ -12,20 +12,32 @@ import { mountedPromise } from "../App.tsx";
 export const pushTab = createDelegate<Tab>();
 export const popTab = createDelegate<Tab>();
 
-export type TabServiceState = {};
+export type TabServiceState = {
+	tabs: SerializedTab[];
+	activetab: string;
+};
 
 export class TabsService extends Service {
-	tabs: Tab[];
-	activetab: Tab = null!;
+	tabs: Tab[] = [];
+	activetab: Tab;
 
 	constructor(data: TabServiceState | null) {
 		super();
 		if (data) {
-			// this.tabs = data.tabs;
-			// this.activetab = data.activetab;
+			for (const dt of data.tabs) {
+				let tab = Tab.deserialize(dt);
+				this.own(tab);
+				this.tabs.push(tab);
+				mountedPromise.then(() => {
+					pushTab(tab);
+				});
+			}
+			this.activetab =
+				this.tabs.find((tab) => tab.id === data.activetab) || this.tabs[0];
 		} else {
 			let tab = new Tab({});
-			this.tabs = [tab];
+			this.own(tab);
+			this.tabs.push(tab);
 			this.activetab = tab;
 			mountedPromise.then(() => {
 				pushTab(tab);
@@ -33,26 +45,41 @@ export class TabsService extends Service {
 		}
 	}
 
+	save(): TabServiceState {
+		return {
+			tabs: this.tabs.map((tab) => tab.serialize()),
+			activetab: this.activetab.id,
+		};
+	}
+	static deserialize(data: TabServiceState): TabsService {
+		return new TabsService(data);
+	}
+
 	newTab(url?: URL, focusomnibox: boolean = false) {
 		let tab = new Tab({ url });
+		this.own(tab);
 		pushTab(tab);
 		this.tabs = [...this.tabs, tab];
 		this.activetab = tab;
 		if (focusomnibox) focusOmnibox();
+		this.markDirty();
 		return tab;
 	}
 
 	newTabRight(ref: Tab, url?: URL) {
 		let tab = new Tab({ url });
+		this.own(tab);
 		pushTab(tab);
 		let index = this.tabs.indexOf(ref);
 		this.tabs.splice(index + 1, 0, tab);
 		this.tabs = this.tabs;
 		this.activetab = tab;
+		this.markDirty();
 		return tab;
 	}
 
 	destroyTab(tab: Tab) {
+		this.disown(tab);
 		this.tabs = this.tabs.filter((t) => t !== tab);
 		if (this.tabs.length === 0 && isPuter) {
 			puter.exit();
@@ -64,6 +91,7 @@ export class TabsService extends Service {
 				this.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//newtab`), true);
 		}
 		popTab(tab);
+		this.markDirty();
 	}
 
 	searchNavigate(url: string) {

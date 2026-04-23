@@ -25,3 +25,4 @@ catalog:
   "@mercuryworkshop/libcurl-transport": 2.0.5
   "@mercuryworkshop/wisp-js": ^0.4.0
   "@mercuryworkshop/epoxy-transport": 3.0.0
+  htmlparser2: ^10.1.0

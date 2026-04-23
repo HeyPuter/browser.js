@@ -49,6 +49,16 @@ type ProfileMetadata = {
 	lastModified: number;
 };
 
+function registerSave(service: Service, kv: KVWrapper, key: string) {
+	setInterval(async () => {
+		if (service.dirty) {
+			console.log("saving", key);
+			await kv.set(key, service.save());
+			service.dirty = false;
+		}
+	}, 1000);
+}
+
 async function loadServices() {
 	await navigator.locks.request("write", async () => {
 		let kv = new KVWrapper(puterBranding ? "puter" : "localstorage");
@@ -74,9 +84,12 @@ async function loadServices() {
 				skipLoad = true;
 			}
 		}
+		await kv.set("version", STORAGE_VERSION);
 
 		settingsService = new SettingsService(await kv.get("settings"));
+		registerSave(settingsService, kv, "settings");
 		faviconService = new FaviconService(await kv.get("faviconCache"));
+		registerSave(faviconService, kv, "faviconCache");
 
 		let profiles = await kv.get<ProfileMetadata[]>("profiles");
 		if (!profiles) {
@@ -96,7 +109,10 @@ async function loadServices() {
 
 		profileService = new ProfileService(await kv.get(profile.storageKey));
 		downloadsService = new DownloadsService();
-		tabsService = new TabsService(null);
+
+		const tabsKey = `tabs-${profile.id}`;
+		tabsService = new TabsService(await kv.get(tabsKey));
+		registerSave(tabsService, kv, tabsKey);
 	});
 }
 

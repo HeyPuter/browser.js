@@ -25,20 +25,20 @@ function navIncumbenceTest(props: {
 				} else if (req.url! === "/dir/flag.html") {
 					res.setHeader("Content-Type", "text/html");
 					if (props.reverse) {
-						res.end(doc(`<script>opener.fail("wrong window opened")</script>`));
+						res.end(doc('<script>opener.fail("wrong window opened")</script>'));
 					} else {
 						res.end(
-							doc(`<script>opener.pass("correct window opened")</script>`)
+							doc('<script>opener.pass("correct window opened")</script>')
 						);
 					}
 				} else if (req.url! === "/flag.html") {
 					res.setHeader("Content-Type", "text/html");
 					if (props.reverse) {
 						res.end(
-							doc(`<script>opener.pass("correct window opened")</script>`)
+							doc('<script>opener.pass("correct window opened")</script>')
 						);
 					} else {
-						res.end(doc(`<script>opener.fail("wrong window opened")</script>`));
+						res.end(doc('<script>opener.fail("wrong window opened")</script>'));
 					}
 				} else {
 					res.statusCode = 404;
@@ -67,7 +67,7 @@ export default [
 	}),
 	navIncumbenceTest({
 		name: "incumbent-window-open-functioncall",
-		topjs: `function doOpen(){ window.open('flag.html') }`,
+		topjs: "function doOpen(){ window.open('flag.html') }",
 		js: "parent.doOpen()",
 	}),
 	navIncumbenceTest({
@@ -76,7 +76,7 @@ export default [
 	}),
 	navIncumbenceTest({
 		name: "incumbent-window-open-eval-functioncall",
-		topjs: `function doOpen(){ window.open('flag.html') }`,
+		topjs: "function doOpen(){ window.open('flag.html') }",
 		js: "parent.eval('doOpen()')",
 	}),
 	navIncumbenceTest({
@@ -104,10 +104,25 @@ export default [
 	navIncumbenceTest({
 		name: "incumbent-window-open-promise-cb",
 		js: "new Promise(r=>r()).then(()=>new parent.Function('window.open(`flag.html`)')())",
-		reverse: true,
 	}),
 	navIncumbenceTest({
 		name: "incumbent-window-open-cross-promise",
+		js: "parent.eval('new Promise(r=>r())').then(()=>new parent.Function('window.open(`flag.html`)')())",
+	}),
+	navIncumbenceTest({
+		name: "incumbent-window-open-cross-promise-direct",
 		js: "parent.eval('new Promise(r=>r())').then(new parent.Function('window.open(`flag.html`)'))",
+		reverse: true,
+	}),
+	navIncumbenceTest({
+		name: "incumbent-window-open-cross-promise-direct",
+		js: "parent.eval('new Promise(r=>r())').then(new parent.Function('window.open(`flag.html`)'))",
+		reverse: true,
+	}),
+	navIncumbenceTest({
+		name: "incumbent-window-open-event-listener",
+		js: "addEventListener('snarkle', ()=>{ parent.window.open('flag.html') })",
+		topjs:
+			"window.onload = () => { frames[0].dispatchEvent(new Event('snarkle')) }",
 	}),
 ];

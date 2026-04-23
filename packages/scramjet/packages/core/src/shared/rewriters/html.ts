@@ -1,23 +1,165 @@
-import { ElementType, Handler, Parser } from "htmlparser2";
+import { ElementType, Parser } from "htmlparser2";
 import { ChildNode, DomHandler, Element, Comment } from "domhandler";
 import render from "dom-serializer";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import { rewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
-import { CookieJar } from "@/shared/cookie";
 import { ScramjetContext } from "@/shared";
 import { htmlRules } from "@/shared/htmlRules";
+import { parseDeclarativeRefresh } from "@/shared/refresh";
 import { Tap } from "@/Tap";
+import { RawHeaders } from "@mercuryworkshop/proxy-transports";
+import { TrackedHistoryState } from "@/fetch";
+import {
+	Performance_now,
+	atob,
+	Object_entries,
+	JSON_parse,
+	JSON_stringify,
+	TextEncoder_encode,
+	Array_from,
+	String_fromCodePoint,
+	btoa,
+	_URL,
+} from "@/shared/snapshot";
+import { flagEnabled } from "..";
 
-const encoder = new TextEncoder();
+export type ForeignContext = "svg" | "math" | undefined;
+
+export type HtmlContext = {
+	// should we inject scramjet scripts at the top of the document?
+	loadScripts: boolean;
+	// did the document come from the service worker, or from document.write/innerHTML?
+	inline: boolean;
+	// for worker originating documents, the source URL, otherwise the url of the page that triggered the rewrite
+	source: string;
+	// for api originating documents, the name of the api that triggered the rewrite
+	apisource?: string;
+	// response headers for worker originating documents
+	headers?: RawHeaders;
+	foreignContext?: ForeignContext;
+	history?: TrackedHistoryState[];
+};
+
+const renderOptions = {
+	encodeEntities: "utf8" as const,
+	decodeEntities: false,
+};
+function serializeHtmlNode(node: ChildNode) {
+	return render(node, renderOptions);
+}
+
+function isElementNode(node: ChildNode): node is Element {
+	return (
+		node.type === ElementType.Tag ||
+		node.type === ElementType.Script ||
+		node.type === ElementType.Style
+	);
+}
+
+export class IncrementalHtmlRewriter {
+	private readonly handler: DomHandler;
+	private readonly parser: Parser;
+	private readonly completedElements = new WeakSet<Element>();
+	private readonly emittedLengths = new WeakMap<ChildNode, number>();
+	private readonly rewrittenNodes = new WeakMap<ChildNode, string>();
+	private ended = false;
+
+	constructor(
+		private readonly context: ScramjetContext,
+		private readonly meta: URLMeta,
+		private readonly htmlcontext: HtmlContext
+	) {
+		this.handler = new DomHandler(undefined, undefined, (element) => {
+			this.completedElements.add(element);
+		});
+		this.parser = new Parser(this.handler, {
+			startingForeignContext: htmlcontext.foreignContext === "svg",
+		});
+	}
+
+	write(html: string) {
+		if (this.ended) {
+			throw new Error("IncrementalHtmlRewriter stream already ended");
+		}
+
+		this.parser.write(html);
+
+		return this.flush();
+	}
+
+	end(html = "") {
+		if (this.ended) {
+			return "";
+		}
+
+		if (html) {
+			this.parser.write(html);
+		}
+
+		this.parser.end();
+		this.ended = true;
+
+		return this.flush();
+	}
+
+	private flush() {
+		let output = "";
+
+		for (const node of this.handler.root.childNodes) {
+			const rewritten = this.getAvailableOutput(node);
+			if (rewritten === null) {
+				break;
+			}
+
+			const emittedLength = this.emittedLengths.get(node) ?? 0;
+			if (rewritten.length > emittedLength) {
+				output += rewritten.slice(emittedLength);
+				this.emittedLengths.set(node, rewritten.length);
+			}
+		}
+
+		return output;
+	}
+
+	private getAvailableOutput(node: ChildNode) {
+		if (!isElementNode(node)) {
+			return serializeHtmlNode(node);
+		}
+
+		if (!this.completedElements.has(node)) {
+			return null;
+		}
+
+		let rewritten = this.rewrittenNodes.get(node);
+		if (rewritten === undefined) {
+			rewritten = rewriteHtmlInner(
+				node,
+				this.context,
+				this.meta,
+				this.htmlcontext
+			);
+			this.rewrittenNodes.set(node, rewritten);
+		}
+
+		return rewritten;
+	}
+}
+
 function rewriteHtmlInner(
-	html: string,
+	html: string | ChildNode,
 	context: ScramjetContext,
 	meta: URLMeta,
-	fromTop: boolean = false
+	htmlcontext: HtmlContext
 ) {
+	if (typeof html !== "string") {
+		html = serializeHtmlNode(html);
+	}
+
 	const handler = new DomHandler((err, dom) => dom);
-	const parser = new Parser(handler);
+	const parser = new Parser(handler, {
+		startingForeignContext: htmlcontext.foreignContext,
+	});
 
 	parser.write(html);
 	parser.end();
@@ -26,7 +168,7 @@ function rewriteHtmlInner(
 		{
 			handler,
 			meta,
-			fromTop,
+			htmlcontext,
 			origHtml: html,
 		},
 		undefined
@@ -86,13 +228,15 @@ function rewriteHtmlInner(
 		}
 	}
 
-	let isQuirky = detectQuirks();
+	const isQuirky = detectQuirks();
 
-	if (fromTop) {
-		const script = (src: string) => new Element("script", { src });
+	if (htmlcontext.loadScripts) {
+		const script = (src: string) =>
+			new Element("script", { src, "scramjet-injected": "true" });
 		const injectScripts = context.interface.getInjectScripts(
 			meta,
 			handler,
+			htmlcontext,
 			script
 		);
 
@@ -113,13 +257,13 @@ function rewriteHtmlInner(
 		}
 	}
 
-	let props: typeof context.hooks.rewriter.html.post.props = {};
+	const props: typeof context.hooks.rewriter.html.post.props = {};
 	Tap.dispatch(
 		context.hooks!.rewriter.html.post,
 		{
 			handler,
 			meta,
-			fromTop,
+			htmlcontext,
 			origHtml: html,
 		},
 		props
@@ -129,30 +273,20 @@ function rewriteHtmlInner(
 		return props.setRawHtml;
 	}
 
-	return render(handler.root, {
-		encodeEntities: "utf8",
-		decodeEntities: false,
-	});
+	return render(handler.root, renderOptions);
 }
 
 export function rewriteHtml(
 	html: string,
 	context: ScramjetContext,
 	meta: URLMeta,
-	fromTop: boolean = false,
-	preRewrite?: (handler: DomHandler) => void,
-	postRewrite?: (handler: DomHandler) => void
+	htmlcontext: HtmlContext
 ) {
-	const before = performance.now();
-	const ret = rewriteHtmlInner(
-		html,
-		context,
-		meta,
-		fromTop,
-		preRewrite,
-		postRewrite
-	);
-	dbg.time(meta, before, "html rewrite");
+	const before = Performance_now();
+	const ret = rewriteHtmlInner(html, context, meta, htmlcontext);
+	if (flagEnabled("rewriterLogs", context, meta.base)) {
+		dbg.time(meta, before, "html rewrite");
+	}
 
 	return ret;
 }
@@ -162,9 +296,11 @@ export function rewriteHtml(
 // 	origin?: URL;
 // };
 
-export function unrewriteHtml(html: string) {
+export function unrewriteHtml(html: string, foreignContext?: ForeignContext) {
 	const handler = new DomHandler((err, dom) => dom);
-	const parser = new Parser(handler);
+	const parser = new Parser(handler, {
+		startingForeignContext: foreignContext,
+	});
 
 	parser.write(html);
 	parser.end();
@@ -195,7 +331,7 @@ export function unrewriteHtml(html: string) {
 	traverse(handler.root);
 
 	return render(handler.root, {
-		decodeEntities: false,
+		...renderOptions,
 	});
 }
 
@@ -207,7 +343,7 @@ function traverseParsedHtml(
 	meta: URLMeta
 ) {
 	if (node.name === "base" && node.attribs.href !== undefined) {
-		meta.base = new URL(node.attribs.href, meta.origin);
+		meta.base = new _URL(node.attribs.href, meta.origin);
 	}
 
 	if (node.attribs) {
@@ -230,7 +366,7 @@ function traverseParsedHtml(
 				}
 			}
 		}
-		for (const [attr, value] of Object.entries(node.attribs)) {
+		for (const [attr, value] of Object_entries(node.attribs)) {
 			if (eventAttributes.includes(attr)) {
 				node.attribs[`scramjet-attr-${attr}`] = value;
 				node.attribs[attr] = rewriteJs(
@@ -258,9 +394,9 @@ function traverseParsedHtml(
 		node.attribs.type === "importmap" &&
 		node.children[0] !== undefined
 	) {
-		let json = node.children[0].data;
+		const json = node.children[0].data;
 		try {
-			const map = JSON.parse(json);
+			const map = JSON_parse(json);
 			if (map.imports) {
 				for (const key in map.imports) {
 					let url = map.imports[key];
@@ -271,9 +407,9 @@ function traverseParsedHtml(
 				}
 			}
 
-			node.children[0].data = JSON.stringify(map);
+			node.children[0].data = JSON_stringify(map);
 		} catch (e) {
-			console.error("Failed to parse importmap JSON:", e);
+			dbg.error("Failed to parse importmap JSON:", e);
 		}
 	}
 	if (
@@ -284,7 +420,7 @@ function traverseParsedHtml(
 		let js = node.children[0].data;
 		const module = node.attribs.type === "module" ? true : false;
 		node.attribs["scramjet-attr-script-source-src"] = bytesToBase64(
-			encoder.encode(js)
+			TextEncoder_encode(js)
 		);
 		const htmlcomment = /<!--[\s\S]*?-->/g;
 		js = js.replace(htmlcomment, "");
@@ -303,14 +439,15 @@ function traverseParsedHtml(
 		) {
 			// just delete it. this needs to be emulated eventually but like
 			node = new Comment(node.attribs.content);
-		} else if (
-			node.attribs["http-equiv"] === "refresh" &&
-			node.attribs.content.includes("url")
-		) {
-			const contentArray = node.attribs.content.split("url=");
-			if (contentArray[1])
-				contentArray[1] = rewriteUrl(contentArray[1].trim(), context, meta);
-			node.attribs.content = contentArray.join("url=");
+		} else if (node.attribs["http-equiv"].toLowerCase() === "refresh") {
+			const refresh = parseDeclarativeRefresh(node.attribs.content || "");
+			if (refresh && refresh.url !== null && refresh.url.length > 0) {
+				const rewritten = rewriteUrl(refresh.url.trim(), context, meta);
+				node.attribs.content =
+					node.attribs.content.slice(0, refresh.urlStart) +
+					rewritten +
+					node.attribs.content.slice(refresh.urlEnd);
+			}
 		}
 	}
 
@@ -356,8 +493,8 @@ export function rewriteSrcset(
 // }
 
 function bytesToBase64(bytes: Uint8Array) {
-	const binString = Array.from(bytes, (byte) =>
-		String.fromCodePoint(byte)
+	const binString = Array_from(bytes, (byte) =>
+		String_fromCodePoint(byte)
 	).join("");
 
 	return btoa(binString);

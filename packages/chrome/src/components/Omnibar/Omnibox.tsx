@@ -26,7 +26,7 @@ InactiveBar.style = css`
 		width: 100%;
 		border: none;
 		outline: none;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		margin: 0.25em;
 	}
 
@@ -406,14 +406,14 @@ Omnibox.style = css`
 		display: none;
 		background: var(--toolbar_field);
 		width: 100%;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		border: 1px solid var(--popup_border);
 		padding-bottom: 0.5em;
 	}
 	.overflow .spacer {
 		display: block;
-		height: 2.5em;
+		height: var(--omnibar-height);
 
 		width: 98%;
 		margin: 0 auto;
@@ -426,7 +426,7 @@ Omnibox.style = css`
 	.spacertext {
 		display: block;
 		height: 2em;
-		line-height: 2.5em;
+		line-height: var(--omnibar-height);
 		padding-left: 1.5em;
 		color: var(--text-60);
 		font-size: 0.9em;

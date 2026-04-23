@@ -15,14 +15,14 @@ import {
 	iconExtension,
 	iconPrivacy,
 	iconAbout,
+	iconBrush,
 	iconError,
 } from "../icons";
 import { settingsService } from "..";
 
 export function SettingsPage(
-	this: FC<{ tab: Tab }, { selected: string; searchQuery: string }>
+	this: FC<{ tab: Tab; selected: string }, { searchQuery: string }>
 ) {
-	this.selected = "general";
 	this.searchQuery = "";
 
 	const button = (id: string, icon: IconifyIcon, name: string) => {
@@ -32,6 +32,8 @@ export function SettingsPage(
 				class:active={use(this.selected).map((s) => s === id)}
 				on:click={() => {
 					this.selected = id;
+					// this.tab.url = new URL(`puter://settings/${id}`);
+					this.tab.history.push(new URL(`puter://settings/${id}`));
 				}}
 			>
 				<Icon icon={icon} />
@@ -40,12 +42,17 @@ export function SettingsPage(
 		);
 	};
 
+	use(this.selected).listen((s) => {
+		console.log("Selected settings category:", s);
+	});
+
 	return (
 		<div class="settings-page">
 			<div class="sidebar">
 				<h1>Settings</h1>
 				<nav class="navigation">
 					{button("general", iconSettings, "General")}
+					{button("appearance", iconBrush, "Appearance")}
 					{button("search", iconSearch, "Search")}
 					{button("privacy", iconPrivacy, "Privacy & Security")}
 					{button("extensions", iconExtension, "Extensions")}
@@ -54,10 +61,7 @@ export function SettingsPage(
 			</div>
 			<div class="content">
 				<div class="search-container">
-					<Input
-						placeholder="Search settings..."
-						value={use(this.searchQuery)}
-					/>
+					<Input placeholder="Search" value={use(this.searchQuery)} />
 				</div>
 				<div class="settings-content">
 					<h1>
@@ -69,107 +73,6 @@ export function SettingsPage(
 					{use(this.selected).map((selected) =>
 						selected === "general" ? (
 							<div class="settings-tab">
-								<section class="setting-section">
-									<div class="section-header">
-										<h3>Appearance</h3>
-										<p class="description">
-											Customize how the browser looks and feels
-										</p>
-									</div>
-									<div class="section-content">
-										<div class="setting-group">
-											<h4>Page Appearance</h4>
-											<div class="radio-group">
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-system"
-														name="appearance"
-														value="system"
-														checked={
-															settingsService.settings.appearance === "system"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "system";
-														}}
-													/>
-													<label for="appearance-system">System Default</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-dark"
-														name="appearance"
-														value="dark"
-														checked={
-															settingsService.settings.appearance === "dark"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "dark";
-														}}
-													/>
-													<label for="appearance-dark">Dark</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="appearance-light"
-														name="appearance"
-														value="light"
-														checked={
-															settingsService.settings.appearance === "light"
-														}
-														on:change={() => {
-															settingsService.settings.appearance = "light";
-														}}
-													/>
-													<label for="appearance-light">Light</label>
-												</div>
-											</div>
-										</div>
-
-										<div class="setting-group">
-											<h4>Color Theme</h4>
-											<p class="description">
-												Choose your preferred color scheme
-											</p>
-											<div class="theme-grid">
-												{THEMES.map((theme) => (
-													<div
-														class="theme-card"
-														class:selected={use(
-															settingsService.settings.themeId
-														).map((id) => id === theme.id)}
-														on:click={() => {
-															settingsService.settings.themeId = theme.id;
-														}}
-													>
-														<div class="theme-preview">
-															<div
-																class="preview-toolbar"
-																style={`background: ${theme.preview.toolbar};`}
-															>
-																<div
-																	class="preview-field"
-																	style={`background: ${theme.preview.field};`}
-																></div>
-																<div
-																	class="preview-accent"
-																	style={`background: ${theme.preview.accent};`}
-																></div>
-															</div>
-														</div>
-														<div class="theme-info">
-															<h5>{theme.name}</h5>
-															<p>{theme.description}</p>
-														</div>
-													</div>
-												))}
-											</div>
-										</div>
-									</div>
-								</section>
-
 								<section class="setting-section">
 									<div class="section-header">
 										<h3>Startup</h3>
@@ -229,6 +132,218 @@ export function SettingsPage(
 												<label for="show-bookmarks-bar">
 													Always show bookmarks bar
 												</label>
+											</div>
+										</div>
+									</div>
+								</section>
+							</div>
+						) : null
+					)}
+
+					{/* Appearance Tab */}
+					{use(this.selected).map((selected) =>
+						selected === "appearance" ? (
+							<div class="settings-tab">
+								<section class="setting-section">
+									<div class="section-header">
+										<h3>Page Appearance</h3>
+										<p class="description">
+											Control the appearance of websites you visit.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-system"
+														name="appearance"
+														value="system"
+														checked={
+															settingsService.settings.appearance === "system"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "system";
+														}}
+													/>
+													<label for="appearance-system">System Default</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-dark"
+														name="appearance"
+														value="dark"
+														checked={
+															settingsService.settings.appearance === "dark"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "dark";
+														}}
+													/>
+													<label for="appearance-dark">Dark</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="appearance-light"
+														name="appearance"
+														value="light"
+														checked={
+															settingsService.settings.appearance === "light"
+														}
+														on:change={() => {
+															settingsService.settings.appearance = "light";
+														}}
+													/>
+													<label for="appearance-light">Light</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-header">
+										<h3>UI Density</h3>
+										<p class="description">
+											Adjust the spacing and sizing of UI elements.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-dense"
+														name="ui-dense"
+														value="compact"
+														checked={
+															settingsService.settings.uiProfile === "compact"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "compact";
+														}}
+													/>
+													<label for="ui-dense">Compact</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-default"
+														name="ui-dense"
+														value="default"
+														checked={
+															settingsService.settings.uiProfile === "default"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "default";
+														}}
+													/>
+													<label for="ui-default">Comfortable</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-sparse"
+														name="ui-dense"
+														value="touch"
+														checked={
+															settingsService.settings.uiProfile === "touch"
+														}
+														on:change={() => {
+															settingsService.settings.uiProfile = "touch";
+														}}
+													/>
+													<label for="ui-sparse">Cozy</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-header">
+										<h3>Browser Theme</h3>
+										<p class="description">
+											Customize the look of the browser.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<br />
+											<h4>Dark</h4>
+											<div class="theme-grid">
+												{THEMES.filter(
+													(theme) => theme.appearance === "dark"
+												).map((theme) => (
+													<div
+														class="theme-card"
+														class:selected={use(
+															settingsService.settings.themeId
+														).map((id) => id === theme.id)}
+														on:click={() => {
+															settingsService.settings.themeId = theme.id;
+														}}
+													>
+														<div class="theme-preview">
+															<div
+																class="preview-toolbar"
+																style={`background: ${theme.preview.toolbar};`}
+															>
+																<div
+																	class="preview-field"
+																	style={`background: ${theme.preview.field};`}
+																></div>
+																<div
+																	class="preview-accent"
+																	style={`background: ${theme.preview.accent};`}
+																></div>
+															</div>
+														</div>
+														<div class="theme-info">
+															<h5>{theme.name}</h5>
+															<p>{theme.description}</p>
+														</div>
+													</div>
+												))}
+											</div>
+											<br />
+											<h4>Light</h4>
+											<div class="theme-grid">
+												{THEMES.filter(
+													(theme) => theme.appearance === "light"
+												).map((theme) => (
+													<div
+														class="theme-card"
+														class:selected={use(
+															settingsService.settings.themeId
+														).map((id) => id === theme.id)}
+														on:click={() => {
+															settingsService.settings.themeId = theme.id;
+														}}
+													>
+														<div class="theme-preview">
+															<div
+																class="preview-toolbar"
+																style={`background: ${theme.preview.toolbar};`}
+															>
+																<div
+																	class="preview-field"
+																	style={`background: ${theme.preview.field};`}
+																></div>
+																<div
+																	class="preview-accent"
+																	style={`background: ${theme.preview.accent};`}
+																></div>
+															</div>
+														</div>
+														<div class="theme-info">
+															<h5>{theme.name}</h5>
+															<p>{theme.description}</p>
+														</div>
+													</div>
+												))}
 											</div>
 										</div>
 									</div>
@@ -369,7 +484,9 @@ export function SettingsPage(
 											<div class="extension-item">
 												<div class="extension-info">
 													<div class="extension-icon">
-														<Icon icon={iconExtension} />
+														<span class="icon-inner">
+															<Icon icon={iconExtension} />
+														</span>
 													</div>
 													<div class="extension-details">
 														<h4>No extensions installed</h4>
@@ -401,8 +518,10 @@ export function SettingsPage(
 												(enabled) =>
 													enabled && (
 														<div class="dev-buttons">
-															<Button>Load Unpacked</Button>
-															<Button>Pack Extension</Button>
+															<Button variant="primary">Load Unpacked</Button>
+															<Button variant="secondary">
+																Pack Extension
+															</Button>
 														</div>
 													)
 											)}
@@ -432,7 +551,7 @@ export function SettingsPage(
 													Scramjet Version: {versionInfo.version} (
 													{versionInfo.build})
 												</p>
-												<p>© 2025 Puter Technologies</p>
+												<p>© {__COPYRIGHT_YEAR__} Puter Technologies</p>
 											</div>
 										</div>
 									</div>
@@ -497,14 +616,14 @@ SettingsPage.style = css`
 
 	h1 {
 		font-size: 1.5rem;
-		font-weight: 600;
-		margin-bottom: 1.5rem;
+		font-weight: 700;
+		margin-bottom: 2rem;
 	}
 
 	h2 {
 		font-size: 1.3rem;
-		font-weight: 600;
-		margin-bottom: 1.5rem;
+		font-weight: 650;
+		margin-bottom: 1.75rem;
 		color: var(--ntp_text);
 	}
 
@@ -512,10 +631,18 @@ SettingsPage.style = css`
 		font-size: 1.1rem;
 		font-weight: 600;
 		color: var(--ntp_text);
+		margin-bottom: 0.75rem;
 	}
 
 	h4 {
 		font-size: 0.95rem;
+		font-weight: 550;
+		color: var(--ntp_text);
+		margin-bottom: 0.75rem;
+	}
+
+	h5 {
+		font-size: 0.9rem;
 		font-weight: 500;
 		color: var(--ntp_text);
 		margin-bottom: 0.5rem;
@@ -548,9 +675,12 @@ SettingsPage.style = css`
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.75rem 1rem;
-		border-radius: 6px;
+		border-radius: var(--radius);
 		cursor: pointer;
-		transition: background-color 0.2s ease;
+		transition:
+			background-color 0.05s ease-out,
+			color 0.05s ease-out,
+			font-weight 0.1s ease-out;
 		font-size: 0.95rem;
 		color: var(--toolbar_text);
 	}
@@ -560,9 +690,9 @@ SettingsPage.style = css`
 	}
 
 	.nav-button.active {
-		background: var(--accent-15);
+		background: var(--accent-10);
 		color: var(--tab_line);
-		font-weight: 500;
+		font-weight: 600;
 	}
 
 	.content {
@@ -637,7 +767,7 @@ SettingsPage.style = css`
 
 	.settings-content {
 		flex: 1;
-		padding: 1.5rem 2rem 2rem;
+		padding: 1rem 2rem 2rem;
 		overflow-y: auto;
 	}
 	.settings-content h1 {
@@ -736,7 +866,7 @@ SettingsPage.style = css`
 
 	.select-input {
 		padding: 0.5rem;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
 		color: var(--toolbar_field_text);
@@ -755,7 +885,7 @@ SettingsPage.style = css`
 		border: 1px solid var(--ntp-text-20);
 		color: var(--toolbar_field_text);
 		padding: 0.5rem 1rem;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		font-size: 0.9rem;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -792,12 +922,20 @@ SettingsPage.style = css`
 	}
 
 	.extension-icon {
-		width: 2.5rem;
-		height: 2.5rem;
+		width: 3.25rem;
+		height: 3.25rem;
 		font-size: 2.25rem;
 		border-radius: 6px;
 		background: var(--ntp-text-10);
 		color: color-mix(in srgb, var(--ntp_text) 50%, transparent);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.extension-icon .icon-inner {
+		transform: translate(2px, 2px);
+		transform-origin: top right;
 	}
 
 	.extension-details h4 {
@@ -880,7 +1018,7 @@ SettingsPage.style = css`
 	}
 
 	.theme-card {
-		border-radius: 8px;
+		border-radius: var(--radius);
 		overflow: hidden;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -907,7 +1045,7 @@ SettingsPage.style = css`
 
 	.preview-toolbar {
 		flex: 1;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		padding: 0.5rem;
 		display: flex;
 		gap: 0.5rem;

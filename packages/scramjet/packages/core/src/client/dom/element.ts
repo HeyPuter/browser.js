@@ -1,19 +1,58 @@
 import { htmlRules } from "@/shared/htmlRules";
+import {
+	String,
+	Array_from,
+	TextEncoder_encode,
+	btoa,
+	Object_keys,
+	Object_defineProperty,
+	atob,
+} from "@/shared/snapshot";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteHtml, unrewriteHtml } from "@rewriters/html";
 import { rewriteJs } from "@rewriters/js";
-import { rewriteUrl, unrewriteUrl } from "@rewriters/url";
+import { unrewriteUrl } from "@rewriters/url";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
+import { isHtmlMimeType } from "@/shared/mime";
+import { ForeignContext } from "@/shared/rewriters/html";
 
-const encoder = new TextEncoder();
 function bytesToBase64(bytes: Uint8Array) {
-	const binString = Array.from(bytes, (byte) =>
+	const binString = Array_from(bytes, (byte) =>
 		String.fromCodePoint(byte)
 	).join("");
 
 	return btoa(binString);
 }
+
+export function foreignContextForElement(
+	client: ScramjetClient,
+	element: Element
+): ForeignContext {
+	if (client.box.instanceof(element, "SVGElement")) return "svg";
+	if (client.box.instanceof(element, "MathMLElement")) return "math";
+	return undefined;
+}
+
+// NOTE: NOT INCLUSIVE OF THE CURRENT ELEMENT
+export function insideForeignContext(
+	client: ScramjetClient,
+	element: Element | null
+): ForeignContext {
+	let current: Element | null = element.parentElement;
+
+	while (current) {
+		const context = foreignContextForElement(client, current);
+		if (context) return context;
+		// EXPLICITLY an html context, don't go up further
+		if (client.box.instanceof(current, "SVGForeignObjectElement"))
+			return undefined;
+		current = current.parentElement;
+	}
+
+	return undefined;
+}
+
 export default function (client: ScramjetClient, self: typeof window) {
 	const attrObject = {
 		nonce: [self.HTMLElement],
@@ -57,7 +96,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 		),
 	];
 
-	const attrs = Object.keys(attrObject);
+	const attrs = Object_keys(attrObject);
 
 	for (const attr of attrs) {
 		for (const element of attrObject[attr]) {
@@ -67,7 +106,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 				element.prototype,
 				attr
 			);
-			Object.defineProperty(element.prototype, attr, {
+			Object_defineProperty(element.prototype, attr, {
 				get() {
 					if (["src", "data", "href", "action", "formaction"].includes(attr)) {
 						return unrewriteUrl(descriptor.get.call(this), client.context);
@@ -77,6 +116,14 @@ export default function (client: ScramjetClient, self: typeof window) {
 				},
 
 				set(value) {
+					// if (
+					// 	this.tagName === "IFRAME" &&
+					// 	attr === "src" &&
+					// 	value === "about:blank"
+					// ) {
+					// 	this.setAttribute("srcdoc", "");
+					// 	return;
+					// }
 					return this.setAttribute(attr, value);
 				},
 			});
@@ -114,16 +161,19 @@ export default function (client: ScramjetClient, self: typeof window) {
 	client.Trap("Node.prototype.baseURI", {
 		get(ctx) {
 			const node = ctx.this as Node;
-			let base = node.ownerDocument?.querySelector("base");
-			if (node instanceof Document) base = node.querySelector("base");
+			const doc = client.box.instanceof(node, "Document")
+				? (node as Document)
+				: node.ownerDocument;
+			const base = doc?.querySelector("base[href]") as HTMLBaseElement | null;
 
 			if (base) {
-				return new URL(base.href, client.url.origin).href;
+				const href = base.getAttribute("href") || base.href;
+				if (href) return new URL(href, client.url.href).href;
 			}
 
-			return client.url.origin;
+			return client.url.href;
 		},
-		set(ctx, v) {
+		set() {
 			return false;
 		},
 	});
@@ -164,13 +214,15 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("Element.prototype.getAttributeNode", {
 		apply(ctx) {
-			if (ctx.args[0].startsWith("scramjet-attr")) return ctx.return(null);
+			if (String(ctx.args[0]).startsWith("scramjet-attr"))
+				return ctx.return(null);
 		},
 	});
 
 	client.Proxy("Element.prototype.hasAttribute", {
 		apply(ctx) {
-			if (ctx.args[0].startsWith("scramjet-attr")) return ctx.return(false);
+			if (String(ctx.args[0]).startsWith("scramjet-attr"))
+				return ctx.return(false);
 		},
 	});
 
@@ -259,7 +311,8 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("Element.prototype.removeAttribute", {
 		apply(ctx) {
-			if (ctx.args[0].startsWith("scramjet-attr")) return ctx.return(undefined);
+			if (String(ctx.args[0]).startsWith("scramjet-attr"))
+				return ctx.return(undefined);
 			if (
 				client.natives.call(
 					"Element.prototype.hasAttribute",
@@ -274,7 +327,8 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("Element.prototype.toggleAttribute", {
 		apply(ctx) {
-			if (ctx.args[0].startsWith("scramjet-attr")) return ctx.return(false);
+			if (String(ctx.args[0]).startsWith("scramjet-attr"))
+				return ctx.return(false);
 			if (
 				client.natives.call(
 					"Element.prototype.hasAttribute",
@@ -291,7 +345,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 		set(ctx, value: string) {
 			let newval;
 			if (
-				ctx.this instanceof self.HTMLScriptElement &&
+				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
 				/(application|text)\/javascript|module|undefined/.test(ctx.this.type)
 			) {
 				newval = rewriteJs(
@@ -304,13 +358,19 @@ export default function (client: ScramjetClient, self: typeof window) {
 					"Element.prototype.setAttribute",
 					ctx.this,
 					"scramjet-attr-script-source-src",
-					bytesToBase64(encoder.encode(newval))
+					bytesToBase64(TextEncoder_encode(newval))
 				);
-			} else if (ctx.this instanceof self.HTMLStyleElement) {
+			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
 				newval = rewriteCss(value, client.context, client.meta);
 			} else {
 				try {
-					newval = rewriteHtml(value, client.context, client.meta);
+					newval = rewriteHtml(value, client.context, client.meta, {
+						loadScripts: false,
+						inline: true,
+						source: client.url.href,
+						apisource: "set Element.prototype.innerHTML",
+						foreignContext: foreignContextForElement(client, ctx.this),
+					});
 				} catch {
 					newval = value;
 				}
@@ -319,7 +379,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 			ctx.set(newval);
 		},
 		get(ctx) {
-			if (ctx.this instanceof self.HTMLScriptElement) {
+			if (client.box.instanceof(ctx.this, "HTMLScriptElement")) {
 				const scriptSource = client.natives.call(
 					"Element.prototype.getAttribute",
 					ctx.this,
@@ -332,7 +392,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 				return ctx.get();
 			}
-			if (ctx.this instanceof self.HTMLStyleElement) {
+			if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
 				return ctx.get();
 			}
 
@@ -344,7 +404,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 		set(ctx, value: string) {
 			// TODO: box the instanceofs
 			if (
-				ctx.this instanceof self.HTMLScriptElement &&
+				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
 				/(application|text)\/javascript|module|undefined/.test(ctx.this.type)
 			) {
 				const newval: string = rewriteJs(
@@ -357,18 +417,18 @@ export default function (client: ScramjetClient, self: typeof window) {
 					"Element.prototype.setAttribute",
 					ctx.this,
 					"scramjet-attr-script-source-src",
-					bytesToBase64(encoder.encode(newval))
+					bytesToBase64(TextEncoder_encode(newval))
 				);
 
 				return ctx.set(newval);
-			} else if (ctx.this instanceof self.HTMLStyleElement) {
+			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
 				return ctx.set(rewriteCss(value, client.context, client.meta));
 			} else {
 				return ctx.set(value);
 			}
 		},
 		get(ctx) {
-			if (ctx.this instanceof self.HTMLScriptElement) {
+			if (client.box.instanceof(ctx.this, "HTMLScriptElement")) {
 				const scriptSource = client.natives.call(
 					"Element.prototype.getAttribute",
 					ctx.this,
@@ -381,7 +441,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 				return ctx.get();
 			}
-			if (ctx.this instanceof self.HTMLStyleElement) {
+			if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
 				return unrewriteCss(ctx.get() as string);
 			}
 
@@ -391,7 +451,14 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Trap("Element.prototype.outerHTML", {
 		set(ctx, value: string) {
-			ctx.set(rewriteHtml(value, client.context, client.meta));
+			ctx.set(
+				rewriteHtml(value, client.context, client.meta, {
+					loadScripts: false,
+					inline: true,
+					source: client.url.href,
+					apisource: "set Element.prototype.outerHTML",
+				})
+			);
 		},
 		get(ctx) {
 			return unrewriteHtml(ctx.get());
@@ -401,12 +468,13 @@ export default function (client: ScramjetClient, self: typeof window) {
 	client.Proxy("Element.prototype.setHTMLUnsafe", {
 		apply(ctx) {
 			try {
-				ctx.args[0] = rewriteHtml(
-					ctx.args[0],
-					client.context,
-					client.meta,
-					false
-				);
+				ctx.args[0] = rewriteHtml(ctx.args[0], client.context, client.meta, {
+					loadScripts: false,
+					inline: true,
+					source: client.url.href,
+					apisource: "set Element.prototype.setHTMLUnsafe",
+					foreignContext: foreignContextForElement(client, ctx.this),
+				});
 			} catch {}
 		},
 	});
@@ -419,15 +487,14 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("Element.prototype.insertAdjacentHTML", {
 		apply(ctx) {
-			if (ctx.args[1])
-				try {
-					ctx.args[1] = rewriteHtml(
-						ctx.args[1],
-						client.context,
-						client.meta,
-						false
-					);
-				} catch {}
+			const html = String(ctx.args[1]);
+			ctx.args[1] = rewriteHtml(html, client.context, client.meta, {
+				loadScripts: false,
+				inline: true,
+				source: client.url.href,
+				apisource: "set Element.prototype.insertAdjacentHTML",
+				foreignContext: foreignContextForElement(client, ctx.this),
+			});
 		},
 	});
 
@@ -587,16 +654,16 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Proxy("DOMParser.prototype.parseFromString", {
 		apply(ctx) {
-			if (ctx.args[1] === "text/html") {
-				try {
-					ctx.args[0] = rewriteHtml(
-						ctx.args[0],
-						client.context,
-						client.meta,
-						false
-					);
-				} catch {}
-			}
+			const html = String(ctx.args[0]);
+			const mime = String(ctx.args[1]);
+			// TODO: what do we do if it's xml/svg?
+			if (!isHtmlMimeType(mime)) return;
+			ctx.args[0] = rewriteHtml(html, client.context, client.meta, {
+				loadScripts: false,
+				inline: true,
+				source: client.url.href,
+				apisource: "DOMParser.prototype.parseFromString",
+			});
 		},
 	});
 }

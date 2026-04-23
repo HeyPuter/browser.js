@@ -35,6 +35,7 @@ export type Chromebound = {
 			sequence: FrameSequence;
 		},
 	];
+	registerFrameContext: [{ id: string }];
 	newtab: [
 		{
 			url: string;

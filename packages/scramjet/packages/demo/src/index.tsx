@@ -1,9 +1,10 @@
 import { css } from "dreamland/core";
 import { App } from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
+import { demoSettingsDefaults } from "./demoSettings";
 
-const transport = new LibcurlClient({
-	wisp: import.meta.env.VITE_WISP_URL,
+let transport = new LibcurlClient({
+	wisp: demoSettingsDefaults.wispUrl,
 });
 
 let app = document.getElementById("app")!;
@@ -42,6 +43,24 @@ LoadInterstitial.style = css`
 const { Controller } = $scramjetController;
 export let controller;
 
+export async function swapTransport(wispUrl: string) {
+	const nextTransport = new LibcurlClient({
+		wisp: wispUrl,
+	});
+
+	transport = nextTransport;
+
+	if (!controller) {
+		return;
+	}
+
+	controller.transport = nextTransport;
+	for (const frame of controller.frames) {
+		frame.controller.transport = nextTransport;
+		frame.fetchHandler.client.transport = nextTransport;
+	}
+}
+
 async function init() {
 	const interstitial: any = (
 		<LoadInterstitial status={"Loading"}></LoadInterstitial>
@@ -53,14 +72,14 @@ async function init() {
 		const registration = await navigator.serviceWorker.register("./sw.js");
 
 		// If already controlled or active, don't block the UI.
-		if (navigator.serviceWorker.controller || registration.active) {
+		const earlySw = navigator.serviceWorker.controller ?? registration.active;
+		if (earlySw) {
 			interstitial.$.state.status = "Service worker active";
 			controller = new Controller({
-				serviceworker: registration.active,
+				serviceworker: earlySw,
 				transport,
 			});
 			await controller.ready;
-			console.log(controller);
 			interstitial.close();
 			return;
 		}
@@ -100,8 +119,12 @@ async function init() {
 		await waitForControllerOrReady(10000);
 		interstitial.$.state.status =
 			"Service worker ready, waiting for controller init";
+		const readySw = navigator.serviceWorker.controller ?? registration.active;
+		if (!readySw) {
+			throw new Error("No service worker available for controller");
+		}
 		controller = new Controller({
-			serviceworker: registration.active,
+			serviceworker: readySw,
 			transport,
 		});
 		await controller.ready;

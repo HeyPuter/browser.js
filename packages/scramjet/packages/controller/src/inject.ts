@@ -1,4 +1,8 @@
-import type { CookieJar, ScramjetConfig } from "@mercuryworkshop/scramjet";
+import type {
+	CookieJar as CookieJarType,
+	ScramjetConfig,
+	TrackedHistoryState,
+} from "@mercuryworkshop/scramjet";
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
 
@@ -10,9 +14,10 @@ import type {
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type {
+	SerializedCookieSyncEntry,
+	CookieSyncOptions,
 	ControllerToTransport,
 	TransportToController,
-	WebSocketData,
 	WebSocketMessage,
 } from "./types";
 
@@ -71,7 +76,7 @@ class RemoteTransport implements ProxyTransport {
 		(code: number, reason: string) => void,
 	] {
 		const channel = new MessageChannel();
-		let port = channel.port1;
+		const port = channel.port1;
 		console.warn("connecting");
 		this.rpc
 			.call(
@@ -139,10 +144,24 @@ class RemoteTransport implements ProxyTransport {
 			headers,
 		});
 	}
+
+	async sendSetCookie(
+		cookies: Array<{ url: URL; cookie: string }>,
+		options: CookieSyncOptions = {}
+	): Promise<void> {
+		await this.rpc.call("sendSetCookie", {
+			cookies: cookies.map(({ url, cookie }) => ({
+				url: url.href,
+				cookie,
+			})),
+			options,
+		});
+	}
 }
 
 const sw = navigator.serviceWorker.controller;
-const { SCRAMJETCLIENT, ScramjetClient, CookieJar, setWasm } = $scramjet;
+const { SCRAMJETCLIENT, ScramjetClient, CookieJar, setWasm, generateClientId } =
+	$scramjet;
 
 type Config = any;
 type Init = {
@@ -154,16 +173,27 @@ type Init = {
 		config: Config,
 		sjconfig: ScramjetConfig,
 		prefix: URL,
-		cookieJar: CookieJar,
+		cookieJar: CookieJarType,
 		codecEncode: (input: string) => string,
 		codecDecode: (input: string) => string
 	) => any;
 	codecEncode: (input: string) => string;
 	codecDecode: (input: string) => string;
+	clientId: string;
+	initHeaders: RawHeaders;
+	history: TrackedHistoryState[];
 };
 
 export function load(init: Init) {
 	if (SCRAMJETCLIENT in globalThis) {
+		(
+			(globalThis as any)[SCRAMJETCLIENT] as ScramjetGlobal.ScramjetClient
+		).syncDocumentInit({
+			clientId: init.clientId,
+			initHeaders: init.initHeaders,
+			history: init.history,
+			cookies: init.cookies,
+		});
 		return;
 	}
 	if (!("WASM" in self)) {
@@ -185,8 +215,10 @@ function createFrameId() {
 
 class ExecutionContextWrapper {
 	client!: ScramjetGlobal.ScramjetClient;
-	cookieJar: CookieJar;
+	cookieJar: CookieJarType;
 	transport: RemoteTransport;
+	clientId: string;
+	private handleServiceWorkerCookieMessage: (event: MessageEvent) => void;
 
 	constructor(
 		public global: typeof globalThis,
@@ -206,6 +238,58 @@ class ExecutionContextWrapper {
 
 		this.cookieJar = new CookieJar();
 		this.cookieJar.load(this.init.cookies);
+
+		this.clientId = init.clientId;
+
+		this.handleServiceWorkerCookieMessage = (event: MessageEvent) => {
+			if (
+				!event.data?.$controller$setCookie ||
+				typeof event.data.$controller$setCookie !== "object"
+			) {
+				return;
+			}
+
+			const payload = event.data.$controller$setCookie as {
+				cookies?: SerializedCookieSyncEntry[];
+				options?: CookieSyncOptions;
+				id?: string;
+			};
+
+			if (payload.options?.clear) {
+				this.cookieJar.clear();
+			}
+
+			if (Array.isArray(payload.cookies)) {
+				for (const cookie of payload.cookies) {
+					if (
+						typeof cookie?.url !== "string" ||
+						typeof cookie.cookie !== "string"
+					) {
+						continue;
+					}
+
+					try {
+						this.cookieJar.setCookies(cookie.cookie, new URL(cookie.url));
+					} catch {
+						console.error("Failed to set cookie", cookie);
+					}
+				}
+			}
+
+			if (typeof payload.id === "string") {
+				const targetSw = navigator.serviceWorker?.controller ?? sw;
+				targetSw?.postMessage({
+					$sw$setCookieDone: {
+						id: payload.id,
+					},
+				});
+			}
+		};
+
+		navigator.serviceWorker?.addEventListener(
+			"message",
+			this.handleServiceWorkerCookieMessage
+		);
 
 		this.injectScramjet();
 	}
@@ -237,13 +321,8 @@ class ExecutionContextWrapper {
 		this.client = new ScramjetClient(this.global, {
 			context,
 			transport: this.transport,
-			sendSetCookie: async (url, cookie) => {
-				// sw.postMessage({
-				// 	$controller$setCookie: {
-				// 		url,
-				// 		cookie
-				// 	}
-				// });
+			sendSetCookie: async (cookies, options) => {
+				await this.transport.sendSetCookie(cookies, options);
 			},
 			shouldPassthroughWebsocket: () => {
 				return false;
@@ -252,9 +331,18 @@ class ExecutionContextWrapper {
 				return false;
 			},
 			hookSubcontext: (frameself) => {
-				const context = new ExecutionContextWrapper(frameself, this.init);
+				const context = new ExecutionContextWrapper(frameself, {
+					...this.init,
+					cookies: this.cookieJar.dump(),
+					// TODO: clientId will change over the lifetime once it recieves syncDocumentInit
+					// this is probably okay?
+					clientId: generateClientId(),
+				});
 				return context.client;
 			},
+			clientId: this.clientId,
+			initHeaders: this.init.initHeaders,
+			history: this.init.history,
 		});
 
 		this.client.hook();

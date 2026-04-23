@@ -1,0 +1,189 @@
+diff --git a/dist/commonjs/Parser.d.ts b/dist/commonjs/Parser.d.ts
+index b6176744e7d9f1f115efda5f051bde13be565f91..f258d6a5b8b86650281f6c3cb922acff62c8332e 100644
+--- a/dist/commonjs/Parser.d.ts
++++ b/dist/commonjs/Parser.d.ts
+@@ -41,6 +41,15 @@ export interface ParserOptions {
+      * @default xmlMode
+      */
+     recognizeSelfClosing?: boolean;
++    /**
++     * Seeds the parser's foreign-context stack.
++     *
++     * Pass `true` to parse markup as though it were already inside a foreign
++     * context such as `<svg>`, or provide the full stack explicitly.
++     *
++     * @default [xmlMode]
++     */
++    startingForeignContext?: boolean | boolean[];
+     /**
+      * Allows the default tokenizer to be overwritten.
+      */
+diff --git a/dist/commonjs/Parser.js b/dist/commonjs/Parser.js
+index 0c4a58c8268ba2f94e685c34c45213dcab6b11f2..c214209ed0cf56c239dbf6e03353f7e07d86c6a2 100644
+--- a/dist/commonjs/Parser.js
++++ b/dist/commonjs/Parser.js
+@@ -132,6 +132,18 @@ const htmlIntegrationElements = new Set([
+     "title",
+ ]);
+ const reNameEnd = /\s|\//;
++function getInitialForeignContext(options, htmlMode) {
++    const { startingForeignContext } = options;
++    if (Array.isArray(startingForeignContext)) {
++        return startingForeignContext.length > 0
++            ? [...startingForeignContext]
++            : [!htmlMode];
++    }
++    if (typeof startingForeignContext === "boolean") {
++        return [startingForeignContext];
++    }
++    return [!htmlMode];
++}
+ class Parser {
+     constructor(cbs, options = {}) {
+         var _a, _b, _c, _d, _e, _f;
+@@ -164,7 +176,7 @@ class Parser {
+         this.recognizeSelfClosing =
+             (_c = options.recognizeSelfClosing) !== null && _c !== void 0 ? _c : !this.htmlMode;
+         this.tokenizer = new ((_d = options.Tokenizer) !== null && _d !== void 0 ? _d : Tokenizer_js_1.default)(this.options, this);
+-        this.foreignContext = [!this.htmlMode];
++        this.foreignContext = getInitialForeignContext(options, this.htmlMode);
+         (_f = (_e = this.cbs).onparserinit) === null || _f === void 0 ? void 0 : _f.call(_e, this);
+     }
+     // Tokenizer event handlers
+@@ -422,7 +434,7 @@ class Parser {
+         (_d = (_c = this.cbs).onparserinit) === null || _d === void 0 ? void 0 : _d.call(_c, this);
+         this.buffers.length = 0;
+         this.foreignContext.length = 0;
+-        this.foreignContext.unshift(!this.htmlMode);
++        this.foreignContext.push(...getInitialForeignContext(this.options, this.htmlMode));
+         this.bufferOffset = 0;
+         this.writeIndex = 0;
+         this.ended = false;
+diff --git a/dist/esm/Parser.d.ts b/dist/esm/Parser.d.ts
+index b6176744e7d9f1f115efda5f051bde13be565f91..f258d6a5b8b86650281f6c3cb922acff62c8332e 100644
+--- a/dist/esm/Parser.d.ts
++++ b/dist/esm/Parser.d.ts
+@@ -41,6 +41,15 @@ export interface ParserOptions {
+      * @default xmlMode
+      */
+     recognizeSelfClosing?: boolean;
++    /**
++     * Seeds the parser's foreign-context stack.
++     *
++     * Pass `true` to parse markup as though it were already inside a foreign
++     * context such as `<svg>`, or provide the full stack explicitly.
++     *
++     * @default [xmlMode]
++     */
++    startingForeignContext?: boolean | boolean[];
+     /**
+      * Allows the default tokenizer to be overwritten.
+      */
+diff --git a/dist/esm/Parser.js b/dist/esm/Parser.js
+index a7c02e75c9513d11916df3f5cf98f47a2066ea4a..7b333c31694bc75180fd153f54a6da52393e860a 100644
+--- a/dist/esm/Parser.js
++++ b/dist/esm/Parser.js
+@@ -96,6 +96,18 @@ const htmlIntegrationElements = new Set([
+     "title",
+ ]);
+ const reNameEnd = /\s|\//;
++function getInitialForeignContext(options, htmlMode) {
++    const { startingForeignContext } = options;
++    if (Array.isArray(startingForeignContext)) {
++        return startingForeignContext.length > 0
++            ? [...startingForeignContext]
++            : [!htmlMode];
++    }
++    if (typeof startingForeignContext === "boolean") {
++        return [startingForeignContext];
++    }
++    return [!htmlMode];
++}
+ export class Parser {
+     constructor(cbs, options = {}) {
+         var _a, _b, _c, _d, _e, _f;
+@@ -128,7 +140,7 @@ export class Parser {
+         this.recognizeSelfClosing =
+             (_c = options.recognizeSelfClosing) !== null && _c !== void 0 ? _c : !this.htmlMode;
+         this.tokenizer = new ((_d = options.Tokenizer) !== null && _d !== void 0 ? _d : Tokenizer)(this.options, this);
+-        this.foreignContext = [!this.htmlMode];
++        this.foreignContext = getInitialForeignContext(options, this.htmlMode);
+         (_f = (_e = this.cbs).onparserinit) === null || _f === void 0 ? void 0 : _f.call(_e, this);
+     }
+     // Tokenizer event handlers
+@@ -386,7 +398,7 @@ export class Parser {
+         (_d = (_c = this.cbs).onparserinit) === null || _d === void 0 ? void 0 : _d.call(_c, this);
+         this.buffers.length = 0;
+         this.foreignContext.length = 0;
+-        this.foreignContext.unshift(!this.htmlMode);
++        this.foreignContext.push(...getInitialForeignContext(this.options, this.htmlMode));
+         this.bufferOffset = 0;
+         this.writeIndex = 0;
+         this.ended = false;
+diff --git a/src/Parser.ts b/src/Parser.ts
+index ee390c11b6e806c3a4595e248a1f51eef4040d45..4428cd91fe2a42c67c51fe33f80594b11e943c43 100644
+--- a/src/Parser.ts
++++ b/src/Parser.ts
+@@ -149,6 +149,16 @@ export interface ParserOptions {
+      */
+     recognizeSelfClosing?: boolean;
+ 
++    /**
++     * Seeds the parser's foreign-context stack.
++     *
++     * Pass `true` to parse markup as though it were already inside a foreign
++     * context such as `<svg>`, or provide the full stack explicitly.
++     *
++     * @default [xmlMode]
++     */
++    startingForeignContext?: boolean | boolean[];
++
+     /**
+      * Allows the default tokenizer to be overwritten.
+      */
+@@ -196,6 +206,25 @@ export interface Handler {
+ 
+ const reNameEnd = /\s|\//;
+ 
++function getInitialForeignContext(
++    options: ParserOptions,
++    htmlMode: boolean,
++): boolean[] {
++    const { startingForeignContext } = options;
++
++    if (Array.isArray(startingForeignContext)) {
++        return startingForeignContext.length > 0
++            ? [...startingForeignContext]
++            : [!htmlMode];
++    }
++
++    if (typeof startingForeignContext === "boolean") {
++        return [startingForeignContext];
++    }
++
++    return [!htmlMode];
++}
++
+ export class Parser implements Callbacks {
+     /** The start index of the last event. */
+     public startIndex = 0;
+@@ -244,7 +273,7 @@ export class Parser implements Callbacks {
+             this.options,
+             this,
+         );
+-        this.foreignContext = [!this.htmlMode];
++        this.foreignContext = getInitialForeignContext(options, this.htmlMode);
+         this.cbs.onparserinit?.(this);
+     }
+ 
+@@ -544,7 +573,9 @@ export class Parser implements Callbacks {
+         this.cbs.onparserinit?.(this);
+         this.buffers.length = 0;
+         this.foreignContext.length = 0;
+-        this.foreignContext.unshift(!this.htmlMode);
++        this.foreignContext.push(
++            ...getInitialForeignContext(this.options, this.htmlMode),
++        );
+         this.bufferOffset = 0;
+         this.writeIndex = 0;
+         this.ended = false;

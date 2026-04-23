@@ -1,19 +1,27 @@
 import { ScramjetContext } from "@/shared";
 import { rewriteJs } from "@rewriters/js";
 
+import {
+	TextEncoder_encode,
+	_URL,
+	_URLSearchParams,
+	atob,
+	String,
+	URL_createObjectURL,
+} from "../snapshot";
+
 export type URLMeta = {
-	origin: URL;
-	base: URL;
+	origin: _URL;
+	base: _URL;
 	topFrameName?: string;
 	parentFrameName?: string;
+	clientId: string;
+	referrerPolicy?: string;
 };
 
-let url_ctor = URL;
-let url_createObjectURL = URL.createObjectURL;
-
-function tryCanParseURL(url: string, origin?: string | URL): URL | null {
+function tryCanParseURL(url: string, origin?: string | URL): _URL | null {
 	try {
-		return new url_ctor(url, origin);
+		return new _URL(url, origin);
 	} catch {
 		return null;
 	}
@@ -24,7 +32,7 @@ export function rewriteBlob(
 	context: ScramjetContext,
 	meta: URLMeta
 ) {
-	const blob = new url_ctor(url.substring("blob:".length));
+	const blob = new _URL(url.substring("blob:".length));
 
 	return "blob:" + meta.origin.origin + blob.pathname;
 }
@@ -32,9 +40,9 @@ export function rewriteBlob(
 export function unrewriteBlob(
 	url: string,
 	context: ScramjetContext,
-	meta: URLMeta
+	_meta: URLMeta
 ) {
-	const blob = new url_ctor(url.substring("blob:".length));
+	const blob = new _URL(url.substring("blob:".length));
 
 	return "blob:" + context.prefix.origin + blob.pathname;
 }
@@ -80,20 +88,35 @@ function dataToBlob(url: string) {
 		} catch {
 			// If decode fails, fall back to raw data.
 		}
-		bytes = new TextEncoder().encode(decoded);
+		bytes = TextEncoder_encode(decoded);
 	}
 
 	const blob = new Blob([bytes], { type });
-	const objectUrl = url_createObjectURL(blob);
+	const objectUrl = URL_createObjectURL(blob);
 	return { blob, objectUrl };
 }
+
+// user: manually triggered navigation
+// link: link clicked by the user. still user initiated, but doesn't wipe
+// location: location = ...
+export type NavigationType = "user" | "link" | "location";
+export type RewriteUrlOptions = {
+	referrerPolicyOverride?: string;
+	moduleType?: string;
+	navigateType?: NavigationType;
+	// is this an iframe, where we would want to create a new client
+	newClient?: boolean;
+	topFrame?: string;
+	parentFrame?: string;
+};
 
 export function rewriteUrl(
 	url: string | URL,
 	context: ScramjetContext,
-	meta: URLMeta
+	meta: URLMeta,
+	options?: RewriteUrlOptions
 ) {
-	if (url instanceof URL) url = url.toString();
+	url = String(url);
 
 	if (url.startsWith("javascript:")) {
 		return (
@@ -114,7 +137,7 @@ export function rewriteUrl(
 		// there's an okayish workaround which is just Pretending It's a Blob
 		// TODO: this leaks memory
 		if (url.length + context.prefix.href.length + BUFFER > URL_MAX_LENGTH) {
-			let { objectUrl } = dataToBlob(url);
+			const { objectUrl } = dataToBlob(url);
 			return context.prefix.href + rewriteBlob(objectUrl, context, meta);
 		}
 
@@ -139,21 +162,42 @@ export function rewriteUrl(
 		const realHash = encodedHash ? "#" + encodedHash : "";
 		realUrl.hash = "";
 
+		const paramsInit = new _URLSearchParams();
+		if (meta.clientId && !options?.newClient) {
+			paramsInit.append("cid", meta.clientId);
+		}
+
+		if (options?.referrerPolicyOverride) {
+			paramsInit.append("rfp", options.referrerPolicyOverride);
+		} else if (meta.referrerPolicy) {
+			paramsInit.append("rfp", meta.referrerPolicy);
+		}
+
+		if (options?.moduleType) {
+			paramsInit.append("type", options.moduleType);
+		}
+
+		if (options?.topFrame) {
+			paramsInit.append("topFrame", options.topFrame);
+		}
+		if (options?.parentFrame) {
+			paramsInit.append("parentFrame", options.parentFrame);
+		}
+
+		let paramstring = "";
+		if (paramsInit.toString()) paramstring = "?" + paramsInit.toString();
+
 		return (
 			context.prefix.href +
 			context.interface.codecEncode(realUrl.href) +
+			paramstring +
 			realHash
 		);
 	}
 }
 
 export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
-	if (url instanceof URL) url = url.toString();
-	// remove query string
-	// if (url.includes("?")) {
-	// 	url = url.split("?")[0];
-	// }
-
+	url = String(url);
 	if (url.startsWith("javascript:")) {
 		//TODO
 		return url;
@@ -173,12 +217,22 @@ export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 			// custom protocol
 			return url;
 		}
+		if (!realUrl.href.startsWith(context.prefix.href)) {
+			dbg.error("unrewriteurl: unexpected url", url);
+			return url;
+		}
 		const decodedHash = context.interface.codecDecode(realUrl.hash.slice(1));
 		const realHash = decodedHash ? "#" + decodedHash : "";
 		realUrl.hash = "";
+		realUrl.search = "";
 
 		return context.interface.codecDecode(
 			realUrl.href.slice(context.prefix.href.length) + realHash
 		);
+	} else if (url == "") {
+		return url;
+	} else {
+		dbg.error("unrewriteurl: unexpected url", url);
+		return url;
 	}
 }

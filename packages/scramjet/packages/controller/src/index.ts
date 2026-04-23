@@ -2,9 +2,11 @@ import { type MethodsDefinition, RpcHelper } from "@mercuryworkshop/rpc";
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
 
-export let Plugin = $scramjet.Plugin;
+export const Plugin = $scramjet.Plugin;
 
 import {
+	type SerializedCookieSyncEntry,
+	type CookieSyncOptions,
 	type TransportToController,
 	type Controllerbound,
 	type ControllerToTransport,
@@ -53,6 +55,116 @@ const scramjetConfig: Partial<ScramjetGlobal.ScramjetConfig> = {
 	maskedfiles: ["inject.js", "scramjet.wasm.js"],
 };
 
+type PersistedCookieState = {
+	updatedAt: number;
+	cookies: string;
+};
+
+const COOKIE_DB_NAME = "__scramjet_controller";
+const COOKIE_STORE_NAME = "state";
+const COOKIE_STATE_KEY = "cookies";
+const BROADCASTCHANNEL_NAME = "__scramjet_controller_channel";
+
+let cookieDbPromise: Promise<IDBDatabase> | null = null;
+
+function parsePersistedCookieState(
+	value: unknown
+): PersistedCookieState | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as PersistedCookieState).updatedAt !== "number" ||
+		!Number.isFinite((value as PersistedCookieState).updatedAt) ||
+		typeof (value as PersistedCookieState).cookies !== "string"
+	) {
+		return null;
+	}
+
+	return value as PersistedCookieState;
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () =>
+			reject(request.error ?? new Error("IndexedDB request failed"));
+	});
+}
+
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onabort = () =>
+			reject(transaction.error ?? new Error("IndexedDB transaction aborted"));
+		transaction.onerror = () =>
+			reject(transaction.error ?? new Error("IndexedDB transaction failed"));
+	});
+}
+
+function openCookieDatabase(): Promise<IDBDatabase> {
+	if (cookieDbPromise) {
+		return cookieDbPromise;
+	}
+
+	cookieDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open(COOKIE_DB_NAME, 1);
+		request.onupgradeneeded = () => {
+			const db = request.result;
+			if (!db.objectStoreNames.contains(COOKIE_STORE_NAME)) {
+				db.createObjectStore(COOKIE_STORE_NAME);
+			}
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () =>
+			reject(request.error ?? new Error("Failed to open cookie database"));
+	});
+
+	return cookieDbPromise;
+}
+
+async function readCookieState(): Promise<PersistedCookieState | null> {
+	try {
+		const db = await openCookieDatabase();
+		const transaction = db.transaction(COOKIE_STORE_NAME, "readonly");
+		const store = transaction.objectStore(COOKIE_STORE_NAME);
+		const value = await requestToPromise(store.get(COOKIE_STATE_KEY));
+		await transactionToPromise(transaction);
+		return parsePersistedCookieState(value);
+	} catch (error) {
+		console.error("Failed to read persisted controller cookies:", error);
+		return null;
+	}
+}
+
+async function writeCookieState(
+	cookies: string,
+	currentUpdatedAt: number
+): Promise<number> {
+	try {
+		const db = await openCookieDatabase();
+		const transaction = db.transaction(COOKIE_STORE_NAME, "readwrite");
+		const store = transaction.objectStore(COOKIE_STORE_NAME);
+		const existing = parsePersistedCookieState(
+			await requestToPromise(store.get(COOKIE_STATE_KEY))
+		);
+		const updatedAt = Math.max(
+			Date.now(),
+			currentUpdatedAt + 1,
+			(existing?.updatedAt ?? 0) + 1
+		);
+		const state: PersistedCookieState = {
+			updatedAt,
+			cookies,
+		};
+		store.put(state, COOKIE_STATE_KEY);
+		await transactionToPromise(transaction);
+		return updatedAt;
+	} catch (error) {
+		console.error("Failed to persist controller cookies:", error);
+		return currentUpdatedAt;
+	}
+}
+
 function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
 }
@@ -94,20 +206,49 @@ export class Controller {
 	prefix: string;
 	frames: Frame[] = [];
 	cookieJar = new $scramjet.CookieJar();
+	private cookieUpdatedAt = 0;
+	serviceWorkerController: ServiceWorker;
+	guardServiceWorkerRevive = true;
 
 	rpc: RpcHelper<Controllerbound, SWbound>;
-	private ready: Promise<[void, void]>;
+	private ready: Promise<void>;
 	private readyResolve!: () => void;
 	public isReady: boolean = false;
 
 	transport: ProxyTransport;
+	private cookieSyncPromise: Promise<void> | null = null;
+	private cookieSyncDirty = true;
+	private cookieSyncChannel = new BroadcastChannel(BROADCASTCHANNEL_NAME);
+
+	private port: MessagePort | null = null;
+	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
+		this.rpc.recieve(e.data);
+	};
+	private onCookieSyncMessage = (event: MessageEvent) => {
+		const updatedAt =
+			typeof event.data === "object" && event.data !== null
+				? (event.data as { updatedAt?: unknown }).updatedAt
+				: undefined;
+		if (typeof updatedAt !== "number" || updatedAt <= this.cookieUpdatedAt) {
+			return;
+		}
+
+		this.cookieSyncDirty = true;
+		void this.loadSavedCookies();
+	};
 
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
 			this.readyResolve();
+			setTimeout(() => {
+				this.guardServiceWorkerRevive = false;
+			}, 5000);
 		},
 		request: async (data) => {
 			try {
+				// doesn't actually *load* every request, but hold up requests until the promise finishes
+				await this.loadSavedCookies();
+
 				const path = new URL(data.rawUrl).pathname;
 				const frame = this.frames.find((f) => path.startsWith(f.prefix));
 				if (!frame) throw new Error("No frame found for request");
@@ -125,11 +266,7 @@ export class Controller {
 								.join("")
 						);
 
-						let payload = "";
-						payload +=
-							"if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
-						payload += `self.WASM = '${b64}';`;
-						wasmPayload = payload;
+						wasmPayload = `self.WASM = '${b64}';`;
 					}
 
 					return [
@@ -153,6 +290,7 @@ export class Controller {
 						? new URL(data.rawClientUrl)
 						: undefined,
 					rawUrl: new URL(data.rawUrl),
+					rawReferrer: data.rawReferrer,
 					destination: data.destination,
 					method: data.method,
 					mode: data.mode,
@@ -190,6 +328,15 @@ export class Controller {
 							undefined
 						);
 						return [response, [response.body]];
+					},
+					sendSetCookie: async ({ cookies, options }) => {
+						await this.loadSavedCookies(true);
+						if (options?.clear) {
+							this.cookieJar.clear();
+						}
+						this.applyCookieSyncEntries(cookies);
+						await this.persistCookies();
+						await this.propagateCookieSync(cookies, options);
 					},
 					connect: async ({ url, protocols, requestHeaders, port }) => {
 						let resolve: (arg: TransportToController["connect"][1]) => void;
@@ -261,7 +408,6 @@ export class Controller {
 			};
 			rpc.call("ready", undefined, []);
 		},
-		sendSetCookie: async ({ url, cookie }) => {},
 	};
 
 	constructor(public init: ControllerInit) {
@@ -271,28 +417,88 @@ export class Controller {
 		this.transport = init.transport;
 		this.id = makeId();
 		this.prefix = this.config.prefix + this.id + "/";
+		this.serviceWorkerController = init.serviceworker;
 
 		this.ready = Promise.all([
 			new Promise<void>((resolve) => {
 				this.readyResolve = resolve;
 			}),
 			loadScramjetWasm(),
-		]);
+			this.loadSavedCookies(true),
+		]).then(() => undefined);
 
-		const channel = new MessageChannel();
 		this.rpc = new RpcHelper<Controllerbound, SWbound>(
 			this.methods,
 			"tabchannel-" + this.id,
 			(data, transfer) => {
-				channel.port1.postMessage(data, transfer);
+				if (!this.port) {
+					throw new Error("Port not found");
+				}
+				this.port.postMessage(data, transfer);
 			}
 		);
-		channel.port1.addEventListener("message", (e) => {
-			this.rpc.recieve(e.data);
-		});
-		channel.port1.start();
 
-		init.serviceworker.postMessage(
+		this.cookieSyncChannel.addEventListener(
+			"message",
+			this.onCookieSyncMessage
+		);
+		this.setupMessagePort();
+
+		navigator.serviceWorker.addEventListener("message", (e) => {
+			if (
+				e.data?.$controller$setCookie &&
+				typeof e.data.$controller$setCookie === "object"
+			) {
+				const payload = e.data.$controller$setCookie as {
+					cookies?: SerializedCookieSyncEntry[];
+					options?: CookieSyncOptions;
+					id?: string;
+				};
+
+				if (payload.options?.clear) {
+					this.cookieJar.clear();
+				}
+				this.applyCookieSyncEntries(payload.cookies);
+
+				if (typeof payload.id === "string") {
+					this.serviceWorkerController.postMessage({
+						$sw$setCookieDone: {
+							id: payload.id,
+						},
+					});
+				}
+
+				return;
+			}
+
+			if (e.data.$controller$swrevive) {
+				// if we just spawned the service worker, it will send this even though it's not actually dead
+				// TODO: pretty jank, fix at some point
+				if (this.guardServiceWorkerRevive) {
+					return;
+				}
+				this.setupMessagePort();
+			}
+		});
+	}
+
+	private setupMessagePort() {
+		if (this.port) {
+			this.port.removeEventListener("message", this.onTabChannelMessage);
+			try {
+				this.port.close();
+			} catch {
+				// ignore
+			}
+			this.port = null;
+		}
+
+		const channel = new MessageChannel();
+		this.port = channel.port1;
+		this.port.addEventListener("message", this.onTabChannelMessage);
+		this.port.start();
+
+		this.serviceWorkerController.postMessage(
 			{
 				$controller$init: {
 					prefix: this.config.prefix + this.id,
@@ -301,6 +507,76 @@ export class Controller {
 			},
 			[channel.port2]
 		);
+	}
+
+	// TODO: should this be a method on the cookie jar?
+	private applyCookieSyncEntries(
+		cookies: SerializedCookieSyncEntry[] | undefined
+	) {
+		if (!Array.isArray(cookies)) {
+			return;
+		}
+
+		for (const entry of cookies) {
+			if (typeof entry?.url !== "string" || typeof entry.cookie !== "string") {
+				continue;
+			}
+
+			this.cookieJar.setCookies(entry.cookie, new URL(entry.url));
+		}
+	}
+
+	async propagateCookieSync(
+		cookies: SerializedCookieSyncEntry[],
+		options: CookieSyncOptions = {}
+	): Promise<void> {
+		if (!this.port) {
+			return;
+		}
+
+		await this.rpc.call("sendSetCookie", {
+			cookies,
+			options,
+		});
+	}
+
+	private async loadSavedCookies(force = false): Promise<void> {
+		if (!force && !this.cookieSyncDirty) {
+			return;
+		}
+
+		if (this.cookieSyncPromise) {
+			return this.cookieSyncPromise;
+		}
+
+		this.cookieSyncPromise = (async () => {
+			const persisted = await readCookieState();
+			if (persisted && persisted.updatedAt > this.cookieUpdatedAt) {
+				this.cookieJar.load(persisted.cookies);
+				this.cookieUpdatedAt = persisted.updatedAt;
+			}
+			this.cookieSyncDirty = false;
+		})().finally(() => {
+			this.cookieSyncPromise = null;
+		});
+
+		return this.cookieSyncPromise;
+	}
+
+	async persistCookies(): Promise<void> {
+		const updatedAt = await writeCookieState(
+			this.cookieJar.dump(),
+			this.cookieUpdatedAt
+		);
+		if (updatedAt <= this.cookieUpdatedAt) {
+			return;
+		}
+
+		this.cookieUpdatedAt = updatedAt;
+		this.cookieSyncDirty = false;
+		this.cookieSyncChannel.postMessage({
+			updatedAt,
+		});
 	}
 
 	createFrame(element?: HTMLIFrameElement): Frame {
@@ -341,7 +617,7 @@ function yieldGetInjectScripts(
 	codecDecode: (input: string) => string
 ) {
 	const getInjectScripts: ScramjetGlobal.ScramjetInterface["getInjectScripts"] =
-		(meta, handler, script) => {
+		(meta, handler, htmlcontext, script) => {
 			function base64Encode(text: string) {
 				return btoa(
 					new TextEncoder()
@@ -360,7 +636,7 @@ function yieldGetInjectScripts(
 				script(
 					"data:text/javascript;charset=utf-8;base64," +
 						base64Encode(`
-					document.currentScript.remove();
+					document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 					$scramjetController.load({
 						config: ${JSON.stringify(config)},
 						sjconfig: ${JSON.stringify(sjconfig)},
@@ -369,6 +645,9 @@ function yieldGetInjectScripts(
 						yieldGetInjectScripts: ${yieldGetInjectScripts.toString()},
 						codecEncode: ${codecEncode.toString()},
 						codecDecode: ${codecDecode.toString()},
+						clientId: ${JSON.stringify(meta.clientId)},
+						initHeaders: ${JSON.stringify(htmlcontext.headers)},
+						history: ${JSON.stringify(htmlcontext.history)},
 					})
 				`)
 				),
@@ -458,7 +737,16 @@ export class Frame {
 			crossOriginIsolated: self.crossOriginIsolated,
 			context: this.context,
 			transport: controller.transport,
-			async sendSetCookie(url, cookie) {},
+			async sendSetCookie(cookies, options) {
+				await controller.persistCookies();
+				await controller.propagateCookieSync(
+					cookies.map(({ url, cookie }) => ({
+						url: url.href,
+						cookie,
+					})),
+					options
+				);
+			},
 			async fetchBlobUrl(url) {
 				return BareResponse.fromNativeResponse(await fetch(url));
 			},

@@ -1,5 +1,6 @@
 import { URLMeta, rewriteUrl, unrewriteUrl } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
+import { String } from "@/shared/snapshot";
 
 export function rewriteCss(
 	css: string,
@@ -20,10 +21,10 @@ function handleCss(
 	meta?: URLMeta
 ) {
 	// regex from vk6 (https://github.com/ading2210)
-	const urlRegex = /url\(['"]?(.+?)['"]?\)/gm;
+	const urlRegex = /(?i:url)\(['"]?(.+?)['"]?\)/gm;
 	const Atruleregex =
-		/@import\s+(url\s*?\(.{0,9999}?\)|['"].{0,9999}?['"]|.{0,9999}?)($|\s|;)/gm;
-	css = new String(css).toString();
+		/@import\s+((?i:url)\s*?\(.{0,9999}?\)|['"].{0,9999}?['"]|.{0,9999}?)($|\s|;)/gm;
+	css = String(css);
 	css = css.replace(urlRegex, (match, url) => {
 		const encodedUrl =
 			type === "rewrite"

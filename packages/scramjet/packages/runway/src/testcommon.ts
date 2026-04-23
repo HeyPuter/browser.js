@@ -1,5 +1,5 @@
 import http from "http";
-import type { Socket } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import type { FrameLocator, Page } from "playwright";
 
 export type TestContext = {
@@ -11,9 +11,34 @@ export type TestContext = {
 	navigate: (url: string) => Promise<void>;
 };
 
+export type DirectTestContext = {
+	assert: (condition: unknown, message?: string) => void;
+	assertEqual: (actual: unknown, expected: unknown, message?: string) => void;
+};
+
 export type Test = {
 	name: string;
 	port: number;
+	/**
+	 * Hostname used in the URL passed to the harness (default `localhost`).
+	 * Cleartext traffic goes to `127.0.0.1:testPort` with a matching `Host` header (no `/etc/hosts`).
+	 * When set to anything other than `localhost` or `127.0.0.1`, {@link runwayTestTargetUrl}
+	 * defaults the scheme to `https` unless {@link Test.scheme} is set.
+	 */
+	hostname?: string;
+	/**
+	 * Extra hostnames handled by the same test server (same port). A request to
+	 * `https://api.example/check` is routed like {@link Test.hostname} if the host is
+	 * an exact match or a subdomain of any entry (including `hostname`). Use this when
+	 * the extra name is not a subdomain of `hostname` (e.g. `cdn.net` alongside `x.com`).
+	 */
+	cleartextHosts?: string[];
+	scheme?: "http" | "https";
+	path?: string;
+	timeoutMs?: number;
+	reloadHarness?: boolean;
+	topLevelScramjet?: boolean;
+	warmProxiedNavigation?: boolean;
 	start: (ctx: {
 		pass: (message?: string, details?: any) => Promise<void>;
 		fail: (message?: string, details?: any) => Promise<void>;
@@ -23,11 +48,56 @@ export type Test = {
 	scramjetOnly?: boolean;
 	/** If defined, this is a playwright test that controls the browser directly */
 	playwrightFn?: (ctx: TestContext) => Promise<void>;
+	/** If defined, this test runs directly in-process and does not use the harness/browser */
+	directFn?: () => Promise<void>;
 	/** Expected number of ok() calls. Test will fail if actual count doesn't match */
 	expectedOkCount?: number;
 };
 
-let nextPort = 9000;
+/**
+ * Hostnames for which the runway harness transport may speak cleartext HTTP to the
+ * origin while the document URL uses `https:` (runway cleartext HTTPS transport).
+ */
+/** All fake hostnames for this test (document host + {@link Test.cleartextHosts}). */
+export function runwayCleartextRoots(test: Test): string[] {
+	if (!test.hostname) return [];
+	return [...new Set([test.hostname, ...(test.cleartextHosts ?? [])])];
+}
+
+export function runwayCleartextHttpsHostList(test: Test): string[] {
+	const roots = runwayCleartextRoots(test);
+	if (roots.length === 0) return [];
+	return [...new Set([...roots, "localhost", "127.0.0.1"])];
+}
+
+/**
+ * When {@link Test.hostname} is set, the harness transport maps default-port
+ * `https://(sub.)host/…` to the real HTTP port {@link Test.port}.
+ */
+export function runwayCleartextSiteForHarness(
+	test: Test
+): { roots: string[]; httpPort: number } | null {
+	const roots = runwayCleartextRoots(test);
+	if (roots.length === 0 || !test.port) return null;
+	return { roots, httpPort: test.port };
+}
+
+/** URL the harness loads for this test (honours {@link Test.hostname} and {@link Test.scheme}). */
+export function runwayTestTargetUrl(test: Test): string {
+	const hostname = test.hostname ?? "localhost";
+	let scheme = test.scheme;
+	if (!scheme) {
+		scheme =
+			hostname !== "localhost" && hostname !== "127.0.0.1" ? "https" : "http";
+	}
+	const path = test.path ?? "/";
+	if (test.hostname) {
+		return `${scheme}://${hostname}${path.startsWith("/") ? path : `/${path}`}`;
+	}
+	return `${scheme}://${hostname}:${test.port}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+let nextPort = 10000 + Math.floor(Math.random() * 40000);
 
 export function basicTest(props: {
 	name: string;
@@ -35,14 +105,21 @@ export function basicTest(props: {
 	autoPass?: boolean;
 	scramjetOnly?: boolean;
 	expectedOkCount?: number;
+	hostname?: string;
+	cleartextHosts?: string[];
+	scheme?: "http" | "https";
 }): Test {
-	const port = nextPort++;
+	let port = 0;
 	let server: http.Server;
-	const scramjetOnly = props.scramjetOnly ?? /checkglobal\s*\(/i.test(props.js);
-
-	return {
+	const scramjetOnly =
+		props.scramjetOnly ??
+		(props.hostname ? true : /checkglobal\s*\(/i.test(props.js));
+	const test: Test = {
 		name: props.name,
 		port,
+		hostname: props.hostname,
+		cleartextHosts: props.cleartextHosts,
+		scheme: props.scheme,
 		scramjetOnly,
 		expectedOkCount: props.expectedOkCount,
 		async start() {
@@ -71,7 +148,11 @@ export function basicTest(props: {
 						res.end("Not found");
 					}
 				});
-				server.listen(port, () => resolve());
+				server.listen(0, () => {
+					port = (server.address() as AddressInfo).port;
+					test.port = port;
+					resolve();
+				});
 			});
 		},
 		async stop() {
@@ -92,6 +173,71 @@ export function basicTest(props: {
 			]);
 		},
 	};
+	return test;
+}
+
+/**
+ * Serves `html` as the full response for `/`. Put your markup and inline scripts
+ * in that string (for example call `runTest` from the CDP harness globals).
+ */
+export function htmlTest(props: {
+	name: string;
+	html: string;
+	scramjetOnly?: boolean;
+	expectedOkCount?: number;
+	hostname?: string;
+	cleartextHosts?: string[];
+	scheme?: "http" | "https";
+}): Test {
+	let port = 0;
+	let server: http.Server;
+	const scramjetOnly =
+		props.scramjetOnly ??
+		(props.hostname ? true : /checkglobal\s*\(/i.test(props.html));
+	const test: Test = {
+		name: props.name,
+		port,
+		hostname: props.hostname,
+		cleartextHosts: props.cleartextHosts,
+		scheme: props.scheme,
+		scramjetOnly,
+		expectedOkCount: props.expectedOkCount,
+		async start() {
+			return new Promise((resolve) => {
+				server = http.createServer((req, res) => {
+					if (req.url === "/") {
+						res.writeHead(200, { "Content-Type": "text/html" });
+						res.end(props.html);
+					} else {
+						res.writeHead(404);
+						res.end("Not found");
+					}
+				});
+				server.listen(0, () => {
+					port = (server.address() as AddressInfo).port;
+					test.port = port;
+					resolve();
+				});
+			});
+		},
+		async stop() {
+			return Promise.race([
+				new Promise<void>((resolve) => {
+					if (server.closeAllConnections) {
+						server.closeAllConnections();
+					}
+					server.close(() => resolve());
+				}),
+				new Promise<void>((_, reject) => {
+					setTimeout(
+						() => reject(new Error("Server stop timed out after 5 seconds")),
+						5000
+					);
+				}),
+			]);
+		},
+	};
+	return test;
 }
 
 /**
@@ -116,10 +262,14 @@ export function basicTest(props: {
 export function playwrightTest(props: {
 	name: string;
 	fn: (ctx: TestContext) => Promise<void>;
+	hostname?: string;
+	cleartextHosts?: string[];
 }): Test {
 	return {
 		name: props.name,
 		port: 0, // Not used for playwright tests
+		hostname: props.hostname,
+		cleartextHosts: props.cleartextHosts,
 		async start() {
 			// No server needed
 		},
@@ -128,6 +278,43 @@ export function playwrightTest(props: {
 		},
 		playwrightFn: props.fn,
 		scramjetOnly: true,
+	};
+}
+
+export function directTest(props: {
+	name: string;
+	fn: (ctx: DirectTestContext) => Promise<void> | void;
+	timeoutMs?: number;
+}): Test {
+	return {
+		name: props.name,
+		port: 0,
+		timeoutMs: props.timeoutMs,
+		async start() {
+			// No server needed
+		},
+		async stop() {
+			// Nothing to stop
+		},
+		scramjetOnly: true,
+		directFn: async () => {
+			const assert = (condition: unknown, message = "Assertion failed") => {
+				if (!condition) throw new Error(message);
+			};
+			const assertEqual = (
+				actual: unknown,
+				expected: unknown,
+				message = "Values are not equal"
+			) => {
+				if (!Object.is(actual, expected)) {
+					throw new Error(
+						`${message}\nExpected: ${String(expected)}\nActual: ${String(actual)}`
+					);
+				}
+			};
+
+			await props.fn({ assert, assertEqual });
+		},
 	};
 }
 
@@ -146,17 +333,26 @@ export function serverTest(props: {
 	js?: string;
 	scramjetOnly?: boolean;
 	expectedOkCount?: number;
+	hostname?: string;
+	cleartextHosts?: string[];
+	scheme?: "http" | "https";
 }) {
-	const port = nextPort++;
+	let port = 0;
 	let server: http.Server;
 	const activeSockets = new Set<Socket>();
 	const scramjetOnly =
 		props.scramjetOnly ??
-		(props.js ? /checkglobal\s*\(/i.test(props.js) : false);
-
-	return {
+		(props.hostname
+			? true
+			: props.js
+				? /checkglobal\s*\(/i.test(props.js)
+				: false);
+	const test: Test = {
 		name: props.name,
 		port,
+		hostname: props.hostname,
+		cleartextHosts: props.cleartextHosts,
+		scheme: props.scheme,
 		scramjetOnly,
 		expectedOkCount: props.expectedOkCount,
 		async start({
@@ -202,9 +398,13 @@ export function serverTest(props: {
 					activeSockets.delete(socket);
 				});
 			});
-			await props.start(server, port, { pass, fail });
 			return new Promise<void>((resolve) => {
-				server.listen(port, () => resolve());
+				server.listen(0, async () => {
+					port = (server.address() as AddressInfo).port;
+					test.port = port;
+					await props.start(server, port, { pass, fail });
+					resolve();
+				});
 			});
 		},
 		async stop() {
@@ -230,6 +430,7 @@ export function serverTest(props: {
 			]);
 		},
 	};
+	return test;
 }
 
 type Frame = {
@@ -251,15 +452,15 @@ export function multiFrameTest(props: {
 		subframes: Record<string, string[]>;
 	};
 
-	let servers: Record<string, Server> = {};
-	let serversOpenPromise: Promise<void>[] = [];
+	const servers: Record<string, Server> = {};
+	const serversOpenPromise: Promise<void>[] = [];
 
 	const createServer = (originid: string) => {
 		const js: Record<string, string> = {};
-		let subframes: Record<string, string[]> = {};
-		let port = nextPort++;
+		const subframes: Record<string, string[]> = {};
+		const port = nextPort++;
 
-		let server = http.createServer((req, res) => {
+		const server = http.createServer((req, res) => {
 			if (req.url === "/") {
 				res.writeHead(302, {
 					Location: `http://localhost:${port}/${props.root.id}`,
@@ -267,7 +468,7 @@ export function multiFrameTest(props: {
 				res.end();
 			} else {
 				if (req.url!.endsWith(".js")) {
-					let id = req.url!.split("/").pop()!.split(".")[0];
+					const id = req.url!.split("/").pop()!.split(".")[0];
 					if (!js[id]) {
 						res.writeHead(404);
 						res.end("Not found");
@@ -276,11 +477,11 @@ export function multiFrameTest(props: {
 					res.writeHead(200, { "Content-Type": "application/javascript" });
 					res.end(js[id]);
 				} else {
-					let id = req.url!.split("/").pop()!;
+					const id = req.url!.split("/").pop()!;
 
-					let subframesHtml: string[] = [];
+					const subframesHtml: string[] = [];
 					for (const subframe of subframes[id]) {
-						let server = Object.values(servers).find(
+						const server = Object.values(servers).find(
 							(server) => server.js[subframe]
 						)!;
 						subframesHtml.push(`
@@ -330,7 +531,7 @@ export function multiFrameTest(props: {
 			servers[frame.originid] = server;
 		}
 
-		let url = `http://localhost:${server.port}/${frame.id}`;
+		const url = `http://localhost:${server.port}/${frame.id}`;
 		server.js[frame.id] = frame.js({
 			url,
 		});
@@ -352,7 +553,7 @@ export function multiFrameTest(props: {
 			await Promise.all(serversOpenPromise);
 		},
 		async stop() {
-			let promises: Promise<void>[] = [];
+			const promises: Promise<void>[] = [];
 			for (const server of Object.values(servers)) {
 				promises.push(
 					new Promise((resolve) => {

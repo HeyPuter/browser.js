@@ -5,6 +5,7 @@
 		<script src="/scramjet/scramjet.js"></script>
 		<script src="/controller/controller.api.js"></script>
 		<script src="/libcurl/index.js"></script>
+		<script src="/runway-cleartext-https-transport.js"></script>
 	</head>
 	<body>
 		<h1>Scramjet Test Harness</h1>
@@ -61,18 +62,26 @@
 
 				statusEl.textContent = "Initializing controller...";
 
-				const transport = new LibcurlClient({
+				const innerTransport = new LibcurlClient({
 					wisp: "ws://localhost:4501/",
 				});
+				const transport = new RunwayCleartextHttpsTransport(innerTransport);
+
+				const sw = navigator.serviceWorker.controller ?? registration.active;
+				if (!sw) {
+					throw new Error("No service worker available for controller");
+				}
 
 				controller = new Controller({
-					serviceworker: registration.active,
+					serviceworker: sw,
 					transport,
 				});
+				window.__runwayController = controller;
 
 				await controller.ready;
 
 				scramjetFrame = controller.createFrame(testframe);
+				window.__runwayScramjetFrame = scramjetFrame;
 
 				statusEl.textContent = "Ready - waiting for test...";
 
@@ -82,7 +91,15 @@
 					sessionStorage.setItem("__runway_last_test", url);
 					reloadBtn.style.display = "inline-block";
 					// injectTestFunctions();
+					console.log("navigating to", url);
 					scramjetFrame.go(url);
+				};
+
+				window.__runwayGetProxiedUrl = (url) => {
+					return $scramjet.rewriteUrl(url, scramjetFrame.context, {
+						origin: new URL(location.href),
+						base: new URL(location.href),
+					});
 				};
 
 				window.__runwayReload = () => {

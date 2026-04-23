@@ -1,12 +1,15 @@
 import { controller } from ".";
 import { createStore, css, type Component } from "dreamland/core";
+import { demoSettingsStore } from "./demoSettings";
 import { FlagEditor } from "./FlagEditor";
 import { RequestViewer, type RequestEntry } from "./RequestViewer";
 import { PlaygroundPanel } from "./PlaygroundPanel";
+import { ResponsePlayground } from "./ResponsePlayground";
+import { SettingsPanel } from "./SettingsPanel";
 
 const urlStore = createStore(
 	{
-		url: "https://google.com",
+		url: demoSettingsStore.homeUrl,
 	},
 	{
 		ident: "store",
@@ -14,17 +17,20 @@ const urlStore = createStore(
 		autosave: "auto",
 	}
 );
-
-const MAX_REQUESTS = 200;
-
 export const App: Component<
 	{},
 	{},
 	{
-		activeTab: "browser" | "requests" | "playground";
+		activeTab:
+			| "browser"
+			| "requests"
+			| "playground"
+			| "response-playground"
+			| "settings";
 		frame: ReturnType<typeof controller.createFrame>;
 		frameel: HTMLIFrameElement;
 		playgroundFrame: ReturnType<typeof controller.createFrame>;
+		responsePlaygroundFrame: ReturnType<typeof controller.createFrame>;
 		requests: RequestEntry[];
 		selectedId: string | null;
 	}
@@ -40,6 +46,7 @@ export const App: Component<
 
 		this.frame = controller.createFrame(this.frameel);
 		this.playgroundFrame = controller.createFrame();
+		this.responsePlaygroundFrame = controller.createFrame();
 
 		const versionInfo = (globalThis as any).$scramjet?.versionInfo ?? {};
 		const scramjetVersion = String(versionInfo.version ?? "unknown");
@@ -203,6 +210,27 @@ export const App: Component<
 					>
 						Playground
 					</button>
+					<button
+						class={use(this.activeTab).map(
+							(tab) =>
+								`tab-button ${tab === "response-playground" ? "active" : ""}`
+						)}
+						on:click={() => {
+							this.activeTab = "response-playground";
+						}}
+					>
+						Response Playground
+					</button>
+					<button
+						class={use(this.activeTab).map(
+							(tab) => `tab-button ${tab === "settings" ? "active" : ""}`
+						)}
+						on:click={() => {
+							this.activeTab = "settings";
+						}}
+					>
+						Settings
+					</button>
 				</div>
 				<form
 					class={use(this.activeTab).map(
@@ -245,7 +273,6 @@ export const App: Component<
 					<FlagEditor
 						inline={true}
 						onFlagsChange={(flags) => {
-							console.log("flags changed", flags);
 							Object.assign(controller.scramjetConfig.flags, flags);
 						}}
 					/>
@@ -269,7 +296,7 @@ export const App: Component<
 					active={use(this.activeTab).map((tab) => tab === "requests")}
 					requests={use(this.requests)}
 					selectedId={use(this.selectedId)}
-					maxRequests={MAX_REQUESTS}
+					maxRequests={use(demoSettingsStore.maxRequests)}
 					onSelect={(id) => {
 						this.selectedId = id;
 					}}
@@ -294,6 +321,31 @@ export const App: Component<
 				<PlaygroundPanel
 					frame={use(this.playgroundFrame)}
 					active={use(this.activeTab).map((tab) => tab === "playground")}
+				/>
+			</div>
+			<div
+				class={use(this.activeTab).map(
+					(tab) =>
+						`tab-panel response-playground-panel ${tab === "response-playground" ? "active" : ""}`
+				)}
+			>
+				<ResponsePlayground
+					frame={use(this.responsePlaygroundFrame)}
+					active={use(this.activeTab).map(
+						(tab) => tab === "response-playground"
+					)}
+				/>
+			</div>
+			<div
+				class={use(this.activeTab).map(
+					(tab) =>
+						`tab-panel settings-tab ${tab === "settings" ? "active" : ""}`
+				)}
+			>
+				<SettingsPanel
+					onHomeUrlApply={(url) => {
+						urlStore.url = url;
+					}}
 				/>
 			</div>
 		</div>
@@ -398,6 +450,16 @@ App.style = css`
 		flex-direction: column;
 	}
 	.playground-panel {
+		width: 100%;
+		min-width: 0;
+		min-height: 0;
+	}
+	.response-playground-panel {
+		width: 100%;
+		min-width: 0;
+		min-height: 0;
+	}
+	.settings-tab {
 		width: 100%;
 		min-width: 0;
 		min-height: 0;

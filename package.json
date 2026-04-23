@@ -12,15 +12,29 @@
 		"build:dreamland": "cd external/dreamlandjs && pnpm build",
 		"build:chrome": "cd packages/chrome && pnpm build",
 		"dev": "node --no-warnings=ExperimentalWarning devserver.ts",
+		"eslint": "node scripts/eslint-cli.mjs",
+		"lint": "pnpm eslint .",
 		"watch": "rspack build --watch",
 		"format": "prettier --write .",
 		"preinstall": "npx only-allow pnpm"
 	},
+	"pnpm": {
+		"overrides": {
+			"htmlparser2": "10.1.0"
+		},
+		"patchedDependencies": {
+			"htmlparser2@10.1.0": "patches/htmlparser2@10.1.0.patch"
+		}
+	},
 	"devDependencies": {
+		"@eslint/eslintrc": "^3.3.5",
+		"@eslint/js": "^10.0.1",
 		"@mercuryworkshop/wisp-js": "catalog:",
 		"@rsdoctor/rspack-plugin": "^1.4.0",
 		"@rspack/cli": "^1.5.8",
 		"@rspack/core": "^1.5.8",
+		"@typescript-eslint/eslint-plugin": "8.57.3-alpha.3",
+		"@typescript-eslint/parser": "8.57.3-alpha.3",
 		"bufferutil": "^4.0.9",
 		"chafa-wasm": "^0.3.1",
 		"chalk": "^5.6.2",
@@ -29,6 +43,7 @@
 		"vite": "^7.1.12"
 	},
 	"dependencies": {
+		"eslint": "^10.1.0",
 		"prettier": "^3.6.2"
 	}
 }

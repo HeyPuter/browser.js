@@ -3,6 +3,14 @@ import type { Tab } from "./Tab";
 import { INTERNAL_URL_PROTOCOL } from "../consts";
 import { profileService } from "..";
 
+export type SerializedHistoryState = {
+	state: any;
+	url: string;
+	title: string | null;
+	favicon: string | null;
+	timestamp: number;
+};
+
 // history api emulation
 export class HistoryState extends StatefulClass {
 	url: URL = null!;
@@ -17,15 +25,55 @@ export class HistoryState extends StatefulClass {
 		super();
 		Object.assign(this, partial);
 		this.timestamp = Date.now();
+		this.autodirty();
+	}
+
+	serialize(): SerializedHistoryState {
+		return {
+			url: this.url.href,
+			title: this.title,
+			state: this.state,
+			favicon: this.favicon,
+			timestamp: this.timestamp,
+		};
+	}
+	static deserialize(data: SerializedHistoryState): HistoryState {
+		return new HistoryState({
+			url: new URL(data.url),
+			state: data.state,
+			title: data.title,
+			favicon: data.favicon,
+			timestamp: data.timestamp,
+		});
 	}
 }
 
-export class History {
+export type SerializedHistory = {
+	index: number;
+	states: SerializedHistoryState[];
+};
+
+export class History extends StatefulClass {
 	index: number = -1;
 	states: HistoryState[] = [];
 	justTriggeredNavigation: boolean = false;
 
-	constructor(private tab: Tab) {}
+	constructor(
+		private tab: Tab,
+		data?: SerializedHistory
+	) {
+		super();
+		if (data) {
+			this.index = data.index;
+			this.states = data.states.map((state) => HistoryState.deserialize(state));
+		}
+	}
+	serialize(): SerializedHistory {
+		return {
+			index: this.index,
+			states: this.states.map((state) => state.serialize()),
+		};
+	}
 
 	current(): HistoryState {
 		if (this.index < 0 || this.index >= this.states.length) {
@@ -42,15 +90,20 @@ export class History {
 		navigate: boolean = true,
 		virtual: boolean = false
 	): HistoryState {
-		if (this.index + 1 < this.states.length)
+		if (this.index + 1 < this.states.length) {
+			// disown states we're removing
+			this.states.slice(this.index + 1).forEach((state) => this.disown(state));
+
 			// "fork" history tree, creating a new timeline
 			this.states.splice(this.index, this.states.length - this.index);
+		}
 		const hstate = new HistoryState({ url, state, title });
 		if (virtual) hstate.virtual = true;
 
 		if (url.href != `${INTERNAL_URL_PROTOCOL}//newtab`)
 			profileService.globalhistory = [...profileService.globalhistory, hstate];
 		this.states.push(hstate);
+		this.own(hstate);
 		this.index++;
 
 		if (navigate) {
@@ -61,6 +114,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
+		this.markDirty();
 		return this.states[this.index];
 	}
 	replace(
@@ -86,7 +140,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
-		markDirty();
+		this.markDirty();
 		return this.states[this.index];
 	}
 	go(delta: number, navigate: boolean = true): HistoryState {
@@ -120,7 +174,7 @@ export class History {
 		this.tab.canGoBack = this.canGoBack();
 		this.tab.canGoForward = this.canGoForward();
 
-		markDirty();
+		this.markDirty();
 		return newstate;
 	}
 	canGoBack(): boolean {

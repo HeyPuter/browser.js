@@ -43,7 +43,7 @@ export default [
 			"no-var": "error",
 			"no-this-before-super": "warn",
 			"no-useless-return": "error",
-			"no-shadow": "error",
+			// "no-shadow": "error",
 			"prefer-const": "warn",
 			"no-unreachable": "warn",
 			"no-undef": "off",

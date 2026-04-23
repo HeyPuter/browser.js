@@ -62,6 +62,7 @@ var $scramjetController;
 									);
 								})
 								.catch((err) => {
+									console.error(err);
 									this.sendRaw(
 										{
 											[this.id]: {
@@ -169,7 +170,40 @@ var $scramjetController;
 				/*! @mercuryworkshop/rpc */ "./packages/scramjet/packages/rpc/index.ts"
 			);
 
-		class Tab {
+		function makeId() {
+			return Math.random().toString(36).substring(2, 10);
+		}
+		let cookieResolvers = {};
+		addEventListener("message", (e) => {
+			if (!e.data) return;
+			if (typeof e.data != "object") return;
+			if (
+				e.data.$sw$setCookieDone &&
+				typeof e.data.$sw$setCookieDone == "object"
+			) {
+				const done = e.data.$sw$setCookieDone;
+				const resolver = cookieResolvers[done.id];
+				if (resolver) {
+					resolver();
+					delete cookieResolvers[done.id];
+				}
+			}
+			if (
+				e.data.$sw$initRemoteTransport &&
+				typeof e.data.$sw$initRemoteTransport == "object"
+			) {
+				const { port, prefix } = e.data.$sw$initRemoteTransport;
+				const relevantcontroller = tabs.find((tab) =>
+					new URL(prefix).pathname.startsWith(tab.prefix)
+				);
+				if (!relevantcontroller) {
+					console.error("No relevant controller found for transport init");
+					return;
+				}
+				relevantcontroller.rpc.call("initRemoteTransport", port, [port]);
+			}
+		});
+		class ControllerReference {
 			prefix;
 			id;
 			rpc;
@@ -178,17 +212,48 @@ var $scramjetController;
 				this.id = id;
 				this.rpc =
 					new _mercuryworkshop_rpc__WEBPACK_IMPORTED_MODULE_0__.RpcHelper(
-						{},
+						{
+							sendSetCookie: async ({ url, cookie }) => {
+								let clients1 = await self.clients.matchAll();
+								let promises = [];
+								for (const client of clients1) {
+									let id = makeId();
+									client.postMessage({
+										$controller$setCookie: {
+											url,
+											cookie,
+											id,
+										},
+									});
+									promises.push(
+										new Promise((resolve) => {
+											cookieResolvers[id] = resolve;
+										})
+									);
+								}
+								await Promise.race([
+									new Promise((resolve) =>
+										setTimeout(() => {
+											console.error(
+												"timed out waiting for set cookie response (deadlock?)"
+											);
+											resolve();
+										}, 1000)
+									),
+									promises,
+								]);
+							},
+						},
 						"tabchannel-" + id,
 						(data, transfer) => {
 							port.postMessage(data, transfer);
 						}
 					);
-				port.addEventListener("message", (e) => {
+				port.onmessage = (e) => {
 					this.rpc.recieve(e.data);
-				});
+				};
 				port.onmessageerror = console.error;
-				this.rpc.call("ready", null);
+				this.rpc.call("ready", undefined);
 			}
 		}
 		const tabs = [];
@@ -198,7 +263,11 @@ var $scramjetController;
 			if (!e.data.$controller$init) return;
 			if (typeof e.data.$controller$init != "object") return;
 			const init = e.data.$controller$init;
-			tabs.push(new Tab(init.prefix, init.id, e.ports[0]));
+			const existing = tabs.findIndex((t) => t.id === init.id);
+			if (existing !== -1) {
+				tabs.splice(existing, 1);
+			}
+			tabs.push(new ControllerReference(init.prefix, init.id, e.ports[0]));
 		});
 		function shouldRoute(event) {
 			const url = new URL(event.request.url);
@@ -210,15 +279,12 @@ var $scramjetController;
 				const url = new URL(event.request.url);
 				const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
 				const client = await clients.get(event.clientId);
-				const bareheaders = {};
-				// @ts-expect-error for some reason it thinks headers.entries doesn't exist?
-				for (const [key, value] of event.request.headers.entries()) {
-					bareheaders[key] = [value];
-				}
+				const rawheaders = [...event.request.headers];
 				const response = await tab.rpc.call(
 					"request",
 					{
 						rawUrl: event.request.url,
+						rawReferrer: event.request.referrer,
 						destination: event.request.destination,
 						mode: event.request.mode,
 						referrer: event.request.referrer,
@@ -226,7 +292,7 @@ var $scramjetController;
 						body: event.request.body,
 						cache: event.request.cache,
 						forceCrossOriginIsolated: false,
-						initialHeaders: bareheaders,
+						initialHeaders: rawheaders,
 						rawClientUrl: client ? client.url : undefined,
 					},
 					event.request.body instanceof ReadableStream || // @ts-expect-error the types for fetchevent are messed up
@@ -234,25 +300,29 @@ var $scramjetController;
 						? [event.request.body]
 						: undefined
 				);
-				const realHeaders = new Headers();
-				for (const [key, values] of Object.entries(response.headers)) {
-					let val =
-						typeof values === "string" ? values : (values?.[0] ?? undefined);
-					if (val !== undefined) {
-						realHeaders.set(key, val);
-					}
-				}
 				return new Response(response.body, {
 					status: response.status,
 					statusText: response.statusText,
-					headers: realHeaders,
+					headers: response.headers,
 				});
 			} catch (e) {
+				console.error("Service Worker error:", e);
 				return new Response("Internal Service Worker Error: " + e.message, {
 					status: 500,
 				});
 			}
 		}
+		// the only way to know if a service worker has suddenly died is if this code runs again
+		// notify all clients to send over their messageports again
+		setTimeout(async () => {
+			console.log("service worker activated, notifying clients to revive");
+			for (const client of await clients.matchAll()) {
+				client.postMessage({
+					$controller$swrevive: {},
+				});
+			}
+			// short delay is apparently needed
+		}, 100);
 	})();
 
 	$scramjetController = __webpack_exports__;

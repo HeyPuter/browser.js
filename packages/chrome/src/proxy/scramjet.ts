@@ -10,6 +10,7 @@ import {
 	type ScramjetFetchResponse,
 	rewriteUrl,
 	ScramjetHeaders,
+	isInlineDisplayableMimeType,
 } from "@mercuryworkshop/scramjet/bundled";
 import type {
 	RawHeaders,
@@ -19,6 +20,7 @@ import { RpcHelper } from "@mercuryworkshop/rpc";
 
 import scramjetWASM from "../../../scramjet/packages/core/dist/scramjet.wasm?url";
 import injectScript from "../../../inject/dist/inject.js?url";
+import { isIsolated } from ".";
 
 export const virtualWasmPath = "scramjet.wasm.js";
 export const virtualInjectPath = "inject.js";
@@ -107,15 +109,19 @@ class ProxyFrameContext {
 						) || null;
 					if (!tab) return;
 
-					console.log("TAB FOUND", url);
 					if (tab.history.justTriggeredNavigation) {
 						// url bar was typed in, we triggered this navigation, don't push a new state since we already did
 						tab.history.justTriggeredNavigation = false;
 					} else {
 						// the page just loaded on its own (a link was clicked, window.location was set)
-						tab.history.push(new URL(url), undefined, false);
+						tab.history.push(new URL(url), undefined, null, false);
 					}
 					tab.initialLoad();
+					// it won't allow scrolling inputs until the tab is focused or something
+					// for some reason frame.focus() doesn't work but frame.click() does ? even cross origin
+					if (tabsService.activetab === tab) {
+						tab.frame.frame.click();
+					}
 				},
 				titlechange: async ({ title, icon }) => {
 					if (!tab) return;
@@ -174,11 +180,26 @@ class ProxyFrameContext {
 						[],
 					];
 				},
+				registerFrameContext: async ({ id: childId }) => {
+					contexts.push(new ProxyFrameContext(this.controller, childId));
+				},
 			},
 			id,
 			(message, transfer) => {
 				if (this.windowproxy) {
-					this.windowproxy.postMessage(message, "*", transfer);
+					// is it a windowproxy?
+					if (isIsolated) {
+						this.windowproxy.postMessage(message, "*", transfer);
+					} else {
+						// TODO :(
+						this.windowproxy[Symbol.for("scramjet client global")].natives.call(
+							"window.postMessage",
+							this.windowproxy,
+							message,
+							"*",
+							transfer
+						);
+					}
 				} else {
 					console.warn("No window proxy available for frame context", this.id);
 				}
@@ -228,7 +249,6 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 				stack: ${JSON.stringify(error.stack)},
 				theme: ${JSON.stringify(theme)},
 			});
-			document.currentScript.remove();
 		</script>
 	`;
 }
@@ -237,6 +257,7 @@ export function createFetchHandler(controller: Controller) {
 	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		meta,
 		handler,
+		htmlcontext,
 		script
 	) => {
 		const contextId = "context-" + makeId();
@@ -254,7 +275,7 @@ export function createFetchHandler(controller: Controller) {
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
 			});
-			document.currentScript.remove();
+			document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 		`;
 
 		return [
@@ -387,32 +408,8 @@ function isDownload(
 				return true;
 			}
 		} else {
-			// check mime type as fallback
-			const displayableMimes = [
-				// Text types
-				"text/html",
-				"text/plain",
-				"text/css",
-				"text/javascript",
-				"text/xml",
-				"application/javascript",
-				"application/json",
-				"application/xml",
-				"application/pdf",
-			];
-			const contentType = responseHeaders
-				.get("content-type")
-				?.split(";")[0]
-				.trim()
-				.toLowerCase();
-			if (
-				contentType &&
-				!displayableMimes.includes(contentType) &&
-				!contentType.startsWith("text") &&
-				!contentType.startsWith("image") &&
-				!contentType.startsWith("font") &&
-				!contentType.startsWith("video")
-			) {
+			const contentType = responseHeaders.get("content-type");
+			if (contentType && !isInlineDisplayableMimeType(contentType)) {
 				return true;
 			}
 		}
@@ -433,11 +430,7 @@ async function makeWasmResponse() {
 				.join("")
 		);
 
-		let payload = "";
-		payload +=
-			"if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
-		payload += `self.WASM = '${b64}';`;
-		wasmPayload = payload;
+		wasmPayload = `self.WASM = '${b64}';`;
 	}
 
 	return {

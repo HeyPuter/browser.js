@@ -59,6 +59,7 @@ export function DragTab(
 			},
 		]);
 
+		// Open-tab animation: expands the tab container from width 0 to full computed width.
 		this.root.animate(
 			[
 				{
@@ -67,7 +68,8 @@ export function DragTab(
 				{},
 			],
 			{
-				duration: 100,
+				duration: 200,
+				easing: "cubic-bezier(.25,.5,0,1.15)",
 				fill: "forwards",
 			}
 		);
@@ -81,6 +83,7 @@ export function DragTab(
 			class="tab"
 			data-id={this.id}
 			on:transitionend={() => {
+				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
 				this.root.style.transition = "";
 				this.root.style.zIndex = "0";
 				this.transitionend();
@@ -186,7 +189,7 @@ DragTab.style = css`
 
 		color: var(--tab_background_text);
 
-		border-radius: 4px;
+		border-radius: var(--radius);
 		padding: 7px 8px;
 
 		background: var(--background_tab_inactive);

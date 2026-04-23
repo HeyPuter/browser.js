@@ -66,6 +66,7 @@ function registerRewrites(
 			);
 
 			rewrites.push({ type, start, end, str: oldStr });
+			cursor += oldLen;
 		}
 	}
 
@@ -79,7 +80,7 @@ function extractTag(fn: string): [string, number, number] | null {
 	// it will look like this:
 	// function name()[possible whitespace]/*scramtag [index] [tag]*/[possible whitespace]{ ... }
 
-	let start = fn.indexOf(SCRAMTAG);
+	const start = fn.indexOf(SCRAMTAG);
 	// no scramtag, probably native function or stolen from scramjet
 	if (start === -1) return null;
 
@@ -89,7 +90,7 @@ function extractTag(fn: string): [string, number, number] | null {
 		throw new Error("unreachable");
 	}
 
-	let tag = fn.substring(start + 2, end).split(" ");
+	const tag = fn.substring(start + 2, end).split(" ");
 
 	if (
 		tag.length !== 3 ||
@@ -103,7 +104,10 @@ function extractTag(fn: string): [string, number, number] | null {
 	return [tag[2], start, +tag[1]];
 }
 
-function doUnrewrite(client: ScramjetClient, ctx: ProxyCtx) {
+function doUnrewrite(
+	client: ScramjetClient,
+	ctx: ProxyCtx<"Function.prototype.toString", "apply">
+) {
 	const stringified: string = ctx.fn.call(ctx.this);
 
 	const extracted = extractTag(stringified);
@@ -165,7 +169,9 @@ export default function (client: ScramjetClient, self: Self) {
 		value: (buf: Array<number>, tag: string) => {
 			const before = performance.now();
 			registerRewrites(client, buf, tag);
-			dbg.time(client.meta, before, `scramtag parse for ${tag}`);
+			if (client.flagEnabled("rewriterLogs")) {
+				dbg.time(client.meta, before, `scramtag parse for ${tag}`);
+			}
 		},
 		enumerable: false,
 		writable: false,

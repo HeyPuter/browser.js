@@ -14,6 +14,7 @@ import {
 	resetSuccessLog,
 	runRspack,
 	normalizeWebsocketUrl,
+	warnOnUrlEscape,
 } from "./packages/scramjet/devlib.ts";
 
 const image = await fs.readFile("./assets/icon.png");
@@ -69,6 +70,8 @@ const server = await createServer({
 		strictPort: true,
 	},
 });
+
+warnOnUrlEscape(server);
 
 await server.listen();
 

@@ -7,10 +7,13 @@ import "./global.d";
 import { ScramjetConfig } from "./types";
 export * from "./client";
 export * from "./shared";
+export { generateClientId } from "./shared/util";
 export * from "./symbols";
 export * from "./types";
 export * from "./fetch";
 export * from "./Tap";
+export { BareResponse } from "@mercuryworkshop/proxy-transports";
+import { atob } from "@/shared/snapshot";
 
 declare const REWRITERWASM: string | undefined;
 
@@ -33,7 +36,7 @@ export const defaultConfig: ScramjetConfig = {
 		syncxhr: false,
 		strictRewrites: true,
 		rewriterLogs: false,
-		captureErrors: true,
+		captureErrors: false,
 		cleanErrors: false,
 		scramitize: false,
 		sourcemaps: true,
@@ -42,6 +45,7 @@ export const defaultConfig: ScramjetConfig = {
 		debugTrampolines: false,
 		allowFailedIntercepts: false,
 		encapsulateWorkers: true,
+		debugSourceURL: false,
 	},
 	siteFlags: {},
 	maskedfiles: [],
@@ -52,8 +56,10 @@ export const defaultConfigDev: ScramjetConfig = {
 	flags: {
 		...defaultConfig.flags,
 		rewriterLogs: true,
+		captureErrors: true,
 		cleanErrors: false,
 		debugTrampolines: true,
+		debugSourceURL: true,
 	},
 };
 

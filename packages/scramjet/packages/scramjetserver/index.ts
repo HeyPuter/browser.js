@@ -73,10 +73,7 @@ const wasmData = readFileSync("../scramjet/dist/scramjet.wasm.wasm");
 const allData = readFileSync("../scramjet/dist/scramjet.all.js");
 
 const wasmBase64 = wasmData.toString("base64");
-let wasmJsPayload = "";
-wasmJsPayload +=
-	"if ('document' in self && document.currentScript) { document.currentScript.remove(); }\n";
-wasmJsPayload += `self.WASM = '${wasmBase64}';`;
+const wasmJsPayload = `self.WASM = '${wasmBase64}';`;
 
 const server = createServer(async (req, res) => {
 	try {
@@ -134,8 +131,8 @@ const server = createServer(async (req, res) => {
 				config,
 				{
 					async fetch(url, options) {
-						let fetchres = await fetch(url, options);
-						let rawHeaders = {};
+						const fetchres = await fetch(url, options);
+						const rawHeaders = {};
 						fetchres.headers.forEach((value, key) => {
 							rawHeaders[key] = value;
 						});

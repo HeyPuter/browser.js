@@ -27,7 +27,7 @@ Checkbox.style = css`
 		border: 1px solid var(--text-20);
 		display: inline-block;
 		position: relative;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		vertical-align: middle;
 		transition:
 			background 120ms ease,
@@ -36,7 +36,7 @@ Checkbox.style = css`
 	}
 
 	:scope::after {
-		content: " ";
+		content: "✓";
 		position: absolute;
 		inset: 0;
 		display: flex;

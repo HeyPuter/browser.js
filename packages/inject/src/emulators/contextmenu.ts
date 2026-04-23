@@ -1,7 +1,11 @@
 import { ExecutionContextWrapper } from "../context";
 import { Chromebound } from "../types";
 
-export function setupContextMenu({ self, rpc }: ExecutionContextWrapper) {
+export function setupContextMenu({
+	self,
+	rpc,
+	client,
+}: ExecutionContextWrapper) {
 	// TODO: this needs to always be last
 	self.document.addEventListener("contextmenu", (e) => {
 		e.preventDefault();
@@ -14,21 +18,24 @@ export function setupContextMenu({ self, rpc }: ExecutionContextWrapper) {
 			selection,
 		};
 
-		if (target instanceof HTMLImageElement) {
+		if (client.box.instanceof(target, "HTMLImageElement")) {
+			const targetImage = target as HTMLImageElement;
 			resp.image = {
-				src: target.src,
-				width: target.naturalWidth,
-				height: target.naturalHeight,
+				src: targetImage.src,
+				width: targetImage.naturalWidth,
+				height: targetImage.naturalHeight,
 			};
-		} else if (target instanceof HTMLAnchorElement) {
+		} else if (client.box.instanceof(target, "HTMLAnchorElement")) {
+			const targetAnchor = target as HTMLAnchorElement;
 			resp.anchor = {
-				href: target.href,
+				href: targetAnchor.href,
 			};
-		} else if (target instanceof HTMLVideoElement) {
+		} else if (client.box.instanceof(target, "HTMLVideoElement")) {
+			const targetVideo = target as HTMLVideoElement;
 			resp.video = {
-				src: target.currentSrc,
-				width: target.videoWidth,
-				height: target.videoHeight,
+				src: targetVideo.currentSrc,
+				width: targetVideo.videoWidth,
+				height: targetVideo.videoHeight,
 			};
 		}
 
