@@ -6,7 +6,7 @@ import {
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
 export const Plugin = $scramjet.Plugin;
-
+import { deepmerge } from "@fastify/deepmerge";
 import type {
 	SerializedCookieSyncEntry,
 	TransportToController,
@@ -167,28 +167,7 @@ function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
 }
 
-function deepMerge(target: any, source: any): any {
-	for (const key in source) {
-		if (key in target) {
-			Object.assign(source[key], deepMerge(target[key], source[key]));
-		}
-	}
-
-	return Object.assign(target || {}, source);
-}
-
-let wasmPayload: string | null = null;
-let wasmAlreadyFetched = false;
-
-async function loadScramjetWasm() {
-	if (wasmAlreadyFetched) {
-		return;
-	}
-
-	const resp = await fetch(config.wasmPath);
-	$scramjet.setWasm(await resp.arrayBuffer());
-	wasmAlreadyFetched = true;
-}
+const deepMerge = deepmerge();
 
 type ControllerInit = {
 	serviceworker: ServiceWorker;
@@ -204,21 +183,22 @@ export class Controller {
 	prefix: string;
 	cookieJar = new $scramjet.CookieJar();
 	frames: Frame[] = [];
-	private cookieUpdatedAt = 0;
 	serviceWorkerController: ServiceWorker;
 	guardServiceWorkerRevive = true;
 
-	rpc: RpcHelper<Controllerbound, SWbound>;
 	private ready: Promise<void>;
 	private readyResolve!: () => void;
 	public isReady: boolean = false;
+	rpc: RpcHelper<Controllerbound, SWbound>;
+	private port: MessagePort | null = null;
 
 	transport: ProxyTransport;
+	private cookieUpdatedAt = 0;
 	private cookieSyncPromise: Promise<void> | null = null;
 	private cookieSyncDirty = true;
 	private cookieSyncChannel = new BroadcastChannel(BROADCASTCHANNEL_NAME);
 
-	private port: MessagePort | null = null;
+	private wasmPayload: string | null = null;
 	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
 		this.rpc.recieve(e.data);
 	};
@@ -251,9 +231,9 @@ export class Controller {
 				const frame = this.frames.find((f) => path.startsWith(f.prefix));
 				if (!frame) throw new Error("No frame found for request");
 
-				if (path === frame.prefix + config.virtualWasmPath) {
-					if (!wasmPayload) {
-						const resp = await fetch(config.wasmPath);
+				if (path === frame.prefix + this.config.virtualWasmPath) {
+					if (!this.wasmPayload) {
+						const resp = await fetch(this.config.wasmPath);
 						const buf = await resp.arrayBuffer();
 						const b64 = btoa(
 							new Uint8Array(buf)
@@ -264,12 +244,12 @@ export class Controller {
 								.join("")
 						);
 
-						wasmPayload = `self.WASM = '${b64}';`;
+						this.wasmPayload = `self.WASM = '${b64}';`;
 					}
 
 					return [
 						{
-							body: wasmPayload,
+							body: this.wasmPayload,
 							status: 200,
 							statusText: "OK",
 							headers: [["Content-Type", "application/javascript"]],
@@ -410,9 +390,12 @@ export class Controller {
 
 	constructor(public init: ControllerInit) {
 		this.id = makeId();
-		this.config = deepMerge(config, init.config);
-		this.scramjetConfig = deepMerge($scramjet.defaultConfig, scramjetConfig);
-		this.scramjetConfig = deepMerge(this.scramjetConfig, init.scramjetConfig);
+		this.config = deepMerge(config, init.config || {}) as Config;
+		this.scramjetConfig = deepMerge(scramjetConfig, $scramjet.defaultConfig);
+		this.scramjetConfig = deepMerge(
+			this.scramjetConfig,
+			init.scramjetConfig || {}
+		) as ScramjetGlobal.ScramjetConfig;
 		this.prefix = this.config.prefix + this.id + "/";
 		this.serviceWorkerController = init.serviceworker;
 
@@ -420,7 +403,6 @@ export class Controller {
 			new Promise<void>((resolve) => {
 				this.readyResolve = resolve;
 			}),
-			loadScramjetWasm(),
 			this.loadSavedCookies(true),
 		]).then(() => undefined);
 
@@ -629,8 +611,8 @@ function yieldGetInjectScripts(
 			}
 			return [
 				script(config.scramjetPath),
-				script(config.injectPath),
 				script(prefix.href + config.virtualWasmPath),
+				script(config.injectPath),
 				script(
 					"data:text/javascript;charset=utf-8;base64," +
 						base64Encode(`
@@ -655,12 +637,11 @@ function yieldGetInjectScripts(
 }
 
 export class Frame {
-	fetchHandler: ScramjetGlobal.ScramjetFetchHandler;
 	id: string;
 	prefix: string;
-
+	fetchHandler: ScramjetGlobal.ScramjetFetchHandler;
 	hooks: {
-		fetch: ScramjetGlobal.FetchTap;
+		fetch: ScramjetGlobal.FetchHooks;
 	};
 
 	get context(): ScramjetGlobal.ScramjetContext {
@@ -760,7 +741,9 @@ export class Frame {
 
 	go(url: string) {
 		const encoded = $scramjet.rewriteUrl(url, this.context, {
+			//@ts-expect-error
 			origin: new URL(location.href),
+			//@ts-expect-error
 			base: new URL(location.href),
 		});
 		this.element.src = encoded;
