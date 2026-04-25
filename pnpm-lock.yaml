@@ -394,6 +394,9 @@ importers:
 
   packages/scramjet/packages/controller:
     dependencies:
+      '@fastify/deepmerge':
+        specifier: ^3.2.1
+        version: 3.2.1
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
         version: 1.0.2
@@ -1604,6 +1607,9 @@ packages:
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
+
+  '@fastify/deepmerge@3.2.1':
+    resolution: {integrity: sha512-N5Oqvltoa2r9z1tbx4xjky0oRR60v+T47Ic4J1ukoVQcptLOrIdRnCSdTGmOmajZuHVKlTnfcmrjyqsGEW1ztA==}
 
   '@fastify/error@4.2.0':
     resolution: {integrity: sha512-RSo3sVDXfHskiBZKBPRgnQTtIqpi/7zhJOEmAxCiBcM7d0uwdGdxLlsCaLzGs8v8NnxIRlfG0N51p5yFaOentQ==}
@@ -8102,6 +8108,8 @@ snapshots:
       fast-uri: 3.0.6
 
   '@fastify/busboy@2.1.1': {}
+
+  '@fastify/deepmerge@3.2.1': {}
 
   '@fastify/error@4.2.0': {}
 
