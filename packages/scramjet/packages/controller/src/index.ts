@@ -198,6 +198,7 @@ export class Controller {
 	private cookieSyncDirty = true;
 	private cookieSyncChannel = new BroadcastChannel(BROADCASTCHANNEL_NAME);
 
+	private wasmAlreadyFetched = false;
 	private wasmPayload: string | null = null;
 	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
 		this.rpc.recieve(e.data);
@@ -214,6 +215,16 @@ export class Controller {
 		this.cookieSyncDirty = true;
 		void this.loadSavedCookies();
 	};
+
+	private async loadScramjetWasm() {
+		if (this.wasmAlreadyFetched) {
+			return;
+		}
+
+		const resp = await fetch(this.config.wasmPath);
+		$scramjet.setWasm(await resp.arrayBuffer());
+		this.wasmAlreadyFetched = true;
+	}
 
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
@@ -403,6 +414,7 @@ export class Controller {
 			new Promise<void>((resolve) => {
 				this.readyResolve = resolve;
 			}),
+			this.loadScramjetWasm(),
 			this.loadSavedCookies(true),
 		]).then(() => undefined);
 
