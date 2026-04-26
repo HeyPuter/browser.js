@@ -571,7 +571,7 @@ export class Controller {
 			updatedAt,
 		});
 	}
-	
+
 	setTransport(transport: ProxyTransport) {
 		this.transport = transport;
 		for (const frame of this.frames) {

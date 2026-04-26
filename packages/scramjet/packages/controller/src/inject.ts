@@ -8,7 +8,7 @@ import type {
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type { Config } from ".";
-import { CONTROLLERFRAME } from "./symbols"
+import { CONTROLLERFRAME } from "./symbols";
 import type {
 	SerializedCookieSyncEntry,
 	ControllerToTransport,
@@ -363,8 +363,18 @@ class ExecutionContextWrapper {
 			client: this.client,
 			isTopLevel,
 		};
-		if (controllerFrame) $scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.pre, frameInitContext, {});
+		if (controllerFrame)
+			$scramjet.Tap.dispatch(
+				controllerFrame.hooks.frameInit.pre,
+				frameInitContext,
+				{}
+			);
 		this.client.hook();
-		if (controllerFrame) $scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.post, frameInitContext, {})
+		if (controllerFrame)
+			$scramjet.Tap.dispatch(
+				controllerFrame.hooks.frameInit.post,
+				frameInitContext,
+				{}
+			);
 	}
 }
