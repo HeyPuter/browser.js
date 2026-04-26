@@ -1,8 +1,7 @@
 import { css } from "dreamland/core";
 import { App } from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
-import type * as ScramjetControllerGlobal from "@mercuryworkshop/scramjet-controller";
-declare const $scramjetController: typeof ScramjetControllerGlobal;
+import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 const { Controller } = $scramjetController;
 import { demoSettingsDefaults } from "./demoSettings";
 
@@ -115,6 +114,7 @@ async function init() {
 		controller = new Controller({
 			serviceworker: readySw,
 			transport,
+			scramjetConfig: defaultConfigDev,
 		});
 		await controller.wait();
 		console.log(controller);
