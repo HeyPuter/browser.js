@@ -44,24 +44,6 @@ LoadInterstitial.style = css`
 
 let controller: InstanceType<typeof Controller>;
 
-export async function swapTransport(wispUrl: string) {
-	const nextTransport = new LibcurlClient({
-		wisp: wispUrl,
-	});
-
-	transport = nextTransport;
-
-	if (!controller) {
-		return;
-	}
-	
-	controller.transport = nextTransport;
-	for (const frame of controller.frames) {
-		frame.controller.transport = nextTransport;
-		frame.fetchHandler.client.transport = nextTransport;
-	}
-}
-
 async function init() {
 	const interstitial: any = (
 		<LoadInterstitial status={"Loading"}></LoadInterstitial>

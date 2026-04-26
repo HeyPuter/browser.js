@@ -569,6 +569,14 @@ export class Controller {
 			updatedAt,
 		});
 	}
+	
+	setTransport(transport: ProxyTransport) {
+		this.transport = transport;
+		for (const frame of this.frames) {
+			frame.controller.transport = transport;
+			frame.fetchHandler.client.transport = transport;
+		}
+	}
 
 	createFrame(element?: HTMLIFrameElement): Frame {
 		if (!this.ready) {
