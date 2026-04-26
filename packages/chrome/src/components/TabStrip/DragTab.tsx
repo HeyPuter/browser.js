@@ -106,7 +106,6 @@ export function DragTab(
 					this.tooltipActive = false;
 				}}
 				on:mouseenter={() => {
-					// forceScreenshot(this.tab);
 					if (hoverTimeout) clearTimeout(hoverTimeout);
 
 					if (activeTooltips > 0) {
@@ -121,13 +120,12 @@ export function DragTab(
 					}
 				}}
 				on:mouseleave={(e: MouseEvent) => {
-					const relatedTarget = e.relatedTarget as Node | null;
-					if (relatedTarget && this.root.contains(relatedTarget)) {
-						// don't dismiss if hovering over the close button, even though that takes focus away from hover-area
-						return;
-					}
 					if (hoverTimeout) clearTimeout(hoverTimeout);
-					this.tooltipActive = false;
+					// really short timeout to allow transitioning from close button to main tab region.
+					// see the listeners on the close button for details
+					hoverTimeout = setTimeout(() => {
+						this.tooltipActive = false;
+					}, 2);
 				}}
 			></div>
 			<TabTooltip
@@ -149,13 +147,31 @@ export function DragTab(
 							e.preventDefault();
 							e.stopPropagation();
 						}}
+						// part that prevents the tooltip from closing when hovering over the close button
+						on:mouseleave={(e: MouseEvent) => {
+							e.stopPropagation();
+							// set a really short timeout to prevent the tooltip from closing immediately.
+							// if going from close button to main tab region, it should stay open for a bit. see line 124
+							hoverTimeout = window.setTimeout(() => {
+								this.tooltipActive = false;
+							}, 2);
+						}}
+						on:mouseenter={(e: MouseEvent) => {
+							e.stopPropagation();
+							if (hoverTimeout) clearTimeout(hoverTimeout);
+							// set tooltip to active.
+							//
+							// unfortunately whenever you hover over the close button before
+							// the 500ms timeout (L117) it'll just instantly show the tooltip
+							//
+							// it's really icky but its the best thing i could think of that
+							// doesn't bring back the "stuck tooltips" bug
+							this.tooltipActive = true;
+						}}
 					>
 						<Icon icon={iconClose} />
 					</button>
 				</div>
-				{/* <div class="belowcontainer">
-						{use(s.active).andThen(<div class="below"></div>)}
-					</div> */}
 			</div>
 		</div>
 	);
