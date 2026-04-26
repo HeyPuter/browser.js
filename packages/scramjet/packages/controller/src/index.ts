@@ -6,7 +6,9 @@ import {
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
 import { deepmerge } from "@fastify/deepmerge";
+import { CONTROLLERFRAME } from "./symbols";
 import type {
+	FrameInitHooks,
 	SerializedCookieSyncEntry,
 	TransportToController,
 	Controllerbound,
@@ -661,6 +663,7 @@ export class Frame {
 	fetchHandler: ScramjetGlobal.ScramjetFetchHandler;
 	hooks: {
 		fetch: ScramjetGlobal.FetchHooks;
+		frameInit: FrameInitHooks;
 	};
 
 	get context(): ScramjetGlobal.ScramjetContext {
@@ -755,7 +758,10 @@ export class Frame {
 
 		this.hooks = {
 			fetch: this.fetchHandler.hooks.fetch,
+			frameInit: $scramjet.Tap.create<FrameInitHooks>(),
 		};
+
+		element[CONTROLLERFRAME] = this;
 	}
 
 	go(url: string) {

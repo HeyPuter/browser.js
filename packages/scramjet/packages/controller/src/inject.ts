@@ -8,6 +8,7 @@ import type {
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import type { Config } from ".";
+import { CONTROLLERFRAME } from "./symbols"
 import type {
 	SerializedCookieSyncEntry,
 	ControllerToTransport,
@@ -292,7 +293,28 @@ class ExecutionContextWrapper {
 		if (frame && !frame.name) {
 			frame.name = createFrameId();
 		}
-
+		let controllerFrame = frame?.[CONTROLLERFRAME];
+		let isTopLevel = true;
+		if (!controllerFrame) {
+			isTopLevel = false;
+			let currentwin = this.global.window;
+			while (currentwin.parent !== currentwin) {
+				const currentclient = currentwin[$scramjet.SCRAMJETCLIENT];
+				if (!currentclient) {
+					currentwin = currentwin.parent.window;
+					continue;
+				}
+				const currentFrame = currentclient.descriptors.get(
+					"window.frameElement",
+					currentwin
+				);
+				if (currentFrame && currentFrame[CONTROLLERFRAME]) {
+					controllerFrame = currentFrame[CONTROLLERFRAME];
+					break;
+				}
+				currentwin = currentwin.parent.window;
+			}
+		}
 		const context: ScramjetGlobal.ScramjetContext = {
 			config: this.init.sjconfig,
 			prefix: this.init.prefix,
@@ -310,7 +332,6 @@ class ExecutionContextWrapper {
 				codecDecode: this.init.codecDecode,
 			},
 		};
-
 		this.client = new ScramjetClient(this.global, {
 			context,
 			transport: this.transport,
@@ -337,7 +358,22 @@ class ExecutionContextWrapper {
 			initHeaders: this.init.initHeaders,
 			history: this.init.history,
 		});
-
+		$scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.pre, 
+			{
+				window: this.global.window,
+				client: this.client,
+				isTopLevel,
+			},
+			{},
+		);
 		this.client.hook();
+		$scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.post, 
+			{
+				window: this.global.window,
+				client: this.client,
+				isTopLevel,
+			},
+			{},
+		);
 	}
 }
