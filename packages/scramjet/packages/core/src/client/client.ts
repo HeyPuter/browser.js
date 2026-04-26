@@ -1,10 +1,9 @@
-type ScramjetFrame = any;
 import {
 	BareCompatibleClient,
 	ProxyTransport,
 	RawHeaders,
 } from "@mercuryworkshop/proxy-transports";
-import { SCRAMJETCLIENT, SCRAMJETFRAME } from "@/symbols";
+import { SCRAMJETCLIENT } from "@/symbols";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
