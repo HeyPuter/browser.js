@@ -313,15 +313,6 @@ importers:
         specifier: ^9.3.0
         version: 9.3.0
 
-  packages/scramjetserver:
-    dependencies:
-      '@mercuryworkshop/scramjet':
-        specifier: workspace:*
-        version: link:../core
-      '@nebula-services/bare-server-node':
-        specifier: ^2.0.4
-        version: 2.0.4(bufferutil@4.0.9)
-
 packages:
 
   '@actions/core@1.11.1':

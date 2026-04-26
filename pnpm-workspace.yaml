@@ -12,10 +12,8 @@ packages:
   - "packages/scramjet/packages/core"
   - "packages/scramjet/packages/bootstrap"
   - "packages/scramjet/packages/controller"
-  - "packages/scramjet/packages/scramjetserver"
   - "packages/scramjet/packages/demo"
   - "packages/scramjet/packages/rpc"
-  - "packages/scramjet/packages/typedoc"
   - "packages/scramjet/packages/create-proxy-app"
   - "packages/scramjet/packages/runway"
 
