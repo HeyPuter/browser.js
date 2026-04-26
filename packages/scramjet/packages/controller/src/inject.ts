@@ -7,6 +7,7 @@ import type {
 } from "@mercuryworkshop/proxy-transports";
 
 import { RpcHelper } from "@mercuryworkshop/rpc";
+import type { Config } from ".";
 import type {
 	SerializedCookieSyncEntry,
 	ControllerToTransport,
@@ -128,7 +129,7 @@ class RemoteTransport implements ProxyTransport {
 		method: string,
 		body: BodyInit | null,
 		headers: RawHeaders,
-		signal: AbortSignal | undefined
+		_signal: AbortSignal | undefined
 	): Promise<TransferrableResponse> {
 		return await this.rpc.call("request", {
 			remote: remote.href,
@@ -156,7 +157,6 @@ const sw = navigator.serviceWorker.controller;
 const { SCRAMJETCLIENT, ScramjetClient, CookieJar, setWasm, generateClientId } =
 	$scramjet;
 
-type Config = any;
 type Init = {
 	config: Config;
 	sjconfig: ScramjetGlobal.ScramjetConfig;

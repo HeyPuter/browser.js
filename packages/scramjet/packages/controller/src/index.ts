@@ -5,7 +5,6 @@ import {
 } from "@mercuryworkshop/proxy-transports";
 import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
 declare const $scramjet: typeof ScramjetGlobal;
-export const Plugin = $scramjet.Plugin;
 import { deepmerge } from "@fastify/deepmerge";
 import type {
 	SerializedCookieSyncEntry,
@@ -16,7 +15,7 @@ import type {
 	WebSocketMessage,
 } from "./types";
 
-type Config = {
+export type Config = {
 	prefix: string;
 	scramjetPath: string;
 	injectPath: string;

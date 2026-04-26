@@ -4,7 +4,7 @@ import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 
 const flagStore = createStore<ScramjetFlags>(
 	{
-		...defaultConfigDev.flags
+		...defaultConfigDev.flags,
 	},
 	{
 		ident: "scramjet-flags",

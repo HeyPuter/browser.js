@@ -42,7 +42,7 @@ LoadInterstitial.style = css`
 	}
 `;
 
-let controller: ScramjetControllerGlobal.Controller;
+let controller: InstanceType<typeof Controller>;
 
 export async function swapTransport(wispUrl: string) {
 	const nextTransport = new LibcurlClient({
@@ -54,7 +54,7 @@ export async function swapTransport(wispUrl: string) {
 	if (!controller) {
 		return;
 	}
-
+	
 	controller.transport = nextTransport;
 	for (const frame of controller.frames) {
 		frame.controller.transport = nextTransport;

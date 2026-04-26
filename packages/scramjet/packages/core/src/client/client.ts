@@ -8,7 +8,7 @@ import { SCRAMJETCLIENT, SCRAMJETFRAME } from "@/symbols";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
-import { NavigateEvent } from "@client/events";
+import { LifecycleHooks } from "@client/events";
 import {
 	rewriteUrl,
 	RewriteUrlOptions,
@@ -220,6 +220,7 @@ export class ScramjetClient {
 		rewriter: {
 			html: Tap.create<HtmlRewriterHooks>(),
 		},
+		lifecycle: Tap.create<LifecycleHooks>(),
 	};
 
 	constructor(
@@ -511,43 +512,6 @@ export class ScramjetClient {
 		}
 	}
 
-	get frame(): ScramjetFrame | null {
-		if (!iswindow) return null;
-		const frame = this.descriptors.get("window.frameElement", this.global);
-
-		if (!frame) return null; // we're top level
-		const sframe = frame[SCRAMJETFRAME];
-
-		if (!sframe) {
-			// we're in a subframe, recurse upward until we find one
-			let currentwin = this.global.window;
-			while (currentwin.parent !== currentwin) {
-				const currentclient = currentwin[SCRAMJETCLIENT];
-				const currentFrame = currentclient.descriptors.get(
-					"window.frameElement",
-					currentwin
-				);
-				if (!currentFrame) return null; // ??
-				if (currentFrame && currentFrame[SCRAMJETFRAME]) {
-					return currentFrame[SCRAMJETFRAME];
-				}
-				currentwin = currentwin.parent.window;
-			}
-		}
-
-		return sframe;
-	}
-	get isSubframe(): boolean {
-		if (!iswindow) return false;
-		const frame = this.descriptors.get("window.frameElement", this.global);
-
-		if (!frame) return false; // we're top level
-		const sframe = frame[SCRAMJETFRAME];
-		if (!sframe) return true;
-
-		return false;
-	}
-
 	hook() {
 		const context = import.meta.webpackContext(".", {
 			recursive: true,
@@ -588,11 +552,15 @@ export class ScramjetClient {
 	set url(url: _URL | string) {
 		url = String(url);
 
-		const ev = new NavigateEvent(url);
-		if (this.frame) {
-			this.frame.dispatchEvent(ev);
-		}
-		if (ev.defaultPrevented) return;
+		Tap.dispatch(
+			this.hooks.lifecycle.navigate,
+			{
+				type: "location",
+			},
+			{
+				url,
+			}
+		);
 
 		this.global.location.href = this.rewriteUrl(ev.url, {
 			navigateType: "location",
