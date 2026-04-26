@@ -358,22 +358,13 @@ class ExecutionContextWrapper {
 			initHeaders: this.init.initHeaders,
 			history: this.init.history,
 		});
-		$scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.pre, 
-			{
-				window: this.global.window,
-				client: this.client,
-				isTopLevel,
-			},
-			{},
-		);
+		const frameInitContext = {
+			window: this.global.window,
+			client: this.client,
+			isTopLevel,
+		};
+		if (controllerFrame) $scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.pre, frameInitContext, {});
 		this.client.hook();
-		$scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.post, 
-			{
-				window: this.global.window,
-				client: this.client,
-				isTopLevel,
-			},
-			{},
-		);
+		if (controllerFrame) $scramjet.Tap.dispatch(controllerFrame.hooks.frameInit.post, frameInitContext, {})
 	}
 }
