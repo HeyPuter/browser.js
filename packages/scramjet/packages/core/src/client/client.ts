@@ -562,7 +562,7 @@ export class ScramjetClient {
 			}
 		);
 
-		this.global.location.href = this.rewriteUrl(ev.url, {
+		this.global.location.href = this.rewriteUrl(url, {
 			navigateType: "location",
 		});
 	}
