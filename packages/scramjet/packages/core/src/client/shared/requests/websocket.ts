@@ -284,20 +284,29 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			ctx.args[1]?.signal.addEventListener("abort", () => {
 				barews.close(1000, "");
 			});
-			let openResolver, closeResolver;
-			let openRejector;
 			const state: FakeWebSocketStreamState = {
-				extensions: "",
 				protocol: "",
+				extensions: "",
 				url: ctx.args[0],
 				barews,
 
 				opened: new Promise((resolve, reject) => {
-					openResolver = resolve;
-					openRejector = reject;
+					barews.addEventListener("open", () => {
+						resolve({
+							readable: state.readable,
+							writable: state.writable,
+							protocol: state.protocol,
+							extensions: state.extensions,
+						});
+					});
+					barews.addEventListener("error", (ev: Event) => {
+						reject(ev);
+					});
 				}),
 				closed: new Promise((resolve) => {
-					closeResolver = resolve;
+					barews.addEventListener("close", (ev: CloseEvent) => {
+						resolve({ code: ev.code, reason: ev.reason });
+					});
 				}),
 				readable: new ReadableStream({
 					start(controller) {
@@ -306,38 +315,32 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 							if (typeof payload === "string") {
 								// DO NOTHING
 							} else if ("byteLength" in payload) {
-								// arraybuffer, set the realms prototype so its recognized
-								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+								// arraybuffer, convert to uint8array
+								Object_setPrototypeOf(payload, ArrayBuffer.prototype);
+								payload = new Uint8Array(payload);
 							} else if ("arrayBuffer" in payload) {
-								// blob, convert to arraybuffer
-								payload = await payload.arrayBuffer();
-								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+								// blob, convert to arraybuffer then to uint8array
+								payload = new Uint8Array(await payload.arrayBuffer());
 							}
 							controller.enqueue(payload);
 						});
+					},
+					cancel(info) {
+						barews.close(info?.closeCode ?? 1000, info?.reason ?? "");
 					},
 				}),
 				writable: new WritableStream({
 					write(chunk) {
 						barews.send(chunk);
 					},
+					abort() {
+						barews.close(1000, "");
+					},
+					close(info) {
+						barews.close(info?.closeCode ?? 1000, info?.reason ?? "");
+					},
 				}),
 			};
-			barews.addEventListener("open", () => {
-				openResolver({
-					readable: state.readable,
-					writable: state.writable,
-					protocol: state.protocol,
-					extensions: state.extensions,
-				});
-			});
-			barews.addEventListener("close", (ev: CloseEvent) => {
-				closeResolver({ code: ev.code, reason: ev.reason });
-			});
-
-			barews.addEventListener("error", (ev: Event) => {
-				openRejector(ev);
-			});
 
 			socketstreammap.set(fakeWebSocket, state);
 			ctx.return(fakeWebSocket);
