@@ -312,15 +312,17 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 					start(controller) {
 						barews.addEventListener("message", async (ev: MessageEvent) => {
 							let payload = ev.data;
+							// TODO: this needs to be changed to uint8array later
+							// chrome isnt following spec though so we are just going to do this
 							if (typeof payload === "string") {
 								// DO NOTHING
 							} else if ("byteLength" in payload) {
-								// arraybuffer, convert to uint8array
-								Object_setPrototypeOf(payload, ArrayBuffer.prototype);
-								payload = new Uint8Array(payload);
+								// arraybuffer, set the realms prototype so its recognized
+								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
 							} else if ("arrayBuffer" in payload) {
-								// blob, convert to arraybuffer then to uint8array
-								payload = new Uint8Array(await payload.arrayBuffer());
+								// blob, convert to arraybuffer
+								payload = await payload.arrayBuffer();
+								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
 							}
 							controller.enqueue(payload);
 						});
