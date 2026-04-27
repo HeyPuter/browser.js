@@ -305,7 +305,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				}),
 				closed: new Promise((resolve) => {
 					barews.addEventListener("close", (ev: CloseEvent) => {
-						resolve({ code: ev.code, reason: ev.reason });
+						resolve({ closeCode: ev.code, reason: ev.reason });
 					});
 				}),
 				readable: new ReadableStream({
