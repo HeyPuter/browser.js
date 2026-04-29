@@ -25,8 +25,6 @@ use crate::{
 };
 
 // js MUST not be able to get a reference to any of these because sbx
-//
-// maybe move this out of this lib?
 const UNSAFE_GLOBALS: &[&str] = &["parent", "top", "location", "eval"];
 
 pub struct Visitor<'alloc, 'data, E>

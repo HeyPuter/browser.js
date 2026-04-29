@@ -45,6 +45,8 @@ pub struct RewriterOptions {
 	prefix: String,
 	#[clap(long, default_value = "$wrap")]
 	wrapfn: String,
+	#[clap(long, default_value = "$wrapthis")]
+	wrapthisfn: String,
 	#[clap(long, default_value = "$sj_")]
 	wrappropertybase: String,
 	#[clap(long, default_value = "$prop")]

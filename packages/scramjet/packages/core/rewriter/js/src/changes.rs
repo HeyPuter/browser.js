@@ -35,6 +35,9 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 		enclose: bool,
 	},
 
+	/// insert `${cfg.wrapthisfn}(`
+	WrapThisFnLeft,
+
 	WrapPropertyLeft,
 	WrapPropertyRight,
 	RewriteProperty {
@@ -150,6 +153,7 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 			} else {
 				transforms![")"]
 			}),
+			Ty::WrapThisFnLeft => LL::insert(transforms![&cfg.wrapthisfn, "("]),
 			Ty::WrapPropertyLeft => LL::insert(transforms![&cfg.wrappropertyfn, "(("]),
 			Ty::WrapPropertyRight => LL::insert(transforms!["))"]),
 			Ty::RewriteProperty { ident } => LL::replace(transforms![&cfg.wrappropertybase, ident]),

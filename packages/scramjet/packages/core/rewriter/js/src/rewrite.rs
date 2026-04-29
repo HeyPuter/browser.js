@@ -19,6 +19,8 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 	WrapFn {
 		enclose: bool,
 	},
+	/// `cfg.wrapthisfn()`
+	WrapThisFn,
 	/// `wrapPostMessage(object)`
 	WrapPostMessage,
 
@@ -138,6 +140,10 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			Self::WrapFn { enclose } => smallvec![
 				change!(span!(start), WrapFnLeft { enclose }),
 				change!(span!(end), WrapFnRight { enclose }),
+			],
+			Self::WrapThisFn => smallvec![
+				change!(span!(start), WrapThisFnLeft),
+				change!(span!(end), ClosingParen { semi: false, replace: false }),
 			],
 			Self::RewriteProperty { ident } => smallvec![change!(span, RewriteProperty { ident }),],
 			Self::RebindProperty { ident, tempvar } => {
