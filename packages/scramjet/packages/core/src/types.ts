@@ -31,6 +31,7 @@ export type ScramjetFlags = {
 	debugTrampolines: boolean;
 	debugSourceURL: boolean;
 	encapsulateWorkers: boolean;
+	visitor: "dpsc" | "ppsc";
 };
 
 export interface ScramjetConfig {

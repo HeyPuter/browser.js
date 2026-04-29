@@ -94,6 +94,8 @@ impl NativeRewriter {
 					scramitize: cfg.scramitize,
 					strict_rewrites: cfg.strict_rewrites,
 					destructure_rewrites: cfg.destructure_rewrites,
+
+					visitor: cfg.visitor.into(),
 				},
 				&rewriter
 			)

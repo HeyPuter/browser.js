@@ -2,7 +2,7 @@
 mod test {
 	use std::fs;
 
-	use crate::{RewriterOptions, rewriter::NativeRewriter};
+	use crate::{CliVisitorKind, RewriterOptions, rewriter::NativeRewriter};
 	use boa_engine::{
 		Context, NativeFunction, Source, js_str, js_string,
 		object::ObjectInitializer,
@@ -129,6 +129,8 @@ function check(val) {
 			scramitize: false,
 			strict_rewrites: true,
 			destructure_rewrites: true,
+
+			visitor: CliVisitorKind::Dpsc,
 		};
 
 		let mut rewriter = NativeRewriter::new(&opts);

@@ -8,7 +8,8 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use js::cfg::VisitorKind;
 use oxc::{
 	allocator::{Allocator, StringBuilder},
 	diagnostics::NamedSource,
@@ -17,6 +18,26 @@ use rewriter::NativeRewriter;
 
 mod rewriter;
 mod test_runner;
+
+/// Mirror of `js::cfg::VisitorKind` that derives `clap::ValueEnum` so the
+/// rewriter's visitor can be selected from the command line. Kept here (rather
+/// than on the upstream type) so the `js` crate doesn't pull in clap.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum CliVisitorKind {
+	/// Full destructure-pattern-and-scope-cleanup visitor (default).
+	Dpsc,
+	/// Stub visitor; performs no rewrites.
+	Ppsc,
+}
+
+impl From<CliVisitorKind> for VisitorKind {
+	fn from(v: CliVisitorKind) -> Self {
+		match v {
+			CliVisitorKind::Dpsc => Self::Dpsc,
+			CliVisitorKind::Ppsc => Self::Ppsc,
+		}
+	}
+}
 
 #[derive(Parser)]
 pub struct RewriterOptions {
@@ -54,7 +75,7 @@ pub struct RewriterOptions {
 	sourcetag: String,
 	#[clap(long, default_value_t = false)]
 	is_module: bool,
-	
+
 	#[clap(long, default_value_t = false)]
 	capture_errors: bool,
 	#[clap(long, default_value_t = false)]
@@ -65,6 +86,10 @@ pub struct RewriterOptions {
 	strict_rewrites: bool,
 	#[clap(long, default_value_t = false)]
 	destructure_rewrites: bool,
+
+	/// Which AST visitor to use for rewriting.
+	#[clap(long, value_enum, default_value_t = CliVisitorKind::Dpsc)]
+	visitor: CliVisitorKind,
 }
 
 impl Default for RewriterOptions {

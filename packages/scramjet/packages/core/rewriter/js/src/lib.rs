@@ -14,9 +14,8 @@ mod changes;
 mod rewrite;
 mod visitor;
 
-use cfg::{Config, Flags, UrlRewriter};
+use cfg::{Config, Flags, UrlRewriter, VisitorKind};
 use changes::JsChanges;
-use visitor::Visitor;
 
 #[derive(Error, Debug)]
 pub enum RewriterError {
@@ -139,22 +138,45 @@ impl Rewriter {
 
 		let jschanges = self.take_changes(alloc)?;
 
-		let mut visitor = Visitor {
-			alloc,
-			jschanges,
-			error: None,
+		// Dispatch to the configured visitor. The two visitor structs share the
+		// same fields but have distinct `Visit` implementations, so each branch
+		// constructs the appropriate one.
+		let kind = flags.visitor;
+		let (jschanges, flags, error) = match kind {
+			VisitorKind::Dpsc => {
+				let mut visitor = visitor::dpsc::Visitor {
+					alloc,
+					jschanges,
+					error: None,
 
-			config: &config,
-			rewriter: rewriter,
-			flags,
+					config: &config,
+					rewriter,
+					flags,
+				};
+				visitor.visit_program(&parsed.program);
+				(visitor.jschanges, visitor.flags, visitor.error)
+			}
+			VisitorKind::Ppsc => {
+				let mut visitor = visitor::ppsc::Visitor {
+					alloc,
+					jschanges,
+					error: None,
+
+					config: &config,
+					rewriter,
+					flags,
+				};
+				visitor.visit_program(&parsed.program);
+				(visitor.jschanges, visitor.flags, visitor.error)
+			}
 		};
-		visitor.visit_program(&parsed.program);
-		if let Some(error) = visitor.error {
+
+		if let Some(error) = error {
 			return Err(RewriterError::Url(error));
 		}
-		let mut jschanges = visitor.jschanges;
+		let mut jschanges = jschanges;
 
-		let changed = jschanges.perform(js, &config, &visitor.flags)?;
+		let changed = jschanges.perform(js, &config, &flags)?;
 
 		self.put_changes(jschanges)?;
 
@@ -165,7 +187,7 @@ impl Rewriter {
 			js,
 			sourcemap,
 			errors: parsed.errors,
-			flags: visitor.flags,
+			flags,
 		})
 	}
 }

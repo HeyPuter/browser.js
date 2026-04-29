@@ -1,7 +1,9 @@
 pub mod error;
 
+use std::str::FromStr;
+
 use error::{Result, RewriterError};
-use js::cfg::{Config, Flags};
+use js::cfg::{Config, Flags, VisitorKind};
 use js_sys::{Object, Reflect};
 use jsr::{JsRewriter, JsRewriterOutput, create_js, create_js_output};
 use oxc::allocator::Allocator;
@@ -34,6 +36,18 @@ fn get_bool(obj: &JsValue, k: &'static str) -> Result<bool> {
 		.ok_or_else(|| RewriterError::not_bool(k))
 }
 
+/// Read a string from `obj[k]` if present, otherwise return `None`. Used for
+/// optional flag fields like `visitor` so that older callers that don't set it
+/// continue to work.
+fn get_str_opt(obj: &JsValue, k: &'static str) -> Result<Option<String>> {
+	let v = Reflect::get(obj, &k.into())?;
+	if v.is_undefined() || v.is_null() {
+		Ok(None)
+	} else {
+		Ok(v.as_string())
+	}
+}
+
 fn set_obj(obj: &Object, k: &str, v: &JsValue) -> Result<()> {
 	if Reflect::set(&obj.into(), &k.into(), v)? {
 		Ok(())
@@ -63,6 +77,14 @@ fn get_js_config(config: &Object) -> Result<Config> {
 }
 
 fn get_js_flags(obj: &Object, base: String, is_module: bool) -> Result<Flags> {
+	// `visitor` is optional on the JS-side flags object so existing callers
+	// keep working unchanged. When absent or unrecognized we fall back to the
+	// historical default visitor (dpsc).
+	let visitor = match get_str_opt(obj, "visitor")? {
+		Some(s) => VisitorKind::from_str(&s).unwrap_or_default(),
+		None => VisitorKind::default(),
+	};
+
 	Ok(Flags {
 		base,
 		sourcetag: scramtag(),
@@ -74,6 +96,7 @@ fn get_js_flags(obj: &Object, base: String, is_module: bool) -> Result<Flags> {
 		strict_rewrites: get_bool(obj, "strictRewrites")?,
 		destructure_rewrites: get_bool(obj, "destructureRewrites")?,
 
+		visitor,
 	})
 }
 
