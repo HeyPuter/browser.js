@@ -61,6 +61,7 @@ fn get_js_config(config: &Object) -> Result<Config> {
 		prefix: get_str(config, "prefix")?,
 
 		wrapfn: get_str(config, "wrapfn")?,
+		wrapthisfn: get_str(config, "wrapthisfn")?,
 		wrappropertybase: get_str(config, "wrappropertybase")?,
 		wrappropertyfn: get_str(config, "wrappropertyfn")?,
 		cleanrestfn: get_str(config, "cleanrestfn")?,

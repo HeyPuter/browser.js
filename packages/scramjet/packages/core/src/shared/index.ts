@@ -12,16 +12,16 @@ export * from "./htmlRules";
 export * from "./mime";
 export * from "./rewriters";
 
-export function flagEnabled(
-	flag: keyof ScramjetFlags,
+export function getFlag<K extends keyof ScramjetFlags>(
+	flag: K,
 	context: ScramjetContext,
 	url: URL
-): boolean {
+): ScramjetFlags[K] {
 	const value = context.config.flags[flag];
 	for (const regex in context.config.siteFlags) {
 		const partialflags = context.config.siteFlags[regex];
 		if (new _RegExp(regex).test(url.href) && flag in partialflags) {
-			return partialflags[flag];
+			return partialflags[flag] as ScramjetFlags[K];
 		}
 	}
 

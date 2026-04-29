@@ -15,14 +15,14 @@ import {
 	type URLMeta,
 } from "@rewriters/url";
 import {
-	flagEnabled,
+	getFlag,
 	HtmlRewriterHooks,
 	ScramjetContext,
 	ScramjetHeaders,
 } from "@/shared";
 import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
-import { ScramjetConfig } from "@/types";
+import { ScramjetConfig, type ScramjetFlags } from "@/types";
 import { Tap } from "@/Tap";
 import {
 	type CookieSyncEntry,
@@ -44,6 +44,7 @@ import {
 	Object_defineProperties,
 	_Map,
 } from "@/shared/snapshot";
+import { createGlobalProxy } from "./global";
 
 export type ScramjetClientInit = {
 	context: ScramjetContext;
@@ -183,6 +184,8 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 }
 
 export class ScramjetClient {
+	// globalproxy is only used in ppsc mode!
+	globalProxy: typeof globalThis | null;
 	locationProxy: any;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
@@ -190,6 +193,8 @@ export class ScramjetClient {
 	natives: NativeStore;
 	descriptors: DescriptorStore;
 	wrapfn: (i: any, ...args: any) => any;
+
+	visitor: "dpsc" | "ppsc";
 
 	eventcallbacks: Map<
 		any,
@@ -228,6 +233,21 @@ export class ScramjetClient {
 				"attempted to initialize a scramjet client, but one is already loaded - this is very bad"
 			);
 			throw new Error();
+		}
+
+		this.visitor = getFlag(
+			"visitor",
+			init.context,
+			new _URL(
+				unrewriteUrl(this.global.location.href, {
+					prefix: init.context.prefix,
+					config: init.context.config,
+					interface: init.context.interface,
+				})
+			)
+		);
+		if (this.visitor == "ppsc") {
+			this.globalProxy = createGlobalProxy(this, global);
 		}
 
 		if (iswindow) {
@@ -600,7 +620,7 @@ export class ScramjetClient {
 
 		let applyFn: typeof Reflect_apply;
 		let constructFn: typeof Reflect_construct;
-		if (this.flagEnabled("debugTrampolines")) {
+		if (this.getFlag("debugTrampolines")) {
 			let fnName: string;
 			if (debugname) {
 				fnName = debugname;
@@ -731,7 +751,7 @@ return { apply, construct };
 							err.stack = err.stack.stack;
 							// eslint-disable-next-line scramjet-core/no-globals
 							console.error("ERROR FROM SCRAMJET INTERNALS", err);
-							if (!this.flagEnabled("allowFailedIntercepts")) {
+							if (!this.getFlag("allowFailedIntercepts")) {
 								Error.prepareStackTrace = pst;
 								throw err;
 							}
@@ -859,8 +879,8 @@ return { apply, construct };
 		return unrewriteUrl(url, this.context);
 	}
 
-	flagEnabled(flag: keyof ScramjetConfig["flags"]): boolean {
-		return flagEnabled(flag, this.context, this.url);
+	getFlag<K extends keyof ScramjetFlags>(flag: K): ScramjetFlags[K] {
+		return getFlag(flag, this.context, this.url);
 	}
 
 	get config(): ScramjetConfig {

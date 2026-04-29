@@ -37,6 +37,7 @@ export type ScramjetFlags = {
 export interface ScramjetConfig {
 	globals: {
 		wrapfn: string;
+		wrapthisfn: string;
 		wrappropertybase: string;
 		wrappropertyfn: string;
 		cleanrestfn: string;

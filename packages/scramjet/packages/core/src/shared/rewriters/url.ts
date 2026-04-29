@@ -105,6 +105,7 @@ export type RewriteUrlOptions = {
 	navigateType?: NavigationType;
 	topFrame?: string;
 	parentFrame?: string;
+	isIframe?: boolean;
 };
 
 export function rewriteUrl(
@@ -174,8 +175,22 @@ export function rewriteUrl(
 		if (options?.topFrame) {
 			paramsInit.append("topFrame", options.topFrame);
 		}
+
 		if (options?.parentFrame) {
 			paramsInit.append("parentFrame", options.parentFrame);
+		}
+
+		if (options?.isIframe) {
+			paramsInit.append("isIframe", "1");
+		}
+
+		// Encode the initiator origin so that requests where the service worker
+		// can't recover the originating page (top-level navigations triggered
+		// from a click, form submit, or location set — event.clientId is empty
+		// and event.request.referrer / Referer aren't surfaced for those) can
+		// still compute Sec-Fetch-Site correctly.
+		if (meta.origin && meta.origin.origin && meta.origin.origin !== "null") {
+			paramsInit.append("sj$io", meta.origin.origin);
 		}
 
 		let paramstring = "";

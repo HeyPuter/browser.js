@@ -6,7 +6,7 @@ import {
 	ScramjetFetchRequest,
 } from ".";
 import {
-	flagEnabled,
+	getFlag,
 	isHtmlMimeType,
 	isJavascriptMimeType,
 	rewriteCss,
@@ -63,9 +63,7 @@ export async function rewriteBody(
 					parsed.scriptType === "module"
 				);
 
-				if (
-					flagEnabled("debugSourceURL", handler.context, parsed.meta.origin)
-				) {
+				if (getFlag("debugSourceURL", handler.context, parsed.meta.origin)) {
 					if (rewritten instanceof Uint8Array) {
 						rewritten = new TextDecoder().decode(rewritten);
 					}

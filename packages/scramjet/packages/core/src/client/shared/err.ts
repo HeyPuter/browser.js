@@ -1,9 +1,9 @@
-import { flagEnabled } from "@/shared";
+import { getFlag } from "@/shared";
 import { ScramjetClient } from "@client/index";
 import { Reflect_apply } from "@/shared/snapshot";
 
 export const enabled = (client: ScramjetClient) =>
-	client.flagEnabled("captureErrors");
+	client.getFlag("captureErrors");
 export function argdbg(arg, recurse = []) {
 	switch (typeof arg) {
 		case "string":

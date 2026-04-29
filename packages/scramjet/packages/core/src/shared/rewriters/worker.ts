@@ -1,4 +1,4 @@
-import { flagEnabled, ScramjetContext } from "@/shared";
+import { getFlag, ScramjetContext } from "@/shared";
 import { rewriteJs } from "@rewriters/js";
 import { URLMeta } from "@rewriters/url";
 import { TextDecoder_decode } from "@/shared/snapshot";
@@ -27,7 +27,7 @@ export function rewriteWorkers(
 		rewritten = TextDecoder_decode(rewritten);
 	}
 
-	if (flagEnabled("encapsulateWorkers", context, meta.origin)) {
+	if (getFlag("encapsulateWorkers", context, meta.origin)) {
 		// TODO: check if there's already a sourceURL/sourcemap before appending another?
 		rewritten += `//# sourceURL=${url}`;
 		str += script(b64(rewritten));

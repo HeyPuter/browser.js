@@ -22,7 +22,7 @@ import {
 	btoa,
 	_URL,
 } from "@/shared/snapshot";
-import { flagEnabled } from "..";
+import { getFlag } from "..";
 
 export type ForeignContext = "svg" | "math" | "html";
 
@@ -284,7 +284,7 @@ export function rewriteHtml(
 ) {
 	const before = Performance_now();
 	const ret = rewriteHtmlInner(html, context, meta, htmlcontext);
-	if (flagEnabled("rewriterLogs", context, meta.base)) {
+	if (getFlag("rewriterLogs", context, meta.base)) {
 		dbg.time(meta, before, "html rewrite");
 	}
 

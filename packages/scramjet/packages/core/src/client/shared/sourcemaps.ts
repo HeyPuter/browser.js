@@ -160,8 +160,7 @@ function doUnrewrite(
 	return ctx.return(newString);
 }
 
-export const enabled = (client: ScramjetClient) =>
-	client.flagEnabled("sourcemaps");
+export const enabled = (client: ScramjetClient) => client.getFlag("sourcemaps");
 
 export default function (client: ScramjetClient, self: Self) {
 	// every script will push a sourcemap
@@ -169,7 +168,7 @@ export default function (client: ScramjetClient, self: Self) {
 		value: (buf: Array<number>, tag: string) => {
 			const before = performance.now();
 			registerRewrites(client, buf, tag);
-			if (client.flagEnabled("rewriterLogs")) {
+			if (client.getFlag("rewriterLogs")) {
 				dbg.time(client.meta, before, `scramtag parse for ${tag}`);
 			}
 		},

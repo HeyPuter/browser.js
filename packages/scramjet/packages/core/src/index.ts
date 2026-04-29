@@ -19,6 +19,7 @@ declare const REWRITERWASM: string | undefined;
 export const defaultConfig: ScramjetConfig = {
 	globals: {
 		wrapfn: "$scramjet$wrap",
+		wrapthisfn: "$scramjet$wrapthis",
 		wrappropertybase: "$scramjet__",
 		wrappropertyfn: "$scramjet$prop",
 		cleanrestfn: "$scramjet$clean",

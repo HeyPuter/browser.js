@@ -2,7 +2,7 @@ import { unrewriteUrl } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
 
 export const enabled = (client: ScramjetClient) =>
-	client.flagEnabled("cleanErrors");
+	client.getFlag("cleanErrors");
 
 export default function (client: ScramjetClient, _self: Self) {
 	// v8 only. all we need to do is clean the scramjet urls from stack traces
