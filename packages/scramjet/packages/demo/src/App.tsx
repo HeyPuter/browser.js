@@ -2,11 +2,11 @@ import { controller } from ".";
 import { css, createStore, type Component } from "dreamland/core";
 import { demoSettingsStore } from "./store";
 import { FlagEditor } from "./components/FlagEditor";
+import { BrowserView, type Frame } from "./pages/BrowserView";
 import { RequestViewer, type RequestEntry } from "./pages/RequestViewer";
 import { PlaygroundPanel } from "./pages/Playground";
 import { ResponsePlayground } from "./pages/ResponsePlayground";
 import { SettingsPanel } from "./pages/SettingsPage";
-import homepage from "./homepage.html?raw";
 
 const urlStore = createStore(
 	{
@@ -28,10 +28,9 @@ export const App: Component<
 			| "playground"
 			| "response-playground"
 			| "settings";
-		frame: ReturnType<typeof controller.createFrame>;
-		frameel: HTMLIFrameElement;
-		playgroundFrame: ReturnType<typeof controller.createFrame>;
-		responsePlaygroundFrame: ReturnType<typeof controller.createFrame>;
+		frame: Frame;
+		playgroundFrame: Frame;
+		responsePlaygroundFrame: Frame;
 		requests: RequestEntry[];
 		selectedId: string | null;
 	}
@@ -45,28 +44,8 @@ export const App: Component<
 		this.requests = [];
 		this.selectedId = null;
 
-		this.frame = controller.createFrame(this.frameel);
 		this.playgroundFrame = controller.createFrame();
 		this.responsePlaygroundFrame = controller.createFrame();
-
-		const versionInfo = window.$scramjet.versionInfo ?? {};
-		let realHomepage = homepage;
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_VERSION}}",
-			String(versionInfo.version ?? "unknown")
-		);
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_BUILD}}",
-			String(versionInfo.build ?? "unknown")
-		);
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_DATE_PRETTY}}",
-			new Date(versionInfo.date).toLocaleString(undefined, {
-				dateStyle: "short",
-				timeStyle: "short",
-			})
-		);
-		this.frame.go(`data:text/html;base64,${btoa(realHomepage)}`);
 	};
 
 	return (
@@ -125,43 +104,6 @@ export const App: Component<
 						Settings
 					</button>
 				</div>
-				<form
-					class={use(this.activeTab).map(
-						(tab) => `url-form ${tab === "browser" ? "active" : ""}`
-					)}
-					on:submit={(e: SubmitEvent) => {
-						e.preventDefault();
-						this.frame?.go(urlStore.url);
-					}}
-				>
-					<div class="browser-omnibox-shell">
-						<div class="omnibox-nav" aria-hidden="true">
-							<button type="button" class="nav-btn">
-								<span class="material-symbols-outlined">arrow_back</span>
-							</button>
-							<button type="button" class="nav-btn">
-								<span class="material-symbols-outlined">arrow_forward</span>
-							</button>
-							<button
-								type="button"
-								class="nav-btn"
-								on:click={() => {
-									this.frame?.go(urlStore.url);
-								}}
-							>
-								<span class="material-symbols-outlined">refresh</span>
-							</button>
-						</div>
-						<input
-							id="search"
-							class="url-input"
-							type="text"
-							value={use(urlStore.url)}
-							spellcheck="false"
-							placeholder="Enter URL or search..."
-						/>
-					</div>
-				</form>
 				<div class="top-actions">
 					<FlagEditor
 						inline={true}
@@ -171,13 +113,13 @@ export const App: Component<
 					/>
 				</div>
 			</div>
-			<div
-				class={use(this.activeTab).map(
-					(tab) => `tab-panel browser-view ${tab === "browser" ? "active" : ""}`
-				)}
-			>
-				<iframe this={use(this.frameel)}></iframe>
-			</div>
+			<BrowserView
+				active={use(this.activeTab).map((tab) => tab === "browser")}
+				url={use(urlStore.url)}
+				onUrlChange={(url) => {
+					urlStore.url = url;
+				}}
+			/>
 			<div
 				class={use(this.activeTab).map(
 					(tab) =>
@@ -323,12 +265,6 @@ App.style = css`
 		padding: 0 0.35em;
 		min-height: 28px;
 	}
-	.browser-view {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		min-height: 0;
-	}
 	.tab-panel {
 		flex: 1;
 		width: 100%;
@@ -356,80 +292,5 @@ App.style = css`
 		width: 100%;
 		min-width: 0;
 		min-height: 0;
-	}
-	iframe {
-		background: white;
-		flex: 1;
-		border: none;
-	}
-	.url-form {
-		flex: 1;
-		display: none;
-		min-width: 0;
-	}
-	.url-form.active {
-		display: flex;
-		align-items: center;
-		padding: 0 0.45em 0 0.2em;
-	}
-	.browser-omnibox-shell {
-		display: flex;
-		align-items: center;
-		gap: 0.35em;
-		min-width: 0;
-		border: 0;
-		background: transparent;
-		padding: 0;
-		flex: 1;
-	}
-	.omnibox-nav {
-		display: flex;
-		align-items: center;
-		gap: 0.15em;
-		padding-right: 0.25em;
-		border-right: 1px solid #2a2a2a;
-	}
-	.nav-btn {
-		border: 0;
-		background: transparent;
-		color: #8f8f8f;
-		width: 1.5em;
-		height: 1.5em;
-		padding: 0;
-		border-radius: 3px;
-		cursor: pointer;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.nav-btn:hover {
-		background: #1f1f1f;
-		color: #d0d0d0;
-	}
-	.browser-omnibox-shell .material-symbols-outlined {
-		font-size: 15px !important;
-		line-height: 1 !important;
-		font-variation-settings:
-			"OPSZ" 20,
-			"wght" 300,
-			"FILL" 0,
-			"GRAD" 0;
-	}
-	.url-input {
-		box-sizing: border-box;
-		width: 100%;
-		padding: 0.22em 0.18em;
-		font-size: 0.9em;
-		border: 1px solid transparent;
-		border-radius: 3px;
-		background: transparent;
-		color: #e5e7eb;
-		outline: none;
-	}
-	.url-input::placeholder {
-		color: #6f7680;
-	}
-	.url-input:focus {
-		/* border-color: #7a7a7a; */
 	}
 `;
