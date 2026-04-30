@@ -7,7 +7,6 @@ import {
 	parseMimeType,
 } from "@mercuryworkshop/scramjet";
 import { MonacoComponent } from "../components/Monaco";
-import { RequestCard } from "../RequestCard";
 
 export type RequestEntry = {
 	id: string;
