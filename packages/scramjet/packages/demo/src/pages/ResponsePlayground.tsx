@@ -5,7 +5,7 @@ import {
 	isXmlMimeType,
 	parseMimeType,
 } from "@mercuryworkshop/scramjet";
-import { MonacoComponent } from "./MonacoComponent";
+import { MonacoComponent } from "../components/Monaco";
 
 const SIM_ORIGIN = "https://response-playground.local";
 

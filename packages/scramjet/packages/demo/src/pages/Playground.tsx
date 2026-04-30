@@ -1,5 +1,5 @@
 import { css, type Component } from "dreamland/core";
-import { MonacoComponent } from "./MonacoComponent";
+import { MonacoComponent } from "../components/Monaco";
 
 const DEFAULT_ORIGIN = "https://fakeorigin.com";
 const DEFAULT_PREVIEW_URL = `${DEFAULT_ORIGIN}/`;

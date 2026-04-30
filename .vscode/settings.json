@@ -1,11 +1,14 @@
 {
 	"editor.formatOnSave": false,
-	"editor.defaultFormatter": "rvest.vs-code-prettier-eslint",
+	"editor.defaultFormatter": "esbenp.prettier-vscode",
 	"prettier.useEditorConfig": true,
-	"typescript.preferences.includePackageJsonAutoImports": "off",
-	"typescript.suggest.autoImports": false,
+	"rust-analyzer.linkedProjects": [
+		"./packages/scramjet/packages/core/rewriter/Cargo.toml"
+	],
+	"js/ts.preferences.includePackageJsonAutoImports": "off",
+	"js/ts.suggest.autoImports": false,
 	"js/ts.implicitProjectConfig.checkJs": true,
-	"typescript.validate.enable": true,
+	"js/ts.validate.enabled": true,
 	"explorer.excludeGitIgnore": false,
 	"files.exclude": {
 		"**/.git": false,

@@ -1,13 +1,13 @@
 import { css, type Component } from "dreamland/core";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
-import { controller } from ".";
+import { controller } from "..";
 import {
 	demoSettingsDefaults,
 	demoSettingsStore,
 	normalizeHomeUrl,
 	normalizeMaxRequests,
 	normalizeWispUrl,
-} from "./demoSettings";
+} from "../store";
 
 export const SettingsPanel: Component<
 	{

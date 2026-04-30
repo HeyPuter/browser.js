@@ -1,46 +1,15 @@
-import { css } from "dreamland/core";
+import LoadInterstitial from "./components/LoadInterstitial";
 import { App } from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 const { Controller } = $scramjetController;
-import { demoSettingsDefaults } from "./demoSettings";
+import { demoSettingsDefaults } from "./store";
 
 let transport = new LibcurlClient({
 	wisp: demoSettingsDefaults.wispUrl,
 });
 
 let app = document.getElementById("app")!;
-
-export function LoadInterstitial() {
-	return (
-		<dialog class="signin">
-			<h1>Loading</h1>
-			<p>{use(this.status)}</p>
-		</dialog>
-	);
-}
-LoadInterstitial.style = css`
-	:scope {
-		transition: opacity 0.4s ease;
-		width: 50%;
-		height: 20%;
-		border: none;
-		border-radius: 1em;
-		text-align: center;
-	}
-	h1 {
-		text-align: center;
-		font-weight: bold;
-		font-size: 2em;
-	}
-	:modal[open] {
-		animation: fade 0.4s ease normal;
-	}
-
-	:modal::backdrop {
-		backdrop-filter: blur(3px);
-	}
-`;
 
 let controller: InstanceType<typeof Controller>;
 
