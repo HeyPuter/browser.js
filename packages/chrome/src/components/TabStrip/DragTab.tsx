@@ -143,6 +143,10 @@ export function DragTab(
 							e.stopPropagation();
 							this.destroy();
 						}}
+						on:auxclick={(e: MouseEvent) => {
+							e.stopPropagation();
+							this.destroy();
+						}}
 						on:contextmenu={(e: MouseEvent) => {
 							e.preventDefault();
 							e.stopPropagation();

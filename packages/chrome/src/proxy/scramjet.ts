@@ -1,5 +1,4 @@
 import {
-	CookieJar,
 	defaultConfig,
 	defaultConfigDev,
 	ScramjetFetchHandler,
@@ -12,10 +11,7 @@ import {
 	ScramjetHeaders,
 	isInlineDisplayableMimeType,
 } from "@mercuryworkshop/scramjet/bundled";
-import type {
-	RawHeaders,
-	BareResponse,
-} from "@mercuryworkshop/proxy-transports";
+import type { BareResponse } from "@mercuryworkshop/proxy-transports";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 
 import scramjetWASM from "../../../scramjet/packages/core/dist/scramjet.wasm?url";
@@ -33,7 +29,6 @@ function makeConfig(): ScramjetConfig {
 			captureErrors: false,
 		},
 		maskedfiles: ["inject.js", "scramjet.wasm.js"],
-		allowedwebsockets: [import.meta.env.VITE_WISP_URL],
 	};
 }
 
@@ -244,6 +239,8 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 				codecEncode: ${codecEncode.toString()},
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
+				initHeaders: [],
+				history: [],
 			}, {
 				message: ${JSON.stringify(error.message)},
 				stack: ${JSON.stringify(error.stack)},
@@ -264,6 +261,9 @@ export function createFetchHandler(controller: Controller) {
 		let frameContext = new ProxyFrameContext(controller, contextId);
 		contexts.push(frameContext);
 
+		const initHeaders = htmlcontext.headers ?? [];
+		const history = htmlcontext.history ?? [];
+
 		const injected = `
 			$injectLoad({
 				id: "${contextId}",
@@ -274,6 +274,8 @@ export function createFetchHandler(controller: Controller) {
 				codecEncode: ${codecEncode.toString()},
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
+				initHeaders: ${JSON.stringify(initHeaders)},
+				history: ${JSON.stringify(history)},
 			});
 			document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 		`;
@@ -294,6 +296,7 @@ export function createFetchHandler(controller: Controller) {
 	) => {
 		let str = "";
 
+		// workers don't have a document, so initHeaders/history are empty.
 		const injectLoad = `
 				$injectLoad({
 					config: ${JSON.stringify(makeConfig())},
@@ -302,6 +305,8 @@ export function createFetchHandler(controller: Controller) {
 					codecEncode: ${codecEncode.toString()},
 					codecDecode: ${codecDecode.toString()},
 					prefix: "${controller.prefix.href}",
+					initHeaders: [],
+					history: [],
 				});
 			`;
 		str += script(controller.prefix.href + virtualWasmPath);
@@ -353,21 +358,22 @@ export function createFetchHandler(controller: Controller) {
 				headers,
 			}) as BareResponse;
 		},
-		async sendSetCookie(url: URL, cookie: string) {
+		async sendSetCookie(cookies) {
+			const serialized = cookies.map(({ url, cookie }) => ({
+				url: url.href,
+				cookie,
+			}));
 			let promises: Promise<any>[] = [];
 			for (const context of contexts) {
 				if (context.alive()) {
-					// console.log("sending to " + context.id, context.windowproxy);
 					promises.push(
-						context.rpc.call("setCookie", {
-							url: url.href,
-							cookie,
+						context.rpc.call("setCookies", {
+							cookies: serialized,
 						})
 					);
 				}
 			}
 			if (promises.length === 0) return;
-			// console.log("actually sent");
 
 			// a context could be deadlocked, so add a safety
 			// await Promise.race([

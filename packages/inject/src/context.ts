@@ -88,8 +88,10 @@ export class ExecutionContextWrapper {
 						[ab],
 					];
 				},
-				setCookie: async ({ url, cookie }) => {
-					this.cookieJar.setCookies([cookie], new URL(url));
+				setCookies: async ({ cookies }) => {
+					for (const { url, cookie } of cookies) {
+						this.cookieJar.setCookies([cookie], new URL(url));
+					}
 				},
 				updateTheme: async (theme) => {
 					applyTheme(theme);
@@ -167,11 +169,16 @@ export class ExecutionContextWrapper {
 					prefix: this.init.prefix,
 					codecEncode: this.init.codecEncode,
 					codecDecode: this.init.codecDecode,
+					// TODO: what should be the behavior here? is inheriting correct?
+					initHeaders: this.init.initHeaders,
+					history: this.init.history,
 				});
 
 				return context.client;
 			},
-			sendSetCookie: async (url: URL, cookie: string) => {},
+			sendSetCookie: async (_cookies, _options) => {},
+			initHeaders: this.init.initHeaders,
+			history: this.init.history,
 		});
 		this.client.hook();
 	}

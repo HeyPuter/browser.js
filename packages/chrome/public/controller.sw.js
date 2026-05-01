@@ -1,105 +1,98 @@
 var $scramjetController;
 (() => {
-	// webpackBootstrap
 	var __webpack_modules__ = {
-		"./packages/scramjet/packages/rpc/index.ts":
-			/*!*************************************************!*\
-  !*** ./packages/scramjet/packages/rpc/index.ts ***!
-  \*************************************************/
-			function (
-				__unused_webpack_module,
-				__webpack_exports__,
-				__webpack_require__
-			) {
-				__webpack_require__.r(__webpack_exports__);
-				__webpack_require__.d(__webpack_exports__, {
-					RpcHelper: () => RpcHelper,
-				});
-				class RpcHelper {
-					methods;
-					id;
-					sendRaw;
-					counter = 0;
-					promiseCallbacks = new Map();
-					constructor(methods, id, sendRaw) {
-						this.methods = methods;
-						this.id = id;
-						this.sendRaw = sendRaw;
-					}
-					recieve(data) {
-						if (data === undefined || data === null || typeof data !== "object")
-							return;
-						const dt = data[this.id];
-						if (dt === undefined || dt === null || typeof dt !== "object")
-							return;
-						const type = dt.$type;
-						if (type === "response") {
-							const token = dt.$token;
-							const data = dt.$data;
-							const error = dt.$error;
-							const cb = this.promiseCallbacks.get(token);
-							if (!cb) return;
-							this.promiseCallbacks.delete(token);
-							if (error !== undefined) {
-								cb.reject(new Error(error));
-							} else {
-								cb.resolve(data);
-							}
-						} else if (type === "request") {
-							const method = dt.$method;
-							const args = dt.$args;
-							this.methods[method](args)
-								.then((r) => {
-									this.sendRaw(
-										{
-											[this.id]: {
-												$type: "response",
-												$token: dt.$token,
-												$data: r?.[0],
-											},
-										},
-										r?.[1]
-									);
-								})
-								.catch((err) => {
-									console.error(err);
-									this.sendRaw(
-										{
-											[this.id]: {
-												$type: "response",
-												$token: dt.$token,
-												$error: err?.toString() || "Unknown error",
-											},
-										},
-										[]
-									);
-								});
+		"./packages/scramjet/packages/rpc/index.ts"(
+			__unused_rspack_module,
+			__webpack_exports__,
+			__webpack_require__
+		) {
+			__webpack_require__.r(__webpack_exports__);
+			__webpack_require__.d(__webpack_exports__, {
+				RpcHelper: () => RpcHelper,
+			});
+			class RpcHelper {
+				methods;
+				id;
+				sendRaw;
+				counter = 0;
+				promiseCallbacks = new Map();
+				constructor(methods, id, sendRaw) {
+					this.methods = methods;
+					this.id = id;
+					this.sendRaw = sendRaw;
+				}
+				recieve(data) {
+					if (data === undefined || data === null || typeof data !== "object")
+						return;
+					const dt = data[this.id];
+					if (dt === undefined || dt === null || typeof dt !== "object") return;
+					const type = dt.$type;
+					if (type === "response") {
+						const token = dt.$token;
+						const data = dt.$data;
+						const error = dt.$error;
+						const cb = this.promiseCallbacks.get(token);
+						if (!cb) return;
+						this.promiseCallbacks.delete(token);
+						if (error !== undefined) {
+							cb.reject(new Error(error));
+						} else {
+							cb.resolve(data);
 						}
-					}
-					call(method, args, transfer = []) {
-						let token = this.counter++;
-						return new Promise((resolve, reject) => {
-							this.promiseCallbacks.set(token, {
-								resolve,
-								reject,
-							});
-							this.sendRaw(
-								{
-									[this.id]: {
-										$type: "request",
-										$method: method,
-										$args: args,
-										$token: token,
+					} else if (type === "request") {
+						const method = dt.$method;
+						const args = dt.$args;
+						this.methods[method](args)
+							.then((r) => {
+								this.sendRaw(
+									{
+										[this.id]: {
+											$type: "response",
+											$token: dt.$token,
+											$data: r?.[0],
+										},
 									},
-								},
-								transfer
-							);
-						});
+									r?.[1]
+								);
+							})
+							.catch((err) => {
+								console.error(err);
+								this.sendRaw(
+									{
+										[this.id]: {
+											$type: "response",
+											$token: dt.$token,
+											$error: err?.toString() || "Unknown error",
+										},
+									},
+									[]
+								);
+							});
 					}
 				}
-			},
+				call(method, args, transfer = []) {
+					const token = this.counter++;
+					return new Promise((resolve, reject) => {
+						this.promiseCallbacks.set(token, {
+							resolve,
+							reject,
+						});
+						this.sendRaw(
+							{
+								[this.id]: {
+									$type: "request",
+									$method: method,
+									$args: args,
+									$token: token,
+								},
+							},
+							transfer
+						);
+					});
+				}
+			}
+		},
 	};
-	/************************************************************************/
 	// The module cache
 	var __webpack_module_cache__ = {};
 
@@ -121,7 +114,6 @@ var $scramjetController;
 		return module.exports;
 	}
 
-	/************************************************************************/
 	// webpack/runtime/define_property_getters
 	(() => {
 		__webpack_require__.d = (exports, definition) => {
@@ -153,27 +145,21 @@ var $scramjetController;
 			Object.defineProperty(exports, "__esModule", { value: true });
 		};
 	})();
-	/************************************************************************/
 	var __webpack_exports__ = {};
 	// This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
 	(() => {
-		/*!*********************************************************!*\
-  !*** ./packages/scramjet/packages/controller/src/sw.ts ***!
-  \*********************************************************/
 		__webpack_require__.r(__webpack_exports__);
 		__webpack_require__.d(__webpack_exports__, {
 			route: () => route,
 			shouldRoute: () => shouldRoute,
 		});
-		/* ESM import */ var _mercuryworkshop_rpc__WEBPACK_IMPORTED_MODULE_0__ =
-			__webpack_require__(
-				/*! @mercuryworkshop/rpc */ "./packages/scramjet/packages/rpc/index.ts"
-			);
+		/* import */ var _mercuryworkshop_rpc__rspack_import_0 =
+			__webpack_require__("./packages/scramjet/packages/rpc/index.ts");
 
 		function makeId() {
 			return Math.random().toString(36).substring(2, 10);
 		}
-		let cookieResolvers = {};
+		const cookieResolvers = {};
 		addEventListener("message", (e) => {
 			if (!e.data) return;
 			if (typeof e.data != "object") return;
@@ -210,45 +196,88 @@ var $scramjetController;
 			constructor(prefix, id, port) {
 				this.prefix = prefix;
 				this.id = id;
-				this.rpc =
-					new _mercuryworkshop_rpc__WEBPACK_IMPORTED_MODULE_0__.RpcHelper(
-						{
-							sendSetCookie: async ({ url, cookie }) => {
-								let clients1 = await self.clients.matchAll();
-								let promises = [];
-								for (const client of clients1) {
-									let id = makeId();
-									client.postMessage({
-										$controller$setCookie: {
-											url,
-											cookie,
-											id,
-										},
-									});
+				this.rpc = new _mercuryworkshop_rpc__rspack_import_0.RpcHelper(
+					{
+						sendSetCookie: async ({ cookies, options }) => {
+							const clients1 = await self.clients.matchAll();
+							const ids = [];
+							const promises = [];
+							// Navigation fetches (document/iframe) deliver cookies via the inject
+							// script's embedded cookieJar dump — the destination page doesn't have
+							// inject.ts loaded yet to ack, so awaiting would deadlock. Broadcast
+							// so any already-loaded clients can update their jars, but don't wait.
+							const isNavigation =
+								options?.destination === "document" ||
+								options?.destination === "iframe";
+							for (const client of clients1) {
+								const id = makeId();
+								ids.push(id);
+								client.postMessage({
+									$controller$setCookie: {
+										cookies,
+										options,
+										id,
+									},
+								});
+								if (!isNavigation) {
 									promises.push(
 										new Promise((resolve) => {
-											cookieResolvers[id] = resolve;
+											// Resolve with the id so we know which client replied.
+											cookieResolvers[id] = () => resolve(id);
 										})
 									);
 								}
-								await Promise.race([
-									new Promise((resolve) =>
-										setTimeout(() => {
-											console.error(
-												"timed out waiting for set cookie response (deadlock?)"
+							}
+							// Wait for the first client to acknowledge the cookie sync.
+							// Using Promise.any (not Promise.all) so that extra SW clients created by
+							// window.open (e.g. test popup windows) don't cause timeouts — only the
+							// main controller client needs to respond.
+							if (promises.length > 0) {
+								let timeoutId;
+								let responded = false;
+								const timeoutPromise = new Promise((resolve) => {
+									timeoutId = setTimeout(() => {
+										if (!responded) {
+											const pending = ids.filter(
+												(id) => cookieResolvers[id] !== undefined
 											);
-											resolve();
-										}, 1000)
-									),
-									promises,
-								]);
-							},
+											console.error(
+												"timed out waiting for set cookie response (deadlock?): " +
+													`cookies=${cookies.length} clients=${clients1.length} ` +
+													`pending=${pending.length}/${ids.length} ` +
+													`clientUrls=${clients1.map((c) => c.url).join(",")}`
+											);
+										}
+										resolve();
+									}, 1000);
+								});
+								try {
+									await Promise.race([
+										timeoutPromise,
+										Promise.any(promises)
+											.then(() => {
+												responded = true;
+											})
+											.catch(() => {}),
+									]);
+								} finally {
+									// Clear the timeout so it doesn't fire spuriously after the
+									// race has already been won by Promise.any.
+									if (timeoutId !== undefined) clearTimeout(timeoutId);
+									// Clean up any pending resolvers so clients that never
+									// responded don't leak entries in cookieResolvers.
+									for (const id of ids) {
+										delete cookieResolvers[id];
+									}
+								}
+							}
 						},
-						"tabchannel-" + id,
-						(data, transfer) => {
-							port.postMessage(data, transfer);
-						}
-					);
+					},
+					"tabchannel-" + id,
+					(data, transfer) => {
+						port.postMessage(data, transfer);
+					}
+				);
 				port.onmessage = (e) => {
 					this.rpc.recieve(e.data);
 				};
@@ -294,6 +323,7 @@ var $scramjetController;
 						forceCrossOriginIsolated: false,
 						initialHeaders: rawheaders,
 						rawClientUrl: client ? client.url : undefined,
+						clientId: event.clientId || event.resultingClientId,
 					},
 					event.request.body instanceof ReadableStream || // @ts-expect-error the types for fetchevent are messed up
 						event.request.body instanceof ArrayBuffer
