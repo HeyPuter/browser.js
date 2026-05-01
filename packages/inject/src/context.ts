@@ -53,6 +53,7 @@ export class ExecutionContextWrapper {
 		public self: typeof globalThis,
 		private init: InjectScramjetInit
 	) {
+		const realFetch = self.fetch.bind(self);
 		this.cookieJar.load(init.cookies);
 		this.loadScramjet();
 
@@ -60,7 +61,6 @@ export class ExecutionContextWrapper {
 		if (!iswindow) return;
 
 		const history_replaceState = self.History.prototype.replaceState;
-		const realFetch = self.fetch.bind(self);
 		this.rpc = new RpcHelper(
 			{
 				navigate: async ({ url }) => {
