@@ -189,6 +189,11 @@ DragTab.style = css`
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
+	:global(*) > :scope .hover-area:is(:hover, :active) {
+		background: red;
+		anchor-name: --hovered-tab;
+	}
+
 	.hover-area {
 		position: absolute;
 		top: -3px;

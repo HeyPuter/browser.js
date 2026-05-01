@@ -1,6 +1,7 @@
 import { iconAdd, iconNew } from "../../icons";
 import { css, type FC } from "dreamland/core";
 import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
+import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import type { Tab } from "../../Tab/Tab";
 // import html2canvas from "html2canvas";
 import { setContextMenu } from "@components/Menu";
@@ -318,7 +319,7 @@ export function TabStrip(
 	};
 
 	return (
-		<div this={use(this.container)}>
+		<div id="tabstrip" this={use(this.container)}>
 			<div class="extra left" this={use(this.leftEl)}></div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
 			<div
@@ -332,6 +333,7 @@ export function TabStrip(
 				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
 			</div>
 			<div class="extra right" this={use(this.rightEl)}></div>
+			<TabHoverCard />
 		</div>
 	);
 }
@@ -342,6 +344,10 @@ TabStrip.style = css`
 		height: calc(var(--tab-height) + calc(var(--tab-padding) * 2));
 		z-index: 2;
 		position: relative;
+	}
+
+	:global(#tabstrip:not(:has(.hover-area:hover)) #hovercard) {
+		visibility: hidden;
 	}
 
 	.extra {
