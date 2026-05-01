@@ -20,67 +20,66 @@ type MonacoProps = {
 	onSave?: () => void;
 };
 
-export const MonacoComponent: Component<MonacoProps, {}, { instance?: any }> =
-	function (cx) {
-		cx.mount = () => {
-			this.instance = monaco.editor.create(cx.root, {
-				value: this.value ?? "",
-				language: this.language ?? "plaintext",
-				readOnly: this.readOnly ?? true,
-				automaticLayout: true,
-				minimap: { enabled: false },
-				scrollBeyondLastLine: false,
-				lineNumbers: "on",
-				renderLineHighlight: "none",
-				theme: "vs-dark",
-			});
+const Monaco: Component<MonacoProps, {}, { instance?: any }> = function (cx) {
+	cx.mount = () => {
+		this.instance = monaco.editor.create(cx.root, {
+			value: this.value ?? "",
+			language: this.language ?? "plaintext",
+			readOnly: this.readOnly ?? true,
+			automaticLayout: true,
+			minimap: { enabled: false },
+			scrollBeyondLastLine: false,
+			lineNumbers: "on",
+			renderLineHighlight: "none",
+			theme: "vs-dark",
+		});
 
-			this.instance.onDidChangeModelContent(() => {
-				this.onChange?.(this.instance.getValue());
-			});
+		this.instance.onDidChangeModelContent(() => {
+			this.onChange?.(this.instance.getValue());
+		});
 
-			this.instance.addCommand(
-				monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-				() => {
-					this.onSave?.();
-				}
-			);
-
-			use(this.value).listen((next) => {
-				if (!this.instance) return;
-				const current = this.instance.getValue();
-				if (current !== next) {
-					this.instance.setValue(next ?? "");
-				}
-			});
-
-			use(this.language).listen((next) => {
-				if (!this.instance || !this.instance.getModel()) return;
-				monaco.editor.setModelLanguage(
-					this.instance.getModel(),
-					next ?? "plaintext"
-				);
-			});
-
-			use(this.readOnly).listen((next) => {
-				if (!this.instance) return;
-				this.instance.updateOptions({ readOnly: next ?? true });
-			});
-		};
-
-		return (
-			<div
-				class={`monaco-host ${this.fill ? "fill" : ""}`}
-				style={
-					this.fill
-						? "min-height: 0; height: 100%;"
-						: `min-height: ${this.minHeight ?? 260}px; height: ${this.minHeight ?? 260}px;`
-				}
-			/>
+		this.instance.addCommand(
+			monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+			() => {
+				this.onSave?.();
+			}
 		);
+
+		use(this.value).listen((next) => {
+			if (!this.instance) return;
+			const current = this.instance.getValue();
+			if (current !== next) {
+				this.instance.setValue(next ?? "");
+			}
+		});
+
+		use(this.language).listen((next) => {
+			if (!this.instance || !this.instance.getModel()) return;
+			monaco.editor.setModelLanguage(
+				this.instance.getModel(),
+				next ?? "plaintext"
+			);
+		});
+
+		use(this.readOnly).listen((next) => {
+			if (!this.instance) return;
+			this.instance.updateOptions({ readOnly: next ?? true });
+		});
 	};
 
-MonacoComponent.style = css`
+	return (
+		<div
+			class={`monaco-host ${this.fill ? "fill" : ""}`}
+			style={
+				this.fill
+					? "min-height: 0; height: 100%;"
+					: `min-height: ${this.minHeight ?? 260}px; height: ${this.minHeight ?? 260}px;`
+			}
+		/>
+	);
+};
+
+Monaco.style = css`
 	:scope {
 		width: 100%;
 		min-width: 0;
@@ -111,3 +110,4 @@ MonacoComponent.style = css`
 		min-height: 0;
 	}
 `;
+export default Monaco;

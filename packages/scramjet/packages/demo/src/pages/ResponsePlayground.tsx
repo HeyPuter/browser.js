@@ -6,10 +6,11 @@ import {
 	parseMimeType,
 	type ScramjetFetchRequest,
 } from "@mercuryworkshop/scramjet";
-const { ScramjetFetchHandler, ScramjetHeaders, BareResponse, rewriteUrl } = window.$scramjet
-import type { Frame } from "@mercuryworkshop/scramjet-controller"
+const { ScramjetFetchHandler, ScramjetHeaders, BareResponse, rewriteUrl } =
+	window.$scramjet;
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { controller } from "..";
-import { MonacoComponent } from "../components/Monaco";
+import Monaco from "../components/Monaco";
 
 const SIM_ORIGIN = "https://response-playground.local";
 
@@ -31,8 +32,8 @@ const normalizePath = (value: string) => {
 	if (!trimmed) return "/index.html";
 	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 };
- 
-export const ResponsePlayground: Component<
+
+const ResponsePlayground: Component<
 	{
 		active?: boolean;
 	},
@@ -73,7 +74,7 @@ export const ResponsePlayground: Component<
 	this.rewrittenBody ??= "";
 	this.status ??= "Ready";
 	this.hasRun ??= false;
-	
+
 	cx.mount = async () => {
 		await controller.wait();
 		this.frame = controller.createFrame();
@@ -133,7 +134,7 @@ export const ResponsePlayground: Component<
 
 			const targetUrl = `${SIM_ORIGIN}${path}`;
 			const encoded = rewriteUrl(targetUrl, frame.context, {
-				//@ts-expect-error 
+				//@ts-expect-error
 				origin: new URL(location.href),
 				//@ts-expect-error
 				base: new URL(location.href),
@@ -153,7 +154,9 @@ export const ResponsePlayground: Component<
 				clientId: frame.id,
 			};
 
-			const rewritten = await handler.handleFetch(request as ScramjetFetchRequest);
+			const rewritten = await handler.handleFetch(
+				request as ScramjetFetchRequest
+			);
 			handler.client.fetch = originalFetch;
 
 			this.rewrittenBody = await readBodyText(rewritten.body);
@@ -209,7 +212,7 @@ export const ResponsePlayground: Component<
 					</button>
 				</div>
 				<div class="editor-wrap">
-					<MonacoComponent
+					<Monaco
 						value={use(this.sourceBody)}
 						language={use(this.contentType).map((ct) =>
 							languageFromContentType(ct)
@@ -234,7 +237,7 @@ export const ResponsePlayground: Component<
 					</span>
 				</div>
 				<div class="editor-wrap">
-					<MonacoComponent
+					<Monaco
 						value={use(this.rewrittenBody)}
 						language={use(this.rewrittenContentType).map((ct) =>
 							languageFromContentType(ct)
@@ -343,3 +346,4 @@ ResponsePlayground.style = css`
 		}
 	}
 `;
+export default ResponsePlayground;

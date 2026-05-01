@@ -5,7 +5,7 @@ import { controller } from "..";
 import { demoSettingsStore } from "../store";
 import homepage from "./homepage.html?raw";
 
-export const BrowserView: Component<
+const BrowserView: Component<
 	{
 		getFrame: Delegate<Frame>;
 		active: boolean;
@@ -182,3 +182,5 @@ BrowserView.style = css`
 		border: none;
 	}
 `;
+
+export default BrowserView;

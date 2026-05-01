@@ -11,7 +11,7 @@ import {
 	normalizeWispUrl,
 } from "../store";
 
-export const SettingsPanel: Component<
+const SettingsView: Component<
 	{},
 	{
 		wispUrlInput: string;
@@ -185,7 +185,7 @@ export const SettingsPanel: Component<
 	);
 };
 
-SettingsPanel.style = css`
+SettingsView.style = css`
 	:scope {
 		display: block;
 		flex: 1;
@@ -259,7 +259,8 @@ SettingsPanel.style = css`
 		appearance: none;
 		-webkit-appearance: none;
 		-moz-appearance: none;
-		background-image: linear-gradient(45deg, transparent 50%, #8f8f8f 50%),
+		background-image:
+			linear-gradient(45deg, transparent 50%, #8f8f8f 50%),
 			linear-gradient(135deg, #8f8f8f 50%, transparent 50%);
 		background-position:
 			calc(100% - 14px) 50%,
@@ -328,3 +329,4 @@ SettingsPanel.style = css`
 		color: #b8c2cc;
 	}
 `;
+export default SettingsView;

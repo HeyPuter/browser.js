@@ -1,15 +1,14 @@
 import { css, createDelegate, type Component } from "dreamland/core";
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
-import { controller } from ".";
-import { FlagEditor } from "./components/FlagEditor";
-import { BrowserView } from "./pages/BrowserView";
-import { RequestViewer } from "./pages/RequestViewer";
-import { PlaygroundPanel } from "./pages/Playground";
-import { ResponsePlayground } from "./pages/ResponsePlayground";
-import { SettingsPanel } from "./pages/SettingsPage";
+import FlagEditor from "./components/FlagEditor";
+import BrowserView from "./pages/BrowserView";
+import RequestViewer from "./pages/RequestViewer";
+import PlaygroundView from "./pages/Playground";
+import ResponsePlayground from "./pages/ResponsePlayground";
+import SettingsView from "./pages/SettingsPage";
 
 const getFrame = createDelegate<Frame>();
-export const App: Component<
+const App: Component<
 	{},
 	{},
 	{
@@ -79,12 +78,7 @@ export const App: Component<
 					</button>
 				</div>
 				<div class="top-actions">
-					<FlagEditor
-						inline={true}
-						onFlagsChange={(flags) => {
-							Object.assign(controller.scramjetConfig.flags, flags);
-						}}
-					/>
+					<FlagEditor inline={true} />
 				</div>
 			</div>
 			<div
@@ -115,7 +109,7 @@ export const App: Component<
 						`tab-panel playground-panel ${tab === "playground" ? "active" : ""}`
 				)}
 			>
-				<PlaygroundPanel
+				<PlaygroundView
 					active={use(this.activeTab).map((tab) => tab === "playground")}
 				/>
 			</div>
@@ -137,7 +131,7 @@ export const App: Component<
 						`tab-panel settings-tab ${tab === "settings" ? "active" : ""}`
 				)}
 			>
-				<SettingsPanel />
+				<SettingsView />
 			</div>
 		</div>
 	);
@@ -250,3 +244,4 @@ App.style = css`
 		min-height: 0;
 	}
 `;
+export default App;

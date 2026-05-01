@@ -1,12 +1,14 @@
-import { css } from "dreamland/core";
-function LoadInterstitial() {
+import { css, type Component } from "dreamland/core";
+const LoadInterstitial: Component<{
+	status: string;
+}> = function () {
 	return (
 		<dialog class="signin">
 			<h1>Loading</h1>
 			<p>{use(this.status)}</p>
 		</dialog>
 	);
-}
+};
 
 LoadInterstitial.style = css`
 	:scope {

@@ -1,5 +1,5 @@
 import LoadInterstitial from "./components/LoadInterstitial";
-import { App } from "./App";
+import App from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import EpoxyClient from "@mercuryworkshop/epoxy-transport";
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";

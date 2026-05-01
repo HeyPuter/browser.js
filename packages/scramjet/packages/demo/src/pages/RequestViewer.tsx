@@ -9,7 +9,7 @@ import {
 const { Plugin: ScramjetPlugin } = window.$scramjet;
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { demoSettingsStore } from "../store";
-import { MonacoComponent } from "../components/Monaco";
+import Monaco from "../components/Monaco";
 export type RequestEntry = {
 	id: string;
 	method: string;
@@ -258,7 +258,7 @@ const StableBodyViewer: Component<
 								`body-monaco ${mode === "code" && loaded ? "" : "hidden"}`
 						)}
 				>
-					<MonacoComponent
+					<Monaco
 						value={value}
 						language={use(this.language).map(
 							(language) => language ?? "plaintext"
@@ -570,7 +570,7 @@ RequestCard.style = css`
 	}
 `;
 
-export const RequestViewer: Component<
+const RequestViewer: Component<
 	{
 		active?: boolean;
 		getFrame: Delegate<Frame>;
@@ -816,7 +816,9 @@ export const RequestViewer: Component<
 				performance.now()
 			);
 			const reqHeaders = normalizeHeaders(props.init?.headers);
-			const reqHeadersPre = normalizeHeaders(context.request.initialHeaders.toRawHeaders());
+			const reqHeadersPre = normalizeHeaders(
+				context.request.initialHeaders.toRawHeaders()
+			);
 			const reqBodyInfo = getBodyPreview(props.init?.body);
 
 			const entry: RequestEntry = {
@@ -1500,3 +1502,5 @@ RequestViewer.style = css`
 		font-style: italic;
 	}
 `;
+
+export default RequestViewer;
