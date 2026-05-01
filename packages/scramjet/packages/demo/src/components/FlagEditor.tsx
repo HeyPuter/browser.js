@@ -55,14 +55,6 @@ const FlagEditor: Component<
 		Object.assign(flagStore, controller.scramjetConfig.flags);
 	};
 
-	const setFlag = <K extends keyof ScramjetFlags>(
-		flag: K,
-		value: ScramjetFlags[K]
-	) => {
-		flagStore[flag] = value;
-		Object.assign(controller.scramjetConfig.flags, flagStore);
-	};
-
 	const VISITOR_OPTIONS: Array<ScramjetFlags["visitor"]> = ["dpsc", "ppsc"];
 
 	const resetToDefaults = () => {
