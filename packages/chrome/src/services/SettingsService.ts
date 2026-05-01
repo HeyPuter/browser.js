@@ -1,4 +1,4 @@
-import { createState, createStore, stateListen } from "dreamland/core";
+import { createState, stateListen } from "dreamland/core";
 import type { Stateful } from "dreamland/core";
 import {
 	type AppearancePreference,
@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS: Settings = {
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
 	defaultZoom: 100,
-	showBookmarksBar: true,
+	showBookmarksBar: false,
 	defaultSearchEngine: "google",
 	searchSuggestionsEnabled: true,
 	blockTrackers: true,

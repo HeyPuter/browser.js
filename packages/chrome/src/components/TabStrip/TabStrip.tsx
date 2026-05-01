@@ -226,7 +226,6 @@ export function TabStrip(
 		transitioningTabs = Math.max(transitioningTabs - 1, 0);
 		if (transitioningTabs == 0) {
 			this.afterEl.style.transition = "";
-			this.tabs = this.tabs;
 		}
 	};
 
