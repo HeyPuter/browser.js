@@ -71,9 +71,6 @@ importers:
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
-      server:
-        specifier: link:@mercuryworkshop/wisp-js/server
-        version: link:@mercuryworkshop/wisp-js/server
       ts-checker-rspack-plugin:
         specifier: ^1.1.6
         version: 1.1.6(@rspack/core@1.5.8(@swc/helpers@0.5.17))(typescript@5.9.3)
@@ -549,6 +546,9 @@ importers:
 
   packages/scramjet/packages/demo:
     dependencies:
+      '@mercuryworkshop/epoxy-transport':
+        specifier: 'catalog:'
+        version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.5
