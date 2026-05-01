@@ -133,7 +133,9 @@ export const ResponsePlayground: Component<
 
 			const targetUrl = `${SIM_ORIGIN}${path}`;
 			const encoded = rewriteUrl(targetUrl, frame.context, {
+				//@ts-expect-error 
 				origin: new URL(location.href),
+				//@ts-expect-error
 				base: new URL(location.href),
 			});
 

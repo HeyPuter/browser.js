@@ -816,7 +816,7 @@ export const RequestViewer: Component<
 				performance.now()
 			);
 			const reqHeaders = normalizeHeaders(props.init?.headers);
-			const reqHeadersPre = normalizeHeaders(context.request.initialHeaders);
+			const reqHeadersPre = normalizeHeaders(context.request.initialHeaders.toRawHeaders());
 			const reqBodyInfo = getBodyPreview(props.init?.body);
 
 			const entry: RequestEntry = {
