@@ -1,11 +1,7 @@
 import { css, type Component } from "dreamland/core";
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
-import type { ScramjetFetchRequest } from "@mercuryworkshop/scramjet";
 import { controller } from "..";
 import Monaco from "../components/Monaco";
-
-const { ScramjetFetchHandler, ScramjetHeaders, BareResponse, rewriteUrl } =
-	window.$scramjet;
 
 const DEFAULT_ORIGIN = "https://fakeorigin.com";
 const DEFAULT_PREVIEW_URL = `${DEFAULT_ORIGIN}/`;
@@ -232,6 +228,11 @@ const PlaygroundView: Component<
 				runRewrite(this.frame);
 			}
 		});
+	};
+
+	cx.mount = async () => {
+		await controller.wait();
+		this.frame = controller.createFrame();
 	};
 
 	const getActiveProject = () =>
