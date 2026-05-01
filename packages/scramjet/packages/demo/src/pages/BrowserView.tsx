@@ -41,13 +41,14 @@ const BrowserView: Component<
 				timeStyle: "short",
 			})
 		);
-		this.frame?.go(`data:text/html;base64,${btoa(realHomepage)}`);
+		this.frameel.src = `data:text/html;base64,${btoa(realHomepage)}`;
 		initPlugin(this.frame);
 	};
 	const initPlugin = (frame: Frame) => {
 		const plugin = new ScramjetPlugin("url-watcher");
 		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
 			if (!context.isTopLevel) return;
+			this.url = context.client.url;
 			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
 				this.url = props.url;
 			});
