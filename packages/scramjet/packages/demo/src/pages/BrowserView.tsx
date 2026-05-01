@@ -1,126 +1,72 @@
-import { css, type Delegate, type Component } from "dreamland/core";
+import {
+	css,
+	type Delegate,
+	type Component,
+	createState,
+} from "dreamland/core";
 const { Plugin: ScramjetPlugin } = window.$scramjet;
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { controller } from "..";
 import { demoSettingsStore } from "../store";
 import homepage from "./homepage.html?raw";
 
-const BrowserView: Component<
-	{
-		getFrame: Delegate<Frame>;
-		active: boolean;
-	},
-	{},
-	{
-		url: string;
-		frame: Frame | null;
-		frameel: HTMLIFrameElement;
-	}
-> = function (cx) {
-	this.url ??= demoSettingsStore.homeUrl;
-	this.frame ??= null;
+export const browserState = createState({
+	url: demoSettingsStore.homeUrl,
+	frame: null! as Frame,
+});
 
-	cx.mount = async () => {
-		await controller.wait();
-		this.frame = controller.createFrame(this.frameel);
-		this.getFrame(this.frame);
-		const versionInfo = window.$scramjet.versionInfo ?? {};
-		let realHomepage = homepage;
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_VERSION}}",
-			String(versionInfo.version ?? "unknown")
-		);
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_BUILD}}",
-			String(versionInfo.build ?? "unknown")
-		);
-		realHomepage = realHomepage.replaceAll(
-			"{{SCRAMJET_DATE_PRETTY}}",
-			new Date(versionInfo.date).toLocaleString(undefined, {
-				dateStyle: "short",
-				timeStyle: "short",
-			})
-		);
-		this.frameel.src = `data:text/html;base64,${btoa(realHomepage)}`;
-		initPlugin(this.frame);
-	};
-	const initPlugin = (frame: Frame) => {
-		const plugin = new ScramjetPlugin("url-watcher");
-		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
-			if (!context.isTopLevel) return;
-			this.url = context.client.url;
-			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
-				this.url = props.url;
-			});
-		});
-	};
+export const Omnibox: Component = function (cx) {
 	const navigate = () => {
-		this.frame?.go(this.url);
+		if (!browserState.url.startsWith("http")) {
+			browserState.url = `https://${browserState.url}`;
+		}
+		browserState.frame?.go(browserState.url);
 	};
-
 	return (
-		<div
-			class={use(this.active).map(
-				(active) => `tab-panel browser-view ${active ? "active" : ""}`
-			)}
+		<form
+			class="url-form"
+			on:submit={(e: SubmitEvent) => {
+				e.preventDefault();
+				navigate();
+			}}
 		>
-			<form
-				class="url-form"
-				on:submit={(e: SubmitEvent) => {
-					e.preventDefault();
-					navigate();
-				}}
-			>
-				<div class="browser-omnibox-shell">
-					<div class="omnibox-nav" aria-hidden="true">
-						<button type="button" class="nav-btn">
-							<span class="material-symbols-outlined">arrow_back</span>
-						</button>
-						<button type="button" class="nav-btn">
-							<span class="material-symbols-outlined">arrow_forward</span>
-						</button>
-						<button type="button" class="nav-btn" on:click={navigate}>
-							<span class="material-symbols-outlined">refresh</span>
-						</button>
-					</div>
-					<input
-						id="search"
-						class="url-input"
-						type="text"
-						value={use(this.url)}
-						spellcheck="false"
-						placeholder="Enter URL or search..."
-					/>
+			<div class="browser-omnibox-shell">
+				<div class="omnibox-nav" aria-hidden="true">
+					<button type="button" class="nav-btn">
+						<span class="material-symbols-outlined">arrow_back</span>
+					</button>
+					<button type="button" class="nav-btn">
+						<span class="material-symbols-outlined">arrow_forward</span>
+					</button>
+					<button type="button" class="nav-btn" on:click={navigate}>
+						<span class="material-symbols-outlined">refresh</span>
+					</button>
 				</div>
-			</form>
-			<iframe this={use(this.frameel)}></iframe>
-		</div>
+				<input
+					id="search"
+					class="url-input"
+					type="text"
+					value={use(browserState.url)}
+					spellcheck="false"
+					placeholder="Enter URL or search..."
+				/>
+			</div>
+		</form>
 	);
 };
-
-BrowserView.style = css`
+Omnibox.style = css`
 	:scope {
-		flex: 1;
-		width: 100%;
-		min-width: 0;
-		min-height: 0;
-		display: none;
-		flex-direction: column;
-	}
-	:scope.active {
-		display: flex;
-	}
-
-	.url-form {
 		display: flex;
 		align-items: center;
-		padding: 0.25em 0.45em;
+		/*padding: 0.25em 0.45em;*/
 		background: #0f0f0f;
 		border-bottom: 1px solid #2a2a2a;
 		min-width: 0;
+		width: 100%;
 	}
 	.browser-omnibox-shell {
 		display: flex;
+		width: 100%;
 		align-items: center;
 		gap: 0.35em;
 		min-width: 0;
@@ -175,6 +121,74 @@ BrowserView.style = css`
 	}
 	.url-input::placeholder {
 		color: #6f7680;
+	}
+`;
+
+const BrowserView: Component<
+	{
+		active: boolean;
+	},
+	{},
+	{
+		frameel: HTMLIFrameElement;
+	}
+> = function (cx) {
+	cx.mount = async () => {
+		await controller.wait();
+		browserState.frame = controller.createFrame(this.frameel);
+		const versionInfo = window.$scramjet.versionInfo ?? {};
+		let realHomepage = homepage;
+		realHomepage = realHomepage.replaceAll(
+			"{{SCRAMJET_VERSION}}",
+			String(versionInfo.version ?? "unknown")
+		);
+		realHomepage = realHomepage.replaceAll(
+			"{{SCRAMJET_BUILD}}",
+			String(versionInfo.build ?? "unknown")
+		);
+		realHomepage = realHomepage.replaceAll(
+			"{{SCRAMJET_DATE_PRETTY}}",
+			new Date(versionInfo.date).toLocaleString(undefined, {
+				dateStyle: "short",
+				timeStyle: "short",
+			})
+		);
+		this.frameel.src = `data:text/html;base64,${btoa(realHomepage)}`;
+		initPlugin(browserState.frame);
+	};
+	const initPlugin = (frame: Frame) => {
+		const plugin = new ScramjetPlugin("url-watcher");
+		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
+			if (!context.isTopLevel) return;
+			browserState.url = context.client.url;
+			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
+				browserState.url = props.url;
+			});
+		});
+	};
+
+	return (
+		<div
+			class={use(this.active).map(
+				(active) => `tab-panel browser-view ${active ? "active" : ""}`
+			)}
+		>
+			<iframe this={use(this.frameel)}></iframe>
+		</div>
+	);
+};
+
+BrowserView.style = css`
+	:scope {
+		flex: 1;
+		width: 100%;
+		min-width: 0;
+		min-height: 0;
+		display: none;
+		flex-direction: column;
+	}
+	:scope.active {
+		display: flex;
 	}
 
 	iframe {

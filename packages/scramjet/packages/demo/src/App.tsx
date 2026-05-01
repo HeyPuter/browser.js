@@ -6,8 +6,9 @@ import RequestViewer from "./pages/RequestViewer";
 import PlaygroundView from "./pages/Playground";
 import ResponsePlayground from "./pages/ResponsePlayground";
 import SettingsView from "./pages/SettingsPage";
+import { Omnibox } from "./pages/BrowserView";
+import { requestsState } from "./pages/RequestViewer";
 
-const getFrame = createDelegate<Frame>();
 const App: Component<
 	{},
 	{},
@@ -43,7 +44,10 @@ const App: Component<
 							this.activeTab = "requests";
 						}}
 					>
-						Requests
+						Requests{" "}
+						{use(requestsState.requests).map((requests) =>
+							requests.length ? `(${requests.length})` : ""
+						)}
 					</button>
 					<button
 						class={use(this.activeTab).map(
@@ -76,6 +80,9 @@ const App: Component<
 					>
 						Settings
 					</button>
+					{use(this.activeTab)
+						.map((tab) => tab === "browser")
+						.andThen(<Omnibox />)}
 				</div>
 				<div class="top-actions">
 					<FlagEditor inline={true} />
@@ -89,7 +96,6 @@ const App: Component<
 			>
 				<BrowserView
 					active={use(this.activeTab).map((tab) => tab === "browser")}
-					getFrame={getFrame}
 				/>
 			</div>
 			<div
@@ -100,7 +106,6 @@ const App: Component<
 			>
 				<RequestViewer
 					active={use(this.activeTab).map((tab) => tab === "requests")}
-					getFrame={getFrame}
 				/>
 			</div>
 			<div
@@ -179,6 +184,7 @@ App.style = css`
 	}
 	.tab-bar {
 		display: flex;
+		flex: 1;
 		align-items: stretch;
 		gap: 0;
 	}

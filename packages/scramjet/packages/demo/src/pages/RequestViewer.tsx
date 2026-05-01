@@ -1,4 +1,9 @@
-import { css, type Component, type Delegate } from "dreamland/core";
+import {
+	css,
+	type Component,
+	type Delegate,
+	createState,
+} from "dreamland/core";
 import {
 	isHtmlMimeType,
 	isImageMimeType,
@@ -10,6 +15,8 @@ const { Plugin: ScramjetPlugin } = window.$scramjet;
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { demoSettingsStore } from "../store";
 import Monaco from "../components/Monaco";
+import { browserState } from "./BrowserView";
+
 export type RequestEntry = {
 	id: string;
 	method: string;
@@ -570,14 +577,15 @@ RequestCard.style = css`
 	}
 `;
 
+export const requestsState = createState({
+	requests: [] as RequestEntry[],
+});
+
 const RequestViewer: Component<
 	{
 		active?: boolean;
-		getFrame: Delegate<Frame>;
 	},
 	{
-		frame: Frame;
-		requests: RequestEntry[];
 		selectedId: string | null;
 		search: string;
 		captureStreamBodies: boolean;
@@ -601,7 +609,6 @@ const RequestViewer: Component<
 	},
 	{}
 > = function () {
-	this.requests ??= [];
 	this.selectedId ??= null;
 	this.search ??= "";
 	this.captureStreamBodies ??= false;
@@ -689,7 +696,7 @@ const RequestViewer: Component<
 			if (!queuedUpdater) return;
 
 			captureListAnchor();
-			this.requests = queuedUpdater(this.requests);
+			requestsState.requests = queuedUpdater(requestsState.requests);
 			restoreListAnchor();
 		});
 	};
@@ -699,7 +706,7 @@ const RequestViewer: Component<
 	};
 
 	const clear = () => {
-		this.requests = [];
+		requestsState.requests = [];
 		this.selectedId = null;
 	};
 
@@ -707,12 +714,14 @@ const RequestViewer: Component<
 	const getRequestById = (id: string | null, requests: RequestEntry[]) =>
 		id ? (requests.find((entry) => entry.id === id) ?? null) : null;
 
-	use(this.selectedId, this.requests).listen(([selectedId, requests]) => {
-		const nextSelected = getRequestById(selectedId, requests);
-		if (this.selectedRequest !== nextSelected) {
-			this.selectedRequest = nextSelected;
+	use(this.selectedId, requestsState.requests).listen(
+		([selectedId, requests]) => {
+			const nextSelected = getRequestById(selectedId, requests);
+			if (this.selectedRequest !== nextSelected) {
+				this.selectedRequest = nextSelected;
+			}
 		}
-	});
+	);
 
 	const hasSelected = use(this.selectedRequest).map((selected) => !!selected);
 	const selectedUrl = use(this.selectedRequest).map(
@@ -989,10 +998,7 @@ const RequestViewer: Component<
 			);
 		});
 	};
-	this.getFrame.listen((frame) => {
-		this.frame = frame;
-	});
-	const activeSignal = use(this.active ?? false, this.frame).map(
+	const activeSignal = use(this.active ?? false, browserState.frame).map(
 		([active, frame]) => {
 			if (active) initPlugin(frame);
 			return active;
@@ -1033,44 +1039,46 @@ const RequestViewer: Component<
 			</div>
 			<div class="requests-content">
 				<div class="requests-list" this={use(this.listEl)}>
-					{use(this.requests, this.search).map(([requests, search]) => {
-						const query = search.trim().toLowerCase();
-						const filtered = query
-							? requests.filter((req) => {
-									const haystack = [
-										req.url,
-										req.method,
-										String(req.status ?? ""),
-										req.contentType ?? "",
-										req.destination ?? "",
-										req.time,
-									]
-										.join(" ")
-										.toLowerCase();
-									return haystack.includes(query);
-								})
-							: requests;
+					{use(requestsState.requests, this.search).map(
+						([requests, search]) => {
+							const query = search.trim().toLowerCase();
+							const filtered = query
+								? requests.filter((req) => {
+										const haystack = [
+											req.url,
+											req.method,
+											String(req.status ?? ""),
+											req.contentType ?? "",
+											req.destination ?? "",
+											req.time,
+										]
+											.join(" ")
+											.toLowerCase();
+										return haystack.includes(query);
+									})
+								: requests;
 
-						if (filtered.length === 0) {
-							return (
-								<div class="requests-empty">
-									{requests.length === 0
-										? "No requests captured yet."
-										: "No requests match your search."}
-								</div>
-							);
+							if (filtered.length === 0) {
+								return (
+									<div class="requests-empty">
+										{requests.length === 0
+											? "No requests captured yet."
+											: "No requests match your search."}
+									</div>
+								);
+							}
+
+							return filtered.map((req) => (
+								<RequestCard
+									request={req}
+									selected={use(this.selectedId).map(
+										(selectedId) => selectedId === req.id
+									)}
+									onSelect={select}
+								/>
+							));
 						}
-
-						return filtered.map((req) => (
-							<RequestCard
-								request={req}
-								selected={use(this.selectedId).map(
-									(selectedId) => selectedId === req.id
-								)}
-								onSelect={select}
-							/>
-						));
-					})}
+					)}
 				</div>
 				<div class="requests-detail">
 					<div
