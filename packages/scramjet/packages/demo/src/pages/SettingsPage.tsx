@@ -1,6 +1,5 @@
 import { css, type Component } from "dreamland/core";
-import LibcurlClient from "@mercuryworkshop/libcurl-transport";
-import { controller } from "..";
+import { controller, getTransport } from "..";
 import {
 	demoSettingsDefaults,
 	demoSettingsStore,
@@ -10,9 +9,7 @@ import {
 } from "../store";
 
 export const SettingsPanel: Component<
-	{
-		onHomeUrlApply?: (url: string) => void;
-	},
+	{},
 	{
 		wispUrlInput: string;
 		homeUrlInput: string;
@@ -43,6 +40,7 @@ export const SettingsPanel: Component<
 			const nextHomeUrl = normalizeHomeUrl(this.homeUrlInput);
 			const nextMaxRequests = normalizeMaxRequests(this.maxRequestsInput);
 			const wispChanged = nextWispUrl !== demoSettingsStore.wispUrl;
+			const transportChanged = 
 
 			demoSettingsStore.wispUrl = nextWispUrl;
 			demoSettingsStore.homeUrl = nextHomeUrl;
@@ -53,10 +51,8 @@ export const SettingsPanel: Component<
 			this.maxRequestsInput = String(nextMaxRequests);
 
 			if (wispChanged) {
-				controller.setTransport(new LibcurlClient({ wisp: nextWispUrl }));
+				controller.setTransport(getTransport());
 			}
-
-			this.onHomeUrlApply?.(nextHomeUrl);
 			this.status = wispChanged
 				? "Settings saved. Wisp transport updated for new requests."
 				: "Settings saved.";

@@ -1,11 +1,14 @@
 import { createStore } from "dreamland/core";
 
+type AvailableTransports = "libcurl" | "epoxy";
 const DEFAULT_WISP_URL = import.meta.env.VITE_WISP_URL;
+const DEFAULT_TRANSPORT = "libcurl";
 const DEFAULT_HOME_URL = "https://google.com";
 const DEFAULT_MAX_REQUESTS = 200;
 
 export const demoSettingsStore = createStore(
 	{
+		transport: DEFAULT_TRANSPORT as AvailableTransports,
 		wispUrl: DEFAULT_WISP_URL,
 		homeUrl: DEFAULT_HOME_URL,
 		maxRequests: DEFAULT_MAX_REQUESTS,
@@ -68,6 +71,7 @@ export function normalizeMaxRequests(value: string | number) {
 
 export const demoSettingsDefaults = {
 	wispUrl: normalizeWispUrl(DEFAULT_WISP_URL),
+	transport: DEFAULT_TRANSPORT,
 	homeUrl: normalizeHomeUrl(DEFAULT_HOME_URL),
 	maxRequests: DEFAULT_MAX_REQUESTS,
 };

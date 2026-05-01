@@ -1,17 +1,46 @@
 import LoadInterstitial from "./components/LoadInterstitial";
 import { App } from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
+import EpoxyClient from "@mercuryworkshop/epoxy-transport";
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 const { Controller } = $scramjetController;
-import { demoSettingsDefaults } from "./store";
-
-let transport = new LibcurlClient({
-	wisp: demoSettingsDefaults.wispUrl,
-});
+import { demoSettingsStore } from "./store";
 
 let app = document.getElementById("app")!;
 
 let controller: InstanceType<typeof Controller>;
+
+export function getTransport(): LibcurlClient | EpoxyClient {
+	const wispUrl = demoSettingsStore.wispUrl;
+	switch (demoSettingsStore.transport) {
+		case "epoxy":
+			return new EpoxyClient({ wisp: wispUrl });
+		case "libcurl":
+		default:
+			return new LibcurlClient({ wisp: wispUrl });
+	}
+}
+
+async function waitForControllerOrReady(timeoutMs = 10000): Promise<void> {
+	if (navigator.serviceWorker.controller) return;
+
+	const ready = navigator.serviceWorker.ready.then(() => {});
+	const controllerChanged = new Promise<void>((resolve) => {
+		const onChange = () => {
+			navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+			resolve();
+		};
+		navigator.serviceWorker.addEventListener("controllerchange", onChange, {
+			once: true,
+		} as any);
+	});
+	const timeout = new Promise<void>((resolve) =>
+		setTimeout(resolve, timeoutMs)
+	);
+
+	// Wait for whichever happens first; on timeout we continue to avoid blocking the UI.
+	await Promise.race([ready, controllerChanged, timeout]);
+}
 
 async function init() {
 	const interstitial: any = (
@@ -64,7 +93,7 @@ async function init() {
 		}
 		controller = new Controller({
 			serviceworker: readySw,
-			transport,
+			transport: getTransport(),
 			scramjetConfig: defaultConfigDev,
 		});
 		await controller.wait();
@@ -80,27 +109,6 @@ async function init() {
 		app.innerText =
 			"Failed to register service worker. Check console for details.";
 	}
-}
-
-async function waitForControllerOrReady(timeoutMs = 10000): Promise<void> {
-	if (navigator.serviceWorker.controller) return;
-
-	const ready = navigator.serviceWorker.ready.then(() => {});
-	const controllerChanged = new Promise<void>((resolve) => {
-		const onChange = () => {
-			navigator.serviceWorker.removeEventListener("controllerchange", onChange);
-			resolve();
-		};
-		navigator.serviceWorker.addEventListener("controllerchange", onChange, {
-			once: true,
-		} as any);
-	});
-	const timeout = new Promise<void>((resolve) =>
-		setTimeout(resolve, timeoutMs)
-	);
-
-	// Wait for whichever happens first; on timeout we continue to avoid blocking the UI.
-	await Promise.race([ready, controllerChanged, timeout]);
 }
 
 async function mount() {

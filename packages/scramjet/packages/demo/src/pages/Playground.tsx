@@ -1,4 +1,6 @@
 import { css, type Component } from "dreamland/core";
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
+import { controller } from "..";
 import { MonacoComponent } from "../components/Monaco";
 
 const DEFAULT_ORIGIN = "https://fakeorigin.com";
@@ -179,10 +181,10 @@ const requestPathToFilePath = (pathname: string) => {
 
 export const PlaygroundPanel: Component<
 	{
-		frame: any;
 		active?: boolean;
 	},
 	{
+		frame: Frame;
 		pluginReady: boolean;
 		origin: string;
 		originInput: string;
@@ -195,7 +197,7 @@ export const PlaygroundPanel: Component<
 		isResizing: boolean;
 	},
 	{}
-> = function () {
+> = function (cx) {
 	this.pluginReady ??= false;
 	this.origin ??= DEFAULT_ORIGIN;
 	this.originInput ??= DEFAULT_ORIGIN;
@@ -206,6 +208,11 @@ export const PlaygroundPanel: Component<
 	this.isResizing ??= false;
 	this.projects ??= loadProjects();
 	this.selectedProjectId ??= this.projects[0]?.id ?? "default";
+
+	cx.mount = async () => {
+		await controller.wait();
+		this.frame = controller.createFrame();
+	};
 
 	const getActiveProject = () =>
 		this.projects.find((project) => project.id === this.selectedProjectId) ??

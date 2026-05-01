@@ -1,23 +1,14 @@
+import { css, createDelegate, type Component } from "dreamland/core";
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { controller } from ".";
-import { css, createStore, type Component } from "dreamland/core";
-import { demoSettingsStore } from "./store";
 import { FlagEditor } from "./components/FlagEditor";
-import { BrowserView, type Frame } from "./pages/BrowserView";
-import { RequestViewer, type RequestEntry } from "./pages/RequestViewer";
+import { BrowserView } from "./pages/BrowserView";
+import { RequestViewer } from "./pages/RequestViewer";
 import { PlaygroundPanel } from "./pages/Playground";
 import { ResponsePlayground } from "./pages/ResponsePlayground";
 import { SettingsPanel } from "./pages/SettingsPage";
 
-const urlStore = createStore(
-	{
-		url: demoSettingsStore.homeUrl,
-	},
-	{
-		ident: "store",
-		backing: "localstorage",
-		autosave: "auto",
-	}
-);
+const getFrame = createDelegate<Frame>();
 export const App: Component<
 	{},
 	{},
@@ -28,26 +19,9 @@ export const App: Component<
 			| "playground"
 			| "response-playground"
 			| "settings";
-		frame: Frame;
-		playgroundFrame: Frame;
-		responsePlaygroundFrame: Frame;
-		requests: RequestEntry[];
-		selectedId: string | null;
 	}
 > = function (cx) {
 	this.activeTab ??= "browser";
-	this.requests ??= [];
-	this.selectedId ??= null;
-	cx.mount = async () => {
-		await controller.wait();
-		this.activeTab = "browser";
-		this.requests = [];
-		this.selectedId = null;
-
-		this.playgroundFrame = controller.createFrame();
-		this.responsePlaygroundFrame = controller.createFrame();
-	};
-
 	return (
 		<div>
 			<div class="top-bar">
@@ -70,7 +44,7 @@ export const App: Component<
 							this.activeTab = "requests";
 						}}
 					>
-						Requests ({use(this.requests).map((reqs) => reqs.length)})
+						Requests
 					</button>
 					<button
 						class={use(this.activeTab).map(
@@ -113,13 +87,17 @@ export const App: Component<
 					/>
 				</div>
 			</div>
-			<BrowserView
-				active={use(this.activeTab).map((tab) => tab === "browser")}
-				url={use(urlStore.url)}
-				onUrlChange={(url) => {
-					urlStore.url = url;
-				}}
-			/>
+			<div
+				class={use(this.activeTab).map(
+					(tab) =>
+						`tab-panel browser-panel ${tab === "browser" ? "active" : ""}`
+				)}
+			>
+				<BrowserView
+					active={use(this.activeTab).map((tab) => tab === "browser")}
+					getFrame={getFrame}
+				/>
+			</div>
 			<div
 				class={use(this.activeTab).map(
 					(tab) =>
@@ -127,24 +105,8 @@ export const App: Component<
 				)}
 			>
 				<RequestViewer
-					frame={use(this.frame)}
 					active={use(this.activeTab).map((tab) => tab === "requests")}
-					requests={use(this.requests)}
-					selectedId={use(this.selectedId)}
-					maxRequests={use(demoSettingsStore.maxRequests)}
-					onSelect={(id) => {
-						this.selectedId = id;
-					}}
-					onSelectedChange={(id) => {
-						this.selectedId = id;
-					}}
-					onRequestsChange={(updater) => {
-						this.requests = updater(this.requests);
-					}}
-					onClear={() => {
-						this.requests = [];
-						this.selectedId = null;
-					}}
+					getFrame={getFrame}
 				/>
 			</div>
 			<div
@@ -154,7 +116,6 @@ export const App: Component<
 				)}
 			>
 				<PlaygroundPanel
-					frame={use(this.playgroundFrame)}
 					active={use(this.activeTab).map((tab) => tab === "playground")}
 				/>
 			</div>
@@ -165,7 +126,6 @@ export const App: Component<
 				)}
 			>
 				<ResponsePlayground
-					frame={use(this.responsePlaygroundFrame)}
 					active={use(this.activeTab).map(
 						(tab) => tab === "response-playground"
 					)}
@@ -177,11 +137,7 @@ export const App: Component<
 						`tab-panel settings-tab ${tab === "settings" ? "active" : ""}`
 				)}
 			>
-				<SettingsPanel
-					onHomeUrlApply={(url) => {
-						urlStore.url = url;
-					}}
-				/>
+				<SettingsPanel />
 			</div>
 		</div>
 	);

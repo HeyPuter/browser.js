@@ -1,26 +1,29 @@
-import { css, type Component } from "dreamland/core";
+import { css, type Delegate, type Component } from "dreamland/core";
+const { Plugin: ScramjetPlugin } = window.$scramjet;
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { controller } from "..";
+import { demoSettingsStore } from "../store";
 import homepage from "./homepage.html?raw";
-
-export type Frame = ReturnType<typeof controller.createFrame>;
 
 export const BrowserView: Component<
 	{
+		getFrame: Delegate<Frame>;
 		active: boolean;
-		url: string;
-		onUrlChange: (url: string) => void;
 	},
 	{},
 	{
+		url: string;
 		frame: Frame | null;
 		frameel: HTMLIFrameElement;
 	}
 > = function (cx) {
+	this.url ??= demoSettingsStore.homeUrl;
 	this.frame ??= null;
 
 	cx.mount = async () => {
 		await controller.wait();
 		this.frame = controller.createFrame(this.frameel);
+		this.getFrame(this.frame);
 		const versionInfo = window.$scramjet.versionInfo ?? {};
 		let realHomepage = homepage;
 		realHomepage = realHomepage.replaceAll(
@@ -39,8 +42,17 @@ export const BrowserView: Component<
 			})
 		);
 		this.frame?.go(`data:text/html;base64,${btoa(realHomepage)}`);
+		initPlugin(this.frame);
 	};
-
+	const initPlugin = (frame: Frame) => {
+		const plugin = new ScramjetPlugin("url-watcher");
+		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
+			if (!context.isTopLevel) return;
+			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
+				this.url = props.url;
+			});
+		});
+	};
 	const navigate = () => {
 		this.frame?.go(this.url);
 	};
@@ -77,9 +89,6 @@ export const BrowserView: Component<
 						value={use(this.url)}
 						spellcheck="false"
 						placeholder="Enter URL or search..."
-						on:input={(e: InputEvent) => {
-							this.onUrlChange((e.target as HTMLInputElement).value);
-						}}
 					/>
 				</div>
 			</form>

@@ -1,4 +1,4 @@
-import { css, type Component } from "dreamland/core";
+import { css, type Component, type Delegate } from "dreamland/core";
 import {
 	isHtmlMimeType,
 	isImageMimeType,
@@ -6,8 +6,10 @@ import {
 	isXmlMimeType,
 	parseMimeType,
 } from "@mercuryworkshop/scramjet";
+const { Plugin: ScramjetPlugin } = window.$scramjet;
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
+import { demoSettingsStore } from "../store";
 import { MonacoComponent } from "../components/Monaco";
-
 export type RequestEntry = {
 	id: string;
 	method: string;
@@ -570,19 +572,13 @@ RequestCard.style = css`
 
 export const RequestViewer: Component<
 	{
-		frame: any;
 		active?: boolean;
-		requests: RequestEntry[];
-		selectedId: string | null;
-		maxRequests: number;
-		onSelect?: (id: string) => void;
-		onClear?: () => void;
-		onRequestsChange?: (
-			updater: (prev: RequestEntry[]) => RequestEntry[]
-		) => void;
-		onSelectedChange?: (id: string | null) => void;
+		getFrame: Delegate<Frame>;
 	},
 	{
+		frame: Frame;
+		requests: RequestEntry[];
+		selectedId: string | null;
 		search: string;
 		captureStreamBodies: boolean;
 		selectedRequest: RequestEntry | null;
@@ -605,6 +601,8 @@ export const RequestViewer: Component<
 	},
 	{}
 > = function () {
+	this.requests ??= [];
+	this.selectedId ??= null;
 	this.search ??= "";
 	this.captureStreamBodies ??= false;
 	this.selectedRequest ??= null;
@@ -619,12 +617,6 @@ export const RequestViewer: Component<
 	this.pendingRequestsUpdater ??= null;
 	this.requestIdByRequest ??= new WeakMap();
 	this.requestStartByRequest ??= new WeakMap();
-
-	if (!this.onSelectedChange && this.onSelect) {
-		this.onSelectedChange = (id) => {
-			if (id != null) this.onSelect?.(id);
-		};
-	}
 
 	const isNearBottom = (el: HTMLElement) =>
 		el.scrollHeight - el.clientHeight - el.scrollTop <= 8;
@@ -697,9 +689,18 @@ export const RequestViewer: Component<
 			if (!queuedUpdater) return;
 
 			captureListAnchor();
-			this.onRequestsChange?.(queuedUpdater);
+			this.requests = queuedUpdater(this.requests);
 			restoreListAnchor();
 		});
+	};
+
+	const select = (id: string | null) => {
+		this.selectedId = id;
+	};
+
+	const clear = () => {
+		this.requests = [];
+		this.selectedId = null;
 	};
 
 	const shouldCaptureStreamBodies = () => this.captureStreamBodies !== false;
@@ -802,12 +803,11 @@ export const RequestViewer: Component<
 		)
 	);
 
-	const initPlugin = (frame: any) => {
-		if (this.pluginReady || !frame) return;
+	const initPlugin = (frame: Frame) => {
+		if (this.pluginReady) return;
 		this.pluginReady = true;
-		const ScramjetPlugin = globalThis.$scramjet.Plugin;
 		const plugin = new ScramjetPlugin("demo-request-viewer");
-		plugin.tap(frame.hooks.fetch.request, (context: any, props: any) => {
+		plugin.tap(frame.hooks.fetch.request, (context, props) => {
 			const id = `${Date.now()}-${++this.requestSeq}`;
 			const url = props.url?.toString?.() ?? context.parsed.url.toString();
 			this.requestIdByRequest.set(context.request as object, id);
@@ -833,14 +833,14 @@ export const RequestViewer: Component<
 			};
 
 			updateRequests((prev) => {
-				const next = [...prev, entry].slice(-this.maxRequests);
+				const next = [...prev, entry].slice(-demoSettingsStore.maxRequests);
 				if (!this.selectedId) {
 					this.selectedRequest = entry;
 				}
 				return next;
 			});
 			if (!this.selectedId) {
-				this.onSelectedChange?.(id);
+				this.selectedId = id;
 			}
 		});
 
@@ -987,7 +987,9 @@ export const RequestViewer: Component<
 			);
 		});
 	};
-
+	this.getFrame.listen((frame) => {
+		this.frame = frame;
+	});
 	const activeSignal = use(this.active ?? false, this.frame).map(
 		([active, frame]) => {
 			if (active) initPlugin(frame);
@@ -1001,13 +1003,11 @@ export const RequestViewer: Component<
 			<div class="requests-header">
 				<span>
 					Requests, oldest to newest (latest{" "}
-					{use(this.maxRequests).map((max) => max)})
+					{use(demoSettingsStore.maxRequests).map((max) => max)})
 				</span>
-				{this.onClear ? (
-					<button class="tab-action" on:click={() => this.onClear?.()}>
-						Clear
-					</button>
-				) : null}
+				<button class="tab-action" on:click={clear}>
+					Clear
+				</button>
 			</div>
 			<div class="requests-toolbar">
 				<input
@@ -1065,7 +1065,7 @@ export const RequestViewer: Component<
 								selected={use(this.selectedId).map(
 									(selectedId) => selectedId === req.id
 								)}
-								onSelect={this.onSelect}
+								onSelect={select}
 							/>
 						));
 					})}
