@@ -63,6 +63,16 @@ export type Chromebound = {
 		},
 	];
 	history_go: [{ delta: number }];
+	/**
+	 * Inject → chrome: a write to `document.cookie` (or equivalent) just landed
+	 * in this frame. Chrome updates its shared cookieJar and fans the batch out
+	 * to every other live frame context so their local jars stay in sync.
+	 */
+	setCookies: [
+		{
+			cookies: { cookie: string; url: string }[];
+		},
+	];
 };
 
 export type Framebound = {

@@ -178,6 +178,22 @@ class ProxyFrameContext {
 				registerFrameContext: async ({ id: childId }) => {
 					contexts.push(new ProxyFrameContext(this.controller, childId));
 				},
+				setCookies: async ({ cookies }) => {
+					for (const { url, cookie } of cookies) {
+						try {
+							profileService.cookieJar.setCookies(cookie, new URL(url));
+						} catch {
+							console.error("Failed to set cookie", { url, cookie });
+						}
+					}
+					profileService.markDirty();
+
+					for (const ctx of contexts) {
+						if (ctx === this) continue;
+						if (!ctx.alive()) continue;
+						void ctx.rpc.call("setCookies", { cookies });
+					}
+				},
 			},
 			id,
 			(message, transfer) => {
@@ -358,12 +374,14 @@ export function createFetchHandler(controller: Controller) {
 				headers,
 			}) as BareResponse;
 		},
-		async sendSetCookie(cookies) {
+		async sendSetCookie(cookies, options) {
+			profileService.markDirty();
+
 			const serialized = cookies.map(({ url, cookie }) => ({
 				url: url.href,
 				cookie,
 			}));
-			let promises: Promise<any>[] = [];
+			const promises: Promise<any>[] = [];
 			for (const context of contexts) {
 				if (context.alive()) {
 					promises.push(
@@ -375,16 +393,26 @@ export function createFetchHandler(controller: Controller) {
 			}
 			if (promises.length === 0) return;
 
-			// a context could be deadlocked, so add a safety
-			// await Promise.race([
-			// 	new Promise((res) =>
-			// 		setTimeout(() => {
-			// 			console.error("a context deadlocked! hit timeout");
-			// 			res(null);
-			// 		}, 1000)
-			// 	),
-			// 	Promise.all(promises),
-			// ]);
+			const isNavigation =
+				options?.destination === "document" ||
+				options?.destination === "iframe";
+			if (isNavigation) return;
+
+			let timeoutId: ReturnType<typeof setTimeout> | undefined;
+			const timeoutPromise = new Promise<void>((resolve) => {
+				timeoutId = setTimeout(() => {
+					console.error("timed out waiting for inject context cookie sync ack");
+					resolve();
+				}, 1000);
+			});
+			try {
+				await Promise.race([
+					timeoutPromise,
+					Promise.any(promises).catch(() => {}),
+				]);
+			} finally {
+				if (timeoutId !== undefined) clearTimeout(timeoutId);
+			}
 		},
 	});
 

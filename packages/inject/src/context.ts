@@ -90,7 +90,7 @@ export class ExecutionContextWrapper {
 				},
 				setCookies: async ({ cookies }) => {
 					for (const { url, cookie } of cookies) {
-						this.cookieJar.setCookies([cookie], new URL(url));
+						this.cookieJar.setCookies(cookie, new URL(url));
 					}
 				},
 				updateTheme: async (theme) => {
@@ -176,7 +176,15 @@ export class ExecutionContextWrapper {
 
 				return context.client;
 			},
-			sendSetCookie: async (_cookies, _options) => {},
+			sendSetCookie: async (cookies, _options) => {
+				if (cookies.length === 0) return;
+				await this.rpc.call("setCookies", {
+					cookies: cookies.map(({ url, cookie }) => ({
+						url: url.href,
+						cookie,
+					})),
+				});
+			},
 			initHeaders: this.init.initHeaders,
 			history: this.init.history,
 		});
