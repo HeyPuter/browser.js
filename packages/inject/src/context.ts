@@ -53,6 +53,7 @@ export class ExecutionContextWrapper {
 		public self: typeof globalThis,
 		private init: InjectScramjetInit
 	) {
+		const realFetch = self.fetch.bind(self);
 		this.cookieJar.load(init.cookies);
 		this.loadScramjet();
 
@@ -60,7 +61,6 @@ export class ExecutionContextWrapper {
 		if (!iswindow) return;
 
 		const history_replaceState = self.History.prototype.replaceState;
-		const realFetch = self.fetch.bind(self);
 		this.rpc = new RpcHelper(
 			{
 				navigate: async ({ url }) => {
@@ -88,8 +88,10 @@ export class ExecutionContextWrapper {
 						[ab],
 					];
 				},
-				setCookie: async ({ url, cookie }) => {
-					this.cookieJar.setCookies([cookie], new URL(url));
+				setCookies: async ({ cookies }) => {
+					for (const { url, cookie } of cookies) {
+						this.cookieJar.setCookies(cookie, new URL(url));
+					}
 				},
 				updateTheme: async (theme) => {
 					applyTheme(theme);
@@ -167,11 +169,24 @@ export class ExecutionContextWrapper {
 					prefix: this.init.prefix,
 					codecEncode: this.init.codecEncode,
 					codecDecode: this.init.codecDecode,
+					// TODO: what should be the behavior here? is inheriting correct?
+					initHeaders: this.init.initHeaders,
+					history: this.init.history,
 				});
 
 				return context.client;
 			},
-			sendSetCookie: async (url: URL, cookie: string) => {},
+			sendSetCookie: async (cookies, _options) => {
+				if (cookies.length === 0) return;
+				await this.rpc.call("setCookies", {
+					cookies: cookies.map(({ url, cookie }) => ({
+						url: url.href,
+						cookie,
+					})),
+				});
+			},
+			initHeaders: this.init.initHeaders,
+			history: this.init.history,
 		});
 		this.client.hook();
 	}

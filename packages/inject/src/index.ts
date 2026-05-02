@@ -1,6 +1,10 @@
 import { FrameSequence, InjectScramjetInit } from "./types";
 
-import { SCRAMJETCLIENT, setWasm } from "@mercuryworkshop/scramjet";
+import {
+	type ScramjetClient,
+	SCRAMJETCLIENT,
+	setWasm,
+} from "@mercuryworkshop/scramjet";
 import { loadErrorPage } from "./errorpage/errorpage";
 import { ExecutionContextWrapper } from "./context";
 
@@ -17,6 +21,12 @@ export function reduceSequence(sequence: FrameSequence): Window | null {
 
 function $injectLoad(init: InjectScramjetInit) {
 	if (SCRAMJETCLIENT in globalThis) {
+		const existing = (globalThis as any)[SCRAMJETCLIENT] as ScramjetClient;
+		existing.syncDocumentInit({
+			initHeaders: init.initHeaders,
+			history: init.history,
+			cookies: init.cookies,
+		});
 		return;
 	}
 

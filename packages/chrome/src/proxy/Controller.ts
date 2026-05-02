@@ -6,12 +6,7 @@ import type {
 } from "../../../scramjet/packages/controller/src/types";
 import { RpcHelper, type MethodsDefinition } from "@mercuryworkshop/rpc";
 import * as tldts from "tldts";
-import {
-	createFetchHandler,
-	handlefetch,
-	renderErrorPage,
-	virtualInjectPath,
-} from "./scramjet";
+import { createFetchHandler, handlefetch, renderErrorPage } from "./scramjet";
 import {
 	ScramjetHeaders,
 	type ScramjetFetchHandler,
@@ -29,9 +24,25 @@ export class Controller {
 	private ready: Promise<void>;
 	private readyResolve!: () => void;
 
+	private port: MessagePort | null = null;
+	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
+		this.rpc.recieve(e.data);
+	};
+
+	/**
+	 * The SW sends `$controller$swrevive` whenever it activates, even on the very
+	 * first init when the message port is already healthy. We use this flag to
+	 * ignore the first revive after construction so we don't tear down the
+	 * working channel for no reason.
+	 */
+	guardServiceWorkerRevive = true;
+
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
 			this.readyResolve();
+			setTimeout(() => {
+				this.guardServiceWorkerRevive = false;
+			}, 5000);
 		},
 		request: async (data) => {
 			try {
@@ -41,6 +52,7 @@ export class Controller {
 					rawClientUrl: data.rawClientUrl
 						? new URL(data.rawClientUrl)
 						: undefined,
+					rawReferrer: data.rawReferrer,
 					method: data.method,
 					initialHeaders: headers,
 					body: data.body,
@@ -48,6 +60,7 @@ export class Controller {
 					cache: data.cache,
 					referrer: data.referrer,
 					destination: data.destination,
+					clientId: data.clientId ?? "",
 				};
 
 				const fetchresp = await handlefetch(request, this);
@@ -59,7 +72,7 @@ export class Controller {
 					body: fetchresp.body,
 				};
 
-				let transfer: any[] | undefined = [];
+				let transfer: Transferable[] = [];
 				if (
 					response.body instanceof ArrayBuffer ||
 					response.body instanceof ReadableStream
@@ -76,19 +89,30 @@ export class Controller {
 						headers: [["Content-Type", "text/html"]],
 						body: renderErrorPage(this, e),
 					},
+					[],
 				];
 			}
 		},
+		// TODO
+		initRemoteTransport: async () => {},
 	};
 
 	fetchHandler: ScramjetFetchHandler;
 
+	/**
+	 * In non-isolated mode this is the chrome-origin ServiceWorker. In isolated
+	 * mode it's the sandbox iframe's window, which forwards `$controller$init`
+	 * to its own (cross-origin) SW. Use `isIsolated` to disambiguate.
+	 */
+	initTarget: ServiceWorker | Window;
+
 	constructor(
 		public prefix: URL,
-		id: string,
-		channel: MessageChannel,
+		public id: string,
+		initTarget: ServiceWorker | Window,
 		public rootdomain?: string
 	) {
+		this.initTarget = initTarget;
 		this.ready = new Promise<void>((res) => {
 			this.readyResolve = res;
 		});
@@ -96,14 +120,76 @@ export class Controller {
 			this.methods,
 			"tabchannel-" + id,
 			(data, transfer) => {
-				channel.port1.postMessage(data, transfer);
+				if (!this.port) {
+					throw new Error("Port not found");
+				}
+				this.port.postMessage(data, transfer);
 			}
 		);
-		channel.port1.addEventListener("message", (e) => {
-			this.rpc.recieve(e.data);
-		});
 
 		this.fetchHandler = createFetchHandler(this);
+
+		this.setupMessagePort();
+		this.installSwReviveListener();
+	}
+
+	private setupMessagePort() {
+		if (this.port) {
+			this.port.removeEventListener("message", this.onTabChannelMessage);
+			try {
+				this.port.close();
+			} catch {
+				// ignore
+			}
+			this.port = null;
+		}
+
+		const channel = new MessageChannel();
+		this.port = channel.port1;
+		this.port.addEventListener("message", this.onTabChannelMessage);
+		this.port.start();
+
+		const initMsg = {
+			$controller$init: {
+				prefix: this.prefix.pathname,
+				id: this.id,
+			},
+		};
+
+		if (isIsolated) {
+			(this.initTarget as Window).postMessage(initMsg, "*", [channel.port2]);
+		} else {
+			(this.initTarget as ServiceWorker).postMessage(initMsg, [channel.port2]);
+		}
+	}
+
+	private installSwReviveListener() {
+		// sw will kill itself randomly, if it restarts we get sent this message, rebuild the message ports
+		if (isIsolated) {
+			const sandboxWindow = this.initTarget as Window;
+			window.addEventListener("message", (e) => {
+				if (e.source !== sandboxWindow) return;
+				if (e.data?.$controller$swrevive) {
+					if (this.guardServiceWorkerRevive) {
+						return;
+					}
+					console.log(
+						"controller: detected sandbox SW revive, re-establishing port"
+					);
+					this.setupMessagePort();
+				}
+			});
+		} else {
+			navigator.serviceWorker.addEventListener("message", (e) => {
+				if (e.data?.$controller$swrevive) {
+					if (this.guardServiceWorkerRevive) {
+						return;
+					}
+					console.log("controller: detected SW revive, re-establishing port");
+					this.setupMessagePort();
+				}
+			});
+		}
 	}
 
 	wait(): Promise<void> {
@@ -209,25 +295,16 @@ export async function controllerForURL(url: URL): Promise<Controller> {
 		await controllerWaitPromise;
 		console.log("controller for " + rootdomain + " ready");
 
-		let channel = new MessageChannel();
-
 		const controllerId = makeId();
 		let prefix = new URL(baseurl.origin + basePrefix + controllerId + "/");
 
-		controller = new Controller(prefix, controllerId, channel, rootdomain);
-		controllers.push(controller);
-
-		channel.port1.start();
-		frame.contentWindow!.postMessage(
-			{
-				$controller$init: {
-					prefix: prefix.pathname,
-					id: controllerId,
-				},
-			},
-			"*",
-			[channel.port2]
+		controller = new Controller(
+			prefix,
+			controllerId,
+			frame.contentWindow!,
+			rootdomain
 		);
+		controllers.push(controller);
 	} else {
 		if (nonIsolatedController) {
 			return nonIsolatedController;
@@ -236,20 +313,8 @@ export async function controllerForURL(url: URL): Promise<Controller> {
 		const registration = await registerLocalControllerSW();
 
 		let controllerId = makeId();
-		let channel = new MessageChannel();
 		let prefix = new URL(location.origin + basePrefix + controllerId + "/");
-		controller = new Controller(prefix, controllerId, channel);
-
-		channel.port1.start();
-		registration.active!.postMessage(
-			{
-				$controller$init: {
-					prefix: prefix.pathname,
-					id: controllerId,
-				},
-			},
-			[channel.port2]
-		);
+		controller = new Controller(prefix, controllerId, registration.active!);
 
 		nonIsolatedController = controller;
 	}

@@ -7,8 +7,8 @@ settings:
 catalogs:
   default:
     '@mercuryworkshop/epoxy-transport':
-      specifier: 3.0.0
-      version: 3.0.0
+      specifier: 3.0.1
+      version: 3.0.1
     '@mercuryworkshop/libcurl-transport':
       specifier: 2.0.5
       version: 2.0.5
@@ -16,7 +16,7 @@ catalogs:
       specifier: 1.0.2
       version: 1.0.2
     '@mercuryworkshop/wisp-js':
-      specifier: ^0.4.0
+      specifier: 0.4.1
       version: 0.4.1
 
 overrides:
@@ -71,9 +71,6 @@ importers:
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
-      server:
-        specifier: link:@mercuryworkshop/wisp-js/server
-        version: link:@mercuryworkshop/wisp-js/server
       ts-checker-rspack-plugin:
         specifier: ^1.1.6
         version: 1.1.6(@rspack/core@1.5.8(@swc/helpers@0.5.17))(typescript@5.9.3)
@@ -264,7 +261,7 @@ importers:
         version: 8.0.13
       '@mercuryworkshop/epoxy-transport':
         specifier: 'catalog:'
-        version: 3.0.0
+        version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.5
@@ -381,7 +378,7 @@ importers:
     devDependencies:
       '@mercuryworkshop/epoxy-transport':
         specifier: 'catalog:'
-        version: 3.0.0
+        version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.5
@@ -549,6 +546,9 @@ importers:
 
   packages/scramjet/packages/demo:
     dependencies:
+      '@mercuryworkshop/epoxy-transport':
+        specifier: 'catalog:'
+        version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.5
@@ -1778,8 +1778,8 @@ packages:
   '@mercuryworkshop/epoxy-tls@2.1.19-1':
     resolution: {integrity: sha512-lF3WVDmKDWfClgFaDm1OAGI6PStcUUKUjNh2AJbfmLXEGh+dT4nvsuTY2QGRImnajCboIRyrpx9eGNY0egZSVg==}
 
-  '@mercuryworkshop/epoxy-transport@3.0.0':
-    resolution: {integrity: sha512-B1jyar2MoZEaINoIWjXpFN2bgBtdwvDnrDQDPRpwVtoIyAEOOczhCynwdiYS1988qaROhEuWsXv32h/R4X8phA==}
+  '@mercuryworkshop/epoxy-transport@3.0.1':
+    resolution: {integrity: sha512-8YzL73WaXZJLBRydmmY6NNPt5leB8ygBYuqgLn4+pGQ+wgi+JUC7ZdBQrA86TR6Oue3twbdfDvLRp48bzZ7DSw==}
 
   '@mercuryworkshop/libcurl-transport@2.0.5':
     resolution: {integrity: sha512-YkAPEAWTEUZZkEOejmRQJxNHw90+kNQnoiSqa5H2sExHBXXdGSXEtg7/35A53U8MDVaznpAwjVbXRONSsfatzw==}
@@ -8321,7 +8321,7 @@ snapshots:
 
   '@mercuryworkshop/epoxy-tls@2.1.19-1': {}
 
-  '@mercuryworkshop/epoxy-transport@3.0.0':
+  '@mercuryworkshop/epoxy-transport@3.0.1':
     dependencies:
       '@mercuryworkshop/epoxy-tls': 2.1.19-1
 

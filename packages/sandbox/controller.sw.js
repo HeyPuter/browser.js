@@ -71,7 +71,7 @@ var $scramjetController;
 					}
 				}
 				call(method, args, transfer = []) {
-					let token = this.counter++;
+					const token = this.counter++;
 					return new Promise((resolve, reject) => {
 						this.promiseCallbacks.set(token, {
 							resolve,
@@ -159,7 +159,7 @@ var $scramjetController;
 		function makeId() {
 			return Math.random().toString(36).substring(2, 10);
 		}
-		let cookieResolvers = {};
+		const cookieResolvers = {};
 		addEventListener("message", (e) => {
 			if (!e.data) return;
 			if (typeof e.data != "object") return;
@@ -198,35 +198,79 @@ var $scramjetController;
 				this.id = id;
 				this.rpc = new _mercuryworkshop_rpc__rspack_import_0.RpcHelper(
 					{
-						sendSetCookie: async ({ url, cookie }) => {
-							let clients1 = await self.clients.matchAll();
-							let promises = [];
+						sendSetCookie: async ({ cookies, options }) => {
+							const clients1 = await self.clients.matchAll();
+							const ids = [];
+							const promises = [];
+							// Navigation fetches (document/iframe) deliver cookies via the inject
+							// script's embedded cookieJar dump — the destination page doesn't have
+							// inject.ts loaded yet to ack, so awaiting would deadlock. Broadcast
+							// so any already-loaded clients can update their jars, but don't wait.
+							const isNavigation =
+								options?.destination === "document" ||
+								options?.destination === "iframe";
 							for (const client of clients1) {
-								let id = makeId();
+								const id = makeId();
+								ids.push(id);
 								client.postMessage({
 									$controller$setCookie: {
-										url,
-										cookie,
+										cookies,
+										options,
 										id,
 									},
 								});
-								promises.push(
-									new Promise((resolve) => {
-										cookieResolvers[id] = resolve;
-									})
-								);
+								if (!isNavigation) {
+									promises.push(
+										new Promise((resolve) => {
+											// Resolve with the id so we know which client replied.
+											cookieResolvers[id] = () => resolve(id);
+										})
+									);
+								}
 							}
-							await Promise.race([
-								new Promise((resolve) =>
-									setTimeout(() => {
-										console.error(
-											"timed out waiting for set cookie response (deadlock?)"
-										);
+							// Wait for the first client to acknowledge the cookie sync.
+							// Using Promise.any (not Promise.all) so that extra SW clients created by
+							// window.open (e.g. test popup windows) don't cause timeouts — only the
+							// main controller client needs to respond.
+							if (promises.length > 0) {
+								let timeoutId;
+								let responded = false;
+								const timeoutPromise = new Promise((resolve) => {
+									timeoutId = setTimeout(() => {
+										if (!responded) {
+											const pending = ids.filter(
+												(id) => cookieResolvers[id] !== undefined
+											);
+											console.error(
+												"timed out waiting for set cookie response (deadlock?): " +
+													`cookies=${cookies.length} clients=${clients1.length} ` +
+													`pending=${pending.length}/${ids.length} ` +
+													`clientUrls=${clients1.map((c) => c.url).join(",")}`
+											);
+										}
 										resolve();
-									}, 1000)
-								),
-								promises,
-							]);
+									}, 1000);
+								});
+								try {
+									await Promise.race([
+										timeoutPromise,
+										Promise.any(promises)
+											.then(() => {
+												responded = true;
+											})
+											.catch(() => {}),
+									]);
+								} finally {
+									// Clear the timeout so it doesn't fire spuriously after the
+									// race has already been won by Promise.any.
+									if (timeoutId !== undefined) clearTimeout(timeoutId);
+									// Clean up any pending resolvers so clients that never
+									// responded don't leak entries in cookieResolvers.
+									for (const id of ids) {
+										delete cookieResolvers[id];
+									}
+								}
+							}
 						},
 					},
 					"tabchannel-" + id,
@@ -248,6 +292,10 @@ var $scramjetController;
 			if (!e.data.$controller$init) return;
 			if (typeof e.data.$controller$init != "object") return;
 			const init = e.data.$controller$init;
+			const existing = tabs.findIndex((t) => t.id === init.id);
+			if (existing !== -1) {
+				tabs.splice(existing, 1);
+			}
 			tabs.push(new ControllerReference(init.prefix, init.id, e.ports[0]));
 		});
 		function shouldRoute(event) {
@@ -265,6 +313,7 @@ var $scramjetController;
 					"request",
 					{
 						rawUrl: event.request.url,
+						rawReferrer: event.request.referrer,
 						destination: event.request.destination,
 						mode: event.request.mode,
 						referrer: event.request.referrer,
@@ -274,6 +323,7 @@ var $scramjetController;
 						forceCrossOriginIsolated: false,
 						initialHeaders: rawheaders,
 						rawClientUrl: client ? client.url : undefined,
+						clientId: event.clientId || event.resultingClientId,
 					},
 					event.request.body instanceof ReadableStream || // @ts-expect-error the types for fetchevent are messed up
 						event.request.body instanceof ArrayBuffer
@@ -292,6 +342,17 @@ var $scramjetController;
 				});
 			}
 		}
+		// the only way to know if a service worker has suddenly died is if this code runs again
+		// notify all clients to send over their messageports again
+		setTimeout(async () => {
+			console.log("service worker activated, notifying clients to revive");
+			for (const client of await clients.matchAll()) {
+				client.postMessage({
+					$controller$swrevive: {},
+				});
+			}
+			// short delay is apparently needed
+		}, 100);
 	})();
 
 	$scramjetController = __webpack_exports__;
