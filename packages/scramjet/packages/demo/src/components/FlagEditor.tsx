@@ -51,6 +51,14 @@ const FlagEditor: Component<
 	this.isOpen = false;
 
 	const toggleFlag = (flag: keyof ScramjetFlags, value: boolean) => {
+		(flagStore as any)[flag] = value;
+		Object.assign(controller.scramjetConfig.flags, flagStore);
+	};
+
+	const setFlag = <K extends keyof ScramjetFlags>(
+		flag: K,
+		value: ScramjetFlags[K]
+	) => {
 		flagStore[flag] = value;
 		Object.assign(flagStore, controller.scramjetConfig.flags);
 	};
