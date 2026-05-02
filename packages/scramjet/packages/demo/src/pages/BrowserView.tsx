@@ -160,9 +160,9 @@ const BrowserView: Component<
 		const plugin = new ScramjetPlugin("url-watcher");
 		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
 			if (!context.isTopLevel) return;
-			browserState.url = context.client.url;
+			browserState.url = context.client.url.href;
 			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
-				browserState.url = props.url;
+				browserState.url = props.url.href;
 			});
 		});
 	};

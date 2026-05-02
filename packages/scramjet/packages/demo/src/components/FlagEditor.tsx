@@ -51,9 +51,19 @@ const FlagEditor: Component<
 	this.isOpen = false;
 
 	const toggleFlag = (flag: keyof ScramjetFlags, value: boolean) => {
+		(flagStore as any)[flag] = value;
+		Object.assign(controller.scramjetConfig.flags, flagStore);
+	};
+
+	const setFlag = <K extends keyof ScramjetFlags>(
+		flag: K,
+		value: ScramjetFlags[K]
+	) => {
 		flagStore[flag] = value;
 		Object.assign(controller.scramjetConfig.flags, flagStore);
 	};
+
+	const VISITOR_OPTIONS: Array<ScramjetFlags["visitor"]> = ["dpsc", "ppsc"];
 
 	const resetToDefaults = () => {
 		Object.assign(flagStore, {
@@ -90,21 +100,55 @@ const FlagEditor: Component<
 					</div>
 					<div class="flags-list">
 						{(Object.keys(flagStore) as Array<keyof ScramjetFlags>).map(
-							(flag) => (
-								<label class="flag-item">
-									<input
-										type="checkbox"
-										checked={use(flagStore[flag])}
-										on:change={(e: Event) =>
-											toggleFlag(flag, (e.target as HTMLInputElement).checked)
-										}
-									/>
-									<div class="flag-info">
-										<span class="flag-name">{flag}</span>
-										<span class="flag-desc">{flagDescriptions[flag]}</span>
-									</div>
-								</label>
-							)
+							(flag) => {
+								if (flag === "visitor") {
+									return (
+										<div class="flag-item flag-item-toggle">
+											<div class="flag-info">
+												<span class="flag-name">{flag}</span>
+												<span class="flag-desc">{flagDescriptions[flag]}</span>
+											</div>
+											<div
+												class="flag-toggle-group"
+												role="radiogroup"
+												aria-label="visitor"
+											>
+												{VISITOR_OPTIONS.map((option) => (
+													<button
+														type="button"
+														role="radio"
+														aria-checked={use(flagStore.visitor).map((v) =>
+															v === option ? "true" : "false"
+														)}
+														class={use(flagStore.visitor).map(
+															(v) =>
+																`flag-toggle-btn ${v === option ? "active" : ""}`
+														)}
+														on:click={() => setFlag("visitor", option)}
+													>
+														{option}
+													</button>
+												))}
+											</div>
+										</div>
+									);
+								}
+								return (
+									<label class="flag-item">
+										<input
+											type="checkbox"
+											checked={use(flagStore[flag] as boolean)}
+											on:change={(e: Event) =>
+												toggleFlag(flag, (e.target as HTMLInputElement).checked)
+											}
+										/>
+										<div class="flag-info">
+											<span class="flag-name">{flag}</span>
+											<span class="flag-desc">{flagDescriptions[flag]}</span>
+										</div>
+									</label>
+								);
+							}
 						)}
 					</div>
 				</div>
@@ -247,6 +291,64 @@ FlagEditor.style = css`
 		margin-top: 0.2em;
 		cursor: pointer;
 		flex-shrink: 0;
+	}
+
+	.flag-item-toggle {
+		cursor: default;
+		align-items: center;
+		gap: 0.75em;
+	}
+
+	.flag-item-toggle:hover {
+		background: transparent;
+	}
+
+	.flag-item-toggle .flag-info {
+		min-width: 0;
+	}
+
+	.flag-toggle-group {
+		display: inline-flex;
+		flex-shrink: 0;
+		padding: 2px;
+		border: 1px solid #2f2f2f;
+		border-radius: 999px;
+		background: #141414;
+		gap: 2px;
+	}
+
+	.flag-toggle-btn {
+		border: 0;
+		background: transparent;
+		color: #9aa0a6;
+		font-family: "Courier New", monospace;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 0.32em 0.85em;
+		border-radius: 999px;
+		cursor: pointer;
+		min-width: 3em;
+		transition:
+			background 0.15s,
+			color 0.15s,
+			box-shadow 0.15s;
+	}
+
+	.flag-toggle-btn:hover {
+		color: #e5e7eb;
+	}
+
+	.flag-toggle-btn.active {
+		background: #2563eb;
+		color: #fff;
+		box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+	}
+
+	.flag-toggle-btn.active:hover {
+		background: #3b82f6;
+		color: #fff;
 	}
 
 	.flag-info {
