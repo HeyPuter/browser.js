@@ -35,10 +35,12 @@ export function TabStrip(
 			afterEl: HTMLElement;
 
 			currentlydragging: string | null;
+			currentlyHovered: Tab | null;
 		}
 	>
 ) {
 	this.currentlydragging = null;
+	this.currentlyHovered = this.tabs[0];
 	this.visualtabs = [];
 
 	const [lock, unlock] = requestUnfocusFrames();
@@ -246,6 +248,10 @@ export function TabStrip(
 						tab={tab}
 						active={use(this.activetab).map((x) => x === tab)}
 						mousedown={(e) => mouseDown(e, visualtab!)}
+						mouseover={() => {
+							this.currentlyHovered = tab;
+							console.log("hovering", tab.title);
+						}}
 						destroy={() => {
 							this.destroyTab(tab);
 						}}
@@ -333,7 +339,7 @@ export function TabStrip(
 				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
 			</div>
 			<div class="extra right" this={use(this.rightEl)}></div>
-			<TabHoverCard />
+			<TabHoverCard hoveredTab={use(this.currentlyHovered)} />
 		</div>
 	);
 }
