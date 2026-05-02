@@ -72,4 +72,8 @@ export class ProfileService extends Service {
 			cookies: this.cookieJar.dump(),
 		};
 	}
+
+	save(): ProfileServiceState {
+		return this.serialize();
+	}
 }
