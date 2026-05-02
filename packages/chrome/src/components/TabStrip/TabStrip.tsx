@@ -250,7 +250,6 @@ export function TabStrip(
 						mousedown={(e) => mouseDown(e, visualtab!)}
 						mouseover={() => {
 							this.currentlyHovered = tab;
-							console.log("hovering", tab.title);
 						}}
 						destroy={() => {
 							this.destroyTab(tab);
