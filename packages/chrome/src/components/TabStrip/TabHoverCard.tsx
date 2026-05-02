@@ -39,9 +39,7 @@ TabHoverCard.style = css`
 		position-visibility: anchors-valid;
 		top: anchor(bottom);
 		left: anchor(left);
-		transition:
-			opacity 0.2s ease 1s,
-			left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
+		/* transitions are defined in ./TabStrip.tsx */
 	}
 	:scope {
 		pointer-events: none;

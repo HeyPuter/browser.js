@@ -350,9 +350,24 @@ TabStrip.style = css`
 		position: relative;
 	}
 
+	:global(#tabstrip #hovercard) {
+		transition:
+			opacity 0.2s ease 800ms,
+			scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 800ms,
+			visibility 0s,
+			left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
+		scale: 1;
+	}
+
 	:global(#tabstrip:not(:has(:hover:not(.extra, .extra *))) #hovercard) {
 		visibility: hidden;
 		opacity: 0;
+		scale: 0.8;
+		/* transition:
+			opacity 150ms,
+			left .5s,
+			top .5s,
+			visibility 0s 150ms; */
 	}
 
 	.extra {
