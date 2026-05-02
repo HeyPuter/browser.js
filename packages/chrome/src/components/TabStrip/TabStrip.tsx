@@ -354,6 +354,7 @@ TabStrip.style = css`
 
 	:global(#tabstrip:not(:has(.hover-area:hover)) #hovercard) {
 		visibility: hidden;
+		opacity: 0;
 	}
 
 	.extra {

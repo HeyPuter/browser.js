@@ -10,7 +10,23 @@ export function TabHoverCard(
 	return (
 		<div id="hovercard">
 			{use(this.hoveredTab).and((tab) => (
-				<span>{tab.title}</span>
+				<>
+					<div class="text">
+						<span class="title">{tab.title}</span>
+						<span class="hostname">{tab.url.hostname}</span>
+					</div>
+					{isFirefox ? (
+						<div
+							style={use`background-image: -moz-element(#tab${tab.id})`}
+							alt="Tab screenshot"
+							class="img"
+						></div>
+					) : (
+						use(tab.screenshot).and(
+							<img alt="Tab screenshot" src={tab.screenshot} class="img" />
+						)
+					)}
+				</>
 			))}
 		</div>
 	);
@@ -25,6 +41,38 @@ TabHoverCard.style = css`
 		left: anchor(left);
 	}
 	:scope {
-		background: var(--toolbar_bg);
+		pointer-events: none;
+		z-index: 1000;
+		background: var(--popup);
+		border: 1px solid var(--popup_border);
+		border-radius: var(--radius);
+		width: 18em;
+		gap: 0.25em;
+		flex-direction: column;
+		opacity: 1;
+		border-radius: var(--radius);
+	}
+	.text {
+		padding: 0.75em 0.67em;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25em;
+	}
+	.title {
+		overflow: clip visible;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 0.9em;
+		font-weight: 500;
+	}
+	.hostname {
+		font-size: 0.7em;
+		color: var(--text-60);
+	}
+
+	.img {
+		width: 100%;
+		aspect-ratio: var(--viewport-ratio);
+		background-size: cover;
 	}
 `;

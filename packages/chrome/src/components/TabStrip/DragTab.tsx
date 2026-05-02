@@ -3,11 +3,6 @@ import type { Tab } from "../../Tab/Tab";
 import { setContextMenu } from "@components/Menu";
 import { iconClose, iconDuplicate, iconNew, iconRefresh } from "../../icons";
 import { Icon } from "@components/Icon";
-import {
-	activeTooltips,
-	fastClose,
-	TabTooltip,
-} from "@components/TabStrip/TabTooltip";
 import { tabsService } from "../..";
 
 export function DragTab(
@@ -146,7 +141,6 @@ DragTab.style = css`
 	}
 
 	:global(*) > :scope .hover-area:is(:hover, :active) {
-		background: red;
 		anchor-name: --hovered-tab;
 	}
 
