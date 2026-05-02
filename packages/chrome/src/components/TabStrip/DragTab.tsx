@@ -19,6 +19,7 @@ export function DragTab(
 		{
 			tooltipActive: boolean;
 			tooltipAnimate: boolean;
+			tooltipHovered: boolean;
 		}
 	>
 ) {
@@ -76,7 +77,9 @@ export function DragTab(
 	return (
 		<div
 			style="z-index: 0;"
-			class="tab"
+			class={use(this.tooltipHovered).map((hovered) =>
+				hovered ? "tab hovered" : "tab"
+			)}
 			data-id={this.id}
 			on:transitionend={() => {
 				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
@@ -98,11 +101,15 @@ export function DragTab(
 					}
 				}}
 				on:mouseenter={() => {
+					this.tooltipHovered = true;
 					this.mouseover();
+				}}
+				on:mouseleave={() => {
+					this.tooltipHovered = false;
 				}}
 			></div>
 			<div class="dragroot" style="position: unset;">
-				<div class={use(this.active).map((x) => `main ${x ? "active" : ""}`)}>
+				<div class={use(this.active).map((x) => (x ? "main active" : "main"))}>
 					{use(this.tab.icon).and(<img src={use(this.tab.icon)} />)}
 					<span>{use(this.tab.title)}</span>
 					<button
@@ -140,7 +147,7 @@ DragTab.style = css`
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
-	:global(*) > :scope .hover-area:is(:hover, :active) {
+	:global(*) > :scope:has(:hover) .hover-area {
 		anchor-name: --hovered-tab;
 	}
 

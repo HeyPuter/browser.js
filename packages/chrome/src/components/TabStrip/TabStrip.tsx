@@ -351,7 +351,7 @@ TabStrip.style = css`
 		position: relative;
 	}
 
-	:global(#tabstrip:not(:has(.hover-area:hover)) #hovercard) {
+	:global(#tabstrip:not(:has(:hover:not(.extra, .extra *))) #hovercard) {
 		visibility: hidden;
 		opacity: 0;
 	}
