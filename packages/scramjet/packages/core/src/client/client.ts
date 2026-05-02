@@ -6,7 +6,7 @@ import {
 import { SCRAMJETCLIENT } from "@/symbols";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
-import { createWrapFn } from "@client/shared/wrap";
+import { createPpscWrapFn, createDpscWrapFn } from "@client/shared/wrap";
 import { LifecycleHooks } from "@client/events";
 import {
 	rewriteUrl,
@@ -44,7 +44,7 @@ import {
 	Object_defineProperties,
 	_Map,
 } from "@/shared/snapshot";
-import { createGlobalProxy } from "./global";
+import { createDocumentProxy, createGlobalProxy } from "./global";
 
 export type ScramjetClientInit = {
 	context: ScramjetContext;
@@ -184,8 +184,9 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 }
 
 export class ScramjetClient {
-	// globalproxy is only used in ppsc mode!
+	// globalproxy/documentProxy is only used in ppsc mode!
 	globalProxy: typeof globalThis | null;
+	documentProxy: typeof Document | null;
 	locationProxy: any;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
@@ -248,6 +249,7 @@ export class ScramjetClient {
 		);
 		if (this.visitor == "ppsc") {
 			this.globalProxy = createGlobalProxy(this, global);
+			this.documentProxy = createDocumentProxy(this, global);
 		}
 
 		if (iswindow) {
@@ -279,7 +281,11 @@ export class ScramjetClient {
 			global.document[SCRAMJETCLIENT] = this;
 		}
 
-		this.wrapfn = createWrapFn(this, global);
+		if (this.visitor === "ppsc") {
+			this.wrapfn = createPpscWrapFn(this, global);
+		} else {
+			this.wrapfn = createDpscWrapFn(this, global);
+		}
 		this.natives = {
 			store: new Proxy(
 				{},

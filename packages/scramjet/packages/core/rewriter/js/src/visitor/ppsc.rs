@@ -137,7 +137,7 @@ where
 		// and it would slow down js execution a lot
 		if let MemberExpression::StaticMemberExpression(s) = it {
 			if s.property.name == "postMessage" {
-				self.jschanges.add(rewrite!(s.property.span, SetRealmFn));
+				// self.jschanges.add(rewrite!(s.property.span, SetRealmFn));
 
 				walk::walk_expression(self, &s.object);
 				return; // unwise to walk the rest of the tree
@@ -239,6 +239,22 @@ where
 
 
 		walk::walk_try_statement(self, it);
+	}
+
+	fn visit_object_expression(&mut self, it: &ObjectExpression<'data>) {
+		for prop in &it.properties {
+			if let ObjectPropertyKind::ObjectProperty(p) = prop
+				&& let Expression::Identifier(s) = &p.value
+				&& UNSAFE_GLOBALS.contains(&s.name.to_string().as_str())
+				&& p.shorthand
+			{
+				self.jschanges
+					.add(rewrite!(s.span, ShorthandObj { name: s.name }));
+				return;
+			}
+		}
+
+		walk::walk_object_expression(self, it);
 	}
 
 	fn visit_function_body(&mut self, it: &FunctionBody<'data>) {
