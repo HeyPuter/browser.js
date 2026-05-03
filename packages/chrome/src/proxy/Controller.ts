@@ -12,12 +12,15 @@ import {
 	type ScramjetFetchHandler,
 	type ScramjetFetchRequest,
 } from "@mercuryworkshop/scramjet";
+import { HttpCachePlugin } from "./cache";
 
 export function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
 }
 
 export const controllers: Controller[] = [];
+
+export const httpCache = new HttpCachePlugin();
 
 export class Controller {
 	private rpc: RpcHelper<Controllerbound, SWbound>;
@@ -128,6 +131,7 @@ export class Controller {
 		);
 
 		this.fetchHandler = createFetchHandler(this);
+		httpCache.install(this);
 
 		this.setupMessagePort();
 		this.installSwReviveListener();

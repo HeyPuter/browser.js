@@ -108,6 +108,7 @@ async function loadServices() {
 		let profile = profiles[0];
 
 		profileService = new ProfileService(await kv.get(profile.storageKey));
+		registerSave(profileService, kv, profile.storageKey);
 		downloadsService = new DownloadsService();
 
 		const tabsKey = `tabs-${profile.id}`;
