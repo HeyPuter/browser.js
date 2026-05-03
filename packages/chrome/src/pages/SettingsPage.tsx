@@ -702,19 +702,16 @@ SettingsPage.style = css`
 		overflow: hidden;
 	}
 
-	.search-container {
-		padding: 1rem 1rem;
-	}
-
 	input {
 		font-family: inherit;
 	}
 
 	.search-container {
-		position: relative;
-		width: 100%;
-		max-width: 24rem;
-		margin-left: auto;
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 24rem;
+		padding: 1.5rem;
 	}
 
 	.search-input input {
@@ -767,11 +764,11 @@ SettingsPage.style = css`
 
 	.settings-content {
 		flex: 1;
-		padding: 1rem 2rem 2rem;
+		padding: 2rem;
 		overflow-y: auto;
 	}
 	.settings-content h1 {
-		margin-bottom: 1.5rem;
+		margin-bottom: 2.5rem;
 		font-size: 1.75rem;
 	}
 
