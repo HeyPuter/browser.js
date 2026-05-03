@@ -75,7 +75,7 @@ export function SettingsPage(
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Startup</h3>
+										<h2>Startup</h2>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -120,7 +120,7 @@ export function SettingsPage(
 
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Bookmarks</h3>
+										<h2>Bookmarks</h2>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -146,7 +146,7 @@ export function SettingsPage(
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Page Appearance</h3>
+										<h2>Page Appearance</h2>
 										<p class="description">
 											Control the appearance of websites you visit.
 										</p>
@@ -205,7 +205,7 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>UI Density</h3>
+										<h2>UI Density</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.
 										</p>
@@ -264,7 +264,7 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Browser Theme</h3>
+										<h2>Browser Theme</h2>
 										<p class="description">
 											Customize the look of the browser.
 										</p>
@@ -384,7 +384,7 @@ export function SettingsPage(
 
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Search Suggestions</h3>
+										<h2>Search Suggestions</h2>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -412,7 +412,7 @@ export function SettingsPage(
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Trackers & Site Data</h3>
+										<h2>Trackers & Site Data</h2>
 										<p class="description">
 											Control how the browser handles trackers and your data
 										</p>
@@ -443,7 +443,7 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Browsing History</h3>
+										<h2>Browsing History</h2>
 										<p class="description">
 											Control what data is saved or cleared
 										</p>
@@ -500,7 +500,7 @@ export function SettingsPage(
 
 								<section class="setting-section">
 									<div class="section-header">
-										<h3>Developer Mode</h3>
+										<h2>Developer Mode</h2>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -620,29 +620,33 @@ SettingsPage.style = css`
 		margin-bottom: 2rem;
 	}
 
+	.settings-content h1 {
+		margin-bottom: 2.75rem;
+	}
+
 	h2 {
-		font-size: 1.3rem;
-		font-weight: 650;
-		margin-bottom: 1.75rem;
+		font-size: 1.2rem;
+		font-weight: 700;
+		margin-bottom: 0.5rem;
 		color: var(--ntp_text);
 	}
 
 	h3 {
-		font-size: 1.1rem;
+		font-size: 1.08rem;
 		font-weight: 600;
 		color: var(--ntp_text);
-		margin-bottom: 0.75rem;
+		margin-bottom: 0.8rem;
 	}
 
 	h4 {
-		font-size: 0.95rem;
+		font-size: 0.925rem;
 		font-weight: 550;
 		color: var(--ntp_text);
-		margin-bottom: 0.75rem;
+		margin-bottom: 0.7rem;
 	}
 
 	h5 {
-		font-size: 0.9rem;
+		font-size: 0.87rem;
 		font-weight: 500;
 		color: var(--ntp_text);
 		margin-bottom: 0.5rem;
@@ -767,10 +771,6 @@ SettingsPage.style = css`
 		padding: 2rem;
 		overflow-y: auto;
 	}
-	.settings-content h1 {
-		margin-bottom: 2.5rem;
-		font-size: 1.75rem;
-	}
 
 	.settings-tab {
 		max-width: 50rem;
@@ -793,7 +793,7 @@ SettingsPage.style = css`
 	}
 
 	.description {
-		margin-top: 0.25rem;
+		margin-block: 0.33rem;
 		color: var(--ntp-text-60);
 	}
 
