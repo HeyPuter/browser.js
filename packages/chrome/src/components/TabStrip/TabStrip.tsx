@@ -359,15 +359,14 @@ TabStrip.style = css`
 		scale: 1;
 	}
 
-	:global(#tabstrip:not(:has(:hover:not(.extra, .extra *))) #hovercard) {
+	:global(
+		#tabstrip:is(:has(:active), :not(:has(:hover:not(.extra, .extra *))))
+			#hovercard
+	) {
 		visibility: hidden;
 		opacity: 0;
 		scale: 0.8;
-		/* transition:
-			opacity 150ms,
-			left .5s,
-			top .5s,
-			visibility 0s 150ms; */
+		transition: none;
 	}
 
 	.extra {

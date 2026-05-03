@@ -138,6 +138,7 @@ export function DragTab(
 		</div>
 	);
 }
+
 DragTab.style = css`
 	:scope {
 		display: inline-block;
