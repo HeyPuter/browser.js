@@ -352,8 +352,8 @@ TabStrip.style = css`
 
 	:global(#tabstrip #hovercard) {
 		transition:
-			opacity 0.2s ease 800ms,
-			scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 800ms,
+			opacity 0.2s ease 700ms,
+			scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 700ms,
 			visibility 0s,
 			left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
 		scale: 1;
