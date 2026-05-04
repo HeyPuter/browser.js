@@ -22,6 +22,9 @@ export function UrlInput(
 		doSearch?: () => void;
 	}>
 ) {
+	use(this.url).listen((url) => {
+		console.log("URL change", url);
+	});
 	return (
 		<div class:active={use(this.active)}>
 			<div class="lefticon">
@@ -64,29 +67,12 @@ export function UrlInput(
 								use(this.url)
 									.map(
 										(u) =>
-											u.protocol === INTERNAL_URL_PROTOCOL ||
-											u.protocol === "about:"
+											u.protocol !== INTERNAL_URL_PROTOCOL ||
+											u.protocol !== "about:" ||
+											u.protocol === "http:" ||
+											u.protocol === "https:"
 									)
 									.and(
-										<>
-											<span class="subdomain">
-												{use(this.url).map((t) =>
-													t.protocol === INTERNAL_URL_PROTOCOL
-														? `${INTERNAL_URL_PROTOCOL}//`
-														: "about:"
-												)}
-											</span>
-											<span class="domain">
-												{use(this.url).map((t) => t.hostname)}
-											</span>
-											<span class="rest">
-												{use(this.url).map(
-													(t) => t.pathname + t.search + t.hash
-												)}
-											</span>
-										</>
-									)
-									.or(
 										<>
 											<span class="subdomain">
 												{use(this.url).map((t) => splitUrl(t)[0])}
@@ -96,6 +82,25 @@ export function UrlInput(
 											</span>
 											<span class="rest">
 												{use(this.url).map((t) => splitUrl(t)[2])}
+											</span>
+										</>
+									)
+									.or(
+										<>
+											<span class="subdomain internal">
+												{use(this.url).map((t) =>
+													t.protocol === INTERNAL_URL_PROTOCOL
+														? `${INTERNAL_URL_PROTOCOL}//`
+														: "about:"
+												)}
+											</span>
+											<span class="domain internal">
+												{use(this.url).map((t) => t.hostname)}
+											</span>
+											<span class="rest internal">
+												{use(this.url).map(
+													(t) => t.pathname + t.search + t.hash
+												)}
 											</span>
 										</>
 									)
