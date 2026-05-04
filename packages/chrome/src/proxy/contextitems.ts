@@ -18,7 +18,6 @@ export function pageContextItems(
 	tab: Tab,
 	{ selection, image, anchor }: Chromebound["contextmenu"][0]
 ) {
-	console.log(selection, image, anchor);
 	if (selection && selection.toString().length > 0) {
 		return [
 			{
