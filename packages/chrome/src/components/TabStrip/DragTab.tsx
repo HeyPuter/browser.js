@@ -191,8 +191,7 @@ DragTab.style = css`
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		display: flex;
-		align-items: center;
+		text-box-trim: trim-both;
 		line-height: var(--tab-height);
 	}
 	.main .close > * {
