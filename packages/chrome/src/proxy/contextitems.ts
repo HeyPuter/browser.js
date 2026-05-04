@@ -18,6 +18,7 @@ export function pageContextItems(
 	tab: Tab,
 	{ selection, image, anchor }: Chromebound["contextmenu"][0]
 ) {
+	console.log(selection, image, anchor);
 	if (selection && selection.toString().length > 0) {
 		return [
 			{
@@ -40,6 +41,14 @@ export function pageContextItems(
 				action: () => {
 					navigator.clipboard.writeText(selection.toString());
 				},
+			},
+			{
+				label: "Inspect",
+				action: () => {
+					tab.devtoolsOpen = true;
+					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+				},
+				icon: iconCode,
 			},
 		];
 	}
@@ -73,6 +82,14 @@ export function pageContextItems(
 				action: () => {
 					// TODO
 				},
+			},
+			{
+				label: "Inspect",
+				action: () => {
+					tab.devtoolsOpen = true;
+					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+				},
+				icon: iconCode,
 			},
 		];
 	} else if (anchor) {
@@ -108,6 +125,14 @@ export function pageContextItems(
 					// TODO
 				},
 				icon: iconSave,
+			},
+			{
+				label: "Inspect",
+				action: () => {
+					tab.devtoolsOpen = true;
+					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+				},
+				icon: iconCode,
 			},
 		];
 	}
