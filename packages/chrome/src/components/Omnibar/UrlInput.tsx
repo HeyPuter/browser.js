@@ -144,6 +144,10 @@ UrlInput.style = css`
 		padding-right: 0.25em;
 	}
 
+	:global(.ui-compact) :scope :is(.inactiveurl, .placeholder, input) {
+		font-size: 0.9rem;
+	}
+
 	input,
 	.inactiveurl,
 	.placeholder {
