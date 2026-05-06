@@ -6,12 +6,4 @@ addEventListener("fetch", (event) => {
 	}
 });
 
-self.addEventListener("install", () => {
-	self.skipWaiting();
-});
-
-self.addEventListener("activate", (e) => {
-	e.waitUntil(self.clients.claim());
-});
-
 console.log("sw initialized");
