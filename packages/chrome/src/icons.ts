@@ -30,6 +30,7 @@ export { default as iconTrash } from "@ktibow/iconset-ion/trash-outline";
 
 export { default as iconClose } from "@ktibow/iconset-ion/close";
 export { default as iconCloseOutline } from "@ktibow/iconset-ion/close-outline";
+export { default as iconCloseCircle } from "@ktibow/iconset-ion/close-circle-outline";
 
 export { default as iconFolder } from "@ktibow/iconset-ion/folder-outline";
 export { default as iconPause } from "@ktibow/iconset-ion/pause-outline";

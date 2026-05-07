@@ -1,7 +1,14 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
 import { setContextMenu } from "@components/Menu";
-import { iconClose, iconDuplicate, iconNew, iconRefresh } from "../../icons";
+import {
+	iconClose,
+	iconDuplicate,
+	iconNew,
+	iconRefresh,
+	iconTrash,
+	iconCloseCircle,
+} from "../../icons";
 import { Icon } from "@components/Icon";
 import { tabsService } from "../..";
 
@@ -48,10 +55,24 @@ export function DragTab(
 				},
 			},
 			{
-				label: "Close Tab",
+				label: "Close",
 				icon: iconClose,
 				action: () => {
 					this.destroy();
+				},
+			},
+			{
+				label: "Close other tabs",
+				icon: iconTrash,
+				action: () => {
+					tabsService.closeOtherTabs(this.tab);
+				},
+			},
+			{
+				label: "Close tabs to the right",
+				icon: iconCloseCircle,
+				action: () => {
+					tabsService.closeTabsToRight(this.tab);
 				},
 			},
 		]);

@@ -78,6 +78,21 @@ export class TabsService extends Service {
 		return tab;
 	}
 
+	closeTabsToRight(ref: Tab) {
+		let index = this.tabs.indexOf(ref);
+		let toClose = this.tabs.slice(index + 1);
+		toClose.forEach((tab) => {
+			this.destroyTab(tab);
+		});
+	}
+
+	closeOtherTabs(ref: Tab) {
+		let toClose = this.tabs.filter((tab) => tab !== ref);
+		toClose.forEach((tab) => {
+			this.destroyTab(tab);
+		});
+	}
+
 	destroyTab(tab: Tab) {
 		this.disown(tab);
 		this.tabs = this.tabs.filter((t) => t !== tab);
