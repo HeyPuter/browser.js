@@ -103,13 +103,13 @@ export async function rewriteResponseHeaders(
 			"sharedworker",
 			"style",
 			"script",
-		].includes(request.destination)
+		].includes(parsed.destination)
 	) {
 		headers.set("Cross-Origin-Embedder-Policy", "require-corp");
 		headers.set("Cross-Origin-Opener-Policy", "same-origin");
 	}
 
-	if (request.destination === "document" || request.destination === "iframe") {
+	if (parsed.destination === "document" || parsed.destination === "iframe") {
 		headers.set("Referrer-Policy", "unsafe-url");
 	}
 
@@ -223,12 +223,7 @@ function applyFetchMetadataHeaders(
 	// and fall back to a destination-based default for everything else.
 	headers.set("Sec-Fetch-Mode", computeFetchMode(request, parsed));
 
-	// Sec-Fetch-Dest: prefer page-side overrides (e.g. `<link rel=prefetch
-	// as=X>` stamps `sj$dest=X` since the SW's `request.destination` for
-	// prefetch is "" even though the network request uses X).
-	if (parsed.fetchDest) {
-		headers.set("Sec-Fetch-Dest", parsed.fetchDest);
-	} else if (request.destination === "iframe") {
+	if (parsed.destination === "iframe") {
 		if (!parsed.isIframe) {
 			// emulate a top-level navigation
 			headers.set("Sec-Fetch-Dest", "document");
@@ -236,7 +231,7 @@ function applyFetchMetadataHeaders(
 			headers.set("Sec-Fetch-Dest", "iframe");
 		}
 	} else {
-		headers.set("Sec-Fetch-Dest", request.destination || "empty");
+		headers.set("Sec-Fetch-Dest", parsed.destination || "empty");
 	}
 
 	// Sec-Fetch-User: sent as "?1" only on user-activated navigation requests
@@ -245,11 +240,11 @@ function applyFetchMetadataHeaders(
 	// originates from a user gesture, so we forward that signal for any
 	// navigation destination.
 	const isNavigationDestination =
-		request.destination === "document" ||
-		request.destination === "iframe" ||
-		request.destination === "frame" ||
-		request.destination === "embed" ||
-		request.destination === "object";
+		parsed.destination === "document" ||
+		parsed.destination === "iframe" ||
+		parsed.destination === "frame" ||
+		parsed.destination === "embed" ||
+		parsed.destination === "object";
 	if (
 		isNavigationDestination &&
 		request.initialHeaders.get("sec-fetch-user") === "?1"
@@ -291,7 +286,7 @@ function requestIncludesCredentials(
 	parsed: ScramjetFetchParsed
 ): boolean {
 	if (parsed.fetchCredentialsInclude) return true;
-	const dest = request.destination;
+	const dest = parsed.destination;
 	// fetch(): destination is "" (empty). XHR / report: destination is
 	// "report". Both default to credentials="same-origin", so cross-site
 	// requests don't include credentials unless the page explicitly opts in.
@@ -299,7 +294,7 @@ function requestIncludesCredentials(
 	// ES modules (including module scripts and module-typed workers) default
 	// to credentials="same-origin", so cross-site fetches do not carry
 	// credentials.
-	if (parsed.scriptType === "module") return false;
+	if (parsed.isModule) return false;
 	// Other destinations (image, classic-script, style, audio, video, track,
 	// font, iframe, frame, document, embed, object, manifest, classic worker,
 	// sharedworker, serviceworker, ...) default to credentials="include".
@@ -334,7 +329,7 @@ function computeFetchMode(
 	parsed: ScramjetFetchParsed
 ): string {
 	if (parsed.fetchMode) return parsed.fetchMode;
-	const dest = request.destination;
+	const dest = parsed.destination;
 	if (
 		dest === "document" ||
 		dest === "iframe" ||
@@ -344,14 +339,9 @@ function computeFetchMode(
 	) {
 		return "navigate";
 	}
-	if (request.mode === "websocket") return "websocket";
-	if (
-		dest === "worker" ||
-		dest === "sharedworker" ||
-		dest === "serviceworker"
-	) {
+	if (dest === "worker" || dest === "sharedworker") {
 		// Classic workers default to same-origin; module workers default to cors.
-		return parsed.scriptType === "module" ? "cors" : "same-origin";
+		return parsed.isModule ? "cors" : "same-origin";
 	}
 	// HTML element fetches: the browser's `request.mode` here reflects the
 	// element's CORS attribute (`<script crossorigin>` ⇒ "cors", plain
@@ -490,7 +480,7 @@ function computeSameSiteContext(
 	// final request is always treated as cross-site regardless of its destination.
 	if (parsed.crossSiteRedirect) {
 		const isNavigation =
-			request.destination === "document" || request.destination === "iframe";
+			parsed.destination === "document" || parsed.destination === "iframe";
 		const isSafeMethod = request.method === "GET" || request.method === "HEAD";
 		return isNavigation && isSafeMethod ? "lax" : "cross-site";
 	}
@@ -505,7 +495,7 @@ function computeSameSiteContext(
 
 	// Cross-site request: check if it's a navigational GET/HEAD (lax) or subresource/POST (cross-site)
 	const isNavigation =
-		request.destination === "document" || request.destination === "iframe";
+		parsed.destination === "document" || parsed.destination === "iframe";
 	const isSafeMethod = request.method === "GET" || request.method === "HEAD";
 
 	if (isNavigation && isSafeMethod) return "lax";

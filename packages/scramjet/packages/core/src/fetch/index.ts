@@ -6,6 +6,7 @@ import {
 } from "@mercuryworkshop/proxy-transports";
 
 import { type URLMeta } from "@rewriters/url";
+import { type ScramjetRequestMode } from "./parse";
 import { ScramjetHeaders } from "@/shared/headers";
 import { HtmlRewriterHooks, ScramjetContext } from "@/shared";
 import { Tap, TapInstance } from "@/Tap";
@@ -15,7 +16,8 @@ import { _URL, _Map } from "@/shared/snapshot";
 export interface ScramjetFetchRequest {
 	rawUrl: URL;
 	rawReferrer: string | null;
-	destination: RequestDestination;
+	// use parsed.destination instead
+	rawDestination: RequestDestination;
 	mode: RequestMode;
 	referrer: string;
 	method: string;
@@ -35,66 +37,29 @@ export interface ScramjetFetchParsed {
 	clientUrl?: _URL;
 	referrerSourceUrl?: _URL | null;
 	hadExtraParams: boolean;
-	/** True when this request follows a redirect chain that passed through a cross-site origin.
-	 *  Used to enforce SameSite "cross-site redirect poisoning" semantics. */
 	crossSiteRedirect: boolean;
 
-	/**
-	 * Worst-case Sec-Fetch-Site classification accumulated across the redirect
-	 * chain that led to this request. Set on each redirect via the `sj$fs` URL
-	 * parameter; combined with the immediate origin↔URL relation when emitting
-	 * the Sec-Fetch-Site request header.
-	 */
+	// track the worst case Sec-Fetch-Site classification through redirects
 	fetchSiteState?: "same-origin" | "same-site" | "cross-site";
 
-	/**
-	 * Origin of the page that initiated the original (pre-redirect) request.
-	 * Stored on every redirect via the `sj$io` URL parameter so that
-	 * Sec-Fetch-Site can compare against the *real* initiator even when
-	 * `request.rawReferrer` has been replaced by an intermediate hop's URL.
-	 */
+	// origin of the page that initialized the request
+	// specifically for tracking Sec-Fetch-Site, don't use for anything else, it will diverge from clientUrl in some cases
 	fetchInitiatorOrigin?: string;
 
-	/**
-	 * Whether the original request explicitly requested credential inclusion.
-	 * Set via the `sj$cred` URL parameter from the client-side fetch proxy
-	 * (since `event.request.credentials` inside a service worker doesn't
-	 * reliably reflect the page's intent). Used to gate
-	 * Sec-Fetch-Storage-Access.
-	 */
+	// was the request made with credentials=include?
 	fetchCredentialsInclude?: boolean;
 
-	/**
-	 * The page's intended `RequestInit.mode` value (or fetch's "cors" default).
-	 * Set via the `sj$mode` URL parameter from the client-side fetch / Request
-	 * proxy. Used to compute Sec-Fetch-Mode for fetch() / new Request()
-	 * calls — `event.request.mode` from the SW reflects the proxy URL
-	 * relationship (always same-origin to the page) and is meaningless to the
-	 * destination.
-	 */
-	fetchMode?: RequestMode;
+	// tracks RequestInit.mode if set
+	fetchMode?: ScramjetRequestMode;
 
-	/**
-	 * True when this request was initiated by an actual `<iframe>` element
-	 * inside the proxied site (i.e. a real sub-frame). Set via the `isIframe`
-	 * URL parameter, which the HTML rule for `<iframe src=…>` stamps onto the
-	 * rewritten URL. Used to distinguish a true sub-frame navigation from the
-	 * runway harness's wrapper iframe so that Sec-Fetch-Dest emits "document"
-	 * for the latter (top-level emulation) and "iframe" for the former.
-	 */
+	// was this request made by an iframe? (scramjet's definition of an iframe, not the browser's)
 	isIframe?: boolean;
 
-	/**
-	 * Page-side override for `request.destination`. Currently set by the HTML
-	 * rule for `<link rel="prefetch|preload|modulepreload" as="X">` because
-	 * `event.request.destination` arrives at the SW as `""` for those even
-	 * though the network request uses `X`. Read from the `sj$dest` URL
-	 * parameter. Used directly as Sec-Fetch-Dest when present.
-	 */
-	fetchDest?: string;
+	// request.destination, but is overridden by $dest
+	destination: RequestDestination;
 
 	meta: URLMeta;
-	scriptType: "module" | "regular";
+	isModule: boolean;
 	referrerPolicy?: string;
 	trackedClient?: ScramjetFetchTrackedClient;
 }

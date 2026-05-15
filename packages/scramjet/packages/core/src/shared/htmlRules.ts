@@ -23,6 +23,28 @@ export type HtmlRuleElement = {
  */
 const LINK_DESTINATION_RELS = new Set(["prefetch", "preload", "modulepreload"]);
 
+const VALID_REQUEST_DESTINATIONS = new Set<RequestDestination>([
+	"audio",
+	"audioworklet",
+	"document",
+	"embed",
+	"font",
+	"frame",
+	"iframe",
+	"image",
+	"manifest",
+	"object",
+	"paintworklet",
+	"report",
+	"script",
+	"sharedworker",
+	"style",
+	"track",
+	"video",
+	"worker",
+	"xslt",
+]);
+
 function linkRel(attribs: Record<string, string> | undefined): string | null {
 	if (!attribs) return null;
 	const rel = (attribs.rel ?? "").trim().toLowerCase();
@@ -31,10 +53,12 @@ function linkRel(attribs: Record<string, string> | undefined): string | null {
 
 function destFromLinkAttribs(
 	attribs: Record<string, string> | undefined
-): string | undefined {
+): RequestDestination | undefined {
 	if (!linkRel(attribs)) return undefined;
 	const as = (attribs!.as ?? "").trim().toLowerCase();
-	return as || undefined;
+	if (!VALID_REQUEST_DESTINATIONS.has(as as RequestDestination))
+		return undefined;
+	return as as RequestDestination;
 }
 
 function credentialsFromLinkAttribs(
@@ -42,16 +66,10 @@ function credentialsFromLinkAttribs(
 ): string | undefined {
 	if (!linkRel(attribs)) return undefined;
 	if (attribs!.crossorigin === undefined) {
-		// No `crossorigin` ⇒ credentials default to "include" for link
-		// prefetch/preload. This is what makes Sec-Fetch-Storage-Access fire
-		// on cross-site requests.
 		return "include";
 	}
 	const value = (attribs!.crossorigin ?? "").trim().toLowerCase();
 	if (value === "use-credentials") return "include";
-	// crossorigin (boolean / "anonymous"): mode "cors", credentials
-	// "same-origin" — leave the default branch in
-	// `requestIncludesCredentials` to handle it.
 	return undefined;
 }
 
@@ -69,7 +87,7 @@ export const htmlRules: {
 			const isLink = element?.name === "link";
 			return rewriteUrl(value, context, meta, {
 				navigateType: "location",
-				dest: isLink ? destFromLinkAttribs(element!.attribs) : undefined,
+				destination: isLink ? destFromLinkAttribs(element!.attribs) : undefined,
 				credentials: isLink
 					? credentialsFromLinkAttribs(element!.attribs)
 					: undefined,
@@ -90,7 +108,7 @@ export const htmlRules: {
 			const url = rewriteUrl(value, context, meta, {
 				topFrame: meta.topFrameName,
 				parentFrame: meta.parentFrameName,
-				isIframe: true,
+				isIframe: "1",
 			});
 
 			return url;

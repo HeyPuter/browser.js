@@ -1,5 +1,6 @@
 import { ScramjetContext } from "@/shared";
 import { rewriteJs } from "@rewriters/js";
+import { QP } from "@/fetch/parse";
 
 import {
 	TextEncoder_encode,
@@ -9,6 +10,23 @@ import {
 	String,
 	URL_createObjectURL,
 } from "../snapshot";
+
+// user: manually triggered navigation
+// link: link clicked by the user. still user initiated, but doesn't wipe
+// location: location = ...
+export type NavigationType = "user" | "link" | "location";
+
+export type RewriteUrlOptions = {
+	referrerPolicy?: string;
+	isModule?: boolean;
+	navigateType?: NavigationType;
+	topFrame?: string;
+	parentFrame?: string;
+	isIframe?: string;
+	mode?: string;
+	credentials?: string;
+	destination?: RequestDestination;
+};
 
 export type URLMeta = {
 	origin: _URL;
@@ -95,44 +113,6 @@ function dataToBlob(url: string) {
 	return { blob, objectUrl };
 }
 
-// user: manually triggered navigation
-// link: link clicked by the user. still user initiated, but doesn't wipe
-// location: location = ...
-export type NavigationType = "user" | "link" | "location";
-export type RewriteUrlOptions = {
-	referrerPolicyOverride?: string;
-	moduleType?: string;
-	navigateType?: NavigationType;
-	topFrame?: string;
-	parentFrame?: string;
-	isIframe?: boolean;
-	/**
-	 * The page's intended `RequestInit.mode`. Captured from `fetch()` /
-	 * `new Request()` callsites because `event.request.mode` inside the
-	 * service worker is computed against the (rewritten, same-origin) URL
-	 * and so is meaningless to the destination. Stamped onto the proxy URL
-	 * as `sj$mode=…`.
-	 */
-	mode?: string;
-	/**
-	 * The page's intended `RequestInit.credentials`. Same reasoning as
-	 * `mode` — `event.request.credentials` is unreliable inside the SW.
-	 * Only forwarded when explicit; gates Sec-Fetch-Storage-Access on
-	 * cross-site requests. Stamped onto the proxy URL as `sj$cred=…`.
-	 */
-	credentials?: string;
-	/**
-	 * Override for the request's destination, used by callers that know
-	 * what the destination *will be* at network time even though the SW's
-	 * `event.request.destination` won't reflect it. Notably
-	 * `<link rel="prefetch" as="X">` and `<link rel="preload" as="X">` —
-	 * the browser reports `destination: ""` to the SW for those, but the
-	 * actual network request uses `X`. Stamped onto the proxy URL as
-	 * `sj$dest=…`.
-	 */
-	dest?: string;
-};
-
 export function rewriteUrl(
 	url: string | URL,
 	context: ScramjetContext,
@@ -187,38 +167,18 @@ export function rewriteUrl(
 
 		const paramsInit = new _URLSearchParams();
 
-		if (options?.referrerPolicyOverride) {
-			paramsInit.append("rfp", options.referrerPolicyOverride);
-		} else if (meta.referrerPolicy) {
-			paramsInit.append("rfp", meta.referrerPolicy);
-		}
-
-		if (options?.moduleType) {
-			paramsInit.append("type", options.moduleType);
-		}
-
-		if (options?.topFrame) {
-			paramsInit.append("topFrame", options.topFrame);
-		}
-		if (options?.parentFrame) {
-			paramsInit.append("parentFrame", options.parentFrame);
-		}
-
-		if (options?.isIframe) {
-			paramsInit.append("isIframe", "1");
-		}
-
-		if (options?.mode) {
-			paramsInit.append("sj$mode", options.mode);
-		}
-
-		if (options?.credentials) {
-			paramsInit.append("sj$cred", options.credentials);
-		}
-
-		if (options?.dest) {
-			paramsInit.append("sj$dest", options.dest);
-		}
+		const referrerPolicy = options?.referrerPolicy ?? meta.referrerPolicy;
+		if (referrerPolicy) paramsInit.set(QP.referrerPolicy, referrerPolicy);
+		if (options?.isModule) paramsInit.set(QP.isModule, "module");
+		if (options?.topFrame) paramsInit.set(QP.topFrame, options.topFrame);
+		if (options?.parentFrame)
+			paramsInit.set(QP.parentFrame, options.parentFrame);
+		if (options?.isIframe) paramsInit.set(QP.isIframe, options.isIframe);
+		if (options?.mode) paramsInit.set(QP.mode, options.mode);
+		if (options?.credentials)
+			paramsInit.set(QP.credentials, options.credentials);
+		if (options?.destination)
+			paramsInit.set(QP.destination, options.destination);
 
 		// Encode the initiator origin so that requests where the service worker
 		// can't recover the originating page (top-level navigations triggered
@@ -235,7 +195,7 @@ export function rewriteUrl(
 			meta.origin.origin !== "null" &&
 			meta.origin.origin !== context.prefix.origin
 		) {
-			paramsInit.append("sj$io", meta.origin.origin);
+			paramsInit.set(QP.initiatorOrigin, meta.origin.origin);
 		}
 
 		let paramstring = "";
