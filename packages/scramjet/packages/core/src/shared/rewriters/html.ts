@@ -356,13 +356,7 @@ function traverseParsedHtml(
 				if (sel === "*" || sel.includes(node.name)) {
 					if (node.attribs[attr] !== undefined) {
 						const value = node.attribs[attr];
-						// Pass element name + attribs so rules that depend on
-						// sibling attributes (e.g. `<link rel=prefetch as=X>`
-						// → Sec-Fetch-Dest=X) can read them.
-						const v = rule.fn(value, context, meta, {
-							name: node.name,
-							attribs: node.attribs,
-						});
+						const v = rule.fn(value, context, meta);
 
 						if (v === null) delete node.attribs[attr];
 						else {

@@ -4,95 +4,13 @@ import { rewriteUrl, unrewriteBlob, URLMeta } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
 import { _URL } from "./snapshot";
 
-export type HtmlRuleElement = {
-	name: string;
-	attribs: Record<string, string>;
-};
-
-/**
- * Per Fetch / HTML, `<link rel="preload" as="X">` and (for browsers that
- * implement it) `<link rel="prefetch" as="X">` set the request's destination
- * to `X` for the network request. The SW's `event.request.destination` is
- * `""` for prefetch though, so we capture `as` here and forward it to
- * `rewriteUrl` which encodes it as `sj$dest=…` on the proxy URL — the
- * service-side Sec-Fetch-Dest computation reads that back.
- *
- * The same `<link>` rels also affect the request's credentials mode: with no
- * `crossorigin` attribute they default to "include", which is what gates
- * Sec-Fetch-Storage-Access on cross-site prefetch / preload requests.
- */
-const LINK_DESTINATION_RELS = new Set(["prefetch", "preload", "modulepreload"]);
-
-const VALID_REQUEST_DESTINATIONS = new Set<RequestDestination>([
-	"audio",
-	"audioworklet",
-	"document",
-	"embed",
-	"font",
-	"frame",
-	"iframe",
-	"image",
-	"manifest",
-	"object",
-	"paintworklet",
-	"report",
-	"script",
-	"sharedworker",
-	"style",
-	"track",
-	"video",
-	"worker",
-	"xslt",
-]);
-
-function linkRel(attribs: Record<string, string> | undefined): string | null {
-	if (!attribs) return null;
-	const rel = (attribs.rel ?? "").trim().toLowerCase();
-	return LINK_DESTINATION_RELS.has(rel) ? rel : null;
-}
-
-function destFromLinkAttribs(
-	attribs: Record<string, string> | undefined
-): RequestDestination | undefined {
-	if (!linkRel(attribs)) return undefined;
-	const as = (attribs!.as ?? "").trim().toLowerCase();
-	if (!VALID_REQUEST_DESTINATIONS.has(as as RequestDestination))
-		return undefined;
-	return as as RequestDestination;
-}
-
-function credentialsFromLinkAttribs(
-	attribs: Record<string, string> | undefined
-): string | undefined {
-	if (!linkRel(attribs)) return undefined;
-	if (attribs!.crossorigin === undefined) {
-		return "include";
-	}
-	const value = (attribs!.crossorigin ?? "").trim().toLowerCase();
-	if (value === "use-credentials") return "include";
-	return undefined;
-}
-
 export const htmlRules: {
 	[key: string]: "*" | string[] | ((...any: any[]) => string | null);
-	fn: (
-		value: string,
-		context: ScramjetContext,
-		meta: URLMeta,
-		element?: HtmlRuleElement
-	) => string | null;
+	fn: (value: string, context: ScramjetContext, meta: URLMeta) => string | null;
 }[] = [
 	{
-		fn: (value, context, meta, element) => {
-			const isLink = element?.name === "link";
-			return rewriteUrl(value, context, meta, {
-				navigateType: "location",
-				destination: isLink ? destFromLinkAttribs(element!.attribs) : undefined,
-				credentials: isLink
-					? credentialsFromLinkAttribs(element!.attribs)
-					: undefined,
-			});
-		},
+		fn: (value, context, meta) =>
+			rewriteUrl(value, context, meta, { navigateType: "location" }),
 
 		// url rewrites
 		src: ["embed", "script", "img", "frame", "input", "track"],
