@@ -10,6 +10,7 @@ import { Service } from "./Service";
 
 export type Settings = {
 	appearance: AppearancePreference;
+	verticalTabs: boolean;
 	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
@@ -25,6 +26,7 @@ export type Settings = {
 
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
+	verticalTabs: false,
 	uiProfile: "default",
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
@@ -41,6 +43,7 @@ const DEFAULT_SETTINGS: Settings = {
 export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
+		verticalTabs: boolean;
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
 		startupPage: "new-tab" | "continue";
@@ -77,6 +80,7 @@ export class SettingsService extends Service {
 		return {
 			settings: {
 				appearance: this.settings.appearance,
+				verticalTabs: this.settings.verticalTabs,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,
 				startupPage: this.settings.startupPage,

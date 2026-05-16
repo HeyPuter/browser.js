@@ -205,6 +205,46 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
+										<h2>Browser Layout</h2>
+										<p class="description">
+											Choose between a vertical or horizontal tab layout.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-horizontal"
+														name="layout"
+														value="horizontal"
+														checked={!settingsService.settings.verticalTabs}
+														on:change={() => {
+															settingsService.settings.verticalTabs = false;
+														}}
+													/>
+													<label for="layout-horizontal">Horizontal</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-vertical"
+														name="layout"
+														value="vertical"
+														checked={settingsService.settings.verticalTabs}
+														on:change={() => {
+															settingsService.settings.verticalTabs = true;
+														}}
+													/>
+													<label for="layout-vertical">Vertical</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-header">
 										<h2>UI Density</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.

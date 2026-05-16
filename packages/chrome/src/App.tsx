@@ -57,6 +57,13 @@ export function App(
 
 	applyProfile();
 
+	const applyLayout = () => {
+		const verticalTabs = settingsService.settings.verticalTabs;
+		document.body.classList.toggle("vertical-tabs", verticalTabs);
+	};
+
+	applyLayout();
+
 	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const handleThemeChange = () => {
 		if (settingsService.settings.appearance === "system") {
@@ -70,6 +77,7 @@ export function App(
 	use(settingsService.settings.themeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
+	use(settingsService.settings.verticalTabs).listen(applyLayout);
 
 	this.cx.mount = () => {
 		applyTheme();
@@ -104,6 +112,7 @@ App.style = css`
 		background-color: var(--frame);
 		--separator-color: color-mix(in srgb, currentColor 10%, transparent);
 	}
+
 	.separator {
 		color: var(--toolbar);
 		position: relative;
