@@ -159,7 +159,9 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 							<Icon icon={iconDownload}></Icon>
 						</div>
 						<CircularProgress
-							progress={use(downloadsService.current?.progress)}
+							progress={use(downloadsService.current).map(
+								(x) => x?.progress || 0
+							)}
 						></CircularProgress>
 					</div>
 				)}
