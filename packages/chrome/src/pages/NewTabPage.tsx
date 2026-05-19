@@ -216,9 +216,11 @@ NewTabPage.style = css`
 	.logo h1 {
 		font-size: 2.25rem;
 		font-weight: 600;
+		user-select: none;
 	}
 	.logo img {
 		display: inline-block;
+		user-select: none;
 	}
 	.clock {
 		font-size: 1.5em;
@@ -402,6 +404,7 @@ NewTabPage.style = css`
 
 	.fallback {
 		line-height: 1;
+		user-select: none;
 	}
 
 	.context-menu-button {
@@ -457,6 +460,7 @@ NewTabPage.style = css`
 		font-size: 0.88rem;
 		line-height: 1.25;
 		color: var(--ntp-text-70);
+		user-select: none;
 	}
 
 	@media (max-width: 720px) {
