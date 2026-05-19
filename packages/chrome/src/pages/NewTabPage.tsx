@@ -65,10 +65,6 @@ function getTopSites(): TopSiteEntry[] {
 		seen.add(url.href);
 	};
 
-	for (const bookmark of profileService.bookmarks) {
-		addEntry(bookmark.url, bookmark.title, bookmark.favicon);
-	}
-
 	for (const entry of [...profileService.globalhistory].sort(
 		(a, b) => b.timestamp - a.timestamp
 	)) {
@@ -79,10 +75,7 @@ function getTopSites(): TopSiteEntry[] {
 }
 
 export function NewTabPage(this: FC<{ tab: Tab }>) {
-	const topSites = use(
-		profileService.bookmarks,
-		profileService.globalhistory
-	).map(getTopSites);
+	const topSites = use(profileService.globalhistory).map(getTopSites);
 
 	const openTopSiteMenu = (event: MouseEvent, entry: TopSiteEntry) => {
 		const target = event.currentTarget as HTMLElement;
