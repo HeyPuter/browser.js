@@ -107,8 +107,11 @@ export function NewTabPage(this: FC<{ tab: Tab }>) {
 
 	return (
 		<div>
+			<div class="logo">
+				<img src="/icon.png" alt="Browser.js Logo" width="56" height="56" />
+				<h1>Browser.js</h1>
+			</div>
 			<div class="topbar">
-				{/*<div class="logo"></div>*/}
 				<div class="inputcontainercontainer">
 					<div class="inputcontainer">
 						<div class="icon">
@@ -167,14 +170,14 @@ export function NewTabPage(this: FC<{ tab: Tab }>) {
 										<div class="title">
 											<span class="title-label">{entry.displayTitle}</span>
 										</div>
-									</button>
-									<button
-										class="context-menu-button"
-										title={`Open context menu for ${entry.title}`}
-										aria-label={`Open context menu for ${entry.title}`}
-										on:click={(e: MouseEvent) => openTopSiteMenu(e, entry)}
-									>
-										<Icon icon={iconMore} width="1rem" height="1rem"></Icon>
+										<button
+											class="context-menu-button"
+											title={`Open context menu for ${entry.title}`}
+											aria-label={`Open context menu for ${entry.title}`}
+											on:click={(e: MouseEvent) => openTopSiteMenu(e, entry)}
+										>
+											<Icon icon={iconMore} width="1rem" height="1rem"></Icon>
+										</button>
 									</button>
 								</div>
 							</li>
@@ -200,7 +203,7 @@ NewTabPage.style = css`
 		background: var(--ntp_background);
 		color: var(--ntp_text);
 
-		padding: clamp(1.5rem, 5vw, 5rem) clamp(1.25rem, 4vw, 4rem) 3rem;
+		padding: clamp(4rem, 5vw, 6rem) clamp(1.25rem, 4vw, 4rem) 3rem;
 		overflow-y: auto;
 	}
 
@@ -212,8 +215,17 @@ NewTabPage.style = css`
 		gap: 1.5rem;
 	}
 	.logo {
-		width: 3em;
-		height: 3em;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1.75rem;
+	}
+	.logo h1 {
+		font-size: 2.25rem;
+		font-weight: 600;
+	}
+	.logo img {
+		display: inline-block;
 	}
 	.clock {
 		font-size: 1.5em;
@@ -271,7 +283,7 @@ NewTabPage.style = css`
 	}
 
 	.main {
-		margin-top: clamp(2rem, 6vw, 4rem);
+		margin-top: 2rem;
 		width: min(100%, 62rem);
 		display: flex;
 		flex-direction: column;
@@ -345,6 +357,7 @@ NewTabPage.style = css`
 		width: var(--top-site-tile-size);
 		height: var(--top-site-tile-size);
 		margin: auto;
+		margin-top: 0.75rem;
 		align-self: end;
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-15);
@@ -371,7 +384,7 @@ NewTabPage.style = css`
 	.icon-wrapper {
 		width: var(--top-site-icon-size);
 		height: var(--top-site-icon-size);
-		border-radius: calc(calc(4.25rem - 48px) / 2);
+		border-radius: calc(var(--radius) * 1.5);
 		background: var(--accent-15);
 		color: var(--accent-tint-50);
 		display: flex;
@@ -400,12 +413,8 @@ NewTabPage.style = css`
 
 	.context-menu-button {
 		position: absolute;
-		top: calc(
-			(var(--top-site-column-size) - var(--top-site-tile-size)) / 2 - 1rem
-		);
-		right: calc(
-			(var(--top-site-column-size) - var(--top-site-tile-size)) / 2 - 0.75rem
-		);
+		top: 0.5rem;
+		right: 0.3rem;
 		width: 1.75rem;
 		height: 1.75rem;
 		border: 1px solid var(--text-20);
