@@ -218,7 +218,7 @@ NewTabPage.style = css`
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-		margin-bottom: 1.75rem;
+		margin-bottom: 2rem;
 	}
 	.logo h1 {
 		font-size: 2.25rem;
@@ -283,7 +283,7 @@ NewTabPage.style = css`
 	}
 
 	.main {
-		margin-top: 2rem;
+		margin-top: 1rem;
 		width: min(100%, 62rem);
 		display: flex;
 		flex-direction: column;
