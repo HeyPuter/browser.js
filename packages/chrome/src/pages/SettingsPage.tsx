@@ -206,7 +206,7 @@ export function SettingsPage(
 								<section class="setting-section">
 									<div class="section-header">
 										<h2>Browser Layout (Experimental)</h2>
-										<p class="description">Choose your tab layout mode.</p>
+										<p class="description">Choose where tabs are displayed.</p>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -224,7 +224,16 @@ export function SettingsPage(
 															settingsService.settings.tabLayout = "horizontal";
 														}}
 													/>
-													<label for="layout-horizontal">Horizontal</label>
+													<label
+														for="layout-horizontal"
+														class="label-multiline"
+													>
+														<span>Horizontal</span>
+														<span class="description">
+															Tabs are displayed in a single row above the
+															address bar.
+														</span>
+													</label>
 												</div>
 												<div class="radio-option">
 													<input
@@ -239,7 +248,12 @@ export function SettingsPage(
 															settingsService.settings.tabLayout = "compact";
 														}}
 													/>
-													<label for="layout-compact">Compact</label>
+													<label for="layout-compact" class="label-multiline">
+														<span>Compact</span>
+														<span class="description">
+															Tabs are displayed next to the address bar.
+														</span>
+													</label>
 												</div>
 												<div class="radio-option">
 													<input
@@ -254,7 +268,13 @@ export function SettingsPage(
 															settingsService.settings.tabLayout = "hybrid";
 														}}
 													/>
-													<label for="layout-hybrid">Hybrid</label>
+													<label for="layout-hybrid" class="label-multiline">
+														<span>Hybrid</span>
+														<span class="description">
+															Tabs are displayed in a vertical sidebar on the
+															left.
+														</span>
+													</label>
 												</div>
 												<div class="radio-option">
 													<input
@@ -269,7 +289,13 @@ export function SettingsPage(
 															settingsService.settings.tabLayout = "vertical";
 														}}
 													/>
-													<label for="layout-vertical">Vertical</label>
+													<label for="layout-vertical" class="label-multiline">
+														<span>Vertical</span>
+														<span class="description">
+															Tabs and the address bar are displayed in a single
+															column to the left of the content area.
+														</span>
+													</label>
 												</div>
 											</div>
 										</div>
@@ -881,6 +907,21 @@ SettingsPage.style = css`
 		margin-bottom: 0;
 	}
 
+	.label-multiline {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.label-multiline .description {
+		font-size: 0.85rem;
+		color: var(--ntp-text-60);
+	}
+
+	.radio-option:has(.label-multiline) {
+		align-items: flex-start;
+	}
+
 	.radio-group {
 		display: flex;
 		flex-direction: column;
@@ -909,6 +950,7 @@ SettingsPage.style = css`
 	input[type="radio"],
 	input[type="checkbox"] {
 		accent-color: var(--tab_line);
+		margin: 0;
 	}
 
 	.zoom-control {
