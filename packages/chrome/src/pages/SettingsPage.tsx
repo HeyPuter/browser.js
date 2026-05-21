@@ -205,7 +205,7 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>Browser Layout</h2>
+										<h2>Browser Layout (Experimental)</h2>
 										<p class="description">Choose your tab layout mode.</p>
 									</div>
 									<div class="section-content">

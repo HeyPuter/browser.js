@@ -1,6 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { iconClose } from "../../icons";
+import { iconClose, iconGlobe } from "../../icons";
 import { Icon } from "@components/Icon";
 export function VerticalDragTab(
 	this: FC<
@@ -103,7 +103,18 @@ export function VerticalDragTab(
 			></div>
 			<div class="dragroot" style="position: unset;">
 				<div class={use(this.active).map((x) => (x ? "main active" : "main"))}>
-					{use(this.tab.icon).and(<img src={use(this.tab.icon)} />)}
+					<div class="favicon">
+						{use(this.tab.icon)
+							.and(
+								<img
+									alt="Tab icon"
+									width="16"
+									height="16"
+									src={use(this.tab.icon)}
+								/>
+							)
+							.or(<Icon class="favicon-placeholder" icon={iconGlobe} />)}
+					</div>
 					<span>{use(this.tab.title)}</span>
 					<button
 						class="close"
@@ -176,9 +187,10 @@ VerticalDragTab.style = css`
 		align-items: center;
 		gap: 8px;
 	}
-	.main img {
+	.favicon {
 		width: 16px;
 		height: 16px;
+		color: var(--text-50);
 	}
 	.main span {
 		flex: 1;

@@ -120,7 +120,10 @@ export class Tab extends StatefulClass {
 	// only caller should be history.ts for this
 	_directnavigate(url: URL) {
 		this.url = url;
+		this.icon = "/defaultfavicon.png";
 		if (url.protocol == INTERNAL_URL_PROTOCOL) {
+			this.icon = "/icon.png";
+			this.history.current().favicon = "/icon.png";
 			switch (url.host) {
 				case "newtab":
 					this.history.current().title = this.title = "New Tab";
