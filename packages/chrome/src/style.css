@@ -15,6 +15,10 @@ html,
 	flex-direction: row;
 }
 
+body.sidebar-right #app.vertical-tabs {
+	flex-direction: row-reverse;
+}
+
 #app.layout-bottom {
 	flex-direction: column-reverse;
 }

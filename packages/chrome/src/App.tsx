@@ -77,6 +77,14 @@ export function App(
 		const verticalTabs = layout === "hybrid" || layout === "vertical";
 		document.body.classList.toggle("vertical-tabs", verticalTabs);
 		document.body.classList.toggle("full-vertical-tabs", layout === "vertical");
+		document.body.classList.toggle(
+			"sidebar-left",
+			settingsService.settings.verticalTabJustify === "left"
+		);
+		document.body.classList.toggle(
+			"sidebar-right",
+			settingsService.settings.verticalTabJustify === "right"
+		);
 	};
 
 	applyLayout();
@@ -95,6 +103,7 @@ export function App(
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
 	use(settingsService.settings.tabLayout).listen(applyLayout);
+	use(settingsService.settings.verticalTabJustify).listen(applyLayout);
 
 	this.cx.mount = () => {
 		applyTheme();

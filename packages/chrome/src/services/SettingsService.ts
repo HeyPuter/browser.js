@@ -11,6 +11,7 @@ import { Service } from "./Service";
 export type Settings = {
 	appearance: AppearancePreference;
 	tabLayout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact";
+	verticalTabJustify: "left" | "right";
 	sidebarWidth: number | null;
 	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
@@ -30,6 +31,7 @@ export type TabLayoutMode = Settings["tabLayout"];
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
 	tabLayout: "horizontal",
+	verticalTabJustify: "left",
 	sidebarWidth: null,
 	uiProfile: "default",
 	themeId: DEFAULT_THEME_ID,
@@ -48,6 +50,7 @@ export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
 		tabLayout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact";
+		verticalTabJustify: "left" | "right";
 		sidebarWidth: number | null;
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
@@ -117,6 +120,7 @@ export class SettingsService extends Service {
 			settings: {
 				appearance: this.settings.appearance,
 				tabLayout: this.settings.tabLayout,
+				verticalTabJustify: this.settings.verticalTabJustify,
 				sidebarWidth: this.settings.sidebarWidth,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,

@@ -345,6 +345,57 @@ export function SettingsPage(
 										</div>
 									</div>
 								</section>
+								{use(settingsService.settings.tabLayout)
+									.map((l) => l === "hybrid" || l === "vertical")
+									.and(
+										<section class="setting-section">
+											<div class="section-header">
+												<h2>Sidebar Location</h2>
+												<p class="description">
+													Choose which side of the screen the sidebar is on.
+													Only applies to vertical and hybrid layouts.
+												</p>
+											</div>
+											<div class="section-content">
+												<div class="setting-group">
+													<div class="radio-group">
+														<div class="radio-option">
+															<input
+																type="radio"
+																id="sidebar-left"
+																name="sidebar-location"
+																value="left"
+																checked={use(
+																	settingsService.settings.verticalTabJustify
+																).map((v) => v === "left")}
+																on:change={() => {
+																	settingsService.settings.verticalTabJustify =
+																		"left";
+																}}
+															/>
+															<label for="sidebar-left">Left</label>
+														</div>
+														<div class="radio-option">
+															<input
+																type="radio"
+																id="sidebar-right"
+																name="sidebar-location"
+																value="right"
+																checked={use(
+																	settingsService.settings.verticalTabJustify
+																).map((v) => v === "right")}
+																on:change={() => {
+																	settingsService.settings.verticalTabJustify =
+																		"right";
+																}}
+															/>
+															<label for="sidebar-right">Right</label>
+														</div>
+													</div>
+												</div>
+											</div>
+										</section>
+									)}
 								<section class="setting-section">
 									<div class="section-header">
 										<h2>UI Density</h2>
