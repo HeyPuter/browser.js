@@ -52,6 +52,32 @@ export function insideForeignContext(
 	return "html";
 }
 
+// TODO: this is pretty bad. really this whole file sucks
+function collectAttributeMap(
+	client: ScramjetClient,
+	element: Element,
+	overrideName: string,
+	overrideValue: unknown
+) {
+	const attrs: Record<string, string | undefined> = {};
+	const attrNames =
+		client.natives.call("Element.prototype.getAttributeNames", element) ?? [];
+
+	for (const attrName of attrNames) {
+		if (String(attrName).startsWith("scramjet-attr")) continue;
+		const value = client.natives.call(
+			"Element.prototype.getAttribute",
+			element,
+			attrName
+		);
+		attrs[String(attrName).toLowerCase()] =
+			typeof value === "string" ? value : undefined;
+	}
+
+	attrs[String(overrideName).toLowerCase()] = String(overrideValue);
+	return attrs;
+}
+
 export default function (client: ScramjetClient, self: typeof window) {
 	const attrObject = {
 		nonce: [self.HTMLElement],
@@ -240,7 +266,12 @@ export default function (client: ScramjetClient, self: typeof window) {
 			});
 
 			if (ruleList) {
-				const ret = ruleList.fn(value, client.context, client.meta);
+				const ret = ruleList.fn(
+					value,
+					client.context,
+					client.meta,
+					collectAttributeMap(client, ctx.this, name, value)
+				);
 				if (ret == null) {
 					client.natives.call(
 						"Element.prototype.removeAttribute",
@@ -276,7 +307,12 @@ export default function (client: ScramjetClient, self: typeof window) {
 			});
 
 			if (ruleList) {
-				ctx.args[2] = ruleList.fn(value, client.context, client.meta);
+				ctx.args[2] = ruleList.fn(
+					value,
+					client.context,
+					client.meta,
+					collectAttributeMap(client, ctx.this, name, value)
+				);
 				client.natives.call(
 					"Element.prototype.setAttribute",
 					ctx.this,
@@ -403,52 +439,59 @@ export default function (client: ScramjetClient, self: typeof window) {
 		},
 	});
 
+	const rewriteTextForElement = (element: Element, value: string) => {
+		if (
+			client.box.instanceof(element, "HTMLScriptElement") &&
+			/(application|text)\/javascript|module|undefined/.test(element.type)
+		) {
+			const newval: string = rewriteJs(
+				value,
+				"(anonymous script element)",
+				client.context,
+				client.meta
+			) as string;
+			client.natives.call(
+				"Element.prototype.setAttribute",
+				element,
+				"scramjet-attr-script-source-src",
+				bytesToBase64(TextEncoder_encode(newval))
+			);
+
+			return newval;
+		} else if (client.box.instanceof(element, "HTMLStyleElement")) {
+			return rewriteCss(value, client.context, client.meta);
+		} else {
+			return value;
+		}
+	};
+	const getTextForElement = (element: Element, text: string) => {
+		if (client.box.instanceof(element, "HTMLScriptElement")) {
+			const scriptSource = client.natives.call(
+				"Element.prototype.getAttribute",
+				element,
+				"scramjet-attr-script-source-src"
+			);
+		}
+		if (client.box.instanceof(element, "HTMLStyleElement")) {
+			return unrewriteCss(text, client.context);
+		}
+		return text;
+	};
+
 	client.Trap("Node.prototype.textContent", {
 		set(ctx, value: string) {
-			// TODO: box the instanceofs
-			if (
-				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
-				/(application|text)\/javascript|module|undefined/.test(ctx.this.type)
-			) {
-				const newval: string = rewriteJs(
-					value,
-					"(anonymous script element)",
-					client.context,
-					client.meta
-				) as string;
-				client.natives.call(
-					"Element.prototype.setAttribute",
-					ctx.this,
-					"scramjet-attr-script-source-src",
-					bytesToBase64(TextEncoder_encode(newval))
-				);
-
-				return ctx.set(newval);
-			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				return ctx.set(rewriteCss(value, client.context, client.meta));
-			} else {
-				return ctx.set(value);
-			}
+			return ctx.set(rewriteTextForElement(ctx.this, value));
 		},
 		get(ctx) {
-			if (client.box.instanceof(ctx.this, "HTMLScriptElement")) {
-				const scriptSource = client.natives.call(
-					"Element.prototype.getAttribute",
-					ctx.this,
-					"scramjet-attr-script-source-src"
-				);
-
-				if (scriptSource) {
-					return atob(scriptSource);
-				}
-
-				return ctx.get();
-			}
-			if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				return unrewriteCss(ctx.get() as string, client.context);
-			}
-
-			return ctx.get();
+			return getTextForElement(ctx.this, ctx.get());
+		},
+	});
+	client.Trap("HTMLElement.prototype.innerText", {
+		set(ctx, value: string) {
+			return ctx.set(rewriteTextForElement(ctx.this, value));
+		},
+		get(ctx) {
+			return getTextForElement(ctx.this, ctx.get());
 		},
 	});
 

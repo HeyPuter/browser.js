@@ -52,7 +52,6 @@ export type ScramjetClientInit = {
 		cookies: CookieSyncEntry[],
 		options?: CookieSyncOptions
 	) => Promise<void>;
-	shouldPassthroughWebsocket?: (url: string | URL) => boolean;
 	shouldBlockMessageEvent?: (ev: MessageEvent) => boolean;
 	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
 	initHeaders: RawHeaders;
@@ -211,6 +210,8 @@ export class ScramjetClient {
 	initHeaders: ScramjetHeaders;
 
 	history: TrackedHistoryState[];
+
+	private flagCache = new _Map<keyof ScramjetConfig["flags"], boolean>();
 
 	hooks = {
 		rewriter: {
@@ -889,7 +890,12 @@ return { apply, construct };
 	}
 
 	flagEnabled(flag: keyof ScramjetConfig["flags"]): boolean {
-		return flagEnabled(flag, this.context, this.url);
+		const cached = this.flagCache.get(flag);
+		if (cached !== undefined) return cached;
+
+		const result = flagEnabled(flag, this.context, this.url);
+		this.flagCache.set(flag, result);
+		return result;
 	}
 
 	get config(): ScramjetConfig {

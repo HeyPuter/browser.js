@@ -7,6 +7,25 @@ import type { ThemeDefinition } from "../../chrome/src/themes";
 export type FrameSequence = number[];
 
 export type Chromebound = {
+	wsconnect: [
+		{
+			url: string;
+			protocols: string[];
+			requestHeaders: RawHeaders;
+			port: MessagePort;
+		},
+		(
+			| {
+					result: "success";
+					protocol: string;
+					extensions: string;
+			  }
+			| {
+					result: "failure";
+					error: string;
+			  }
+		),
+	];
 	contextmenu: [
 		{
 			x: number;

@@ -12,7 +12,6 @@ import {
 	InjectScramjetInit,
 } from "./types";
 
-import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import { applyTheme } from "./errorpage/errorpage";
 import { chromeframe, wasm } from ".";
@@ -21,6 +20,7 @@ import { setupHistoryEmulation } from "./emulators/history";
 import { setupTitleWatcher } from "./emulators/titlewatcher";
 import { setupAnchorHandler } from "./emulators/anchors";
 import { setupWindowOpen } from "./emulators/windowopen";
+import { RemoteTransport } from "./transport";
 
 function makeContextId(): string {
 	return "context-" + Math.random().toString(36).substring(2, 10);
@@ -128,8 +128,7 @@ export class ExecutionContextWrapper {
 	}
 
 	loadScramjet() {
-		const transport = new LibcurlClient({ wisp: this.init.wisp });
-
+		const transport = new RemoteTransport(this);
 		this.client = new ScramjetClient(this.self, {
 			context: {
 				interface: {
@@ -142,9 +141,6 @@ export class ExecutionContextWrapper {
 				prefix: new URL(this.init.prefix),
 			},
 			transport,
-			shouldPassthroughWebsocket: (url) => {
-				return url === this.init.wisp;
-			},
 			hookSubcontext: (frameself, frame) => {
 				if (!frame) {
 					throw new Error(

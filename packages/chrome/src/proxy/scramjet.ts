@@ -54,7 +54,10 @@ import { Controller, controllerForURL, makeId } from "./Controller";
 import type { Tab } from "../Tab/Tab";
 import { createMenu } from "@components/Menu";
 import { pageContextItems } from "./contextitems";
-import type { BodyType } from "../../../scramjet/packages/controller/src/types";
+import type {
+	BodyType,
+	WebSocketMessage,
+} from "../../../scramjet/packages/controller/src/types";
 import { getTheme } from "../themes";
 import {
 	downloadsService,
@@ -94,7 +97,7 @@ class ProxyFrameContext {
 		public id: string
 	) {
 		let tab: Tab | null = null;
-		this.rpc = new RpcHelper(
+		this.rpc = new RpcHelper<Chromebound, Framebound>(
 			{
 				load: async ({ url, sequence }) => {
 					this.windowproxy = reduceSequence(sequence);
@@ -192,6 +195,62 @@ class ProxyFrameContext {
 						if (!ctx.alive()) continue;
 						void ctx.rpc.call("setCookies", { cookies });
 					}
+				},
+				wsconnect: async ({ url, protocols, requestHeaders, port }) => {
+					let resolve!: (arg: Chromebound["wsconnect"][1]) => void;
+					const promise = new Promise<Chromebound["wsconnect"][1]>(
+						(res) => (resolve = res)
+					);
+					const [send, close] = transport.connect(
+						new URL(url),
+						protocols,
+						requestHeaders,
+						(protocol, extensions) => {
+							resolve({
+								result: "success",
+								protocol,
+								extensions,
+							});
+						},
+						(data) => {
+							port.postMessage(
+								{
+									type: "data",
+									data,
+								} as WebSocketMessage,
+								data instanceof ArrayBuffer ? [data] : []
+							);
+						},
+						(code, reason) => {
+							port.postMessage({
+								type: "close",
+								code,
+								reason,
+							} as WebSocketMessage);
+						},
+						(error) => {
+							resolve({
+								result: "failure",
+								error,
+							});
+						}
+					);
+					port.onmessageerror = (ev) => {
+						console.error(
+							"Transport port messageerror (this should never happen!)",
+							ev
+						);
+					};
+					port.onmessage = ({ data }: MessageEvent) => {
+						const message = data as WebSocketMessage;
+						if (message.type === "data") {
+							send(message.data);
+						} else if (message.type === "close") {
+							close(message.code, message.reason);
+						}
+					};
+
+					return [await promise, []];
 				},
 			},
 			id,
@@ -500,7 +559,7 @@ export async function handlefetch(
 		});
 	}
 
-	if (data.destination === "document" || data.destination === "iframe") {
+	if (data.rawDestination === "document" || data.rawDestination === "iframe") {
 		const unrewritten = unrewriteUrl(
 			data.rawUrl,
 			controller.fetchHandler.context
@@ -536,7 +595,7 @@ export async function handlefetch(
 	const fetchresponse = await controller.fetchHandler.handleFetch(data);
 
 	if (
-		isDownload(fetchresponse.headers, data.destination) &&
+		isDownload(fetchresponse.headers, data.rawDestination) &&
 		fetchresponse.status === 200
 	) {
 		let filename: string | null = null;

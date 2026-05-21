@@ -21,6 +21,7 @@ export const Omnibox: Component = function (cx) {
 		if (!browserState.url.startsWith("http")) {
 			browserState.url = `https://${browserState.url}`;
 		}
+		demoSettingsStore.homeUrl = browserState.url;
 		browserState.frame?.go(browserState.url);
 	};
 	return (
@@ -201,7 +202,7 @@ const BrowserView: Component<
 	};
 	const initPlugin = (frame: Frame) => {
 		const plugin = new ScramjetPlugin("url-watcher");
-		plugin.tap(frame.hooks.frameInit.post, (context, props) => {
+		plugin.tap(frame.hooks.init.post, (context, props) => {
 			if (!context.isTopLevel) return;
 			browserState.url = context.client.url.href;
 			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {

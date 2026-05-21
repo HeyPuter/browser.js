@@ -1,0 +1,17 @@
+{
+	"name": "proxy-app-template",
+	"version": "1.0.0",
+	"description": "",
+	"main": "server.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node server.js",
+		"start": "node server.js"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "AGPL-3.0-only",
+	"dependencies": {
+		"@mercuryworkshop/proxy-bootstrap": "*"
+	}
+}

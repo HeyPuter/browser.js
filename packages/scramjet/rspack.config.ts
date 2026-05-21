@@ -38,11 +38,36 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const scramjetdir = join(__dirname, "packages/core");
 const controllerdir = join(__dirname, "packages/controller");
 const bootstrapdir = join(__dirname, "packages/bootstrap");
+const createproxyappdir = join(__dirname, "packages/create-proxy-app");
+const utilsdir = join(__dirname, "packages/utils");
+
+function scramjetIifeExternal(
+	{ request }: { request?: string },
+	callback: (err?: Error | null, result?: string) => void
+) {
+	if (request === "@mercuryworkshop/scramjet") {
+		return callback(null, "root $scramjet");
+	}
+	callback();
+}
 
 // Load WASM for rewriter
 const sjpackagemeta = JSON.parse(
 	await readFile(join(scramjetdir, "package.json"), "utf-8")
 );
+const controllermeta = JSON.parse(
+	await readFile(join(controllerdir, "package.json"), "utf-8")
+);
+
+const controllerVersionDefines = new rspack.DefinePlugin({
+	CONTROLLER_VERSION: JSON.stringify(controllermeta.version),
+	SCRAMJET_EXPECTED_VERSION: JSON.stringify(sjpackagemeta.version),
+});
+
+const utilsVersionDefines = new rspack.DefinePlugin({
+	SCRAMJET_EXPECTED_VERSION: JSON.stringify(sjpackagemeta.version),
+	CONTROLLER_EXPECTED_VERSION: JSON.stringify(controllermeta.version),
+});
 const wasmPath = join(scramjetdir, "dist/scramjet.wasm");
 let wasmB64: string;
 const wasmBuf = await readFile(wasmPath);
@@ -359,6 +384,13 @@ const bootstrapConfig = createGenericConfig({
 	},
 	target: "node",
 	externals: [nodeExternals],
+	module: {
+		parser: {
+			javascript: {
+				importMeta: false,
+			},
+		},
+	},
 	plugins: [
 		new TypeScriptDeclarationsPlugin(
 			bootstrapdir,
@@ -366,6 +398,93 @@ const bootstrapConfig = createGenericConfig({
 			"tsconfig.types.json",
 			false
 		),
+	],
+});
+
+const utilsIifeConfig = createGenericConfig({
+	name: "scramjet-utils-iife",
+	entry: {
+		main: join(utilsdir, "src/index.ts"),
+	},
+	output: {
+		filename: "scramjet-utils.js",
+		path: join(utilsdir, "dist"),
+		iife: true,
+		library: {
+			type: "assign",
+			name: "self.$scramjetUtils",
+		},
+	},
+	target: "web",
+	externals: [scramjetIifeExternal],
+	plugins: [
+		utilsVersionDefines,
+		new TypeScriptDeclarationsPlugin(
+			utilsdir,
+			"dist/temp-types-build",
+			"tsconfig.types.json",
+			false
+		),
+	],
+});
+
+const utilsModuleConfig = createGenericConfig({
+	name: "scramjet-utils-esmodule",
+	entry: {
+		main: join(utilsdir, "src/index.ts"),
+	},
+	output: {
+		filename: "scramjet-utils.mjs",
+		path: join(utilsdir, "dist"),
+		libraryTarget: "module",
+		iife: false,
+	},
+	experiments: {
+		outputModule: true,
+	},
+	target: "web",
+	externals: {
+		"@mercuryworkshop/scramjet": "module @mercuryworkshop/scramjet",
+	},
+	plugins: [
+		utilsVersionDefines,
+		new TypeScriptDeclarationsPlugin(
+			utilsdir,
+			"dist/temp-types-build",
+			"tsconfig.types.json",
+			false
+		),
+	],
+});
+
+const createProxyAppConfig = createGenericConfig({
+	name: "create-proxy-app",
+	entry: {
+		index: join(createproxyappdir, "src/index.ts"),
+	},
+	output: {
+		path: join(createproxyappdir, "dist"),
+		filename: "[name].js",
+		libraryTarget: "module",
+		iife: false,
+	},
+	experiments: {
+		outputModule: true,
+	},
+	target: "node",
+	module: {
+		parser: {
+			javascript: {
+				importMeta: false,
+			},
+		},
+	},
+	plugins: [
+		new rspack.BannerPlugin({
+			banner: "#!/usr/bin/env node",
+			raw: true,
+			entryOnly: true,
+		}),
 	],
 });
 
@@ -397,7 +516,10 @@ const controllerConfig = createGenericConfig({
 			name: "$scramjetController",
 		},
 	},
+	target: "web",
+	externals: [scramjetIifeExternal],
 	plugins: [
+		controllerVersionDefines,
 		new TypeScriptDeclarationsPlugin(
 			controllerdir,
 			"dist/temp-types-build",
@@ -446,5 +568,8 @@ export default [
 	bootstrapConfig,
 	bootstrapStaticConfig,
 	controllerConfig,
+	createProxyAppConfig,
+	utilsIifeConfig,
+	utilsModuleConfig,
 	typeGenConfig,
 ];

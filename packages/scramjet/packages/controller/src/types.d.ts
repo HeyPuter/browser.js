@@ -119,6 +119,20 @@ export type FrameInitHooks = {
 		props: {};
 	};
 };
+
+export type FrameErrorHooks = {
+	request: {
+		context: {
+			rawrequest: TransferRequest;
+			error: unknown;
+		};
+		props: {
+			setResponse?: TransferResponse;
+			suppressError?: boolean;
+		};
+	};
+};
+
 declare global {
 	interface HTMLIFrameElement {
 		[CONTROLLERFRAME]: Frame;

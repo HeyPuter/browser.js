@@ -3,6 +3,7 @@ import http from "http";
 import { extract } from "tar";
 import { Readable } from "stream";
 import fs from "fs/promises";
+import { join } from "node:path";
 import {
 	defaultConfig,
 	EPOXY_TRANSPORT_PACKAGE_NAME,
@@ -15,6 +16,8 @@ import {
 	SCRAMJET_PACKAGE_NAME,
 	BootstrapOptions,
 } from "./common";
+
+const bootstrapRoot = import.meta.dirname;
 
 type ServerBootstrapOptions = BootstrapOptions & {
 	downloadedFilesDir: string;
@@ -32,7 +35,7 @@ async function sendFile(
 	res.end(data);
 }
 const clientdata = await fs.readFile(
-	import.meta.dirname + "/bootstrap-client.js"
+	join(bootstrapRoot, "bootstrap-client.js")
 );
 function routeRequest(
 	req: http.IncomingMessage,
@@ -55,7 +58,7 @@ addEventListener("fetch", (e) => {
 		res.writeHead(200, { "Content-Type": "application/javascript" });
 		res.end(`async function initBootstrap() {
 	const { init } = await import("data:text/javascript;base64,${Buffer.from(clientdata).toString("base64")}");
-	return init(${JSON.stringify({ config })});
+	return init(${JSON.stringify(config)});
 }`);
 
 		return true;
@@ -155,6 +158,7 @@ async function updateScramjet(controllerMeta: any) {
 	const scramjetVersion =
 		controllerMeta.dependencies["@mercuryworkshop/scramjet"];
 
+	console.log(`Fetching scramjet version: ${scramjetVersion}`);
 	const scramjetRes = await fetch(
 		`${REGISTRY_URL}${SCRAMJET_PACKAGE_NAME}/${scramjetVersion}`
 	);
@@ -215,7 +219,7 @@ export async function bootstrap(
 	config = {
 		...defaultConfig,
 		...cfg,
-		downloadedFilesDir: import.meta.dirname + "/.downloads/",
+		downloadedFilesDir: join(bootstrapRoot, ".downloads") + "/",
 	} as ServerBootstrapOptions;
 
 	const downloadedControllerVersion = await getDownloadedControllerVersion();

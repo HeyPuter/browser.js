@@ -70,9 +70,9 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 						image: st.favicon || defaultFaviconUrl,
 						action: () => {
 							let rel =
-								browser.activetab.history.states.indexOf(st) -
-								browser.activetab.history.index;
-							browser.activetab.history.go(rel);
+								tabsService.activetab.history.states.indexOf(st) -
+								tabsService.activetab.history.index;
+							tabsService.activetab.history.go(rel);
 						},
 					})),
 					"-",
@@ -80,7 +80,7 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 						icon: iconTime,
 						label: "Show Full History",
 						action: () => {
-							browser.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
+							tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
 						},
 					},
 				]
@@ -119,8 +119,8 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
 						e,
-						browser.activetab.history.states
-							.slice(0, browser.activetab.history.index)
+						tabsService.activetab.history.states
+							.slice(0, tabsService.activetab.history.index)
 							.reverse()
 					)
 				}
@@ -133,9 +133,9 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 				rightclick={(e: MouseEvent) =>
 					historyMenu(
 						e,
-						browser.activetab.history.states.slice(
-							browser.activetab.history.index + 1,
-							browser.activetab.history.states.length
+						tabsService.activetab.history.states.slice(
+							tabsService.activetab.history.index + 1,
+							tabsService.activetab.history.states.length
 						)
 					)
 				}
@@ -159,7 +159,9 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 							<Icon icon={iconDownload}></Icon>
 						</div>
 						<CircularProgress
-							progress={use(downloadsService.downloadProgress)}
+							progress={use(downloadsService.current).map(
+								(x) => x?.progress || 0
+							)}
 						></CircularProgress>
 					</div>
 				)}
@@ -215,7 +217,7 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 							},
 
 							puterBranding &&
-							browser.activetab.url.protocol !== INTERNAL_URL_PROTOCOL
+							tabsService.activetab.url.protocol !== INTERNAL_URL_PROTOCOL
 								? {
 										label: "Report Broken Site",
 										action: () => {

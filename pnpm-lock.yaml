@@ -518,7 +518,7 @@ importers:
         version: 5.9.2
 
   packages/scramjet/packages/create-proxy-app:
-    dependencies:
+    devDependencies:
       '@clack/core':
         specifier: ^0.3.4
         version: 0.3.5
@@ -619,6 +619,15 @@ importers:
       v8-to-istanbul:
         specifier: ^9.3.0
         version: 9.3.0
+
+  packages/scramjet/packages/utils:
+    devDependencies:
+      '@mercuryworkshop/scramjet':
+        specifier: workspace:*
+        version: link:../core
+      '@types/serviceworker':
+        specifier: ^0.0.197
+        version: 0.0.197
 
 packages:
 
