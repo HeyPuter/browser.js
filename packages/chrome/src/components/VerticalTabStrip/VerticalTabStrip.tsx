@@ -1,11 +1,9 @@
-import { iconAdd, iconNew } from "../../icons";
 import { css, type FC } from "dreamland/core";
-import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
-import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import type { Tab } from "../../Tab/Tab";
-// import html2canvas from "html2canvas";
-import { setContextMenu } from "@components/Menu";
-import { DragTab } from "@components/TabStrip/DragTab";
+import { VerticalDragTab } from "./VerticalDragTab";
+import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
+import { Icon } from "@components/Icon";
+import { iconAdd } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
 
 type VisualTab = {
@@ -15,11 +13,11 @@ type VisualTab = {
 	dragpos: number;
 	startdragpos: number;
 	closing: boolean;
-
-	width: number;
+	height: number;
 	pos: number;
 };
-export function TabStrip(
+
+export function VerticalTabStrip(
 	this: FC<
 		{
 			tabs: Tab[];
@@ -30,29 +28,41 @@ export function TabStrip(
 		{
 			visualtabs: VisualTab[];
 			container: HTMLElement;
-			leftEl: HTMLElement;
-			rightEl: HTMLElement;
+			topEl: HTMLElement;
+			bottomEl: HTMLElement;
 			afterEl: HTMLElement;
-
 			currentlydragging: string | null;
 			currentlyHovered: Tab | null;
 		}
 	>
 ) {
 	this.currentlydragging = null;
-	this.currentlyHovered = this.tabs[0];
+	this.currentlyHovered = this.tabs[0] ?? null;
 	this.visualtabs = [];
 
 	const [lock, unlock] = requestUnfocusFrames();
 
 	const TAB_PADDING = 6;
-	const TAB_MAX_SIZE = 231;
-	// Reorder/move animation for tabs and trailing controls in the strip.
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
 
 	let transitioningTabs = 0;
+
+	const getRootHeight = () => {
+		const style = getComputedStyle(this.container);
+		const padding =
+			parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+		const border =
+			parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+		const top = this.topEl.offsetHeight;
+		const bottom = this.bottomEl.offsetHeight;
+		const after = this.afterEl.offsetHeight;
+
+		return (
+			this.container.offsetHeight - padding - border - top - bottom - after
+		);
+	};
 
 	const getRootWidth = () => {
 		const style = getComputedStyle(this.container);
@@ -60,57 +70,57 @@ export function TabStrip(
 			parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
 		const border =
 			parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-		const left = this.leftEl.offsetWidth;
-		const right = this.rightEl.offsetWidth;
-		const after = this.afterEl.offsetWidth;
 
-		return this.container.offsetWidth - padding - border - left - right - after;
+		return this.container.offsetWidth - padding - border;
 	};
+
 	const getAbsoluteStart = () => {
 		const rect = this.container.getBoundingClientRect();
 		const style = getComputedStyle(this.container);
 
 		return (
-			rect.left +
+			rect.top +
 			getLayoutStart() +
-			parseFloat(style.paddingLeft) +
-			parseFloat(style.borderLeftWidth)
+			parseFloat(style.paddingTop) +
+			parseFloat(style.borderTopWidth)
 		);
 	};
+
 	const getLayoutStart = () => {
-		return this.leftEl.offsetWidth;
+		return this.topEl.offsetHeight;
 	};
 
-	const getTabWidth = () => {
-		let total = getRootWidth();
-		const visibleTabCount = this.visualtabs.filter(
-			(tab) => !tab.closing
-		).length;
-		const count = Math.max(visibleTabCount, 1);
+	const getTabHeight = () => {
+		const firstVisible = this.visualtabs.find((tab) => !tab.closing);
+		if (firstVisible) {
+			const measured = firstVisible.root.offsetHeight;
+			if (measured > 0) return measured;
+		}
 
-		// remove padding
-		total -= TAB_PADDING * (count - 1);
-
-		const each = total / count;
-
-		return Math.min(TAB_MAX_SIZE, Math.floor(each));
+		const cssHeight = parseFloat(
+			getComputedStyle(document.documentElement)
+				.getPropertyValue("--tab-height")
+				.trim()
+		);
+		return Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 36;
 	};
 
 	const reorderTabs = () => {
 		this.visualtabs.sort((a, b) => {
-			const aCenter = a.pos + a.width / 2;
+			const aCenter = a.pos + a.height / 2;
 
-			const bLeft = b.pos;
-			const bRight = b.pos + b.width;
+			const bTop = b.pos;
+			const bBottom = b.pos + b.height;
 			const bCenter =
-				Math.abs(aCenter - bLeft) > Math.abs(aCenter - bRight) ? bRight : bLeft;
+				Math.abs(aCenter - bTop) > Math.abs(aCenter - bBottom) ? bBottom : bTop;
 
 			return aCenter - bCenter;
 		});
 	};
 
 	const layoutTabs = (transition: boolean) => {
-		const width = getTabWidth();
+		const height = getTabHeight();
+		const width = getRootWidth();
 
 		reorderTabs();
 
@@ -120,59 +130,54 @@ export function TabStrip(
 		let movedTabs = 0;
 		for (const tab of this.visualtabs) {
 			if (tab.closing) {
-				// Closing tabs animate their own width; keep their current transform while
-				// siblings/new-tab button reflow into post-close slots.
 				const tabPos = tab.dragpos != -1 ? tab.dragpos : tab.pos;
-				tab.root.style.transform = `translateX(${tabPos}px)`;
+				tab.root.style.transform = `translateY(${tabPos}px)`;
 				tab.pos = tabPos;
 				continue;
 			}
 
 			tab.root.style.width = width + "px";
+			tab.root.style.height = height + "px";
 
 			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
-			// Moves each tab horizontally to its computed slot.
-			tab.root.style.transform = `translateX(${tabPos}px)`;
+			tab.root.style.transform = `translateY(${tabPos}px)`;
 			if (transition && tab.dragpos == -1 && tab.pos != tabPos) {
 				const delay = Math.min(
 					staggerIndex * TAB_STAGGER_STEP,
 					TAB_STAGGER_MAX
 				);
-				// Animates tab movement when tabs are inserted/removed/reordered.
 				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
 				transitioningTabs++;
 				movedTabs++;
 			}
-			dragpos = Math.max(dragpos, tab.dragpos + width + TAB_PADDING);
+			dragpos = Math.max(dragpos, tab.dragpos + height + TAB_PADDING);
 
 			tab.pos = tabPos;
-			tab.width = width;
-			currpos += width + TAB_PADDING;
+			tab.height = height;
+			currpos += height + TAB_PADDING;
 			staggerIndex++;
 		}
 
-		if (transition && movedTabs > 0) {
+		const afterpos = Math.max(dragpos, currpos);
+		if (transition) {
 			const afterDelay = Math.min(
-				staggerIndex * TAB_STAGGER_STEP,
+				Math.max(staggerIndex, movedTabs > 0 ? staggerIndex : 1) *
+					TAB_STAGGER_STEP,
 				TAB_STAGGER_MAX
 			);
-			// Animate trailing "after" area (new-tab button container) with stagger too.
 			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
 		}
-
-		const afterpos = Math.max(dragpos, currpos);
-		// Moves the trailing control area to stay after the last tab.
-		this.afterEl.style.transform = `translateX(${afterpos}px)`;
+		this.afterEl.style.transform = `translateY(${afterpos}px)`;
 	};
 
 	const getMaxDragPos = () => {
-		return getLayoutStart() + getRootWidth();
+		return getLayoutStart() + getRootHeight();
 	};
 
 	const calcDragPos = (e: MouseEvent, tab: VisualTab) => {
-		const maxPos = getMaxDragPos() - tab.root.offsetWidth;
+		const maxPos = getMaxDragPos() - tab.root.offsetHeight;
 
-		const pos = e.clientX - tab.dragoffset - getAbsoluteStart();
+		const pos = e.clientY - tab.dragoffset - getAbsoluteStart();
 
 		tab.dragpos = Math.min(Math.max(getLayoutStart(), pos), maxPos);
 		layoutTabs(true);
@@ -214,8 +219,8 @@ export function TabStrip(
 		const dragroot = tab.root.querySelector(".dragroot") as HTMLElement;
 		dragroot.style.width = rect.width + "px";
 		dragroot.style.position = "absolute";
-		tab.dragoffset = e.clientX - rect.left;
-		tab.startdragpos = rect.left;
+		tab.dragoffset = e.clientY - rect.top;
+		tab.startdragpos = rect.top;
 
 		if (tab.dragoffset < 0) throw new Error("dragoffset must be positive");
 
@@ -223,7 +228,6 @@ export function TabStrip(
 
 		if (this.activetab != tab.tab) {
 			this.activetab = tab.tab;
-			// markDirty();
 		}
 
 		window.addEventListener("mousemove", mouseMoveHandler);
@@ -247,7 +251,7 @@ export function TabStrip(
 
 			if (!visualtab) {
 				let dt = (
-					<DragTab
+					<VerticalDragTab
 						id={tab.id}
 						tab={tab}
 						active={use(this.activetab).map((x) => x === tab)}
@@ -268,8 +272,8 @@ export function TabStrip(
 					dragpos: -1,
 					startdragpos: -1,
 					closing: false,
-					width: 0,
-					pos: getLayoutStart() + index * (getTabWidth() + TAB_PADDING),
+					height: 0,
+					pos: getLayoutStart() + index * (getTabHeight() + TAB_PADDING),
 				};
 			}
 
@@ -281,12 +285,11 @@ export function TabStrip(
 				let indexof = this.visualtabs.indexOf(vtab);
 				vtab.closing = true;
 				newvisualtabs.splice(indexof, 0, vtab);
-				// Close-tab animation: collapses tab width to 0 before removal from DOM list.
 				let anim = vtab.root.animate(
 					[
 						{},
 						{
-							width: "0px",
+							height: "0px",
 						},
 					],
 					{
@@ -321,68 +324,64 @@ export function TabStrip(
 		};
 		window.addEventListener("resize", resizeHandler);
 
-		setContextMenu(this.root, [
-			{
-				label: "New Tab",
-				icon: iconNew,
-				action: () => {
-					this.addTab();
-				},
-			},
-		]);
-
 		// Force an initial sync for newly-mounted strips after mode switches.
 		this.tabs = [...this.tabs];
 	};
 
 	return (
 		<div id="tabstrip" this={use(this.container)}>
-			<div class="extra left" this={use(this.leftEl)}></div>
+			<div class="extra top" this={use(this.topEl)}></div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
-			<div
-				class="extra after"
-				this={use(this.afterEl)}
-				on:contextmenu={(e: MouseEvent) => {
-					e.preventDefault();
-					e.stopPropagation();
-				}}
-			>
-				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
+			<div class="extra after" this={use(this.afterEl)}>
+				<button class="new-tab" on:click={this.addTab}>
+					<Icon icon={iconAdd} />
+				</button>
 			</div>
-			<div class="extra right" this={use(this.rightEl)}></div>
+			<div class="extra bottom" this={use(this.bottomEl)}></div>
 			<TabHoverCard hoveredTab={use(this.currentlyHovered)} />
 		</div>
 	);
 }
-TabStrip.style = css`
+
+VerticalTabStrip.style = css`
 	:scope {
-		background: var(--frame);
-		padding: var(--tab-padding) 12px;
-		height: calc(var(--tab-height) + calc(var(--tab-padding) * 2));
-		z-index: 2;
+		display: block;
 		position: relative;
+		padding: var(--tab-padding) 8px;
+		background: var(--frame);
+		min-width: 225px;
+		height: 100%;
+		z-index: 2;
+		border-right: 1px solid var(--text-15);
 	}
 
 	.extra {
-		top: 0px;
-		height: 100%;
+		left: 0;
+		width: 100%;
 		position: absolute;
 		display: flex;
 		align-items: center;
+		justify-content: center;
 	}
 
-	.left {
-		left: 0;
+	.top {
+		top: 0;
 	}
-	.right {
-		right: 0;
+
+	.bottom {
+		bottom: 0;
+	}
+
+	.new-tab {
+		border: none;
+		background: var(--toolbar);
+		color: var(--toolbar_text);
+		border-radius: var(--radius);
+		height: var(--tab-height);
+		width: calc(100% - 16px);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 `;
-
-function updateAspectRatio() {
-	const ratio = window.innerWidth / window.innerHeight;
-	document.documentElement.style.setProperty("--viewport-ratio", String(ratio));
-}
-
-updateAspectRatio();
-window.addEventListener("resize", updateAspectRatio);

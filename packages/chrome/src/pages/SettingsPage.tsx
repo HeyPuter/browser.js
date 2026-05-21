@@ -206,9 +206,7 @@ export function SettingsPage(
 								<section class="setting-section">
 									<div class="section-header">
 										<h2>Browser Layout</h2>
-										<p class="description">
-											Choose between a vertical or horizontal tab layout.
-										</p>
+										<p class="description">Choose your tab layout mode.</p>
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
@@ -219,9 +217,11 @@ export function SettingsPage(
 														id="layout-horizontal"
 														name="layout"
 														value="horizontal"
-														checked={!settingsService.settings.verticalTabs}
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "horizontal")}
 														on:change={() => {
-															settingsService.settings.verticalTabs = false;
+															settingsService.settings.tabLayout = "horizontal";
 														}}
 													/>
 													<label for="layout-horizontal">Horizontal</label>
@@ -229,12 +229,29 @@ export function SettingsPage(
 												<div class="radio-option">
 													<input
 														type="radio"
+														id="layout-hybrid"
+														name="layout"
+														value="hybrid"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "hybrid")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "hybrid";
+														}}
+													/>
+													<label for="layout-hybrid">Hybrid</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
 														id="layout-vertical"
 														name="layout"
 														value="vertical"
-														checked={settingsService.settings.verticalTabs}
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "vertical")}
 														on:change={() => {
-															settingsService.settings.verticalTabs = true;
+															settingsService.settings.tabLayout = "vertical";
 														}}
 													/>
 													<label for="layout-vertical">Vertical</label>

@@ -10,7 +10,7 @@ import { Service } from "./Service";
 
 export type Settings = {
 	appearance: AppearancePreference;
-	verticalTabs: boolean;
+	tabLayout: "horizontal" | "hybrid" | "vertical";
 	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
@@ -24,9 +24,11 @@ export type Settings = {
 	extensionsDevMode: boolean;
 };
 
+export type TabLayoutMode = Settings["tabLayout"];
+
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
-	verticalTabs: false,
+	tabLayout: "horizontal",
 	uiProfile: "default",
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
@@ -43,7 +45,7 @@ const DEFAULT_SETTINGS: Settings = {
 export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
-		verticalTabs: boolean;
+		tabLayout: "horizontal" | "hybrid" | "vertical";
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
 		startupPage: "new-tab" | "continue";
@@ -61,10 +63,27 @@ export type SettingsServiceState = {
 export class SettingsService extends Service {
 	public settings: Stateful<Settings>;
 
+	private normalizeTabLayout(tabLayout: unknown): TabLayoutMode {
+		if (
+			tabLayout === "horizontal" ||
+			tabLayout === "hybrid" ||
+			tabLayout === "vertical"
+		) {
+			return tabLayout;
+		}
+		return "horizontal";
+	}
+
 	constructor(data: SettingsServiceState | null) {
 		super();
 		if (data) {
-			this.settings = createState(data.settings);
+			const saved = data.settings as Partial<SettingsServiceState["settings"]>;
+			const normalized: Settings = {
+				...DEFAULT_SETTINGS,
+				...saved,
+				tabLayout: this.normalizeTabLayout(saved.tabLayout),
+			};
+			this.settings = createState(normalized);
 		} else {
 			this.settings = createState(DEFAULT_SETTINGS);
 		}
@@ -80,7 +99,7 @@ export class SettingsService extends Service {
 		return {
 			settings: {
 				appearance: this.settings.appearance,
-				verticalTabs: this.settings.verticalTabs,
+				tabLayout: this.settings.tabLayout,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,
 				startupPage: this.settings.startupPage,

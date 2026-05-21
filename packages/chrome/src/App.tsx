@@ -1,6 +1,7 @@
 import type { FC } from "dreamland/core";
 import { css } from "dreamland/core";
 import { TabStrip } from "@components/TabStrip/TabStrip";
+import { VerticalTabStrip } from "@components/VerticalTabStrip/VerticalTabStrip";
 import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
@@ -58,7 +59,7 @@ export function App(
 	applyProfile();
 
 	const applyLayout = () => {
-		const verticalTabs = settingsService.settings.verticalTabs;
+		const verticalTabs = settingsService.settings.tabLayout === "hybrid";
 		document.body.classList.toggle("vertical-tabs", verticalTabs);
 	};
 
@@ -77,33 +78,64 @@ export function App(
 	use(settingsService.settings.themeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
-	use(settingsService.settings.verticalTabs).listen(applyLayout);
+	use(settingsService.settings.tabLayout).listen(applyLayout);
 
 	this.cx.mount = () => {
 		applyTheme();
 	};
 
 	return (
-		<div id="app">
-			<TabStrip
-				tabs={use(tabsService.tabs)}
-				activetab={use(tabsService.activetab)}
-				addTab={() => {
-					tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//newtab`), true);
-				}}
-				destroyTab={(tab: Tab) => {
-					tabsService.destroyTab(tab);
-				}}
-			/>
-			<Omnibar tab={use(tabsService.activetab)} />
-			{use(tabsService.activetab.url, settingsService.settings.showBookmarksBar)
-				.map(
-					([u, pinned]) =>
-						pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+		<div
+			id="app"
+			class={use(settingsService.settings.tabLayout).map((layout) =>
+				layout === "hybrid" ? "vertical-tabs" : `layout-${layout}`
+			)}
+		>
+			{use(settingsService.settings.tabLayout).map((layout) =>
+				layout === "hybrid" ? (
+					<VerticalTabStrip
+						tabs={use(tabsService.tabs)}
+						activetab={use(tabsService.activetab)}
+						addTab={() => {
+							tabsService.newTab(
+								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+								true
+							);
+						}}
+						destroyTab={(tab: Tab) => {
+							tabsService.destroyTab(tab);
+						}}
+					/>
+				) : (
+					<TabStrip
+						tabs={use(tabsService.tabs)}
+						activetab={use(tabsService.activetab)}
+						addTab={() => {
+							tabsService.newTab(
+								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+								true
+							);
+						}}
+						destroyTab={(tab: Tab) => {
+							tabsService.destroyTab(tab);
+						}}
+					/>
 				)
-				.and(<BookmarksStrip />)}
-			<div class="separator"></div>
-			{this.children}
+			)}
+			<div id="main">
+				<Omnibar tab={use(tabsService.activetab)} />
+				{use(
+					tabsService.activetab.url,
+					settingsService.settings.showBookmarksBar
+				)
+					.map(
+						([u, pinned]) =>
+							pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+					)
+					.and(<BookmarksStrip />)}
+				<div class="separator"></div>
+				{this.children}
+			</div>
 		</div>
 	);
 }
