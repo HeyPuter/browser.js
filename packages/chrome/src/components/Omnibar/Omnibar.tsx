@@ -26,6 +26,7 @@ import { DownloadsPopup } from "@components/DownloadsPopup";
 import { CircularProgress } from "@components/Omnibar/CircularProgress";
 import { ReportBrokenSiteModal } from "@components/ReportBrokenSiteModal";
 import { INTERNAL_URL_PROTOCOL } from "../../consts";
+import { TabStrip } from "@components/TabStrip/TabStrip";
 
 export const animateDownloadFly = createDelegate<void>();
 export const showDownloadsPopup = createDelegate<void>();
@@ -42,7 +43,7 @@ Spacer.style = css`
 export function Omnibar(
 	this: FC<{
 		tab: Tab;
-		layout?: "horizontal" | "vertical";
+		layout?: "horizontal" | "vertical" | "compact";
 	}>
 ) {
 	const selectContent = createDelegate<void>();
@@ -261,21 +262,59 @@ export function Omnibar(
 		</>
 	);
 
-	return layout === "vertical" ? (
-		<div class="vertical">
-			<div class="top-row">
+	if (layout === "vertical") {
+		return (
+			<div class="vertical">
+				<div class="top-row">
+					<div class="button-group nav">{navigationControls}</div>
+					<div class="button-group utilities">{utilityControls}</div>
+				</div>
+				<div class="omnibox-row">
+					<Omnibox
+						selectContent={selectContent}
+						layout="vertical"
+						url={use(this.tab.url)}
+					></Omnibox>
+				</div>
+			</div>
+		);
+	}
+
+	if (layout === "compact") {
+		return (
+			<div class="compact">
 				<div class="button-group nav">{navigationControls}</div>
+				<div class="compact-center">
+					<div class="compact-omnibox">
+						<Omnibox
+							selectContent={selectContent}
+							layout="horizontal"
+							url={use(this.tab.url)}
+						></Omnibox>
+					</div>
+					<div class="compact-tabs">
+						<TabStrip
+							inline
+							tabs={use(tabsService.tabs)}
+							activetab={use(tabsService.activetab)}
+							addTab={() => {
+								tabsService.newTab(
+									new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+									true
+								);
+							}}
+							destroyTab={(tab: Tab) => {
+								tabsService.destroyTab(tab);
+							}}
+						/>
+					</div>
+				</div>
 				<div class="button-group utilities">{utilityControls}</div>
 			</div>
-			<div class="omnibox-row">
-				<Omnibox
-					selectContent={selectContent}
-					layout="vertical"
-					url={use(this.tab.url)}
-				></Omnibox>
-			</div>
-		</div>
-	) : (
+		);
+	}
+
+	return (
 		<div class="horizontal">
 			{navigationControls}
 			<Spacer></Spacer>
@@ -290,7 +329,8 @@ export function Omnibar(
 	);
 }
 Omnibar.style = css`
-	:scope.horizontal {
+	:scope.horizontal,
+	:scope.compact {
 		z-index: 1;
 		background: var(--toolbar);
 		display: flex;
@@ -299,6 +339,10 @@ Omnibar.style = css`
 		align-items: center;
 		position: relative;
 		gap: 0.2em;
+	}
+
+	:scope.compact {
+		gap: 0.45rem;
 	}
 
 	:scope {
@@ -332,6 +376,32 @@ Omnibar.style = css`
 
 	.button-group.utilities {
 		margin-left: auto;
+	}
+
+	.compact-center,
+	.compact-omnibox,
+	.compact-tabs {
+		display: flex;
+		align-items: stretch;
+		min-width: 0;
+	}
+
+	.compact-center {
+		flex: 1;
+		gap: 0.45rem;
+	}
+
+	.compact-omnibox {
+		flex: 0 1 40rem;
+		width: clamp(14rem, 36vw, 40rem);
+	}
+
+	.compact-tabs {
+		flex: 1;
+	}
+
+	:scope.compact .button-group.utilities {
+		margin-left: 0;
 	}
 
 	.omnibox-row {

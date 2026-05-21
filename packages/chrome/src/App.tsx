@@ -74,6 +74,7 @@ export function App(
 	const applyLayout = () => {
 		const layout = settingsService.settings.tabLayout;
 		document.body.classList.toggle("layout-bottom", layout === "bottom");
+		document.body.classList.toggle("layout-compact", layout === "compact");
 		const verticalTabs = layout === "hybrid" || layout === "vertical";
 		document.body.classList.toggle("vertical-tabs", verticalTabs);
 		document.body.classList.toggle("full-vertical-tabs", layout === "vertical");
@@ -155,7 +156,7 @@ export function App(
 							) : null
 						}
 					/>
-				) : (
+				) : layout === "compact" ? null : (
 					<TabStrip
 						tabs={use(tabsService.tabs)}
 						activetab={use(tabsService.activetab)}
@@ -175,7 +176,10 @@ export function App(
 				{use(settingsService.settings.tabLayout).map((layout) =>
 					layout === "vertical" ? null : (
 						<>
-							<Omnibar tab={use(tabsService.activetab)} />
+							<Omnibar
+								tab={use(tabsService.activetab)}
+								layout={layout === "compact" ? "compact" : "horizontal"}
+							/>
 							{use(
 								tabsService.activetab.url,
 								settingsService.settings.showBookmarksBar

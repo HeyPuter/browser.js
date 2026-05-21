@@ -251,7 +251,7 @@ export function SettingsPage(
 														for="layout-horizontal"
 														class="label-multiline"
 													>
-														<span>Horizontal</span>
+														<span>Default</span>
 														<span class="description">
 															Tabs are displayed in a single row above the
 															address bar.
@@ -284,7 +284,6 @@ export function SettingsPage(
 														id="layout-compact"
 														name="layout"
 														value="compact"
-														disabled
 														checked={use(
 															settingsService.settings.tabLayout
 														).map((v) => v === "compact")}
@@ -293,7 +292,7 @@ export function SettingsPage(
 														}}
 													/>
 													<label for="layout-compact" class="label-multiline">
-														<span>Compact (Coming Soon)</span>
+														<span>Compact</span>
 														<span class="description">
 															Tabs are displayed next to the address bar.
 														</span>
@@ -398,7 +397,7 @@ export function SettingsPage(
 									)}
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>UI Density</h2>
+										<h2>UI Density (Beta)</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.
 										</p>

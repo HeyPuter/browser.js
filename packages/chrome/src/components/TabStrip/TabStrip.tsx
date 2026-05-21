@@ -26,6 +26,7 @@ export function TabStrip(
 			activetab: Tab;
 			destroyTab: (tab: Tab) => void;
 			addTab: () => void;
+			inline?: boolean;
 		},
 		{
 			visualtabs: VisualTab[];
@@ -340,7 +341,11 @@ export function TabStrip(
 	};
 
 	return (
-		<div id="tabstrip" this={use(this.container)}>
+		<div
+			id="tabstrip"
+			class:inline={this.inline ?? false}
+			this={use(this.container)}
+		>
 			<div class="extra left" this={use(this.leftEl)}></div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
 			<div
@@ -367,8 +372,21 @@ TabStrip.style = css`
 		position: relative;
 	}
 
+	:scope.inline {
+		background: none;
+		padding: calc((var(--omnibar-height) - var(--tab-height)) / 2) 0;
+		height: var(--omnibar-height);
+		width: 100%;
+		min-width: 0;
+		flex: 1;
+	}
+
 	:global(.layout-bottom) :scope {
 		border-top: 1px solid var(--popup_border);
+	}
+
+	:global(.layout-bottom) :scope.inline {
+		border-top: none;
 	}
 
 	.extra {
