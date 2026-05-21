@@ -1,7 +1,7 @@
 import type { FC } from "dreamland/core";
 import { css } from "dreamland/core";
 import { TabStrip } from "@components/TabStrip/TabStrip";
-import { VerticalTabStrip } from "@components/VerticalTabStrip/VerticalTabStrip";
+import { Sidebar } from "@components/TabStrip/Sidebar";
 import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
@@ -124,7 +124,7 @@ export function App(
 		>
 			{use(settingsService.settings.tabLayout).map((layout) =>
 				layout === "hybrid" || layout === "vertical" ? (
-					<VerticalTabStrip
+					<Sidebar
 						tabs={use(tabsService.tabs)}
 						activetab={use(tabsService.activetab)}
 						sidebarWidth={use(

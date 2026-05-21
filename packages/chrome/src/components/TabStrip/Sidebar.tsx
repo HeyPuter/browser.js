@@ -1,6 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { VerticalDragTab } from "./VerticalDragTab";
+import { VerticalDragTab } from "../VerticalTabStrip/VerticalDragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
@@ -17,7 +17,7 @@ type VisualTab = {
 	pos: number;
 };
 
-export function VerticalTabStrip(
+export function Sidebar(
 	this: FC<
 		{
 			tabs: Tab[];
@@ -402,7 +402,7 @@ export function VerticalTabStrip(
 	);
 }
 
-VerticalTabStrip.style = css`
+Sidebar.style = css`
 	:scope {
 		display: block;
 		position: relative;
