@@ -50,13 +50,32 @@ type ProfileMetadata = {
 };
 
 function registerSave(service: Service, kv: KVWrapper, key: string) {
-	setInterval(async () => {
-		if (service.dirty) {
+	let saving = false;
+
+	const flush = async () => {
+		if (!service.dirty || saving) return;
+		saving = true;
+		try {
 			console.log("saving", key);
 			await kv.set(key, service.save());
 			service.dirty = false;
+		} finally {
+			saving = false;
 		}
+	};
+
+	setInterval(async () => {
+		await flush();
 	}, 1000);
+
+	window.addEventListener("pagehide", () => {
+		void flush();
+	});
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") {
+			void flush();
+		}
+	});
 }
 
 async function loadServices() {
