@@ -40,6 +40,7 @@ export function Omnibox(
 		{
 			url: URL;
 			selectContent: Delegate<void>;
+			layout?: "horizontal" | "vertical";
 		},
 		{
 			value: string;
@@ -264,6 +265,7 @@ export function Omnibox(
 			}}
 			class:subtle={use(this.subtleinput)}
 			class:active={use(this.active)}
+			class:vertical-layout={this.layout === "vertical"}
 		>
 			<InactiveBar
 				subtle={use(this.subtleinput)}
@@ -389,6 +391,22 @@ Omnibox.style = css`
 		flex: 1;
 		display: flex;
 		height: 100%;
+		overflow: visible;
+		transition: width 150ms cubic-bezier(0,1.33,.5,1);
+	}
+
+	:scope.vertical-layout {
+		flex: none;
+		width: 100%;
+		z-index: 0;
+		background: var(--toolbar_field);
+		border-radius: var(--radius);
+	    border: 1px solid var(--text-20);
+	}
+
+	:scope.vertical-layout.active {
+		width: min(42rem, calc(100vw - 2rem));
+		z-index: 5;
 	}
 
 	.result-icon {

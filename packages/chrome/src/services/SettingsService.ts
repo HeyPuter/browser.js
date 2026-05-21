@@ -11,6 +11,7 @@ import { Service } from "./Service";
 export type Settings = {
 	appearance: AppearancePreference;
 	tabLayout: "horizontal" | "hybrid" | "vertical" | "compact";
+	sidebarWidth: number | null;
 	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
@@ -29,6 +30,7 @@ export type TabLayoutMode = Settings["tabLayout"];
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
 	tabLayout: "horizontal",
+	sidebarWidth: null,
 	uiProfile: "default",
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
@@ -46,6 +48,7 @@ export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
 		tabLayout: "horizontal" | "hybrid" | "vertical" | "compact";
+		sidebarWidth: number | null;
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
 		startupPage: "new-tab" | "continue";
@@ -75,6 +78,17 @@ export class SettingsService extends Service {
 		return "horizontal";
 	}
 
+	private normalizeSidebarWidth(sidebarWidth: unknown): number | null {
+		if (
+			typeof sidebarWidth === "number" &&
+			Number.isFinite(sidebarWidth) &&
+			sidebarWidth > 0
+		) {
+			return Math.round(sidebarWidth);
+		}
+		return null;
+	}
+
 	constructor(data: SettingsServiceState | null) {
 		super();
 		if (data) {
@@ -83,6 +97,7 @@ export class SettingsService extends Service {
 				...DEFAULT_SETTINGS,
 				...saved,
 				tabLayout: this.normalizeTabLayout(saved.tabLayout),
+				sidebarWidth: this.normalizeSidebarWidth(saved.sidebarWidth),
 			};
 			this.settings = createState(normalized);
 		} else {
@@ -101,6 +116,7 @@ export class SettingsService extends Service {
 			settings: {
 				appearance: this.settings.appearance,
 				tabLayout: this.settings.tabLayout,
+				sidebarWidth: this.settings.sidebarWidth,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,
 				startupPage: this.settings.startupPage,

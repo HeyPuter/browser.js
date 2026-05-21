@@ -4,6 +4,7 @@ export function Checkbox(
 	this: FC<{
 		value: boolean;
 		id?: string;
+		disabled?: boolean;
 		"on:change"?: (value: boolean) => void;
 	}>
 ) {
@@ -13,6 +14,7 @@ export function Checkbox(
 				type="checkbox"
 				id={use(this.id)}
 				checked={use(this.value)}
+				disabled={use(this.disabled).map((v) => (v ? true : undefined))}
 				onChange={(e) => this["on:change"]?.(e.target.checked)}
 			></input>
 		</label>
@@ -33,6 +35,7 @@ Checkbox.style = css`
 			background 120ms ease,
 			border-color 120ms ease;
 		box-sizing: border-box;
+		margin: 0;
 	}
 
 	:scope::after {
@@ -65,6 +68,12 @@ Checkbox.style = css`
 
 	:scope:has(input:checked)::after {
 		transform: scale(1) translateY(0.5px);
+	}
+
+	:scope:has(input:disabled) {
+		opacity: 0.5;
+		filter: grayscale(100%);
+		cursor: not-allowed;
 	}
 
 	input {

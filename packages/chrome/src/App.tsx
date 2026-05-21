@@ -11,6 +11,19 @@ import { INTERNAL_URL_PROTOCOL } from "./consts";
 import { Shell } from "@components/Shell";
 import { settingsService, tabsService } from ".";
 
+const DEFAULT_HYBRID_SIDEBAR_WIDTH = 225;
+const DEFAULT_VERTICAL_SIDEBAR_WIDTH = 280;
+
+function getSidebarWidth(
+	layout: "horizontal" | "hybrid" | "vertical" | "compact",
+	savedWidth: number | null
+) {
+	if (savedWidth !== null) return savedWidth;
+	return layout === "vertical"
+		? DEFAULT_VERTICAL_SIDEBAR_WIDTH
+		: DEFAULT_HYBRID_SIDEBAR_WIDTH;
+}
+
 export function App(
 	this: FC<
 		{},
@@ -59,8 +72,10 @@ export function App(
 	applyProfile();
 
 	const applyLayout = () => {
-		const verticalTabs = settingsService.settings.tabLayout === "hybrid";
+		const layout = settingsService.settings.tabLayout;
+		const verticalTabs = layout === "hybrid" || layout === "vertical";
 		document.body.classList.toggle("vertical-tabs", verticalTabs);
+		document.body.classList.toggle("full-vertical-tabs", layout === "vertical");
 	};
 
 	applyLayout();
@@ -88,14 +103,28 @@ export function App(
 		<div
 			id="app"
 			class={use(settingsService.settings.tabLayout).map((layout) =>
-				layout === "hybrid" ? "vertical-tabs" : `layout-${layout}`
+				[
+					layout === "hybrid" || layout === "vertical" ? "vertical-tabs" : "",
+					`layout-${layout}`,
+				]
+					.filter(Boolean)
+					.join(" ")
 			)}
 		>
 			{use(settingsService.settings.tabLayout).map((layout) =>
-				layout === "hybrid" ? (
+				layout === "hybrid" || layout === "vertical" ? (
 					<VerticalTabStrip
 						tabs={use(tabsService.tabs)}
 						activetab={use(tabsService.activetab)}
+						sidebarWidth={use(
+							settingsService.settings.tabLayout,
+							settingsService.settings.sidebarWidth
+						).map(([currentLayout, sidebarWidth]) =>
+							getSidebarWidth(currentLayout, sidebarWidth)
+						)}
+						setSidebarWidth={(width: number) => {
+							settingsService.settings.sidebarWidth = width;
+						}}
 						addTab={() => {
 							tabsService.newTab(
 								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
@@ -105,6 +134,16 @@ export function App(
 						destroyTab={(tab: Tab) => {
 							tabsService.destroyTab(tab);
 						}}
+						topContent={
+							layout === "vertical" ? (
+								<div class="vertical-sidebar-header">
+									<Omnibar tab={use(tabsService.activetab)} layout="vertical" />
+									<div class="vertical-sidebar-bookmarks">
+										<BookmarksStrip orientation="vertical" />
+									</div>
+								</div>
+							) : null
+						}
 					/>
 				) : (
 					<TabStrip
@@ -123,17 +162,23 @@ export function App(
 				)
 			)}
 			<div id="main">
-				<Omnibar tab={use(tabsService.activetab)} />
-				{use(
-					tabsService.activetab.url,
-					settingsService.settings.showBookmarksBar
-				)
-					.map(
-						([u, pinned]) =>
-							pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+				{use(settingsService.settings.tabLayout).map((layout) =>
+					layout === "vertical" ? null : (
+						<>
+							<Omnibar tab={use(tabsService.activetab)} />
+							{use(
+								tabsService.activetab.url,
+								settingsService.settings.showBookmarksBar
+							)
+								.map(
+									([u, pinned]) =>
+										pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+								)
+								.and(<BookmarksStrip />)}
+							<div class="separator"></div>
+						</>
 					)
-					.and(<BookmarksStrip />)}
-				<div class="separator"></div>
+				)}
 				{this.children}
 			</div>
 		</div>
@@ -152,6 +197,17 @@ App.style = css`
 
 		/*box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);*/
 		border-top: 1px solid var(--text-15);
+	}
+
+	.vertical-sidebar-header {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.vertical-sidebar-bookmarks {
+		padding-bottom: 0.25rem;
+		border-bottom: 1px solid var(--text-10);
 	}
 `;
 

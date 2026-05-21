@@ -126,6 +126,18 @@ body.ui-touch {
 	--tab-padding: 7px;
 }
 
+body.full-vertical-tabs {
+	--omnibar-height: 2.25rem;
+}
+
+body.full-vertical-tabs.ui-compact {
+	--omnibar-height: 2rem;
+}
+
+body.full-vertical-tabs.ui-touch {
+	--omnibar-height: 2.5rem;
+}
+
 * {
 	box-sizing: border-box;
 }

@@ -1,11 +1,16 @@
-import { createState, css, type FC } from "dreamland/core";
-import { Icon } from "@components/Icon";
+import { css, type FC } from "dreamland/core";
 import { iconAdd, iconOpen, iconLink, iconBrush, iconTrash } from "../icons";
 import { createMenu, createMenuCustom, setContextMenu } from "@components/Menu";
 import { BookmarkPopup } from "@components/BookmarkPopup";
 import { profileService, settingsService, tabsService } from "..";
 
-export function BookmarksStrip(this: FC<{}>) {
+export function BookmarksStrip(
+	this: FC<{
+		orientation?: "horizontal" | "vertical";
+	}>
+) {
+	this.orientation ??= "horizontal";
+
 	this.cx.mount = () => {
 		setContextMenu(this.root, [
 			{
@@ -20,7 +25,7 @@ export function BookmarksStrip(this: FC<{}>) {
 		]);
 	};
 	return (
-		<div>
+		<div class:vertical={this.orientation === "vertical"}>
 			{use(profileService.bookmarks).mapEach((b) => (
 				<button
 					on:auxclick={(e: MouseEvent) => {
@@ -84,11 +89,19 @@ BookmarksStrip.style = css`
 	:scope {
 		padding: 0.25em;
 		padding-left: 0.5em;
-		height: 2em;
 		display: flex;
 		gap: 0.5em;
 		background: var(--toolbar);
 		color: var(--toolbar_text);
+		height: 2em;
+	}
+
+	:scope.vertical {
+		padding: 0;
+		height: auto;
+		flex-direction: column;
+		gap: 0.35em;
+		background: none;
 	}
 
 	button {
@@ -102,11 +115,23 @@ BookmarksStrip.style = css`
 		border-radius: 3px;
 		color: var(--toolbar_text);
 	}
+
+	:scope.vertical button {
+		width: 100%;
+		height: auto;
+		min-height: var(--tab-height);
+		padding: 0.6em 0.75em;
+		border-radius: calc(var(--radius) + 1px);
+		background: var(--toolbar_field);
+	}
+
 	button:hover {
 		background: var(--toolbarbutton-hover-background);
 	}
 	button span {
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	button img {

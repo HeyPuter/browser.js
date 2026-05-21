@@ -24,6 +24,10 @@ export function VerticalTabStrip(
 			activetab: Tab;
 			destroyTab: (tab: Tab) => void;
 			addTab: () => void;
+			sidebarWidth: number;
+			setSidebarWidth: (width: number) => void;
+			topContent?: any;
+			bottomContent?: any;
 		},
 		{
 			visualtabs: VisualTab[];
@@ -41,6 +45,8 @@ export function VerticalTabStrip(
 	this.visualtabs = [];
 
 	const [lock, unlock] = requestUnfocusFrames();
+	const SIDEBAR_MIN_WIDTH = 190;
+	const SIDEBAR_MAX_WIDTH = 520;
 
 	const TAB_PADDING = 6;
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
@@ -79,10 +85,7 @@ export function VerticalTabStrip(
 		const style = getComputedStyle(this.container);
 
 		return (
-			rect.top +
-			getLayoutStart() +
-			parseFloat(style.paddingTop) +
-			parseFloat(style.borderTopWidth)
+			rect.top + parseFloat(style.paddingTop) + parseFloat(style.borderTopWidth)
 		);
 	};
 
@@ -234,6 +237,39 @@ export function VerticalTabStrip(
 		window.addEventListener("mouseup", mouseUpHandler);
 	};
 
+	const clampSidebarWidth = (width: number) => {
+		const viewportMax = Math.max(SIDEBAR_MIN_WIDTH, window.innerWidth - 140);
+		return Math.min(
+			Math.max(Math.round(width), SIDEBAR_MIN_WIDTH),
+			Math.min(SIDEBAR_MAX_WIDTH, viewportMax)
+		);
+	};
+
+	const sidebarResizeMouseDown = (e: MouseEvent) => {
+		if (e.button !== 0) return;
+
+		lock();
+		document.body.style.cursor = "ew-resize";
+
+		const mouseMoveHandler = (moveEvent: MouseEvent) => {
+			const { left } = this.container.getBoundingClientRect();
+			this.setSidebarWidth(clampSidebarWidth(moveEvent.clientX - left));
+		};
+
+		const mouseUpHandler = () => {
+			unlock();
+			document.body.style.cursor = "";
+			window.removeEventListener("mousemove", mouseMoveHandler);
+			window.removeEventListener("mouseup", mouseUpHandler);
+		};
+
+		window.addEventListener("mousemove", mouseMoveHandler);
+		window.addEventListener("mouseup", mouseUpHandler);
+
+		e.preventDefault();
+		e.stopPropagation();
+	};
+
 	const transitionend = () => {
 		transitioningTabs = Math.max(transitioningTabs - 1, 0);
 		if (transitioningTabs == 0) {
@@ -315,29 +351,48 @@ export function VerticalTabStrip(
 
 	this.cx.mount = () => {
 		requestAnimationFrame(() => layoutTabs(false));
-		const resizeHandler = () => {
+		let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
 			if (!this.root.isConnected) {
-				window.removeEventListener("resize", resizeHandler);
+				resizeObserver?.disconnect();
+				resizeObserver = null;
 				return;
 			}
 			layoutTabs(false);
-		};
-		window.addEventListener("resize", resizeHandler);
+		});
+		resizeObserver.observe(this.container);
+		resizeObserver.observe(this.topEl);
+		resizeObserver.observe(this.bottomEl);
+		resizeObserver.observe(this.afterEl);
 
 		// Force an initial sync for newly-mounted strips after mode switches.
 		this.tabs = [...this.tabs];
 	};
 
 	return (
-		<div id="tabstrip" this={use(this.container)}>
-			<div class="extra top" this={use(this.topEl)}></div>
+		<div
+			id="tabstrip"
+			this={use(this.container)}
+			style={use(this.sidebarWidth).map(
+				(width) =>
+					`width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`
+			)}
+		>
+			<div class="extra top" this={use(this.topEl)}>
+				{this.topContent}
+			</div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
 			<div class="extra after" this={use(this.afterEl)}>
 				<button class="new-tab" on:click={this.addTab}>
 					<Icon icon={iconAdd} />
 				</button>
 			</div>
-			<div class="extra bottom" this={use(this.bottomEl)}></div>
+			<div class="extra bottom" this={use(this.bottomEl)}>
+				{this.bottomContent}
+			</div>
+			<div
+				class="sidebar-resizer"
+				on:mousedown={(e: MouseEvent) => sidebarResizeMouseDown(e)}
+			></div>
 			<TabHoverCard hoveredTab={use(this.currentlyHovered)} />
 		</div>
 	);
@@ -349,7 +404,6 @@ VerticalTabStrip.style = css`
 		position: relative;
 		padding: var(--tab-padding) 8px;
 		background: var(--frame);
-		min-width: 225px;
 		height: 100%;
 		z-index: 2;
 		border-right: 1px solid var(--text-15);
@@ -359,17 +413,40 @@ VerticalTabStrip.style = css`
 		left: 0;
 		width: 100%;
 		position: absolute;
+	}
+
+	.top,
+	.bottom,
+	.after {
 		display: flex;
-		align-items: center;
-		justify-content: center;
+	}
+
+	.top,
+	.bottom {
+		padding: 0 8px;
+		padding-top: 8px;
+		flex-direction: column;
+		align-items: stretch;
+		justify-content: flex-start;
+		gap: 8px;
 	}
 
 	.top {
 		top: 0;
 	}
 
+	.top:empty,
+	.bottom:empty {
+		padding: 0;
+	}
+
 	.bottom {
 		bottom: 0;
+	}
+
+	.after {
+		align-items: center;
+		justify-content: center;
 	}
 
 	.new-tab {
@@ -383,5 +460,15 @@ VerticalTabStrip.style = css`
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.sidebar-resizer {
+		position: absolute;
+		top: 0;
+		right: -4px;
+		width: 8px;
+		height: 100%;
+		cursor: ew-resize;
+		z-index: 3;
 	}
 `;

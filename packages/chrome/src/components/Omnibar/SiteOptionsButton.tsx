@@ -1,8 +1,7 @@
-import { css, type FC } from "dreamland/core";
+import { css } from "dreamland/core";
 import { createMenuCustom } from "@components/Menu";
 import { SiteInformationPopup } from "@components/SiteInformationPopup";
 import { Icon } from "@components/Icon";
-import { emToPx } from "../../util";
 import { iconOptions } from "../../icons";
 import { tabsService } from "../..";
 
@@ -10,10 +9,12 @@ export function SiteOptionsButton() {
 	return (
 		<button
 			on:click={(e: MouseEvent) => {
+				const target = e.currentTarget as HTMLElement;
+				const rect = target.getBoundingClientRect();
 				createMenuCustom(
 					{
-						left: (e.target as HTMLElement).getBoundingClientRect().left,
-						top: emToPx(2.5) + 40,
+						left: rect.left,
+						top: rect.bottom + 6,
 					},
 					<SiteInformationPopup
 						tab={tabsService.activetab}

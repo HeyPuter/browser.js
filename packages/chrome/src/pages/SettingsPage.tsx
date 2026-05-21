@@ -124,14 +124,37 @@ export function SettingsPage(
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
-											<div class="checkbox-option">
+											<div
+												class="checkbox-option"
+												class:disabled={use(
+													settingsService.settings.tabLayout
+												).map((layout) => layout === "vertical")}
+											>
 												<Checkbox
 													value={use(settingsService.settings.showBookmarksBar)}
 													id="show-bookmarks-bar"
+													disabled={use(settingsService.settings.tabLayout).map(
+														(layout) => layout === "vertical"
+													)}
 												/>
-												<label for="show-bookmarks-bar">
-													Always show bookmarks bar
-												</label>
+												{use(settingsService.settings.tabLayout)
+													.map((layout) => layout === "vertical")
+													.and(
+														<label
+															for="show-bookmarks-bar"
+															class="label-multiline"
+														>
+															<span>Always show bookmarks bar</span>
+															<span class="description">
+																Bookmarks are always shown in vertical mode.
+															</span>
+														</label>
+													)
+													.or(
+														<label for="show-bookmarks-bar">
+															Show bookmarks bar
+														</label>
+													)}
 											</div>
 										</div>
 									</div>
@@ -241,6 +264,7 @@ export function SettingsPage(
 														id="layout-compact"
 														name="layout"
 														value="compact"
+														disabled
 														checked={use(
 															settingsService.settings.tabLayout
 														).map((v) => v === "compact")}
@@ -249,7 +273,7 @@ export function SettingsPage(
 														}}
 													/>
 													<label for="layout-compact" class="label-multiline">
-														<span>Compact</span>
+														<span>Compact (Coming Soon)</span>
 														<span class="description">
 															Tabs are displayed next to the address bar.
 														</span>
@@ -910,7 +934,7 @@ SettingsPage.style = css`
 	.label-multiline {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 2.5px;
 	}
 
 	.label-multiline .description {
@@ -918,6 +942,7 @@ SettingsPage.style = css`
 		color: var(--ntp-text-60);
 	}
 
+	.checkbox-option:has(.label-multiline),
 	.radio-option:has(.label-multiline) {
 		align-items: flex-start;
 	}
@@ -947,10 +972,21 @@ SettingsPage.style = css`
 		cursor: pointer;
 	}
 
+	.checkbox-option.disabled label {
+		cursor: not-allowed;
+		opacity: 0.65;
+	}
+
 	input[type="radio"],
 	input[type="checkbox"] {
 		accent-color: var(--tab_line);
 		margin: 0;
+	}
+
+	.setting-hint {
+		margin: 0.25rem 0 0;
+		font-size: 0.85rem;
+		color: var(--ntp-text-60);
 	}
 
 	.zoom-control {

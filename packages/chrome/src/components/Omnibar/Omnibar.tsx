@@ -39,8 +39,27 @@ Spacer.style = css`
 	}
 `;
 
-export function Omnibar(this: FC<{ tab: Tab }>) {
+export function Omnibar(
+	this: FC<{
+		tab: Tab;
+		layout?: "horizontal" | "vertical";
+	}>
+) {
 	const selectContent = createDelegate<void>();
+	const layout = this.layout ?? "horizontal";
+
+	const getPopupPosition = (
+		target: EventTarget | null,
+		align: "left" | "right" = "left"
+	) => {
+		const element = target instanceof HTMLElement ? target : null;
+		if (!element) return { left: 0, top: 0 };
+
+		const rect = element.getBoundingClientRect();
+		return align === "right"
+			? { right: rect.right, top: rect.bottom + 6 }
+			: { left: rect.left, top: rect.bottom + 6 };
+	};
 
 	animateDownloadFly.listen(async () => {
 		await new Promise((r) => setTimeout(r, 10));
@@ -59,32 +78,26 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 
 	const historyMenu = (e: MouseEvent, states: HistoryState[]) => {
 		if (states.length > 0) {
-			createMenu(
-				{
-					left: e.clientX,
-					top: this.root.clientTop + this.root.clientHeight * 2,
-				},
-				[
-					...states.map((st) => ({
-						label: st.title || "New Tab",
-						image: st.favicon || defaultFaviconUrl,
-						action: () => {
-							let rel =
-								tabsService.activetab.history.states.indexOf(st) -
-								tabsService.activetab.history.index;
-							tabsService.activetab.history.go(rel);
-						},
-					})),
-					"-",
-					{
-						icon: iconTime,
-						label: "Show Full History",
-						action: () => {
-							tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
-						},
+			createMenu(getPopupPosition(e.currentTarget), [
+				...states.map((st) => ({
+					label: st.title || "New Tab",
+					image: st.favicon || defaultFaviconUrl,
+					action: () => {
+						let rel =
+							tabsService.activetab.history.states.indexOf(st) -
+							tabsService.activetab.history.index;
+						tabsService.activetab.history.go(rel);
 					},
-				]
-			);
+				})),
+				"-",
+				{
+					icon: iconTime,
+					label: "Show Full History",
+					action: () => {
+						tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
+					},
+				},
+			]);
 		}
 		e.preventDefault();
 		e.stopPropagation();
@@ -99,18 +112,14 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 		></OmnibarButton>
 	);
 	showDownloadsPopup.listen(() => {
-		const { right } = downloadsButton.getBoundingClientRect();
 		createMenuCustom(
-			{
-				top: this.root.clientTop + this.root.clientHeight * 2,
-				right,
-			},
+			getPopupPosition(downloadsButton, "right"),
 			<DownloadsPopup></DownloadsPopup>
 		);
 	});
 
-	return (
-		<div>
+	const navigationControls = (
+		<>
 			<OmnibarButton
 				tooltip="Go back one page (Alt+Left Arrow)"
 				active={use(this.tab.canGoBack)}
@@ -145,14 +154,16 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 				click={() => this.tab.reload()}
 				icon={iconRefresh}
 			></OmnibarButton>
-			<Spacer></Spacer>
-			<Omnibox selectContent={selectContent} url={use(this.tab.url)}></Omnibox>
-			<Spacer></Spacer>
+		</>
+	);
+
+	const utilityControls = (
+		<>
 			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
 			{use(downloadsService.sessionDownloadHistory)
 				.map((arr) => arr.length > 0)
 				.and(
-					<div style="position: relative">
+					<div class="download-container">
 						{downloadsButton}
 
 						<div class="downloadfly down">
@@ -165,16 +176,12 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 						></CircularProgress>
 					</div>
 				)}
-
 			<OmnibarButton
 				tooltip="More Options"
 				icon={iconMore}
 				click={(e: MouseEvent) => {
 					createMenu(
-						{
-							left: e.x,
-							top: this.root.clientTop + this.root.clientHeight * 2,
-						},
+						getPopupPosition(e.currentTarget, "right"),
 						[
 							{
 								label: "New Tab",
@@ -251,11 +258,39 @@ export function Omnibar(this: FC<{ tab: Tab }>) {
 					e.stopPropagation();
 				}}
 			></OmnibarButton>
+		</>
+	);
+
+	return layout === "vertical" ? (
+		<div class="vertical">
+			<div class="top-row">
+				<div class="button-group nav">{navigationControls}</div>
+				<div class="button-group utilities">{utilityControls}</div>
+			</div>
+			<div class="omnibox-row">
+				<Omnibox
+					selectContent={selectContent}
+					layout="vertical"
+					url={use(this.tab.url)}
+				></Omnibox>
+			</div>
+		</div>
+	) : (
+		<div class="horizontal">
+			{navigationControls}
+			<Spacer></Spacer>
+			<Omnibox
+				selectContent={selectContent}
+				layout="horizontal"
+				url={use(this.tab.url)}
+			></Omnibox>
+			<Spacer></Spacer>
+			{utilityControls}
 		</div>
 	);
 }
 Omnibar.style = css`
-	:scope {
+	:scope.horizontal {
 		z-index: 1;
 		background: var(--toolbar);
 		display: flex;
@@ -264,6 +299,55 @@ Omnibar.style = css`
 		align-items: center;
 		position: relative;
 		gap: 0.2em;
+	}
+
+	:scope {
+		width: 100%;
+	}
+
+	:scope.vertical {
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		width: 100%;
+		position: relative;
+	}
+
+	.top-row,
+	.button-group,
+	.omnibox-row {
+		display: flex;
+		align-items: center;
+	}
+
+	.top-row {
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.button-group {
+		gap: 0.2em;
+	}
+
+	.button-group.utilities {
+		margin-left: auto;
+	}
+
+	.omnibox-row {
+		height: var(--omnibar-height);
+		position: relative;
+		overflow: visible;
+		z-index: 0;
+	}
+
+	.omnibox-row:has(> .active) {
+		z-index: 4;
+	}
+
+	.download-container {
+		position: relative;
+		display: flex;
 	}
 
 	.downloadfly {
