@@ -261,6 +261,26 @@ export function SettingsPage(
 												<div class="radio-option">
 													<input
 														type="radio"
+														id="layout-bottom"
+														name="layout"
+														value="bottom"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "bottom")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "bottom";
+														}}
+													/>
+													<label for="layout-bottom" class="label-multiline">
+														<span>Bottom</span>
+														<span class="description">
+															Tabs are displayed at the bottom of the window.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
 														id="layout-compact"
 														name="layout"
 														value="compact"

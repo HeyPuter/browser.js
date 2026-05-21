@@ -15,6 +15,14 @@ html,
 	flex-direction: row;
 }
 
+#app.layout-bottom {
+	flex-direction: column-reverse;
+}
+
+/* #app.layout-bottom #main {
+	flex-direction: column-reverse;
+} */
+
 iframe {
 	height: 100%;
 }

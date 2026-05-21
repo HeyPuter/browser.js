@@ -15,7 +15,7 @@ const DEFAULT_HYBRID_SIDEBAR_WIDTH = 225;
 const DEFAULT_VERTICAL_SIDEBAR_WIDTH = 280;
 
 function getSidebarWidth(
-	layout: "horizontal" | "hybrid" | "vertical" | "compact",
+	layout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact",
 	savedWidth: number | null
 ) {
 	if (savedWidth !== null) return savedWidth;
@@ -73,6 +73,7 @@ export function App(
 
 	const applyLayout = () => {
 		const layout = settingsService.settings.tabLayout;
+		document.body.classList.toggle("layout-bottom", layout === "bottom");
 		const verticalTabs = layout === "hybrid" || layout === "vertical";
 		document.body.classList.toggle("vertical-tabs", verticalTabs);
 		document.body.classList.toggle("full-vertical-tabs", layout === "vertical");

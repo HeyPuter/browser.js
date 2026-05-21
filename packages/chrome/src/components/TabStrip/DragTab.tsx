@@ -103,7 +103,8 @@ export function DragTab(
 				hovered ? "tab hovered" : "tab"
 			)}
 			data-id={this.id}
-			on:transitionend={() => {
+			on:transitionend={(e: TransitionEvent) => {
+				if (e.target !== this.root || e.propertyName !== "transform") return;
 				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
 				this.root.style.transition = "";
 				this.root.style.zIndex = "0";

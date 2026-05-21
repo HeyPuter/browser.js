@@ -206,6 +206,9 @@ export function VerticalTabStrip(
 		tab.dragoffset = -1;
 		tab.dragpos = -1;
 		layoutTabs(true);
+		if (!tab.root.style.transition) {
+			tab.root.style.zIndex = "0";
+		}
 		this.currentlydragging = null;
 		unlock();
 		window.removeEventListener("mousemove", mouseMoveHandler);
@@ -218,6 +221,7 @@ export function VerticalTabStrip(
 		lock();
 
 		const rect = tab.root.getBoundingClientRect();
+		tab.root.style.transition = "";
 		tab.root.style.zIndex = "100";
 		const dragroot = tab.root.querySelector(".dragroot") as HTMLElement;
 		dragroot.style.width = rect.width + "px";

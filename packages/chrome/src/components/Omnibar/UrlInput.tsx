@@ -143,10 +143,6 @@ UrlInput.style = css`
 		font-size: 0.9rem;
 	}
 
-	:global(.vertical-layout) :scope .lefticon {
-		margin-block: 0;
-	}
-
 	input,
 	.inactiveurl,
 	.placeholder {
