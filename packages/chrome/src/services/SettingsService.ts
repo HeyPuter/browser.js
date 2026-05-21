@@ -10,7 +10,7 @@ import { Service } from "./Service";
 
 export type Settings = {
 	appearance: AppearancePreference;
-	tabLayout: "horizontal" | "hybrid" | "vertical";
+	tabLayout: "horizontal" | "hybrid" | "vertical" | "compact";
 	uiProfile: "default" | "compact" | "touch";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS: Settings = {
 export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
-		tabLayout: "horizontal" | "hybrid" | "vertical";
+		tabLayout: "horizontal" | "hybrid" | "vertical" | "compact";
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
 		startupPage: "new-tab" | "continue";
@@ -67,7 +67,8 @@ export class SettingsService extends Service {
 		if (
 			tabLayout === "horizontal" ||
 			tabLayout === "hybrid" ||
-			tabLayout === "vertical"
+			tabLayout === "vertical" ||
+			tabLayout === "compact"
 		) {
 			return tabLayout;
 		}

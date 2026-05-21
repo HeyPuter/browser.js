@@ -229,6 +229,21 @@ export function SettingsPage(
 												<div class="radio-option">
 													<input
 														type="radio"
+														id="layout-compact"
+														name="layout"
+														value="compact"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "compact")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "compact";
+														}}
+													/>
+													<label for="layout-compact">Compact</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
 														id="layout-hybrid"
 														name="layout"
 														value="hybrid"
