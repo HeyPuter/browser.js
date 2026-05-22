@@ -170,6 +170,7 @@ pub fn placeholder(node: &str) -> &'static str {
         "StringLiteral" => "\"\"",
         "NumericLiteral" => "0",
         "BindingRestElement" => "...r",
+        "PrivateIdentifier" => "#p",
         "TemplateElement" => "",
         "Directive" => "",
         "ImportDeclarationSpecifier" => "x",

@@ -242,8 +242,8 @@ fn pivot_witness(
         if let Some(v) = variant_hint {
             // Pivot here.
             path.push(Step::Variant { node: cur_ty, variant: v });
-            // BFS from the variant to IdentifierReference.
-            let inner = bfs_to_ident(graph, v)?;
+            // Hint-aware BFS so deeper levels also prefer uncovered.
+            let inner = bfs_to_ident_with_hints(graph, v, hints)?;
             path.extend(inner);
             path.push(Step::Leaf);
             return Some(path);
@@ -309,6 +309,65 @@ fn bfs_to_hint(
         }
         for f in def.fields {
             if !graph.in_r(f.ty) { continue; }
+            if parent.contains_key(f.ty) { continue; }
+            parent.insert(
+                f.ty,
+                (cur, Step::Field { node: cur, field: f.name, child_ty: f.ty, card: f.card }),
+            );
+            queue.push_back(f.ty);
+        }
+    }
+    None
+}
+
+/// BFS to IdentifierReference that prefers hinted (uncovered) children at
+/// every step, so deep witnesses also follow uncovered paths.
+fn bfs_to_ident_with_hints(
+    graph: &AstGraph,
+    start_ty: &'static str,
+    hints: &HashMap<&'static str, BTreeSet<String>>,
+) -> Option<Vec<Step>> {
+    if start_ty == "IdentifierReference" {
+        return Some(Vec::new());
+    }
+    let mut parent: HashMap<&'static str, (&'static str, Step)> = HashMap::new();
+    let mut queue: VecDeque<&'static str> = VecDeque::new();
+    queue.push_back(start_ty);
+    parent.insert(start_ty, ("__root__", Step::Leaf));
+
+    while let Some(cur) = queue.pop_front() {
+        if cur == "IdentifierReference" {
+            let mut out = Vec::new();
+            let mut t = cur;
+            while t != start_ty {
+                let (p, step) = parent[t].clone();
+                out.push(step);
+                t = p;
+            }
+            out.reverse();
+            return Some(out);
+        }
+        let Some(def) = graph.nodes.get(cur) else { continue };
+        let cur_hints = hints.get(cur);
+        let is_pref = |name: &str| cur_hints.map(|s| s.contains(name)).unwrap_or(false);
+        let mut variants_pref: Vec<&&str> = Vec::new();
+        let mut variants_other: Vec<&&str> = Vec::new();
+        for v in def.variants {
+            if !graph.in_r(v) { continue; }
+            if is_pref(v) { variants_pref.push(v); } else { variants_other.push(v); }
+        }
+        let mut fields_pref: Vec<&crate::ast_table::Field> = Vec::new();
+        let mut fields_other: Vec<&crate::ast_table::Field> = Vec::new();
+        for f in def.fields {
+            if !graph.in_r(f.ty) { continue; }
+            if is_pref(f.name) { fields_pref.push(f); } else { fields_other.push(f); }
+        }
+        for v in variants_pref.iter().chain(variants_other.iter()) {
+            if parent.contains_key(**v) { continue; }
+            parent.insert(*v, (cur, Step::Variant { node: cur, variant: *v }));
+            queue.push_back(*v);
+        }
+        for f in fields_pref.iter().chain(fields_other.iter()) {
             if parent.contains_key(f.ty) { continue; }
             parent.insert(
                 f.ty,

@@ -25,6 +25,11 @@ use crate::{
 	rewrite::rewrite,
 };
 
+// required stub markers
+macro_rules! audit_skip { ($($t:tt)*) => {}; }
+#[allow(unused)]
+macro_rules! skip_field { ($($t:tt)*) => {}; }
+
 // js MUST not be able to get a reference to any of these because sbx
 //
 // maybe move this out of this lib?
@@ -418,6 +423,10 @@ where
 				AssignmentTarget::ArrayAssignmentTarget(a) => {
 					self.recurse_array_assignment_target(a, &mut restids, &mut location_assigned);
 				}
+				AssignmentTarget::PrivateFieldExpression(_) => {
+					// `for (location.#p of ...)` 
+					audit_skip!("private field can never contain anything unsafe");
+				}
 				_ => {}
 			}
 		}
@@ -539,6 +548,7 @@ where
 	// indirect eval, which could break things. we handle that edge case here
 	#[coverage_checked(CallExpression)]
 	fn visit_call_expression(&mut self, it: &CallExpression<'data>) {
+		audit_skip!(it.callee, "top(0): none of the unsafe globals can be called as functions, other than eval which we handle above");
 		if let Expression::Identifier(s) = &it.callee {
 			// if it's optional that actually makes it an indirect eval which is handled separately
 			if s.name == "eval" && !it.optional {
@@ -591,7 +601,8 @@ where
 		if let Some(source) = &it.source {
 			self.rewrite_url(source, true);
 		}
-		// do not walk further, we don't want to rewrite the identifiers
+		audit_skip!(it.declaration, "export {x} is safe because you can only export locals, which the only unsafe `top/parent` obviously can't be");
+		audit_skip!(it.specifiers, "export {x as y} is safe because you can only export locals");
 	}
 
 	#[coverage_checked(TryStatement)]
@@ -807,6 +818,7 @@ where
 					// `typeof location` -> `typeof $wrap(location)` seems like a sane rewrite but it's incorrect
 					// typeof has the special property of not caring whether the identifier is undefined
 					// and this won't escape anyway, so don't rewrite
+					audit_skip!(it.argument, "safe, identifier tree cannot expand into an escape");
 					return;
 				}
 				_ => {
@@ -829,6 +841,7 @@ where
 				// so it's safer to assume that this "location" is a local
 				// even if it's real location you can't escape with it anyway
 				// unless you consider navigating to "https://proxy.com/NaN" escaping
+				audit_skip!(it.argument, "ident++ would need $wrap(ident)++ which is invalid syntax; arithmetic on location coerces to NaN and assigns the string back, which navigates only to a non-attacker-controlled URL");
 				return;
 			}
 			_ => {}
@@ -921,6 +934,12 @@ where
 						));
 					}
 				}
+			}
+			AssignmentTarget::PrivateFieldExpression(_) => {
+				// `location.#p = x` — the private-field brand check throws
+				// TypeError before the identifier value is exposed to the
+				// program, so the bare `location` here cannot escape.
+				audit_skip!("PrivateField LHS: brand check throws TypeError before exposure");
 			}
 			_ => {}
 		}

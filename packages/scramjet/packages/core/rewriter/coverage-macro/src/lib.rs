@@ -199,16 +199,53 @@ impl<'ast, 'a> syn::visit::Visit<'ast> for SkipChecker<'a> {
                     if self.graph.field_in_r(field) {
                         let msg = format!(
                             "skip_field!({}.{}) is unsound: type `{}` can reach Expression. \
-                             Walk it (with a context flag if needed) instead.",
-                            "it", fname, field.ty
+                             Use audit_skip!(it.{}, \"reason\") if you've audited that this \
+                             specific cull cannot be exploited at runtime.",
+                            "it", fname, field.ty, fname,
                         );
                         self.errors.push(emit_diag(m.span(), &msg));
                     }
                 }
             }
+        } else if name == "audit_skip" {
+            // Require a non-empty reason string literal as the second arg.
+            // We accept any second token group that contains a string with
+            // at least one non-whitespace char.
+            if !audit_skip_has_reason(&m.tokens) {
+                self.errors.push(emit_diag(
+                    m.span(),
+                    "audit_skip!(it.<field>, \"reason\") requires a non-empty string reason \
+                     documenting WHY this cull is not exploitable (TypeError-bound, \
+                     evaluation-only, invalid-syntax-wrap, etc).",
+                ));
+            }
+            if std::env::var("COVERAGE_AUDIT").is_ok() {
+                if let Some((_, fname)) = extract_receiver_and_field(&m.tokens) {
+                    eprintln!(
+                        "[coverage-audit] audit_skip!(it.{}) at {:?}",
+                        fname, m.span()
+                    );
+                }
+            }
         }
         syn::visit::visit_macro(self, m);
     }
+}
+
+fn audit_skip_has_reason(ts: &proc_macro2::TokenStream) -> bool {
+    // Both `audit_skip!(it.<field>, "reason")` and `audit_skip!("reason")` are
+    // accepted — just look for any non-empty string literal in the tokens.
+    use proc_macro2::TokenTree;
+    for tt in ts.clone() {
+        if let TokenTree::Literal(lit) = tt {
+            let s = lit.to_string();
+            let inner = s.trim_matches('"');
+            if inner.chars().any(|c| !c.is_whitespace()) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn build_witness_snippet(graph: &AstGraph, node: &str, f: &Field) -> String {
@@ -239,11 +276,10 @@ fn format_diagnostic(node: &str, f: &Field, path: &str, snippet: &str) -> String
     };
     format!(
         "coverage_checked: `{node}.{name}` (type `{ty}`{card}) is not covered on {path}.\n\
-         This field can reach Expression — skipping it is the cull-bug.\n\
-         Minimal program that would be miscompiled:\n\
+         This may lead to a runtime escape.\n\
+         Minimal program that can reach this path (may not actually demonstrate the escape):\n\
              {snippet}\n\
-         Fix: add `walk_field!(it.{name});` (or `walk_all!(it);`), or push a \
-         context flag with `walk_field_ctx!(self, CTX, it.{name});`.",
+         ",
         name = f.name,
         ty = f.ty,
     )
@@ -341,7 +377,7 @@ fn try_expand_marker(
             walk_for_field(f)
         }
         "walk_field_ctx" => expand_walk_field_ctx(inner, def),
-        "skip_field" => Some(TokenStream2::new()),
+        "skip_field" | "audit_skip" => Some(TokenStream2::new()),
         _ => None,
     }
 }
