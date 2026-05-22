@@ -196,7 +196,31 @@ fn inspect_expr(
             completed.push(Witness { kind: PathKind::Return, covered: cov });
             (Covered::full(), true)
         }
-        Expr::Macro(m) => (handle_macro_invocation(&m.mac, cov), false),
+        Expr::Break(_) | Expr::Continue(_) => {
+            // Abnormal terminator — control leaves the current arm/loop
+            // body without producing a fall-through value. We don't record
+            // a coverage witness, because the caller never observes a
+            // partially-rewritten state through this path: any rewrites
+            // already pushed into the bag are still emitted; nothing
+            // downstream from here would have run.
+            (Covered::full(), true)
+        }
+        Expr::Try(t) => {
+            // `expr?` — the Err path returns Err to the function caller
+            // without observable partial state at this point (rewrites
+            // already pushed remain). Don't record a witness; continue
+            // analyzing the Ok path through the inner expression.
+            return inspect_expr(&t.expr, cov, origins, completed, ctx);
+        }
+        Expr::Macro(m) => {
+            if is_terminating_macro(&m.mac) {
+                // panic!() / unreachable!() / todo!() / unimplemented!() —
+                // function aborts. Same as Break/Continue: no observable
+                // partial state, no witness recorded.
+                return (Covered::full(), true);
+            }
+            (handle_macro_invocation(&m.mac, cov), false)
+        }
         Expr::If(eif) => (walk_if(eif, cov, origins, completed, ctx), false),
         Expr::Match(em) => (walk_match(em, cov, origins, completed, ctx), false),
         Expr::Block(b) => (walk_block(&b.block, cov, origins.clone(), completed, ctx), false),
@@ -1016,6 +1040,16 @@ fn apply_origin_to_cov_typed(
         Origin::Field(name) => cov.add_field(&name),
         Origin::Unknown => {}
     }
+}
+
+fn is_terminating_macro(mac: &syn::Macro) -> bool {
+    let name = mac
+        .path
+        .segments
+        .last()
+        .map(|s| s.ident.to_string())
+        .unwrap_or_default();
+    matches!(name.as_str(), "panic" | "unreachable" | "todo" | "unimplemented")
 }
 
 fn handle_macro_invocation(mac: &syn::Macro, mut cov: Covered) -> Covered {
