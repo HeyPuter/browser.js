@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use coverage_macro::coverage_checked;
 use oxc::{
 	allocator::{Allocator, StringBuilder},
 	ast::ast::{
@@ -464,6 +465,7 @@ impl<'data, E> Visit<'data> for Visitor<'_, 'data, E>
 where
 	E: UrlRewriter,
 {
+	#[coverage_checked(IdentifierReference)]
 	fn visit_identifier_reference(&mut self, it: &IdentifierReference) {
 		if UNSAFE_GLOBALS.contains(&it.name.as_str()) {
 			self.jschanges
@@ -471,6 +473,7 @@ where
 		}
 	}
 
+	#[coverage_checked(NewExpression)]
 	fn visit_new_expression(&mut self, it: &NewExpression<'data>) {
 		match &it.callee {
 			Expression::StaticMemberExpression(_) | Expression::Identifier(_) => {
@@ -493,6 +496,7 @@ where
 		walk::walk_arguments(self, &it.arguments);
 	}
 
+	#[coverage_checked(MemberExpression)]
 	fn visit_member_expression(&mut self, it: &MemberExpression<'data>) {
 		match &it {
 			MemberExpression::StaticMemberExpression(s) => {
@@ -525,6 +529,7 @@ where
 		walk::walk_member_expression(self, it);
 	}
 
+	#[coverage_checked(DebuggerStatement)]
 	fn visit_debugger_statement(&mut self, it: &DebuggerStatement) {
 		// delete debugger statements entirely. some sites will spam debugger as an anti-debugging measure, and we don't want that!
 		self.jschanges.add(rewrite!(it.span, Delete));
@@ -532,6 +537,7 @@ where
 
 	// we can't overwrite window.eval in the normal way because that would make everything an
 	// indirect eval, which could break things. we handle that edge case here
+	#[coverage_checked(CallExpression)]
 	fn visit_call_expression(&mut self, it: &CallExpression<'data>) {
 		if let Expression::Identifier(s) = &it.callee {
 			// if it's optional that actually makes it an indirect eval which is handled separately
@@ -555,6 +561,7 @@ where
 		walk::walk_call_expression(self, it);
 	}
 
+	#[coverage_checked(ImportDeclaration)]
 	fn visit_import_declaration(&mut self, it: &ImportDeclaration<'data>) {
 		let str = it.source.to_string();
 		if str.contains(":")
@@ -566,6 +573,7 @@ where
 		}
 		walk::walk_import_declaration(self, it);
 	}
+	#[coverage_checked(ImportExpression)]
 	fn visit_import_expression(&mut self, it: &ImportExpression<'data>) {
 		self.jschanges.add(rewrite!(
 			Span::new(it.span.start, it.span.start + 7),
@@ -574,9 +582,11 @@ where
 		walk::walk_import_expression(self, it);
 	}
 
+	#[coverage_checked(ExportAllDeclaration)]
 	fn visit_export_all_declaration(&mut self, it: &ExportAllDeclaration<'data>) {
 		self.rewrite_url(&it.source, true);
 	}
+	#[coverage_checked(ExportNamedDeclaration)]
 	fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'data>) {
 		if let Some(source) = &it.source {
 			self.rewrite_url(source, true);
@@ -584,6 +594,7 @@ where
 		// do not walk further, we don't want to rewrite the identifiers
 	}
 
+	#[coverage_checked(TryStatement)]
 	fn visit_try_statement(&mut self, it: &oxc::ast::ast::TryStatement<'data>) {
 		// for debugging we need to know what the error was
 
@@ -635,6 +646,7 @@ where
 		walk::walk_block_statement(self, &it.block);
 	}
 
+	#[coverage_checked(ObjectExpression)]
 	fn visit_object_expression(&mut self, it: &ObjectExpression<'data>) {
 		for prop in &it.properties {
 			if let ObjectPropertyKind::ObjectProperty(p) = prop
@@ -651,6 +663,7 @@ where
 		walk::walk_object_expression(self, it);
 	}
 
+	#[coverage_checked(Function)]
 	fn visit_function(
 		&mut self,
 		it: &oxc::ast::ast::Function<'data>,
@@ -693,6 +706,7 @@ where
 		}
 	}
 
+	#[coverage_checked(ArrowFunctionExpression)]
 	fn visit_arrow_function_expression(
 		&mut self,
 		it: &oxc::ast::ast::ArrowFunctionExpression<'data>,
@@ -727,6 +741,7 @@ where
 		}
 	}
 
+	#[coverage_checked(ForStatement)]
 	fn visit_for_statement(&mut self, it: &ForStatement<'data>) {
 		if !self.flags.destructure_rewrites {
 			walk::walk_for_statement(self, it);
@@ -763,13 +778,16 @@ where
 		}
 	}
 
+	#[coverage_checked(ForOfStatement)]
 	fn visit_for_of_statement(&mut self, it: &oxc::ast::ast::ForOfStatement<'data>) {
     	self.handle_for_of_in(&it.left, &it.right, &it.body);
 	}
+	#[coverage_checked(ForInStatement)]
 	fn visit_for_in_statement(&mut self, it: &oxc::ast::ast::ForInStatement<'data>) {
     	self.handle_for_of_in(&it.left, &it.right, &it.body);
 	}
 
+	#[coverage_checked(FunctionBody)]
 	fn visit_function_body(&mut self, it: &FunctionBody<'data>) {
 		// tag function for use in sourcemaps
 
@@ -781,6 +799,7 @@ where
 		walk::walk_function_body(self, it);
 	}
 
+	#[coverage_checked(UnaryExpression)]
 	fn visit_unary_expression(&mut self, it: &UnaryExpression<'data>) {
 		if matches!(it.operator, UnaryOperator::Typeof) {
 			match it.argument {
@@ -799,6 +818,7 @@ where
 		walk::walk_unary_expression(self, it);
 	}
 
+	#[coverage_checked(UpdateExpression)]
 	fn visit_update_expression(&mut self, it: &UpdateExpression<'data>) {
 		// this is like a ++ or -- operator
 		match it.argument {
@@ -818,12 +838,14 @@ where
 		walk::walk_update_expression(self, it);
 	}
 
+	#[coverage_checked(MetaProperty)]
 	fn visit_meta_property(&mut self, it: &MetaProperty<'data>) {
 		if it.meta.name == "import" {
 			self.jschanges.add(rewrite!(it.span, MetaFn));
 		}
 	}
 
+	#[coverage_checked(VariableDeclaration)]
 	fn visit_variable_declaration(&mut self, it: &oxc::ast::ast::VariableDeclaration<'data>) {
 		if !self.flags.destructure_rewrites {
 			walk::walk_variable_declaration(self, it);
@@ -847,6 +869,7 @@ where
 		}
 	}
 
+	#[coverage_checked(AssignmentExpression)]
 	fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'data>) {
 		match &it.left {
 			AssignmentTarget::AssignmentTargetIdentifier(s) => {
