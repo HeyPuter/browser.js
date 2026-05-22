@@ -1,6 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { VerticalDragTab } from "../VerticalTabStrip/VerticalDragTab";
+import { DragTab } from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
@@ -291,9 +291,10 @@ export function Sidebar(
 
 			if (!visualtab) {
 				let dt = (
-					<VerticalDragTab
+					<DragTab
 						id={tab.id}
 						tab={tab}
+						orientation="vertical"
 						active={use(this.activetab).map((x) => x === tab)}
 						mousedown={(e) => mouseDown(e, visualtab!)}
 						mouseover={() => {

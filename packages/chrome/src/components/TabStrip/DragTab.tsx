@@ -19,6 +19,7 @@ export function DragTab(
 			active: boolean;
 			id: string;
 			tab: Tab;
+			orientation?: "horizontal" | "vertical";
 			mousedown: (e: MouseEvent) => void;
 			mouseover: () => void;
 			destroy: () => void;
@@ -32,7 +33,58 @@ export function DragTab(
 	>
 ) {
 	this.tooltipActive = false;
+	this.tooltipAnimate = false;
+	this.tooltipHovered = false;
+
+	const orientation = this.orientation ?? "horizontal";
+	const isVertical = orientation === "vertical";
+
 	this.cx.mount = () => {
+		if (isVertical) {
+			// Animate inner content so absolute-positioned root layout is unaffected.
+			requestAnimationFrame(() => {
+				const dragroot = this.root.querySelector(
+					".dragroot"
+				) as HTMLElement | null;
+				const main = this.root.querySelector(".main") as HTMLElement | null;
+				if (!dragroot) return;
+
+				const cssHeight = parseFloat(
+					getComputedStyle(document.documentElement)
+						.getPropertyValue("--tab-height")
+						.trim()
+				);
+				const targetHeight =
+					main?.offsetHeight || dragroot.scrollHeight || cssHeight || 36;
+
+				dragroot.style.height = "0px";
+				const anim = dragroot.animate(
+					[
+						{
+							height: "0px",
+						},
+						{
+							height: `${targetHeight}px`,
+						},
+					],
+					{
+						duration: 200,
+						easing: "cubic-bezier(.25,.5,0,1.15)",
+						fill: "forwards",
+					}
+				);
+
+				anim.addEventListener(
+					"finish",
+					() => {
+						dragroot.style.height = "";
+					},
+					{ once: true }
+				);
+			});
+			return;
+		}
+
 		setContextMenu(this.root, [
 			{
 				label: "New tab to the right",
@@ -100,7 +152,7 @@ export function DragTab(
 		<div
 			style="z-index: 0;"
 			class={use(this.tooltipHovered).map((hovered) =>
-				hovered ? "tab hovered" : "tab"
+				hovered ? `tab ${orientation} hovered` : `tab ${orientation}`
 			)}
 			data-id={this.id}
 			on:transitionend={(e: TransitionEvent) => {
@@ -186,8 +238,16 @@ DragTab.style = css`
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
+	:scope.vertical {
+		display: block;
+	}
+
 	:global(*) > :scope:has(:hover) .hover-area {
 		anchor-name: --hovered-tab;
+	}
+
+	:scope.vertical .dragroot {
+		overflow: hidden;
 	}
 
 	.hover-area {
