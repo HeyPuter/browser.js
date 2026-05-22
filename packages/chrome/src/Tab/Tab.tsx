@@ -122,7 +122,7 @@ export class Tab extends StatefulClass {
 		this.url = url;
 		this.icon = "/defaultfavicon.png";
 		if (url.protocol == INTERNAL_URL_PROTOCOL) {
-			this.icon = "/icon.png";
+			this.icon = null;
 			this.history.current().favicon = "/icon.png";
 			switch (url.host) {
 				case "newtab":
