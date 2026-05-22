@@ -20,6 +20,8 @@ type VisualTab = {
 export function Sidebar(
 	this: FC<
 		{
+			layout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact";
+			justify: "left" | "right";
 			tabs: Tab[];
 			activetab: Tab;
 			destroyTab: (tab: Tab) => void;
@@ -45,7 +47,7 @@ export function Sidebar(
 	this.visualtabs = [];
 
 	const [lock, unlock] = requestUnfocusFrames();
-	const SIDEBAR_MIN_WIDTH = 190;
+	const SIDEBAR_MIN_WIDTH = this.layout === "vertical" ? 190 : 48;
 	const SIDEBAR_MAX_WIDTH = 520;
 
 	const TAB_PADDING = 6;
@@ -257,7 +259,15 @@ export function Sidebar(
 
 		const mouseMoveHandler = (moveEvent: MouseEvent) => {
 			const { left } = this.container.getBoundingClientRect();
-			this.setSidebarWidth(clampSidebarWidth(moveEvent.clientX - left));
+			if (this.justify === "right") {
+				this.setSidebarWidth(
+					clampSidebarWidth(
+						left + this.container.offsetWidth - moveEvent.clientX
+					)
+				);
+			} else {
+				this.setSidebarWidth(clampSidebarWidth(moveEvent.clientX - left));
+			}
 		};
 
 		const mouseUpHandler = () => {
@@ -355,6 +365,18 @@ export function Sidebar(
 	});
 
 	this.cx.mount = () => {
+		if (
+			this.sidebarWidth < SIDEBAR_MIN_WIDTH ||
+			this.sidebarWidth > SIDEBAR_MAX_WIDTH
+		) {
+			this.setSidebarWidth(
+				Math.min(
+					Math.max(this.sidebarWidth, SIDEBAR_MIN_WIDTH),
+					Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth - 140)
+				)
+			);
+		}
+
 		requestAnimationFrame(() => layoutTabs(false));
 		let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
 			if (!this.root.isConnected) {
@@ -412,6 +434,11 @@ Sidebar.style = css`
 		height: 100%;
 		z-index: 2;
 		border-right: 1px solid var(--text-15);
+	}
+
+	:global(.sidebar-right *) > :scope {
+		border-right: none;
+		border-left: 1px solid var(--text-15);
 	}
 
 	.extra {
@@ -475,5 +502,10 @@ Sidebar.style = css`
 		height: 100%;
 		cursor: ew-resize;
 		z-index: 3;
+	}
+
+	:global(.sidebar-right *) > :scope .sidebar-resizer {
+		left: -4px;
+		right: auto;
 	}
 `;

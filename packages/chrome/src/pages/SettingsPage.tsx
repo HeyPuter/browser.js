@@ -352,7 +352,6 @@ export function SettingsPage(
 												<h2>Sidebar Location</h2>
 												<p class="description">
 													Choose which side of the screen the sidebar is on.
-													Only applies to vertical and hybrid layouts.
 												</p>
 											</div>
 											<div class="section-content">

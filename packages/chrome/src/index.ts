@@ -55,10 +55,16 @@ function registerSave(service: Service, kv: KVWrapper, key: string) {
 	const flush = async () => {
 		if (!service.dirty || saving) return;
 		saving = true;
+		const data = service.save();
+		service.dirty = false;
 		try {
 			console.log("saving", key);
 			await kv.set(key, service.save());
 			service.dirty = false;
+			await kv.set(key, data);
+		} catch (error) {
+			service.dirty = true;
+			// throw error;
 		} finally {
 			saving = false;
 		}

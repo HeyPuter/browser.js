@@ -40,51 +40,6 @@ export function DragTab(
 	const isVertical = orientation === "vertical";
 
 	this.cx.mount = () => {
-		if (isVertical) {
-			// Animate inner content so absolute-positioned root layout is unaffected.
-			requestAnimationFrame(() => {
-				const dragroot = this.root.querySelector(
-					".dragroot"
-				) as HTMLElement | null;
-				const main = this.root.querySelector(".main") as HTMLElement | null;
-				if (!dragroot) return;
-
-				const cssHeight = parseFloat(
-					getComputedStyle(document.documentElement)
-						.getPropertyValue("--tab-height")
-						.trim()
-				);
-				const targetHeight =
-					main?.offsetHeight || dragroot.scrollHeight || cssHeight || 36;
-
-				dragroot.style.height = "0px";
-				const anim = dragroot.animate(
-					[
-						{
-							height: "0px",
-						},
-						{
-							height: `${targetHeight}px`,
-						},
-					],
-					{
-						duration: 200,
-						easing: "cubic-bezier(.25,.5,0,1.15)",
-						fill: "forwards",
-					}
-				);
-
-				anim.addEventListener(
-					"finish",
-					() => {
-						dragroot.style.height = "";
-					},
-					{ once: true }
-				);
-			});
-			return;
-		}
-
 		setContextMenu(this.root, [
 			{
 				label: "New tab to the right",
@@ -130,20 +85,64 @@ export function DragTab(
 			},
 		]);
 
-		// Open-tab animation: expands the tab container from width 0 to full computed width.
-		this.root.animate(
-			[
+		if (isVertical) {
+			// Animate inner content so absolute-positioned root layout is unaffected.
+			requestAnimationFrame(() => {
+				const dragroot = this.root.querySelector(
+					".dragroot"
+				) as HTMLElement | null;
+				const main = this.root.querySelector(".main") as HTMLElement | null;
+				if (!dragroot) return;
+
+				const cssHeight = parseFloat(
+					getComputedStyle(document.documentElement)
+						.getPropertyValue("--tab-height")
+						.trim()
+				);
+				const targetHeight =
+					main?.offsetHeight || dragroot.scrollHeight || cssHeight || 36;
+
+				dragroot.style.height = "0px";
+				const anim = dragroot.animate(
+					[
+						{
+							height: "0px",
+						},
+						{
+							height: `${targetHeight}px`,
+						},
+					],
+					{
+						duration: 200,
+						easing: "cubic-bezier(.25,.5,0,1.15)",
+						fill: "forwards",
+					}
+				);
+
+				anim.addEventListener(
+					"finish",
+					() => {
+						dragroot.style.height = "";
+					},
+					{ once: true }
+				);
+			});
+		} else {
+			// Open-tab animation: expands the tab container from width 0 to full computed width.
+			this.root.animate(
+				[
+					{
+						width: "0px",
+					},
+					{},
+				],
 				{
-					width: "0px",
-				},
-				{},
-			],
-			{
-				duration: 200,
-				easing: "cubic-bezier(.25,.5,0,1.15)",
-				fill: "forwards",
-			}
-		);
+					duration: 200,
+					easing: "cubic-bezier(.25,.5,0,1.15)",
+					fill: "forwards",
+				}
+			);
+		}
 	};
 
 	let hoverTimeout: number;

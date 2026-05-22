@@ -69,30 +69,6 @@ export type SettingsServiceState = {
 export class SettingsService extends Service {
 	public settings: Stateful<Settings>;
 
-	private normalizeTabLayout(tabLayout: unknown): TabLayoutMode {
-		if (
-			tabLayout === "horizontal" ||
-			tabLayout === "hybrid" ||
-			tabLayout === "vertical" ||
-			tabLayout === "compact" ||
-			tabLayout === "bottom"
-		) {
-			return tabLayout;
-		}
-		return "horizontal";
-	}
-
-	private normalizeSidebarWidth(sidebarWidth: unknown): number | null {
-		if (
-			typeof sidebarWidth === "number" &&
-			Number.isFinite(sidebarWidth) &&
-			sidebarWidth > 0
-		) {
-			return Math.round(sidebarWidth);
-		}
-		return null;
-	}
-
 	constructor(data: SettingsServiceState | null) {
 		super();
 		if (data) {
@@ -100,8 +76,6 @@ export class SettingsService extends Service {
 			const normalized: Settings = {
 				...DEFAULT_SETTINGS,
 				...saved,
-				tabLayout: this.normalizeTabLayout(saved.tabLayout),
-				sidebarWidth: this.normalizeSidebarWidth(saved.sidebarWidth),
 			};
 			this.settings = createState(normalized);
 		} else {

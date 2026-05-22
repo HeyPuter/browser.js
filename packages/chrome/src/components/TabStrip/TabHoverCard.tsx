@@ -42,7 +42,12 @@ TabHoverCard.style = css`
 		/* transitions and some other styles are defined in ./TabStrip.tsx */
 	}
 	:global(.vertical-tabs *) > :scope {
-		left: calc(anchor(right) + 8px);
+		left: anchor(right);
+		top: calc(anchor(top) + 2px);
+	}
+	:global(body.sidebar-right.vertical-tabs *) > :scope {
+		left: auto;
+		right: anchor(left);
 	}
 	:scope {
 		pointer-events: none;

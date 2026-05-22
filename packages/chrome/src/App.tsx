@@ -125,6 +125,8 @@ export function App(
 			{use(settingsService.settings.tabLayout).map((layout) =>
 				layout === "hybrid" || layout === "vertical" ? (
 					<Sidebar
+						layout={layout}
+						justify={use(settingsService.settings.verticalTabJustify)}
 						tabs={use(tabsService.tabs)}
 						activetab={use(tabsService.activetab)}
 						sidebarWidth={use(
@@ -134,7 +136,7 @@ export function App(
 							getSidebarWidth(currentLayout, sidebarWidth)
 						)}
 						setSidebarWidth={(width: number) => {
-							settingsService.settings.sidebarWidth = width;
+							settingsService.settings.sidebarWidth = Math.round(width);
 						}}
 						addTab={() => {
 							tabsService.newTab(
