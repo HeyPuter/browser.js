@@ -184,18 +184,26 @@ export function DragTab(
 			></div>
 			<div class="dragroot" style="position: unset;">
 				<div class={use(this.active).map((x) => (x ? "main active" : "main"))}>
-					<div class="favicon">
-						{use(this.tab.icon)
-							.and(
+					{use(this.tab.icon)
+						.and(
+							<div class="favicon">
 								<img
 									alt="Tab icon"
 									width="16"
 									height="16"
 									src={use(this.tab.icon)}
 								/>
-							)
-							.or(<Icon class="favicon-placeholder" icon={iconGlobe} />)}
-					</div>
+							</div>
+						)
+						.or(
+							use(this.orientation)
+								.map((o) => o === "vertical")
+								.and(
+									<div class="favicon">
+										<Icon class="favicon-placeholder" icon={iconGlobe} />
+									</div>
+								)
+						)}
 					<span>{use(this.tab.title)}</span>
 					<button
 						class="close"
