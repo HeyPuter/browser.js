@@ -8,7 +8,7 @@ export function setupTitleWatcher({ self, rpc }: ExecutionContextWrapper) {
 			rpc.call("titlechange", { title: title.textContent || undefined });
 		}
 		const favicon = self.document.querySelector(
-			"link[rel='icon'], link[rel='shortcut icon']"
+			"link[rel='icon'], link[rel='shortcut icon'], link[rel='icon shortcut']"
 		);
 
 		const loadAndSendData = async (href: string) => {

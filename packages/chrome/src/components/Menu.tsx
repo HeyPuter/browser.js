@@ -246,20 +246,20 @@ export function createMenu(
 	position: PositionConstraints,
 	items: MenuItem[]
 ): HTMLElement {
-	if (isPuter) {
-		puter.ui.contextMenu({
-			items: items.map((i) =>
-				i == "-"
-					? i
-					: {
-							label: i.label,
-							action: i.action,
-						}
-			),
-		});
+	// if (isPuter) {
+	// 	puter.ui.contextMenu({
+	// 		items: items.map((i) =>
+	// 			i == "-"
+	// 				? i
+	// 				: {
+	// 						label: i.label,
+	// 						action: i.action,
+	// 					}
+	// 		),
+	// 	});
 
-		return undefined as any;
-	}
+	// 	return undefined as any;
+	// }
 
 	if (activeMenu) {
 		closeMenu();

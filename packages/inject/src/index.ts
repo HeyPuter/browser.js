@@ -4,7 +4,7 @@ import {
 	type ScramjetClient,
 	SCRAMJETCLIENT,
 	setWasm,
-} from "@mercuryworkshop/scramjet";
+} from "@mercuryworkshop/scramjet/bundled";
 import { loadErrorPage } from "./errorpage/errorpage";
 import { ExecutionContextWrapper } from "./context";
 

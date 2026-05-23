@@ -1,7 +1,7 @@
 import {
 	ScramjetInterface,
 	TrackedHistoryState,
-} from "@mercuryworkshop/scramjet";
+} from "@mercuryworkshop/scramjet/bundled";
 import type { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import type { ThemeDefinition } from "../../chrome/src/themes";
 export type FrameSequence = number[];

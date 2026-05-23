@@ -1,7 +1,7 @@
 import { css, type Component, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import type { IconifyIcon } from "@iconify/types";
-import { versionInfo } from "@mercuryworkshop/scramjet";
+import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
 import { Icon } from "@components/Icon";
 import { Checkbox } from "@components/Checkbox";
 import { Button } from "@components/Button";

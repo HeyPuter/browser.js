@@ -2,7 +2,7 @@ import { css, type FC } from "dreamland/core";
 import { Button } from "@components/Button";
 import { Icon } from "@components/Icon";
 import { iconClose, iconError, iconCheckmark } from "../icons";
-import { versionInfo } from "@mercuryworkshop/scramjet";
+import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
 import { Input } from "@components/Input";
 import { tabsService } from "..";
 

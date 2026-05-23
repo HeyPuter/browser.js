@@ -10,7 +10,7 @@ import {
 	rewriteUrl,
 	ScramjetHeaders,
 	isInlineDisplayableMimeType,
-} from "@mercuryworkshop/scramjet/bundled";
+} from "@mercuryworkshop/scramjet/bundled-wasm";
 import type { BareResponse } from "@mercuryworkshop/proxy-transports";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 

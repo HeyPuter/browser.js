@@ -18,6 +18,7 @@ import {
 	type ScramjetContext,
 	type ScramjetInterface,
 	type TrackedHistoryState,
+	Plugin,
 } from "@mercuryworkshop/scramjet";
 import { CONTROLLERFRAME } from "./symbols";
 import type {
@@ -32,7 +33,6 @@ import type {
 } from "./types";
 import { assertRuntimeScramjetVersion } from "./version";
 
-export { HttpCachePlugin, type HttpCachePluginOptions } from "./cache";
 export { VERSION } from "./version";
 export { assertRuntimeScramjetVersion } from "./version";
 
@@ -77,6 +77,19 @@ type PersistedCookieState = {
 	updatedAt: number;
 	cookies: string;
 };
+
+export class ManagedPlugin extends Plugin {
+	frame: Frame = null!;
+	dependencies: string[] = [];
+	constructor(name: string, dependencies: string[]) {
+		super(name);
+		this.dependencies = dependencies;
+	}
+
+	install(frame: Frame): void {
+		this.frame = frame;
+	}
+}
 
 const COOKIE_DB_NAME = "__scramjet_controller";
 const COOKIE_STORE_NAME = "state";
@@ -194,6 +207,10 @@ type ControllerInit = {
 	transport: ProxyTransport;
 	config?: Partial<Config>;
 	scramjetConfig?: Partial<ScramjetConfig>;
+};
+
+type FrameOptions = {
+	plugins: ManagedPlugin[];
 };
 
 export class Controller {
@@ -612,14 +629,14 @@ export class Controller {
 		}
 	}
 
-	createFrame(element?: HTMLIFrameElement): Frame {
+	createFrame(element?: HTMLIFrameElement, options: FrameOptions = {}): Frame {
 		if (!this.ready) {
 			throw new Error(
 				"Controller is not ready! Try awaiting controller.wait()"
 			);
 		}
 		element ??= document.createElement("iframe");
-		const frame = new Frame(this, element);
+		const frame = new Frame(this, element, options);
 		this.frames.push(frame);
 		return frame;
 	}
@@ -760,9 +777,11 @@ export class Frame {
 		};
 	}
 
+	public plugins: ManagedPlugin[] = [];
 	constructor(
 		public controller: Controller,
-		public element: HTMLIFrameElement
+		public element: HTMLIFrameElement,
+		public options: FrameOptions = {}
 	) {
 		this.id = makeId();
 		this.prefix = this.controller.prefix + this.id + "/";
@@ -796,6 +815,29 @@ export class Frame {
 		};
 
 		element[CONTROLLERFRAME] = this;
+
+		this.plugins = options.plugins ?? [];
+		for (const plugin of this.plugins) {
+			for (const dependency of plugin.dependencies) {
+				const dependencyPlugin = this.plugins.find(
+					(p) => p.name === dependency
+				);
+				if (!dependencyPlugin) {
+					throw new Error(
+						`Dependency ${dependency} not found for plugin ${plugin.name}`
+					);
+				}
+			}
+			plugin.install(this);
+		}
+	}
+
+	getPlugin<T extends ManagedPlugin>(name: string): T {
+		const plugin = this.plugins.find((p) => p.name === name) as T;
+		if (!plugin) {
+			throw new Error(`Plugin ${name} not found`);
+		}
+		return plugin;
 	}
 
 	back() {
