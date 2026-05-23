@@ -72,12 +72,7 @@ export class SettingsService extends Service {
 	constructor(data: SettingsServiceState | null) {
 		super();
 		if (data) {
-			const saved = data.settings as Partial<SettingsServiceState["settings"]>;
-			const normalized: Settings = {
-				...DEFAULT_SETTINGS,
-				...saved,
-			};
-			this.settings = createState(normalized);
+			this.settings = createState(data.settings);
 		} else {
 			this.settings = createState(DEFAULT_SETTINGS);
 		}
