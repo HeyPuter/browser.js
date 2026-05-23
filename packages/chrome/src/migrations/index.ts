@@ -1,26 +1,48 @@
 import { STORAGE_VERSION } from "..";
 import { KVWrapper } from "../services/KVWrapper";
 
-type Migration = (kv: KVWrapper) => Promise<void>;
-let migrations: Record<number, Migration> = {};
+let migrationsLoaded = false;
 
-export function migration(version: number, migrate: Migration) {
-	migrations[version] = migrate;
+async function loadMigrations() {
+	if (migrationsLoaded) return;
+	migrationsLoaded = true;
+}
+
+export type MigrationAction = (kv: KVWrapper) => Promise<void>;
+export type Migration = {
+	version: number;
+	action: MigrationAction;
+};
+
+export function migration(
+	version: number,
+	migrate: MigrationAction
+): Migration {
+	return {
+		version,
+		action: migrate,
+	};
 }
 
 export async function migrate(version: number, kv: KVWrapper) {
+	const modules = import.meta.glob("./[0-9]*.ts");
+	const migrations = (await Promise.all(
+		Object.values(modules).map((load) => load())
+	)) as Migration[];
 	console.log(
 		`attempting migration from ver. ${version} to ${STORAGE_VERSION}`
 	);
 	for (let i = version; i < STORAGE_VERSION; i++) {
-		let migrate = migrations[i];
+		const migration = migrations.find((m) => m.version === i)!;
 		if (!migrate) {
 			throw new Error(`Migration ${i} not found`);
 		}
 		console.log(`running migration ${i}`);
-		await migrate(kv);
+		// eslint-disable-next-line no-await-in-loop
+		await migration.action(kv);
 		console.log(`migration ${i} complete`);
-		await kv.set(`version`, (i + 1).toString());
+		// eslint-disable-next-line no-await-in-loop
+		await kv.set("version", (i + 1).toString());
 	}
-	console.log(`migration complete`);
+	console.log("migration complete");
 }
