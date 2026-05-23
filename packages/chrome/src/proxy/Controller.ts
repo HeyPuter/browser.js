@@ -11,7 +11,7 @@ import {
 	ScramjetHeaders,
 	type ScramjetFetchHandler,
 	type ScramjetFetchRequest,
-} from "@mercuryworkshop/scramjet";
+} from "@mercuryworkshop/scramjet/bundled";
 import { HttpCachePlugin } from "./cache";
 
 export function makeId(): string {

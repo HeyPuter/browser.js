@@ -21,6 +21,7 @@ import { setupTitleWatcher } from "./emulators/titlewatcher";
 import { setupAnchorHandler } from "./emulators/anchors";
 import { setupWindowOpen } from "./emulators/windowopen";
 import { RemoteTransport } from "./transport";
+import { setupAlwaysLastBubble } from "./emulators/alwaysLastBubble";
 
 function makeContextId(): string {
 	return "context-" + Math.random().toString(36).substring(2, 10);
@@ -113,10 +114,15 @@ export class ExecutionContextWrapper {
 			this.rpc.recieve(event.data);
 		});
 
+		const addAlwaysLastEventListener = setupAlwaysLastBubble(this, [
+			"click",
+			"auxclick",
+			"contextmenu",
+		]);
 		setupTitleWatcher(this);
-		setupContextMenu(this);
+		setupContextMenu(this, addAlwaysLastEventListener);
 		setupHistoryEmulation(this);
-		setupAnchorHandler(this);
+		setupAnchorHandler(this, addAlwaysLastEventListener);
 		setupWindowOpen(this);
 		// inform	chrome of the current url
 		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise

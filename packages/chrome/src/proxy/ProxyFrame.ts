@@ -1,4 +1,4 @@
-import { rewriteUrl } from "@mercuryworkshop/scramjet";
+import { rewriteUrl } from "@mercuryworkshop/scramjet/bundled";
 import { Controller, controllerForURL } from "./Controller";
 
 export class ProxyFrame {

@@ -1,7 +1,7 @@
 import type { Stateful } from "dreamland/core";
 import { Service } from "./Service";
 import { HistoryState } from "../Tab/History";
-import { CookieJar } from "@mercuryworkshop/scramjet";
+import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
 import { StatefulClass } from "../util/StatefulClass";
 import type { SerializedHistoryState } from "../Tab/History";
 
