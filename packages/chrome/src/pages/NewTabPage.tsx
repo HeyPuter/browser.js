@@ -42,7 +42,8 @@ function getTopSites(): TopSiteEntry[] {
 		title: string | null | undefined,
 		favicon: string | null | undefined
 	) => {
-		if (!url || seen.has(url.href) || topSites.length >= MAX_TOP_SITES) return;
+		if (!url || seen.has(url.origin) || topSites.length >= MAX_TOP_SITES)
+			return;
 
 		const cleanTitle = title?.trim() || trimUrl(url);
 		const displayTitle = getTopSiteTitle(title, url);
@@ -53,7 +54,7 @@ function getTopSites(): TopSiteEntry[] {
 			favicon: favicon || null,
 			fallback: getTopSiteFallback(displayTitle, url),
 		});
-		seen.add(url.href);
+		seen.add(url.origin);
 	};
 
 	for (const entry of [...profileService.globalhistory].sort(
