@@ -151,12 +151,12 @@ fn diag_mode() -> &'static str {
 
 fn emit_diag(span: proc_macro2::Span, msg: &str) -> TokenStream2 {
     match diag_mode() {
-        "warn" => {
+        "off" => TokenStream2::new(),
+        "error" => error_at_span(span, msg),
+        "warn" | _ => {
             eprintln!("warning: {msg}");
             TokenStream2::new()
         }
-        "off" => TokenStream2::new(),
-        _ => error_at_span(span, msg),
     }
 }
 
