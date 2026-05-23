@@ -21,7 +21,7 @@ import { mount } from "./App.tsx";
 export const isPuter =
 	import.meta.env.VITE_PUTER_BRANDING && puter.env == "app";
 export const puterBranding = import.meta.env.VITE_PUTER_BRANDING;
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 
 export let profileService: ProfileService;
 export let settingsService: SettingsService;
