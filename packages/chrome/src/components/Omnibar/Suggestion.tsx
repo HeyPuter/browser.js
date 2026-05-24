@@ -33,6 +33,7 @@ export function Suggestion(
 		item: OmniboxResult;
 		input: HTMLInputElement;
 		focused: boolean;
+		layout?: "horizontal" | "vertical";
 
 		onClick: (e: MouseEvent) => void;
 	}>
@@ -58,6 +59,7 @@ export function Suggestion(
 			on:click={this.onClick}
 			class:focused={use(this.focused)}
 			title={item.url.href}
+			class:vertical={this.layout === "vertical"}
 		>
 			<div class="result-icon">
 				{item.kind === "search" || item.kind === "directsearch" ? (

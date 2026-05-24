@@ -295,6 +295,7 @@ export function Omnibox(
 					<Suggestion
 						item={item}
 						input={this.input}
+						layout={this.layout}
 						onClick={() => navTo(item.url)}
 						focused={use(this.focusindex).map(
 							(i) =>
@@ -407,6 +408,7 @@ Omnibox.style = css`
 	:scope.vertical-layout.active {
 		width: min(42rem, calc(100vw - 2rem));
 		z-index: 5;
+		right: calc(min(42rem, -2rem + 100vw) - var(--sidebar-width) + 16px);	
 	}
 
 	.result-icon {

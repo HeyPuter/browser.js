@@ -401,7 +401,7 @@ export function Sidebar(
 			this={use(this.container)}
 			style={use(this.sidebarWidth).map(
 				(width) =>
-					`width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`
+					`--sidebar-width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`
 			)}
 		>
 			<div class="extra top" this={use(this.topEl)}>
@@ -427,6 +427,7 @@ export function Sidebar(
 
 Sidebar.style = css`
 	:scope {
+		--sidebar-width: 250px;
 		display: block;
 		position: relative;
 		padding: var(--tab-padding) 8px;
@@ -434,6 +435,7 @@ Sidebar.style = css`
 		height: 100%;
 		z-index: 2;
 		border-right: 1px solid var(--text-15);
+		width: var(--sidebar-width);
 	}
 
 	:global(.sidebar-right *) > :scope {
