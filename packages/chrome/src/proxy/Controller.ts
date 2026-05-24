@@ -11,7 +11,7 @@ import {
 	ScramjetHeaders,
 	type ScramjetFetchHandler,
 	type ScramjetFetchRequest,
-} from "@mercuryworkshop/scramjet";
+} from "@mercuryworkshop/scramjet/bundled";
 import { HttpCachePlugin } from "./cache";
 
 export function makeId(): string {
@@ -49,7 +49,7 @@ export class Controller {
 		},
 		request: async (data) => {
 			try {
-				let headers = ScramjetHeaders.fromRawHeaders(data.initialHeaders);
+				const headers = ScramjetHeaders.fromRawHeaders(data.initialHeaders);
 				const request: ScramjetFetchRequest = {
 					rawUrl: new URL(data.rawUrl),
 					rawClientUrl: data.rawClientUrl
@@ -62,7 +62,7 @@ export class Controller {
 					mode: data.mode,
 					cache: data.cache,
 					referrer: data.referrer,
-					destination: data.destination,
+					rawDestination: data.destination,
 					clientId: data.clientId ?? "",
 				};
 

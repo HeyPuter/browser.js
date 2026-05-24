@@ -21,8 +21,10 @@
 // PRIVATE cache (browser-local, single-user):
 //
 //   - Only GET / HEAD are cached.
-//   - Cacheable status codes per RFC 9110 §15.1: 200 203 204 206 300 301 308
-//     404 405 410 414 501. Other statuses pass through.
+//   - Cacheable status codes per RFC 9110 §15.1: 200 203 204 300 301 308
+//     404 405 410 414 501. Other statuses pass through. 206 is omitted
+//     because the Cache API spec (Service Workers §cache-put) rejects
+//     partial responses outright.
 //   - `Cache-Control: no-store` and `Vary: *` opt out.
 //   - Freshness:
 //       1. `Cache-Control: s-maxage` (private cache treats this same as
@@ -41,18 +43,27 @@
 // `rewriteBody` runs, without going through `rewriteBody` again. That can
 // come later.
 
-import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
-import { BareResponse } from "@mercuryworkshop/proxy-transports";
-declare const $scramjet: typeof ScramjetGlobal;
+import {
+	BareResponse,
+	type ScramjetFetchRequest,
+	type ScramjetHeaders,
+} from "@mercuryworkshop/scramjet";
+import { ManagedPlugin } from "@mercuryworkshop/scramjet-controller";
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
 
 export const CACHE_NAME = "scramjet-http-cache-v2";
 
 /** Header recording when this entry entered the cache (ms since epoch). */
 const STORED_AT_HEADER = "x-sj-cached-at";
 
-/** Status codes RFC 9110 §15.1 marks as "cacheable by default". */
+/**
+ * Status codes RFC 9110 §15.1 marks as "cacheable by default", minus 206:
+ * the Cache API rejects partial responses (cache.put throws TypeError on
+ * any non-200/non-OK response with a Content-Range), so storing them is a
+ * non-starter regardless of what HTTP allows.
+ */
 const DEFAULT_CACHEABLE_STATUSES = new Set([
-	200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501,
+	200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
 ]);
 
 /**
@@ -177,7 +188,7 @@ function responseIsStorable(
 /** Build a synthetic cache-key Request keyed by the *underlying* URL. */
 function buildCacheKeyRequest(
 	parsedUrl: string,
-	headers: ScramjetGlobal.ScramjetHeaders
+	headers: ScramjetHeaders
 ): Request {
 	const native = new Headers();
 	for (const [k, v] of headers.toRawHeaders()) {
@@ -284,30 +295,23 @@ export interface HttpCachePluginOptions {
 }
 
 /**
- * RFC-9111-ish HTTP cache for ScramjetFetchHandler. Subclasses
- * `$scramjet.Plugin` so it composes with the same hook plumbing every other
- * scramjet plugin uses; `install(target)` wires it onto a Frame (or any
- * object exposing a `fetchHandler`), and `bust()` drops the underlying
- * `caches` entry.
+ * RFC-9111-ish HTTP cache for ScramjetFetchHandler.
  *
  * One instance can be installed onto multiple Frames -- the WeakMap of
  * "did this request come from cache?" book-keeping is per-instance, not
  * per-Frame, so nothing leaks across installs.
  */
-export class HttpCachePlugin extends $scramjet.Plugin {
+export class HttpCachePlugin extends ManagedPlugin {
 	readonly cacheName: string;
 
 	private cachePromise: Promise<Cache> | null = null;
 	// Marks requests whose `earlyResponse` we sourced from the cache, so the
 	// preresponse hook below knows not to re-store them. WeakMap keys are
 	// the request objects so entries clean themselves up automatically.
-	private cameFromCache = new WeakMap<
-		ScramjetGlobal.ScramjetFetchRequest,
-		true
-	>();
+	private cameFromCache = new WeakMap<ScramjetFetchRequest, true>();
 
 	constructor(options: HttpCachePluginOptions = {}) {
-		super("scramjet-http-cache");
+		super("scramjet-http-cache", []);
 		this.cacheName = options.cacheName ?? CACHE_NAME;
 	}
 
@@ -319,12 +323,10 @@ export class HttpCachePlugin extends $scramjet.Plugin {
 		return this.cachePromise;
 	}
 
-	/**
-	 * Wire the cache up to a Frame (or anything exposing `fetchHandler`).
-	 * Safe to call multiple times across different Frames.
-	 */
-	install(target: { fetchHandler: ScramjetGlobal.ScramjetFetchHandler }): void {
-		const hooks = target.fetchHandler.hooks.fetch;
+	install(frame: Frame): void {
+		super.install(frame);
+
+		const hooks = frame.fetchHandler.hooks.fetch;
 
 		// ----- request: cache lookup --------------------------------------
 		this.tap(hooks.request, async (ctx, props) => {

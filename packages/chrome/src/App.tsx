@@ -1,6 +1,7 @@
 import type { FC } from "dreamland/core";
 import { css } from "dreamland/core";
 import { TabStrip } from "@components/TabStrip/TabStrip";
+import { Sidebar } from "@components/TabStrip/Sidebar";
 import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
@@ -9,6 +10,19 @@ import { contexts } from "./proxy/scramjet";
 import { INTERNAL_URL_PROTOCOL } from "./consts";
 import { Shell } from "@components/Shell";
 import { settingsService, tabsService } from ".";
+
+const DEFAULT_HYBRID_SIDEBAR_WIDTH = 225;
+const DEFAULT_VERTICAL_SIDEBAR_WIDTH = 280;
+
+function getSidebarWidth(
+	layout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact",
+	savedWidth: number | null
+) {
+	if (savedWidth !== null) return savedWidth;
+	return layout === "vertical"
+		? DEFAULT_VERTICAL_SIDEBAR_WIDTH
+		: DEFAULT_HYBRID_SIDEBAR_WIDTH;
+}
 
 export function App(
 	this: FC<
@@ -57,6 +71,25 @@ export function App(
 
 	applyProfile();
 
+	const applyLayout = () => {
+		const layout = settingsService.settings.tabLayout;
+		document.body.classList.toggle("layout-bottom", layout === "bottom");
+		document.body.classList.toggle("layout-compact", layout === "compact");
+		const verticalTabs = layout === "hybrid" || layout === "vertical";
+		document.body.classList.toggle("vertical-tabs", verticalTabs);
+		document.body.classList.toggle("full-vertical-tabs", layout === "vertical");
+		document.body.classList.toggle(
+			"sidebar-left",
+			settingsService.settings.verticalTabJustify === "left"
+		);
+		document.body.classList.toggle(
+			"sidebar-right",
+			settingsService.settings.verticalTabJustify === "right"
+		);
+	};
+
+	applyLayout();
+
 	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const handleThemeChange = () => {
 		if (settingsService.settings.appearance === "system") {
@@ -70,32 +103,100 @@ export function App(
 	use(settingsService.settings.themeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
+	use(settingsService.settings.tabLayout).listen(applyLayout);
+	use(settingsService.settings.verticalTabJustify).listen(applyLayout);
 
 	this.cx.mount = () => {
 		applyTheme();
 	};
 
 	return (
-		<div id="app">
-			<TabStrip
-				tabs={use(tabsService.tabs)}
-				activetab={use(tabsService.activetab)}
-				addTab={() => {
-					tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//newtab`), true);
-				}}
-				destroyTab={(tab: Tab) => {
-					tabsService.destroyTab(tab);
-				}}
-			/>
-			<Omnibar tab={use(tabsService.activetab)} />
-			{use(tabsService.activetab.url, settingsService.settings.showBookmarksBar)
-				.map(
-					([u, pinned]) =>
-						pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+		<div
+			id="app"
+			class={use(settingsService.settings.tabLayout).map((layout) =>
+				[
+					layout === "hybrid" || layout === "vertical" ? "vertical-tabs" : "",
+					`layout-${layout}`,
+				]
+					.filter(Boolean)
+					.join(" ")
+			)}
+		>
+			{use(settingsService.settings.tabLayout).map((layout) =>
+				layout === "hybrid" || layout === "vertical" ? (
+					<Sidebar
+						layout={layout}
+						justify={use(settingsService.settings.verticalTabJustify)}
+						tabs={use(tabsService.tabs)}
+						activetab={use(tabsService.activetab)}
+						sidebarWidth={use(
+							settingsService.settings.tabLayout,
+							settingsService.settings.sidebarWidth
+						).map(([currentLayout, sidebarWidth]) =>
+							getSidebarWidth(currentLayout, sidebarWidth)
+						)}
+						setSidebarWidth={(width: number) => {
+							settingsService.settings.sidebarWidth = Math.round(width);
+						}}
+						addTab={() => {
+							tabsService.newTab(
+								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+								true
+							);
+						}}
+						destroyTab={(tab: Tab) => {
+							tabsService.destroyTab(tab);
+						}}
+						topContent={
+							layout === "vertical" ? (
+								<div class="vertical-sidebar-header">
+									<Omnibar tab={use(tabsService.activetab)} layout="vertical" />
+									<div class="vertical-sidebar-bookmarks">
+										<BookmarksStrip orientation="vertical" />
+									</div>
+								</div>
+							) : null
+						}
+					/>
+				) : layout === "compact" ? null : (
+					<TabStrip
+						tabs={use(tabsService.tabs)}
+						activetab={use(tabsService.activetab)}
+						addTab={() => {
+							tabsService.newTab(
+								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
+								true
+							);
+						}}
+						destroyTab={(tab: Tab) => {
+							tabsService.destroyTab(tab);
+						}}
+					/>
 				)
-				.and(<BookmarksStrip />)}
-			<div class="separator"></div>
-			{this.children}
+			)}
+			<div id="main">
+				{use(settingsService.settings.tabLayout).map((layout) =>
+					layout === "vertical" ? null : (
+						<>
+							<Omnibar
+								tab={use(tabsService.activetab)}
+								layout={layout === "compact" ? "compact" : "horizontal"}
+							/>
+							{use(
+								tabsService.activetab.url,
+								settingsService.settings.showBookmarksBar
+							)
+								.map(
+									([u, pinned]) =>
+										pinned || u.href === `${INTERNAL_URL_PROTOCOL}//newtab`
+								)
+								.and(<BookmarksStrip />)}
+							<div class="separator"></div>
+						</>
+					)
+				)}
+				{this.children}
+			</div>
 		</div>
 	);
 }
@@ -104,6 +205,7 @@ App.style = css`
 		background-color: var(--frame);
 		--separator-color: color-mix(in srgb, currentColor 10%, transparent);
 	}
+
 	.separator {
 		color: var(--toolbar);
 		position: relative;
@@ -111,6 +213,17 @@ App.style = css`
 
 		/*box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);*/
 		border-top: 1px solid var(--text-15);
+	}
+
+	.vertical-sidebar-header {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.vertical-sidebar-bookmarks {
+		padding-bottom: 0.25rem;
+		border-bottom: 1px solid var(--text-10);
 	}
 `;
 

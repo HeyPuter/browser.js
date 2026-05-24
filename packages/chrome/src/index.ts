@@ -21,7 +21,7 @@ import { mount } from "./App.tsx";
 export const isPuter =
 	import.meta.env.VITE_PUTER_BRANDING && puter.env == "app";
 export const puterBranding = import.meta.env.VITE_PUTER_BRANDING;
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 
 export let profileService: ProfileService;
 export let settingsService: SettingsService;
@@ -50,13 +50,38 @@ type ProfileMetadata = {
 };
 
 function registerSave(service: Service, kv: KVWrapper, key: string) {
-	setInterval(async () => {
-		if (service.dirty) {
+	let saving = false;
+
+	const flush = async () => {
+		if (!service.dirty || saving) return;
+		saving = true;
+		const data = service.save();
+		service.dirty = false;
+		try {
 			console.log("saving", key);
 			await kv.set(key, service.save());
 			service.dirty = false;
+			await kv.set(key, data);
+		} catch (error) {
+			service.dirty = true;
+			// throw error;
+		} finally {
+			saving = false;
 		}
+	};
+
+	setInterval(async () => {
+		await flush();
 	}, 1000);
+
+	window.addEventListener("pagehide", () => {
+		void flush();
+	});
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") {
+			void flush();
+		}
+	});
 }
 
 async function loadServices() {

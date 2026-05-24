@@ -8,6 +8,7 @@ import {
 	iconRefresh,
 	iconTrash,
 	iconCloseCircle,
+	iconGlobe,
 } from "../../icons";
 import { Icon } from "@components/Icon";
 import { tabsService } from "../..";
@@ -18,6 +19,7 @@ export function DragTab(
 			active: boolean;
 			id: string;
 			tab: Tab;
+			orientation?: "horizontal" | "vertical";
 			mousedown: (e: MouseEvent) => void;
 			mouseover: () => void;
 			destroy: () => void;
@@ -31,6 +33,12 @@ export function DragTab(
 	>
 ) {
 	this.tooltipActive = false;
+	this.tooltipAnimate = false;
+	this.tooltipHovered = false;
+
+	const orientation = this.orientation ?? "horizontal";
+	const isVertical = orientation === "vertical";
+
 	this.cx.mount = () => {
 		setContextMenu(this.root, [
 			{
@@ -77,20 +85,64 @@ export function DragTab(
 			},
 		]);
 
-		// Open-tab animation: expands the tab container from width 0 to full computed width.
-		this.root.animate(
-			[
+		if (isVertical) {
+			// Animate inner content so absolute-positioned root layout is unaffected.
+			requestAnimationFrame(() => {
+				const dragroot = this.root.querySelector(
+					".dragroot"
+				) as HTMLElement | null;
+				const main = this.root.querySelector(".main") as HTMLElement | null;
+				if (!dragroot) return;
+
+				const cssHeight = parseFloat(
+					getComputedStyle(document.documentElement)
+						.getPropertyValue("--tab-height")
+						.trim()
+				);
+				const targetHeight =
+					main?.offsetHeight || dragroot.scrollHeight || cssHeight || 36;
+
+				dragroot.style.height = "0px";
+				const anim = dragroot.animate(
+					[
+						{
+							height: "0px",
+						},
+						{
+							height: `${targetHeight}px`,
+						},
+					],
+					{
+						duration: 200,
+						easing: "cubic-bezier(.25,.5,0,1.15)",
+						fill: "forwards",
+					}
+				);
+
+				anim.addEventListener(
+					"finish",
+					() => {
+						dragroot.style.height = "";
+					},
+					{ once: true }
+				);
+			});
+		} else {
+			// Open-tab animation: expands the tab container from width 0 to full computed width.
+			this.root.animate(
+				[
+					{
+						width: "0px",
+					},
+					{},
+				],
 				{
-					width: "0px",
-				},
-				{},
-			],
-			{
-				duration: 200,
-				easing: "cubic-bezier(.25,.5,0,1.15)",
-				fill: "forwards",
-			}
-		);
+					duration: 200,
+					easing: "cubic-bezier(.25,.5,0,1.15)",
+					fill: "forwards",
+				}
+			);
+		}
 	};
 
 	let hoverTimeout: number;
@@ -99,10 +151,11 @@ export function DragTab(
 		<div
 			style="z-index: 0;"
 			class={use(this.tooltipHovered).map((hovered) =>
-				hovered ? "tab hovered" : "tab"
+				hovered ? `tab ${orientation} hovered` : `tab ${orientation}`
 			)}
 			data-id={this.id}
-			on:transitionend={() => {
+			on:transitionend={(e: TransitionEvent) => {
+				if (e.target !== this.root || e.propertyName !== "transform") return;
 				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
 				this.root.style.transition = "";
 				this.root.style.zIndex = "0";
@@ -131,7 +184,26 @@ export function DragTab(
 			></div>
 			<div class="dragroot" style="position: unset;">
 				<div class={use(this.active).map((x) => (x ? "main active" : "main"))}>
-					{use(this.tab.icon).and(<img src={use(this.tab.icon)} />)}
+					{use(this.tab.icon)
+						.and(
+							<div class="favicon">
+								<img
+									alt="Tab icon"
+									width="16"
+									height="16"
+									src={use(this.tab.icon)}
+								/>
+							</div>
+						)
+						.or(
+							use(this.orientation)
+								.map((o) => o === "vertical")
+								.and(
+									<div class="favicon">
+										<Icon class="favicon-placeholder" icon={iconGlobe} />
+									</div>
+								)
+						)}
 					<span>{use(this.tab.title)}</span>
 					<button
 						class="close"
@@ -173,8 +245,16 @@ DragTab.style = css`
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
+	:scope.vertical {
+		display: block;
+	}
+
 	:global(*) > :scope:has(:hover) .hover-area {
 		anchor-name: --hovered-tab;
+	}
+
+	:scope.vertical .dragroot {
+		overflow: hidden;
 	}
 
 	.hover-area {
@@ -202,9 +282,10 @@ DragTab.style = css`
 		align-items: center;
 		gap: 8px;
 	}
-	.main img {
+	.favicon {
 		width: 16px;
 		height: 16px;
+		color: var(--text-50);
 	}
 	.main span {
 		flex: 1;

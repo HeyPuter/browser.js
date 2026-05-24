@@ -4,12 +4,15 @@ import {
 	type Component,
 	createState,
 } from "dreamland/core";
-const { Plugin: ScramjetPlugin, ScramjetHeaders } = window.$scramjet;
-import type { Plugin } from "@mercuryworkshop/scramjet";
-import type { Frame } from "@mercuryworkshop/scramjet-controller";
+import {
+	CatchEscapedLinksPlugin,
+	UrlWatcherPlugin,
+} from "@mercuryworkshop/scramjet-utils";
+import { versionInfo } from "@mercuryworkshop/scramjet";
 import { cachePlugin, controller } from "..";
 import { demoSettingsStore } from "../store";
 import homepage from "./homepage.html?raw";
+import type { Frame } from "@mercuryworkshop/scramjet-controller";
 
 export const browserState = createState({
 	url: demoSettingsStore.homeUrl,
@@ -149,40 +152,25 @@ const BrowserView: Component<
 > = function (cx) {
 	cx.mount = async () => {
 		await controller.wait();
-		browserState.frame = controller.createFrame(this.frameel);
-		cachePlugin.install(browserState.frame);
-		const openfix = new ScramjetPlugin("openfix");
-		openfix.tap(
-			browserState.frame.hooks.fetch.intercept,
-			(context, props) => {
-				if (context.request.destination === "document") {
-					props.response = {
-						body: "",
-						status: 302,
-						statusText: "Found",
-						headers: ScramjetHeaders.fromRawHeaders([
-							[
-								"Location",
-								new URL(
-									`/?goto=${encodeURIComponent(context.parsed.url.href)}`,
-									location.origin
-								).href,
-							],
-						]),
-					};
-				}
-			},
-			(other: Plugin) => (other.name === cachePlugin.name ? 1 : -1)
+
+		let urlWatcher = new UrlWatcherPlugin((url) => {
+			browserState.url = url;
+		});
+		let catchEscapedLinks = new CatchEscapedLinksPlugin(
+			(url) =>
+				new URL(`/?goto=${encodeURIComponent(url.href)}`, location.origin)
 		);
-		const versionInfo = window.$scramjet.versionInfo ?? {};
+		browserState.frame = controller.createFrame(this.frameel, {
+			plugins: [cachePlugin, urlWatcher, catchEscapedLinks],
+		});
 		let realHomepage = homepage;
 		realHomepage = realHomepage.replaceAll(
 			"{{SCRAMJET_VERSION}}",
-			String(versionInfo.version ?? "unknown")
+			String(versionInfo.version)
 		);
 		realHomepage = realHomepage.replaceAll(
 			"{{SCRAMJET_BUILD}}",
-			String(versionInfo.build ?? "unknown")
+			String(versionInfo.build)
 		);
 		realHomepage = realHomepage.replaceAll(
 			"{{SCRAMJET_DATE_PRETTY}}",
@@ -192,23 +180,12 @@ const BrowserView: Component<
 			})
 		);
 		this.frameel.src = `data:text/html;base64,${btoa(realHomepage)}`;
-		initPlugin(browserState.frame);
 
 		let goto = new URL(location.href).searchParams.get("goto");
 		if (goto) {
 			browserState.frame?.go(goto);
 			history.replaceState(null, "", location.href.split("?")[0]);
 		}
-	};
-	const initPlugin = (frame: Frame) => {
-		const plugin = new ScramjetPlugin("url-watcher");
-		plugin.tap(frame.hooks.init.post, (context, props) => {
-			if (!context.isTopLevel) return;
-			browserState.url = context.client.url.href;
-			plugin.tap(context.client.hooks.lifecycle.navigate, (context, props) => {
-				browserState.url = props.url;
-			});
-		});
 	};
 
 	return (

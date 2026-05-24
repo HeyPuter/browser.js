@@ -1,14 +1,15 @@
 import { ExecutionContextWrapper } from "../context";
 import { Chromebound } from "../types";
+import { setupAlwaysLastBubble } from "./alwaysLastBubble";
 
-export function setupContextMenu({
-	self,
-	rpc,
-	client,
-}: ExecutionContextWrapper) {
-	// TODO: this needs to always be last
-	self.document.addEventListener("contextmenu", (e) => {
+export function setupContextMenu(
+	{ self, rpc, client }: ExecutionContextWrapper,
+	addAlwaysLastEventListener: ReturnType<typeof setupAlwaysLastBubble>
+) {
+	addAlwaysLastEventListener(self.document, "contextmenu", (e: MouseEvent) => {
 		e.preventDefault();
+		e.stopPropagation();
+		e.stopImmediatePropagation();
 		const target = e.target;
 		const selection = getSelection()?.toString();
 

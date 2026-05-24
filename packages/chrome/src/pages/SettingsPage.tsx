@@ -1,7 +1,7 @@
 import { css, type Component, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import type { IconifyIcon } from "@iconify/types";
-import { versionInfo } from "@mercuryworkshop/scramjet";
+import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
 import { Icon } from "@components/Icon";
 import { Checkbox } from "@components/Checkbox";
 import { Button } from "@components/Button";
@@ -124,14 +124,37 @@ export function SettingsPage(
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
-											<div class="checkbox-option">
+											<div
+												class="checkbox-option"
+												class:disabled={use(
+													settingsService.settings.tabLayout
+												).map((layout) => layout === "vertical")}
+											>
 												<Checkbox
 													value={use(settingsService.settings.showBookmarksBar)}
 													id="show-bookmarks-bar"
+													disabled={use(settingsService.settings.tabLayout).map(
+														(layout) => layout === "vertical"
+													)}
 												/>
-												<label for="show-bookmarks-bar">
-													Always show bookmarks bar
-												</label>
+												{use(settingsService.settings.tabLayout)
+													.map((layout) => layout === "vertical")
+													.and(
+														<label
+															for="show-bookmarks-bar"
+															class="label-multiline"
+														>
+															<span>Always show bookmarks bar</span>
+															<span class="description">
+																Bookmarks are always shown in vertical mode.
+															</span>
+														</label>
+													)
+													.or(
+														<label for="show-bookmarks-bar">
+															Show bookmarks bar
+														</label>
+													)}
 											</div>
 										</div>
 									</div>
@@ -205,7 +228,175 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>UI Density</h2>
+										<h2>Browser Layout (Experimental)</h2>
+										<p class="description">Choose where tabs are displayed.</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-horizontal"
+														name="layout"
+														value="horizontal"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "horizontal")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "horizontal";
+														}}
+													/>
+													<label
+														for="layout-horizontal"
+														class="label-multiline"
+													>
+														<span>Default</span>
+														<span class="description">
+															Tabs are displayed in a single row above the
+															address bar.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-bottom"
+														name="layout"
+														value="bottom"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "bottom")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "bottom";
+														}}
+													/>
+													<label for="layout-bottom" class="label-multiline">
+														<span>Bottom</span>
+														<span class="description">
+															Tabs are displayed at the bottom of the window.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-compact"
+														name="layout"
+														value="compact"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "compact")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "compact";
+														}}
+													/>
+													<label for="layout-compact" class="label-multiline">
+														<span>Compact</span>
+														<span class="description">
+															Tabs are displayed next to the address bar.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-hybrid"
+														name="layout"
+														value="hybrid"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "hybrid")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "hybrid";
+														}}
+													/>
+													<label for="layout-hybrid" class="label-multiline">
+														<span>Hybrid</span>
+														<span class="description">
+															Tabs are displayed in a vertical sidebar on the
+															left.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="layout-vertical"
+														name="layout"
+														value="vertical"
+														checked={use(
+															settingsService.settings.tabLayout
+														).map((v) => v === "vertical")}
+														on:change={() => {
+															settingsService.settings.tabLayout = "vertical";
+														}}
+													/>
+													<label for="layout-vertical" class="label-multiline">
+														<span>Vertical</span>
+														<span class="description">
+															Tabs and the address bar are displayed in a single
+															column to the left of the content area.
+														</span>
+													</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								{use(settingsService.settings.tabLayout)
+									.map((l) => l === "hybrid" || l === "vertical")
+									.and(
+										<section class="setting-section">
+											<div class="section-header">
+												<h2>Sidebar Location</h2>
+												<p class="description">
+													Choose which side of the screen the sidebar is on.
+												</p>
+											</div>
+											<div class="section-content">
+												<div class="setting-group">
+													<div class="radio-group">
+														<div class="radio-option">
+															<input
+																type="radio"
+																id="sidebar-left"
+																name="sidebar-location"
+																value="left"
+																checked={use(
+																	settingsService.settings.verticalTabJustify
+																).map((v) => v === "left")}
+																on:change={() => {
+																	settingsService.settings.verticalTabJustify =
+																		"left";
+																}}
+															/>
+															<label for="sidebar-left">Left</label>
+														</div>
+														<div class="radio-option">
+															<input
+																type="radio"
+																id="sidebar-right"
+																name="sidebar-location"
+																value="right"
+																checked={use(
+																	settingsService.settings.verticalTabJustify
+																).map((v) => v === "right")}
+																on:change={() => {
+																	settingsService.settings.verticalTabJustify =
+																		"right";
+																}}
+															/>
+															<label for="sidebar-right">Right</label>
+														</div>
+													</div>
+												</div>
+											</div>
+										</section>
+									)}
+								<section class="setting-section">
+									<div class="section-header">
+										<h2>UI Density (Beta)</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.
 										</p>
@@ -809,6 +1000,22 @@ SettingsPage.style = css`
 		margin-bottom: 0;
 	}
 
+	.label-multiline {
+		display: flex;
+		flex-direction: column;
+		gap: 2.5px;
+	}
+
+	.label-multiline .description {
+		font-size: 0.85rem;
+		color: var(--ntp-text-60);
+	}
+
+	.checkbox-option:has(.label-multiline),
+	.radio-option:has(.label-multiline) {
+		align-items: flex-start;
+	}
+
 	.radio-group {
 		display: flex;
 		flex-direction: column;
@@ -834,9 +1041,21 @@ SettingsPage.style = css`
 		cursor: pointer;
 	}
 
+	.checkbox-option.disabled label {
+		cursor: not-allowed;
+		opacity: 0.65;
+	}
+
 	input[type="radio"],
 	input[type="checkbox"] {
 		accent-color: var(--tab_line);
+		margin: 0;
+	}
+
+	.setting-hint {
+		margin: 0.25rem 0 0;
+		font-size: 0.85rem;
+		color: var(--ntp-text-60);
 	}
 
 	.zoom-control {

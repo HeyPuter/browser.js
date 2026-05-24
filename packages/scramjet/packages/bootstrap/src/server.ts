@@ -3,6 +3,7 @@ import http from "http";
 import { extract } from "tar";
 import { Readable } from "stream";
 import fs from "fs/promises";
+import { join } from "node:path";
 import {
 	defaultConfig,
 	EPOXY_TRANSPORT_PACKAGE_NAME,
@@ -13,8 +14,12 @@ import {
 	SCRAMJET_CONTROLLER_PACKAGE_NAME,
 	SCRAMJET_CONTROLLER_PINNED_MAJOR_VERSION,
 	SCRAMJET_PACKAGE_NAME,
+	SCRAMJET_UTILS_PACKAGE_NAME,
+	SCRAMJET_UTILS_PINNED_MAJOR_VERSION,
 	BootstrapOptions,
 } from "./common";
+
+const bootstrapRoot = import.meta.dirname;
 
 type ServerBootstrapOptions = BootstrapOptions & {
 	downloadedFilesDir: string;
@@ -32,7 +37,7 @@ async function sendFile(
 	res.end(data);
 }
 const clientdata = await fs.readFile(
-	import.meta.dirname + "/bootstrap-client.js"
+	join(bootstrapRoot, "bootstrap-client.js")
 );
 function routeRequest(
 	req: http.IncomingMessage,
@@ -73,6 +78,9 @@ addEventListener("fetch", (e) => {
 			config.downloadedFilesDir + "scramjet/package/dist/scramjet.js",
 		[config.scramjetWasmPath]:
 			config.downloadedFilesDir + "scramjet/package/dist/scramjet.wasm",
+		[config.scramjetUtilsBundlePath]:
+			config.downloadedFilesDir +
+			"scramjet-utils/package/dist/scramjet-utils.js",
 
 		[config.libcurlClientPath]:
 			config.downloadedFilesDir + "libcurl-transport/package/dist/index.js",
@@ -135,9 +143,10 @@ export async function unpack(tarball: string, name: string) {
 	}
 }
 
-async function getDownloadedControllerVersion(): Promise<string | null> {
-	const packagedir = `${config.downloadedFilesDir}controller`;
-	console.log(packagedir);
+async function getDownloadedPackageVersion(
+	name: string
+): Promise<string | null> {
+	const packagedir = `${config.downloadedFilesDir}${name}`;
 	try {
 		const pkgJson = JSON.parse(
 			(await fs.readFile(
@@ -216,10 +225,11 @@ export async function bootstrap(
 	config = {
 		...defaultConfig,
 		...cfg,
-		downloadedFilesDir: import.meta.dirname + "/.downloads/",
+		downloadedFilesDir: join(bootstrapRoot, ".downloads") + "/",
 	} as ServerBootstrapOptions;
 
-	const downloadedControllerVersion = await getDownloadedControllerVersion();
+	const downloadedControllerVersion =
+		await getDownloadedPackageVersion("controller");
 	if (downloadedControllerVersion) {
 		console.log(
 			`Found downloaded Scramjet Controller version: ${downloadedControllerVersion}`
@@ -258,6 +268,21 @@ export async function bootstrap(
 		console.log(
 			`Downloaded Scramjet Controller version: ${controllerMeta.version}`
 		);
+	}
+
+	const downloadedUtilsVersion =
+		await getDownloadedPackageVersion("scramjet-utils");
+	const utilsMeta = await findLatestVersionOfPackage(
+		SCRAMJET_UTILS_PACKAGE_NAME,
+		SCRAMJET_UTILS_PINNED_MAJOR_VERSION
+	);
+	if (downloadedUtilsVersion === utilsMeta.version) {
+		console.log(
+			`Scramjet Utils is up to date (version: ${downloadedUtilsVersion}), skipping download.`
+		);
+	} else {
+		await unpack(utilsMeta.dist.tarball, "scramjet-utils");
+		console.log(`Downloaded Scramjet Utils version: ${utilsMeta.version}`);
 	}
 
 	return {

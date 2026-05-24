@@ -1,6 +1,7 @@
 body,
 html,
-#app {
+#app,
+#main {
 	width: 100vw;
 	height: 100vh;
 	margin: 0;
@@ -9,6 +10,23 @@ html,
 	display: flex;
 	flex-direction: column;
 }
+
+#app.vertical-tabs {
+	flex-direction: row;
+}
+
+body.sidebar-right #app.vertical-tabs {
+	flex-direction: row-reverse;
+}
+
+#app.layout-bottom {
+	flex-direction: column-reverse;
+}
+
+/* #app.layout-bottom #main {
+	flex-direction: column-reverse;
+} */
+
 iframe {
 	height: 100%;
 }
@@ -120,6 +138,18 @@ body.ui-touch {
 	--tab-padding: 7px;
 }
 
+body.full-vertical-tabs {
+	--omnibar-height: 2.25rem;
+}
+
+body.full-vertical-tabs.ui-compact {
+	--omnibar-height: 2rem;
+}
+
+body.full-vertical-tabs.ui-touch {
+	--omnibar-height: 2.5rem;
+}
+
 * {
 	box-sizing: border-box;
 }
@@ -135,4 +165,21 @@ button {
 	padding: 0;
 	cursor: pointer;
 	font-family: var(--font);
+}
+
+#tabstrip #hovercard {
+	transition:
+		opacity 0.2s ease 700ms,
+		scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 700ms,
+		visibility 0s,
+		left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
+	scale: 1;
+}
+
+#tabstrip:is(:has(:active), :not(:has(:hover:not(.extra, .extra *))))
+	#hovercard {
+	visibility: hidden;
+	opacity: 0;
+	scale: 0.8;
+	transition: none;
 }

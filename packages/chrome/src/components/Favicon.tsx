@@ -35,7 +35,18 @@ export function Favicon(
 	this.domain = this.domain;
 	this.iconUrl = this.iconUrl;
 
-	return <img src={use(this.url)} class={use(this.size)}></img>;
+	return (
+		<img
+			src={use(this.url)}
+			width={use(this.size).map((s) =>
+				s === "small" ? 16 : s === "medium" ? 32 : 64
+			)}
+			height={use(this.size).map((s) =>
+				s === "small" ? 16 : s === "medium" ? 32 : 64
+			)}
+			class={use(this.size)}
+		></img>
+	);
 }
 Favicon.style = css`
 	:scope.small {

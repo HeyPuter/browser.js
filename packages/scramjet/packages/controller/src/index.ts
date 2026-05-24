@@ -3,9 +3,23 @@ import {
 	BareResponse,
 	type ProxyTransport,
 } from "@mercuryworkshop/proxy-transports";
-import type * as ScramjetGlobal from "@mercuryworkshop/scramjet";
-declare const $scramjet: typeof ScramjetGlobal;
 import { deepmerge } from "@fastify/deepmerge";
+import {
+	CookieJar,
+	defaultConfig as scramjetDefaultConfig,
+	rewriteUrl,
+	ScramjetFetchHandler,
+	ScramjetHeaders,
+	setWasm,
+	Tap,
+	type CookieSyncOptions,
+	type FetchHooks,
+	type ScramjetConfig,
+	type ScramjetContext,
+	type ScramjetInterface,
+	type TrackedHistoryState,
+	Plugin,
+} from "@mercuryworkshop/scramjet";
 import { CONTROLLERFRAME } from "./symbols";
 import type {
 	FrameInitHooks,
@@ -17,8 +31,10 @@ import type {
 	WebSocketMessage,
 	FrameErrorHooks,
 } from "./types";
+import { assertRuntimeScramjetVersion } from "./version";
 
-export { HttpCachePlugin, type HttpCachePluginOptions } from "./cache";
+export { VERSION } from "./version";
+export { assertRuntimeScramjetVersion } from "./version";
 
 export type Config = {
 	prefix: string;
@@ -49,9 +65,9 @@ export const config: Config = {
 	},
 };
 
-const scramjetConfig: Partial<ScramjetGlobal.ScramjetConfig> = {
+const scramjetConfig: Partial<ScramjetConfig> = {
 	flags: {
-		...$scramjet.defaultConfig.flags,
+		...scramjetDefaultConfig.flags,
 		allowFailedIntercepts: true,
 	},
 	maskedfiles: ["inject.js", "scramjet.wasm.js"],
@@ -61,6 +77,19 @@ type PersistedCookieState = {
 	updatedAt: number;
 	cookies: string;
 };
+
+export class ManagedPlugin extends Plugin {
+	frame: Frame = null!;
+	dependencies: string[] = [];
+	constructor(name: string, dependencies: string[]) {
+		super(name);
+		this.dependencies = dependencies;
+	}
+
+	install(frame: Frame): void {
+		this.frame = frame;
+	}
+}
 
 const COOKIE_DB_NAME = "__scramjet_controller";
 const COOKIE_STORE_NAME = "state";
@@ -177,15 +206,19 @@ type ControllerInit = {
 	serviceworker: ServiceWorker;
 	transport: ProxyTransport;
 	config?: Partial<Config>;
-	scramjetConfig?: Partial<ScramjetGlobal.ScramjetConfig>;
+	scramjetConfig?: Partial<ScramjetConfig>;
+};
+
+type FrameOptions = {
+	plugins: ManagedPlugin[];
 };
 
 export class Controller {
 	id: string;
 	config: Config;
-	scramjetConfig: ScramjetGlobal.ScramjetConfig;
+	scramjetConfig: ScramjetConfig;
 	prefix: string;
-	cookieJar = new $scramjet.CookieJar();
+	cookieJar = new CookieJar();
 	frames: Frame[] = [];
 	serviceWorkerController: ServiceWorker;
 	guardServiceWorkerRevive = true;
@@ -226,7 +259,7 @@ export class Controller {
 		}
 
 		const resp = await fetch(this.config.wasmPath);
-		$scramjet.setWasm(await resp.arrayBuffer());
+		setWasm(await resp.arrayBuffer());
 		this.wasmAlreadyFetched = true;
 	}
 
@@ -272,9 +305,7 @@ export class Controller {
 					];
 				}
 
-				const sjheaders = $scramjet.ScramjetHeaders.fromRawHeaders(
-					data.initialHeaders
-				);
+				const sjheaders = ScramjetHeaders.fromRawHeaders(data.initialHeaders);
 
 				const fetchresponse = await frame.fetchHandler.handleFetch({
 					initialHeaders: sjheaders,
@@ -313,11 +344,7 @@ export class Controller {
 					setResponse: undefined,
 					suppressError: false,
 				};
-				await $scramjet.Tap.dispatch(
-					frame.hooks.error.request,
-					reqcontext,
-					reqprops
-				);
+				await Tap.dispatch(frame.hooks.error.request, reqcontext, reqprops);
 				if (!reqprops.suppressError) {
 					console.error("Error in controller request handler:", e);
 				}
@@ -422,13 +449,14 @@ export class Controller {
 	};
 
 	constructor(public init: ControllerInit) {
+		assertRuntimeScramjetVersion();
 		this.id = makeId();
 		this.config = deepMerge(config, init.config || {}) as Config;
-		this.scramjetConfig = deepMerge(scramjetConfig, $scramjet.defaultConfig);
+		this.scramjetConfig = deepMerge(scramjetConfig, scramjetDefaultConfig);
 		this.scramjetConfig = deepMerge(
 			this.scramjetConfig,
 			init.scramjetConfig || {}
-		) as ScramjetGlobal.ScramjetConfig;
+		) as ScramjetConfig;
 		this.prefix = this.config.prefix + this.id + "/";
 		this.serviceWorkerController = init.serviceworker;
 
@@ -465,7 +493,7 @@ export class Controller {
 			) {
 				const payload = e.data.$controller$setCookie as {
 					cookies?: SerializedCookieSyncEntry[];
-					options?: ScramjetGlobal.CookieSyncOptions;
+					options?: CookieSyncOptions;
 					id?: string;
 				};
 
@@ -542,7 +570,7 @@ export class Controller {
 
 	async propagateCookieSync(
 		cookies: SerializedCookieSyncEntry[],
-		options: ScramjetGlobal.CookieSyncOptions = {}
+		options: CookieSyncOptions = {}
 	): Promise<void> {
 		if (!this.port) {
 			return;
@@ -601,14 +629,14 @@ export class Controller {
 		}
 	}
 
-	createFrame(element?: HTMLIFrameElement): Frame {
+	createFrame(element?: HTMLIFrameElement, options: FrameOptions = {}): Frame {
 		if (!this.ready) {
 			throw new Error(
 				"Controller is not ready! Try awaiting controller.wait()"
 			);
 		}
 		element ??= document.createElement("iframe");
-		const frame = new Frame(this, element);
+		const frame = new Frame(this, element, options);
 		this.frames.push(frame);
 		return frame;
 	}
@@ -632,32 +660,36 @@ function base64Encode(text: string) {
 
 function yieldGetInjectScripts(
 	config: Config,
-	sjconfig: ScramjetGlobal.ScramjetConfig,
+	sjconfig: ScramjetConfig,
 	prefix: URL,
-	cookieJar: ScramjetGlobal.CookieJar,
+	cookieJar: CookieJar,
 	codecEncode: (input: string) => string,
 	codecDecode: (input: string) => string
 ) {
-	const getInjectScripts: ScramjetGlobal.ScramjetInterface["getInjectScripts"] =
-		(meta, handler, htmlcontext, script) => {
-			function base64Encode(text: string) {
-				return btoa(
-					new TextEncoder()
-						.encode(text)
-						.reduce(
-							(data, byte) => (data.push(String.fromCharCode(byte)), data),
-							[] as any
-						)
-						.join("")
-				);
-			}
-			return [
-				script(config.scramjetPath),
-				script(prefix.href + config.virtualWasmPath),
-				script(config.injectPath),
-				script(
-					"data:text/javascript;charset=utf-8;base64," +
-						base64Encode(`
+	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
+		meta,
+		handler,
+		htmlcontext,
+		script
+	) => {
+		function base64Encode(text: string) {
+			return btoa(
+				new TextEncoder()
+					.encode(text)
+					.reduce(
+						(data, byte) => (data.push(String.fromCharCode(byte)), data),
+						[] as any
+					)
+					.join("")
+			);
+		}
+		return [
+			script(config.scramjetPath),
+			script(prefix.href + config.virtualWasmPath),
+			script(config.injectPath),
+			script(
+				"data:text/javascript;charset=utf-8;base64," +
+					base64Encode(`
 					document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 					$scramjetController.load({
 						config: ${JSON.stringify(config)},
@@ -671,23 +703,23 @@ function yieldGetInjectScripts(
 						history: ${JSON.stringify(htmlcontext.history ?? [])},
 					})
 				`)
-				),
-			];
-		};
+			),
+		];
+	};
 	return getInjectScripts;
 }
 
 export class Frame {
 	id: string;
 	prefix: string;
-	fetchHandler: ScramjetGlobal.ScramjetFetchHandler;
+	fetchHandler: ScramjetFetchHandler;
 	hooks: {
-		fetch: ScramjetGlobal.FetchHooks;
+		fetch: FetchHooks;
 		init: FrameInitHooks;
 		error: FrameErrorHooks;
 	};
 
-	get context(): ScramjetGlobal.ScramjetContext {
+	get context(): ScramjetContext {
 		return {
 			config: this.controller.scramjetConfig,
 			prefix: new URL(this.prefix, location.href),
@@ -730,9 +762,6 @@ export class Frame {
 						const client = new ScramjetClient(globalThis, {
 							context,
 							transport: null,
-							shouldPassthroughWebsocket: (url) => {
-								return false;
-							}
 						});
 
 						client.hook();
@@ -748,14 +777,16 @@ export class Frame {
 		};
 	}
 
+	public plugins: ManagedPlugin[] = [];
 	constructor(
 		public controller: Controller,
-		public element: HTMLIFrameElement
+		public element: HTMLIFrameElement,
+		public options: FrameOptions = {}
 	) {
 		this.id = makeId();
 		this.prefix = this.controller.prefix + this.id + "/";
 
-		this.fetchHandler = new $scramjet.ScramjetFetchHandler({
+		this.fetchHandler = new ScramjetFetchHandler({
 			crossOriginIsolated: self.crossOriginIsolated,
 			context: this.context,
 			transport: controller.transport,
@@ -779,11 +810,34 @@ export class Frame {
 
 		this.hooks = {
 			fetch: this.fetchHandler.hooks.fetch,
-			init: $scramjet.Tap.create<FrameInitHooks>(),
-			error: $scramjet.Tap.create<FrameErrorHooks>(),
+			init: Tap.create<FrameInitHooks>(),
+			error: Tap.create<FrameErrorHooks>(),
 		};
 
 		element[CONTROLLERFRAME] = this;
+
+		this.plugins = options.plugins ?? [];
+		for (const plugin of this.plugins) {
+			for (const dependency of plugin.dependencies) {
+				const dependencyPlugin = this.plugins.find(
+					(p) => p.name === dependency
+				);
+				if (!dependencyPlugin) {
+					throw new Error(
+						`Dependency ${dependency} not found for plugin ${plugin.name}`
+					);
+				}
+			}
+			plugin.install(this);
+		}
+	}
+
+	getPlugin<T extends ManagedPlugin>(name: string): T {
+		const plugin = this.plugins.find((p) => p.name === name) as T;
+		if (!plugin) {
+			throw new Error(`Plugin ${name} not found`);
+		}
+		return plugin;
 	}
 
 	back() {
@@ -799,7 +853,7 @@ export class Frame {
 	}
 
 	go(url: string) {
-		const encoded = $scramjet.rewriteUrl(url, this.context, {
+		const encoded = rewriteUrl(url, this.context, {
 			//@ts-expect-error
 			origin: new URL(location.href),
 			//@ts-expect-error

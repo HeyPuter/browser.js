@@ -15,6 +15,7 @@ packages:
   - "packages/scramjet/packages/demo"
   - "packages/scramjet/packages/rpc"
   - "packages/scramjet/packages/create-proxy-app"
+  - "packages/scramjet/packages/utils"
   - "packages/scramjet/packages/runway"
 
 catalog:

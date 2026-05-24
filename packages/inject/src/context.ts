@@ -4,7 +4,7 @@ import {
 	SCRAMJETCLIENT,
 	ScramjetClient,
 	setWasm,
-} from "@mercuryworkshop/scramjet";
+} from "@mercuryworkshop/scramjet/bundled";
 import {
 	Chromebound,
 	Framebound,
@@ -12,7 +12,6 @@ import {
 	InjectScramjetInit,
 } from "./types";
 
-import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import { RpcHelper } from "@mercuryworkshop/rpc";
 import { applyTheme } from "./errorpage/errorpage";
 import { chromeframe, wasm } from ".";
@@ -21,6 +20,8 @@ import { setupHistoryEmulation } from "./emulators/history";
 import { setupTitleWatcher } from "./emulators/titlewatcher";
 import { setupAnchorHandler } from "./emulators/anchors";
 import { setupWindowOpen } from "./emulators/windowopen";
+import { RemoteTransport } from "./transport";
+import { setupAlwaysLastBubble } from "./emulators/alwaysLastBubble";
 
 function makeContextId(): string {
 	return "context-" + Math.random().toString(36).substring(2, 10);
@@ -113,10 +114,15 @@ export class ExecutionContextWrapper {
 			this.rpc.recieve(event.data);
 		});
 
+		const addAlwaysLastEventListener = setupAlwaysLastBubble(this, [
+			"click",
+			"auxclick",
+			"contextmenu",
+		]);
 		setupTitleWatcher(this);
-		setupContextMenu(this);
+		setupContextMenu(this, addAlwaysLastEventListener);
 		setupHistoryEmulation(this);
-		setupAnchorHandler(this);
+		setupAnchorHandler(this, addAlwaysLastEventListener);
 		setupWindowOpen(this);
 		// inform	chrome of the current url
 		// will happen if you get redirected/click on a link, etc, the chrome will have no idea otherwise
@@ -128,8 +134,7 @@ export class ExecutionContextWrapper {
 	}
 
 	loadScramjet() {
-		const transport = new LibcurlClient({ wisp: this.init.wisp });
-
+		const transport = new RemoteTransport(this);
 		this.client = new ScramjetClient(this.self, {
 			context: {
 				interface: {
@@ -142,9 +147,6 @@ export class ExecutionContextWrapper {
 				prefix: new URL(this.init.prefix),
 			},
 			transport,
-			shouldPassthroughWebsocket: (url) => {
-				return url === this.init.wisp;
-			},
 			hookSubcontext: (frameself, frame) => {
 				if (!frame) {
 					throw new Error(

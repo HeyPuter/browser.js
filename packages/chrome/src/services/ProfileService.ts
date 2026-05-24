@@ -1,7 +1,7 @@
 import type { Stateful } from "dreamland/core";
 import { Service } from "./Service";
 import { HistoryState } from "../Tab/History";
-import { CookieJar } from "@mercuryworkshop/scramjet";
+import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
 import { StatefulClass } from "../util/StatefulClass";
 import type { SerializedHistoryState } from "../Tab/History";
 
@@ -61,7 +61,23 @@ export class ProfileService extends Service {
 			);
 		} else {
 			this.globalhistory = [];
-			this.bookmarks = [];
+			this.bookmarks = [
+				new BookmarkEntry({
+					url: new URL("https://www.google.com"),
+					title: "Google",
+					favicon: "https://www.google.com/favicon.ico",
+				}),
+				new BookmarkEntry({
+					url: new URL("https://www.youtube.com"),
+					title: "YouTube",
+					favicon: "https://www.youtube.com/favicon.ico",
+				}),
+				new BookmarkEntry({
+					url: new URL("https://developer.puter.com"),
+					title: "Puter Developers",
+					favicon: "https://developer.puter.com/favicons/favicon-16x16.png",
+				}),
+			];
 		}
 	}
 

@@ -26,6 +26,7 @@ export function TabStrip(
 			activetab: Tab;
 			destroyTab: (tab: Tab) => void;
 			addTab: () => void;
+			inline?: boolean;
 		},
 		{
 			visualtabs: VisualTab[];
@@ -178,15 +179,15 @@ export function TabStrip(
 		layoutTabs(true);
 	};
 
-	window.addEventListener("mousemove", (e: MouseEvent) => {
+	const mouseMoveHandler = (e: MouseEvent) => {
 		if (this.currentlydragging === null) return;
 		calcDragPos(
 			e,
 			this.visualtabs.find((tab) => tab.tab.id === this.currentlydragging)!
 		);
-	});
+	};
 
-	window.addEventListener("mouseup", () => {
+	const mouseUpHandler = () => {
 		if (this.currentlydragging === null) return;
 		const tab = this.visualtabs.find(
 			(tab) => tab.tab.id === this.currentlydragging
@@ -198,9 +199,14 @@ export function TabStrip(
 		tab.dragoffset = -1;
 		tab.dragpos = -1;
 		layoutTabs(true);
+		if (!tab.root.style.transition) {
+			tab.root.style.zIndex = "0";
+		}
 		this.currentlydragging = null;
 		unlock();
-	});
+		window.removeEventListener("mousemove", mouseMoveHandler);
+		window.removeEventListener("mouseup", mouseUpHandler);
+	};
 
 	const mouseDown = (e: MouseEvent, tab: VisualTab) => {
 		if (e.button != 0) return;
@@ -208,6 +214,7 @@ export function TabStrip(
 		lock();
 
 		const rect = tab.root.getBoundingClientRect();
+		tab.root.style.transition = "";
 		tab.root.style.zIndex = "100";
 		const dragroot = tab.root.querySelector(".dragroot") as HTMLElement;
 		dragroot.style.width = rect.width + "px";
@@ -223,6 +230,9 @@ export function TabStrip(
 			this.activetab = tab.tab;
 			// markDirty();
 		}
+
+		window.addEventListener("mousemove", mouseMoveHandler);
+		window.addEventListener("mouseup", mouseUpHandler);
 	};
 
 	const transitionend = () => {
@@ -307,7 +317,14 @@ export function TabStrip(
 
 	this.cx.mount = () => {
 		requestAnimationFrame(() => layoutTabs(false));
-		window.addEventListener("resize", () => layoutTabs(false));
+		const resizeHandler = () => {
+			if (!this.root.isConnected) {
+				window.removeEventListener("resize", resizeHandler);
+				return;
+			}
+			layoutTabs(false);
+		};
+		window.addEventListener("resize", resizeHandler);
 
 		setContextMenu(this.root, [
 			{
@@ -319,11 +336,16 @@ export function TabStrip(
 			},
 		]);
 
-		this.tabs = this.tabs;
+		// Force an initial sync for newly-mounted strips after mode switches.
+		this.tabs = [...this.tabs];
 	};
 
 	return (
-		<div id="tabstrip" this={use(this.container)}>
+		<div
+			id="tabstrip"
+			class:inline={this.inline ?? false}
+			this={use(this.container)}
+		>
 			<div class="extra left" this={use(this.leftEl)}></div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
 			<div
@@ -350,23 +372,21 @@ TabStrip.style = css`
 		position: relative;
 	}
 
-	:global(#tabstrip #hovercard) {
-		transition:
-			opacity 0.2s ease 700ms,
-			scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 700ms,
-			visibility 0s,
-			left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
-		scale: 1;
+	:scope.inline {
+		background: none;
+		padding: calc((var(--omnibar-height) - var(--tab-height)) / 2) 0;
+		height: var(--omnibar-height);
+		width: 100%;
+		min-width: 0;
+		flex: 1;
 	}
 
-	:global(
-		#tabstrip:is(:has(:active), :not(:has(:hover:not(.extra, .extra *))))
-			#hovercard
-	) {
-		visibility: hidden;
-		opacity: 0;
-		scale: 0.8;
-		transition: none;
+	:global(.layout-bottom) :scope {
+		border-top: 1px solid var(--popup_border);
+	}
+
+	:global(.layout-bottom) :scope.inline {
+		border-top: none;
 	}
 
 	.extra {

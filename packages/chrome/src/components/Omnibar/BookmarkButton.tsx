@@ -1,8 +1,6 @@
-import { createState, css, type FC } from "dreamland/core";
-import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
+import { css, type FC } from "dreamland/core";
 import { createMenuCustom } from "@components/Menu";
 import { BookmarkPopup } from "@components/BookmarkPopup";
-import { emToPx } from "../../util";
 
 import { iconStar, iconStarFilled } from "../../icons";
 import { Icon } from "@components/Icon";
@@ -15,6 +13,8 @@ export function BookmarkButton(this: FC<{ url: URL }>) {
 			on:click={(e) => {
 				e.stopPropagation();
 				e.preventDefault();
+				const target = e.currentTarget as HTMLElement;
+				const rect = target.getBoundingClientRect();
 				let bookmark = profileService.bookmarks.find(
 					(b) => b.url.href == this.url.href
 				);
@@ -32,8 +32,8 @@ export function BookmarkButton(this: FC<{ url: URL }>) {
 
 				createMenuCustom(
 					{
-						right: (e.target as HTMLElement).getBoundingClientRect().right,
-						top: emToPx(2.5) + 40,
+						right: rect.right,
+						top: rect.bottom + 6,
 					},
 					<BookmarkPopup new={isnew} bookmark={bookmark}></BookmarkPopup>
 				);

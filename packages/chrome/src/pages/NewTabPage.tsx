@@ -1,17 +1,81 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import { trimUrl } from "@components/Omnibar/utils";
-import { createMenu } from "@components/Menu";
 import { Icon } from "@components/Icon";
-import { iconLink, iconOpen, iconSearch } from "../icons";
-import { Favicon } from "@components/Favicon";
+import { iconSearch } from "../icons";
+import { TopSiteButton, type TopSiteEntry } from "@components/TopSiteButton";
 import { profileService, tabsService } from "..";
 
+const MAX_TOP_SITES = 8;
+
+function getTopSiteFallback(title: string, url: URL) {
+	const source = (title || url.hostname || trimUrl(url))
+		.replace(/^www\./, "")
+		.trim();
+
+	return source.charAt(0).toUpperCase() || "?";
+}
+
+function getTopSiteTitle(title: string | null | undefined, url: URL) {
+	const trimmedTitle = title?.trim();
+
+	if (trimmedTitle && !/^https?:\/\//i.test(trimmedTitle)) {
+		return trimmedTitle;
+	}
+
+	if (url.hostname) {
+		const hostname = url.hostname.replace(/^www\./, "");
+		const pathname = url.pathname.replace(/\/$/, "");
+
+		return pathname && pathname !== "/" ? `${hostname}${pathname}` : hostname;
+	}
+
+	return trimUrl(url);
+}
+
+function getTopSites(): TopSiteEntry[] {
+	const topSites: TopSiteEntry[] = [];
+	const seen = new Set<string>();
+
+	const addEntry = (
+		url: URL | null | undefined,
+		title: string | null | undefined,
+		favicon: string | null | undefined
+	) => {
+		if (!url || seen.has(url.origin) || topSites.length >= MAX_TOP_SITES)
+			return;
+
+		const cleanTitle = title?.trim() || trimUrl(url);
+		const displayTitle = getTopSiteTitle(title, url);
+		topSites.push({
+			url,
+			title: cleanTitle,
+			displayTitle,
+			favicon: favicon || null,
+			fallback: getTopSiteFallback(displayTitle, url),
+		});
+		seen.add(url.origin);
+	};
+
+	for (const entry of [...profileService.globalhistory].sort(
+		(a, b) => b.timestamp - a.timestamp
+	)) {
+		addEntry(entry.url, entry.title, entry.favicon);
+	}
+
+	return topSites;
+}
+
 export function NewTabPage(this: FC<{ tab: Tab }>) {
+	const topSites = use(profileService.globalhistory).map(getTopSites);
+
 	return (
 		<div>
+			<div class="logo">
+				<img src="/icon.png" alt="Browser.js Logo" width="56" height="56" />
+				<h1>Browser</h1>
+			</div>
 			<div class="topbar">
-				{/*<div class="logo"></div>*/}
 				<div class="inputcontainercontainer">
 					<div class="inputcontainer">
 						<div class="icon">
@@ -38,43 +102,23 @@ export function NewTabPage(this: FC<{ tab: Tab }>) {
 				</div>*/}
 			</div>
 			<div class="main">
-				<div class="suggestions">
-					{profileService.globalhistory.slice(0, 5).map((entry) => (
-						<div
-							class="suggestion"
-							on:contextmenu={(e: MouseEvent) => {
-								createMenu({ left: e.clientX, top: e.clientY }, [
-									{
-										label: "Open",
-										icon: iconLink,
-										action: () => tabsService.activetab.pushNavigate(entry.url),
-									},
-									{
-										label: "Open in New Tab",
-										icon: iconOpen,
-										action: () => tabsService.newTab(entry.url),
-									},
-								]);
-								e.preventDefault();
-								e.stopPropagation();
-							}}
-							on:click={() => tabsService.newTab(entry.url)}
-						>
-							<div class="suggestioninner">
-								<div class="circle">
-									<Favicon iconUrl={entry.favicon} size="medium"></Favicon>
-								</div>
-								<span class="title">{entry.title || trimUrl(entry.url)}</span>
-							</div>
-						</div>
-					))}
-				</div>
+				<section class="top-sites" aria-label="Favorites and frequent sites">
+					<ul class="top-sites-list">
+						{topSites.mapEach((entry) => (
+							<TopSiteButton entry={entry}></TopSiteButton>
+						))}
+					</ul>
+				</section>
 			</div>
 		</div>
 	);
 }
 NewTabPage.style = css`
 	:scope {
+		--top-site-column-size: 6.3rem;
+		--top-site-tile-size: 4.25rem;
+		--top-site-icon-size: 48px;
+
 		width: 100%;
 		height: 100%;
 		display: flex;
@@ -84,7 +128,8 @@ NewTabPage.style = css`
 		background: var(--ntp_background);
 		color: var(--ntp_text);
 
-		padding: 5em;
+		padding: clamp(4rem, 5vw, 6rem) clamp(1.25rem, 4vw, 4rem) 3rem;
+		overflow-y: auto;
 	}
 
 	.topbar {
@@ -92,11 +137,22 @@ NewTabPage.style = css`
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 3em;
+		gap: 1.5rem;
 	}
 	.logo {
-		width: 3em;
-		height: 3em;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 2rem;
+	}
+	.logo h1 {
+		font-size: 2.25rem;
+		font-weight: 600;
+		user-select: none;
+	}
+	.logo img {
+		display: inline-block;
+		user-select: none;
 	}
 	.clock {
 		font-size: 1.5em;
@@ -106,98 +162,94 @@ NewTabPage.style = css`
 	}
 
 	.inputcontainercontainer {
-		flex: 1;
+		width: 100%;
 		display: flex;
 		justify-content: center;
 	}
 	.inputcontainer {
-		flex: 1;
-		max-width: 60em;
-		box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
-		background: var(--ntp-text-15);
-		border-radius: var(--radius);
+		width: min(100%, 42rem);
+		min-height: 3rem;
+		background: var(--toolbar_field);
+		border: 1px solid var(--ntp-text-20);
+		border-radius: calc(var(--radius) * 2);
 		display: flex;
 		align-items: center;
+		transition:
+			border-color 0.15s ease-out,
+			box-shadow 0.15s ease-out,
+			background-color 0.15s ease-out;
 	}
 
 	.icon {
-		font-size: 1.5em;
-		padding-left: 0.5em;
-		color: var(--ntp-text-60);
+		font-size: 1.15rem;
+		padding-left: 1rem;
+		color: var(--field-text-50);
 	}
 
 	.inputcontainer:focus-within {
-		box-shadow: 0 0 2px var(--tab_line);
-		outline: 1px solid var(--tab_line);
+		border-color: var(--tab_line);
+		box-shadow: 0 0 0 2px var(--accent-20);
+		outline: none;
 	}
 	input {
-		font-size: 1.25em;
+		font-size: 1.05rem;
 		outline: none;
 		padding: 1em;
-		padding-top: 0.75em;
-		padding-bottom: 0.75em;
+		padding-top: 0.9em;
+		padding-bottom: 0.9em;
 		flex: 1;
 		height: 100%;
 		background: none;
 		border: none;
-		color: var(--ntp_text);
+		color: var(--toolbar_field_text);
 		font-family: var(--font);
 	}
 
-	.suggestions {
+	input::placeholder {
+		color: var(--field-text-60);
+	}
+
+	.main {
+		margin-top: 1rem;
+		width: min(100%, 62rem);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.top-sites {
 		width: 100%;
+		display: flex;
+		justify-content: center;
+	}
 
-		grid-template-columns: repeat(5, 1fr);
-		grid-template-rows: repeat(2, 1fr);
+	.top-sites-list {
+		width: 100%;
+		max-width: calc(var(--top-site-column-size) * 8 + 7 * 1rem);
 		display: grid;
-	}
-
-	.suggestion {
-		cursor: pointer;
-		aspect-ratio: 1/1;
-		display: flex;
-		align-items: center;
+		grid-template-columns: repeat(
+			auto-fit,
+			minmax(
+				min(var(--top-site-column-size), 100%),
+				var(--top-site-column-size)
+			)
+		);
 		justify-content: center;
-		border-radius: 2em;
-	}
-	.suggestion:hover {
-		background: var(--ntp-text-8);
-	}
-	.suggestioninner {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5em;
-	}
-	.circle {
-		width: 64px;
-		height: 64px;
-
-		border-radius: 50%;
-		background-color: var(--ntp-text-5);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-	.title {
-		width: 6em;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		text-align: center;
-		white-space: nowrap;
-		line-height: 1.2;
+		justify-items: center;
+		gap: 1.35rem 1rem;
+		list-style: none;
+		padding: 0;
+		margin: 0;
 	}
 
-	.main {
-		margin-top: 2.5em;
-		width: 70%;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 1em;
-	}
+	@media (max-width: 720px) {
+		:scope {
+			padding-top: 1.25rem;
+		}
 
-	.main {
-		position: relative;
+		.top-sites-list {
+			grid-template-columns: repeat(auto-fit, minmax(6.25rem, 6.25rem));
+		}
 	}
 `;

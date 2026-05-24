@@ -18,7 +18,8 @@
 		"watch": "rspack build --watch",
 		"format": "prettier --write .",
 		"preinstall": "npx only-allow pnpm",
-		"ii": "pnpm install && pnpm -C packages/scramjet install"
+		"ii": "pnpm install && pnpm -C packages/scramjet install",
+		"runway": "pnpm -C packages/scramjet/packages/runway"
 	},
 	"pnpm": {
 		"overrides": {
