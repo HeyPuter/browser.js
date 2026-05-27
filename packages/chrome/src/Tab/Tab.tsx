@@ -20,6 +20,7 @@ export type SerializedTab = {
 	id: string;
 	icon: string | null;
 	history: SerializedHistory;
+	pinned: boolean;
 };
 
 export class Tab extends StatefulClass {
@@ -27,6 +28,8 @@ export class Tab extends StatefulClass {
 	frame: ProxyFrame;
 	devtoolsFrame: any;
 	screenshot: string | null = null;
+
+	pinned: boolean = false;
 
 	url: URL;
 
@@ -121,6 +124,7 @@ export class Tab extends StatefulClass {
 			id: this.id,
 			icon: this.icon,
 			history: this.history.serialize(),
+			pinned: this.pinned,
 		};
 	}
 	static deserialize(data: SerializedTab): Tab {
@@ -130,6 +134,7 @@ export class Tab extends StatefulClass {
 				url: new URL(data.url),
 				id: data.id,
 				icon: data.icon,
+				pinned: data.pinned,
 			},
 			data.history
 		);

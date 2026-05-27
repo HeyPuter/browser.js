@@ -63,6 +63,12 @@ export function DragTab(
 				},
 			},
 			{
+				label: this.tab.pinned ? "Unpin" : "Pin",
+				action: () => {
+					this.tab.pinned = !this.tab.pinned;
+				},
+			},
+			{
 				label: "Close",
 				icon: iconClose,
 				action: () => {
