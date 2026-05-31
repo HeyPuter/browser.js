@@ -1,11 +1,14 @@
+import { readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { exec as execCallback, execSync } from "node:child_process";
 import { defineConfig } from "@rspack/cli";
 import { rspack, type RspackOptions } from "@rspack/core";
 import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
-import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
+const exec = promisify(execCallback);
 
 function nodeExternals({ context, request }, callback) {
 	if (!/^(\.|\/)/.test(request)) {
@@ -14,13 +17,6 @@ function nodeExternals({ context, request }, callback) {
 
 	callback();
 }
-
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import { join, resolve } from "path";
-import { fileURLToPath } from "url";
-import { readFileSync } from "node:fs";
-import { writeFileSync, chmodSync } from "node:fs";
 
 if (!process.env.CI) {
 	try {
@@ -166,9 +162,8 @@ const utilsVersionDefines = new rspack.DefinePlugin({
 	CONTROLLER_EXPECTED_VERSION: JSON.stringify(controllermeta.version),
 });
 const wasmPath = join(scramjetdir, "dist/scramjet.wasm");
-let wasmB64: string;
 const wasmBuf = await readFile(wasmPath);
-wasmB64 = wasmBuf.toString("base64");
+const wasmB64 = wasmBuf.toString("base64");
 
 export const tsloader = {
 	test: /\.ts$/,
@@ -229,7 +224,7 @@ const createGenericConfig = (options) => {
 			minimizer: [
 				new rspack.SwcJsMinimizerRspackPlugin({
 					minimizerOptions: {
-						module: options.output.libraryTarget === "module",
+						module: options.output.library?.type === "module",
 					},
 				}),
 			],
@@ -332,7 +327,7 @@ class TypeScriptDeclarationsPlugin {
 				try {
 					console.log(`Generating TypeScript declarations for ${this.dir}...`);
 					try {
-						const { stdout, stderr } = await execAsync(
+						const { stdout, stderr } = await exec(
 							`pnpm exec tsc --project ${this.tsconfigName}`,
 							{ cwd: this.dir }
 						);
@@ -349,7 +344,7 @@ class TypeScriptDeclarationsPlugin {
 					}
 
 					if (this.useAlias) {
-						const aliasResult = await execAsync(
+						const aliasResult = await exec(
 							`pnpm exec tsc-alias --project ${this.tsconfigName}`,
 							{ cwd: this.dir }
 						);
@@ -358,8 +353,8 @@ class TypeScriptDeclarationsPlugin {
 					}
 
 					try {
-						await execAsync(`rm -rf ${this.tempDir}`, { cwd: this.dir });
-					} catch (e) {}
+						await exec(`rm -rf ${this.tempDir}`, { cwd: this.dir });
+					} catch {}
 
 					console.log(
 						`TypeScript declarations generated successfully for ${this.dir}`
@@ -430,15 +425,13 @@ const moduleBundledConfig = createScramjetConfig({
 	output: {
 		filename: "scramjet_bundled.mjs",
 		path: join(scramjetdir, "dist"),
-		libraryTarget: "module",
+		library: { type: "module" },
+		module: true,
 		iife: false,
 	},
 	rewriterWasm: JSON.stringify(wasmB64),
 	performance: {
 		hints: false,
-	},
-	experiments: {
-		outputModule: true,
 	},
 });
 
@@ -451,16 +444,14 @@ const moduleConfig = createScramjetConfig({
 	output: {
 		filename: "scramjet.mjs",
 		path: join(scramjetdir, "dist"),
-		libraryTarget: "module",
+		library: { type: "module" },
+		module: true,
 		iife: false,
 	},
 	// do not embed the wasm in this build
 	rewriterWasm: "undefined",
 	performance: {
 		hints: false,
-	},
-	experiments: {
-		outputModule: true,
 	},
 });
 moduleConfig.plugins!.push(
@@ -482,10 +473,8 @@ const bootstrapConfig = createGenericConfig({
 		filename: "bootstrap-[name].js",
 		path: join(bootstrapdir, "dist"),
 		iife: false,
-		libraryTarget: "module",
-	},
-	experiments: {
-		outputModule: true,
+		library: { type: "module" },
+		module: true,
 	},
 	target: "node",
 	externals: [nodeExternals],
@@ -542,11 +531,9 @@ const utilsModuleConfig = createGenericConfig({
 	output: {
 		filename: "scramjet-utils.mjs",
 		path: join(utilsdir, "dist"),
-		libraryTarget: "module",
+		library: { type: "module" },
+		module: true,
 		iife: false,
-	},
-	experiments: {
-		outputModule: true,
 	},
 	target: "web",
 	plugins: [
@@ -568,11 +555,9 @@ const createProxyAppConfig = createGenericConfig({
 	output: {
 		path: join(createproxyappdir, "dist"),
 		filename: "[name].js",
-		libraryTarget: "module",
+		library: { type: "module" },
+		module: true,
 		iife: false,
-	},
-	experiments: {
-		outputModule: true,
 	},
 	target: "node",
 	module: {

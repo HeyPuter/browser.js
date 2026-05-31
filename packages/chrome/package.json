@@ -10,8 +10,8 @@
 		"preview": "vite preview"
 	},
 	"devDependencies": {
-		"typescript": "~5.9.3",
-		"vite": "^7.1.12"
+		"typescript": "^6.0.3",
+		"vite": "^8.0.14"
 	},
 	"dependencies": {
 		"@iconify/types": "^2.0.0",
@@ -30,7 +30,7 @@
 		"htmlparser2": "catalog:",
 		"monaco-editor": "^0.54.0",
 		"tldts": "^7.0.11",
-		"vite-plugin-singlefile": "^2.3.0",
-		"vite-plugin-static-copy": "^3.1.0"
+		"vite-plugin-singlefile": "^2.3.3",
+		"vite-plugin-static-copy": "^4.1.0"
 	}
 }

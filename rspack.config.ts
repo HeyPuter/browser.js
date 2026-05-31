@@ -1,13 +1,8 @@
 import { defineConfig } from "@rspack/cli";
-import { rspack } from "@rspack/core";
-import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
 
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import { join, resolve } from "path";
-import { fileURLToPath } from "url";
-import { readFileSync } from "node:fs";
 import { writeFileSync, chmodSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import scramjetConfig, { tsloader } from "./packages/scramjet/rspack.config.ts";
 
 if (!process.env.CI) {
@@ -43,15 +38,13 @@ const cdpConfig = defineConfig({
 		library: {
 			type: "module",
 		},
+		module: true,
 	},
 	resolve: {
 		extensions: [".ts", ".js"],
 	},
 	module: {
 		rules: [tsloader, cssloader],
-	},
-	experiments: {
-		outputModule: true,
 	},
 	externals: {
 		axios: "axios",

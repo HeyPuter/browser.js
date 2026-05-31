@@ -1,6 +1,5 @@
+import path from "node:path";
 import { defineConfig } from "vite";
-import path from "path";
-
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import { jsxPlugin } from "dreamland/vite";
@@ -12,19 +11,21 @@ export default defineConfig({
 		jsxPlugin(),
 		// ssr({ entry: "/src/main-server.ts" }),
 		// viteStaticCopy({
-		// 	structured: false,
 		// 	targets: [
 		// 		{
 		// 			src: scramjetPath + "/*",
 		// 			dest: "scram/",
+		// 			rename: {stripBase: true},
 		// 		},
 		// 		{
 		// 			src: "../inject/dist/inject.js",
 		// 			dest: ".",
+		// 			rename: {stripBase: true},
 		// 		},
 		// 		// {
 		// 		// 	src: "../chii/public/*",
 		// 		// 	dest: "chii",
+		//			rename: {stripBase: true},
 		// 		// },
 		// 	],
 		// }),

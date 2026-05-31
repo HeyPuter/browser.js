@@ -1,9 +1,11 @@
 {
 	"compilerOptions": {
+		"rootDir": "./src",
 		"target": "ES2022",
 		"useDefineForClassFields": true,
 		"module": "ESNext",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+
 		"types": [],
 		"skipLibCheck": true,
 		/* Bundler mode */
