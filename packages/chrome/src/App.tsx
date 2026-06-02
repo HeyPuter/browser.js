@@ -148,14 +148,20 @@ export function App(
 							tabsService.destroyTab(tab);
 						}}
 						topContent={
-							layout === "vertical" ? (
-								<div class="vertical-sidebar-header">
-									<Omnibar tab={use(tabsService.activetab)} layout="vertical" />
-									<div class="vertical-sidebar-bookmarks">
-										<BookmarksStrip orientation="vertical" />
-									</div>
-								</div>
-							) : null
+							layout === "vertical"
+								? (pinnedTabs: any) => (
+										<div class="vertical-sidebar-header">
+											<Omnibar
+												tab={use(tabsService.activetab)}
+												layout="vertical"
+												verticalMiddleContent={pinnedTabs}
+											/>
+											<div class="vertical-sidebar-bookmarks">
+												<BookmarksStrip orientation="vertical" />
+											</div>
+										</div>
+									)
+								: null
 						}
 					/>
 				) : layout === "compact" ? null : (

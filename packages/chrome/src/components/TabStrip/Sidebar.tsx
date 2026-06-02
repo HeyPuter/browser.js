@@ -5,16 +5,22 @@ import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
+import { tabsService } from "../..";
 
 type VisualTab = {
 	tab: Tab;
 	root: HTMLElement;
-	dragoffset: number;
-	dragpos: number;
-	startdragpos: number;
+	dragoffsetx: number;
+	dragoffsety: number;
+	dragx: number;
+	dragy: number;
+	startdragx: number;
+	startdragy: number;
 	closing: boolean;
+	width: number;
 	height: number;
-	pos: number;
+	x: number;
+	y: number;
 };
 
 export function Sidebar(
@@ -28,13 +34,14 @@ export function Sidebar(
 			addTab: () => void;
 			sidebarWidth: number;
 			setSidebarWidth: (width: number) => void;
-			topContent?: any;
+			topContent?: any | ((pinnedTabs: any) => any);
 			bottomContent?: any;
 		},
 		{
 			visualtabs: VisualTab[];
 			container: HTMLElement;
 			topEl: HTMLElement;
+			pinnedEl: HTMLElement;
 			bottomEl: HTMLElement;
 			afterEl: HTMLElement;
 			currentlydragging: string | null;
@@ -51,11 +58,22 @@ export function Sidebar(
 	const SIDEBAR_MAX_WIDTH = 520;
 
 	const TAB_PADDING = 6;
+	const OPEN_TAB_TRANSITION = "200ms cubic-bezier(.25,.5,0,1.15)";
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
+	const PIN_GAP = 6;
+	const PIN_MIN_WIDTH = 32;
+	const PIN_MAX_WIDTH = 56;
+	const PIN_MIN_HEIGHT = 32;
+	const PIN_MAX_HEIGHT = 44;
 
 	let transitioningTabs = 0;
+	let openingTabs = new Set<VisualTab>();
+
+	const getVisibleTabs = () => {
+		return this.visualtabs.filter((tab) => !tab.closing);
+	};
 
 	const getRootHeight = () => {
 		const style = getComputedStyle(this.container);
@@ -96,10 +114,20 @@ export function Sidebar(
 	};
 
 	const getTabHeight = () => {
-		const firstVisible = this.visualtabs.find((tab) => !tab.closing);
+		const firstVisible = getVisibleTabs().find((tab) => !tab.tab.pinned);
 		if (firstVisible) {
-			const measured = firstVisible.root.offsetHeight;
+			const dragroot = firstVisible.root.querySelector(
+				".dragroot"
+			) as HTMLElement | null;
+			const main = firstVisible.root.querySelector(
+				".main"
+			) as HTMLElement | null;
+			const measured = Math.max(
+				main?.offsetHeight ?? 0,
+				dragroot?.scrollHeight ?? 0
+			);
 			if (measured > 0) return measured;
+			if (firstVisible.height > 0) return firstVisible.height;
 		}
 
 		const cssHeight = parseFloat(
@@ -110,81 +138,339 @@ export function Sidebar(
 		return Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 36;
 	};
 
-	const reorderTabs = () => {
-		this.visualtabs.sort((a, b) => {
-			const aCenter = a.pos + a.height / 2;
+	const getPinnedGridMetrics = (
+		count = getVisibleTabs().filter((tab) => tab.tab.pinned).length
+	) => {
+		const availableWidth =
+			this.pinnedEl?.offsetWidth || Math.max(getRootWidth() - 16, 0);
+		const maxColumns = Math.min(4, Math.max(1, count));
+		let columns = 1;
+		for (let candidate = maxColumns; candidate >= 1; candidate--) {
+			const minRequiredWidth =
+				PIN_MIN_WIDTH * candidate + PIN_GAP * (candidate - 1);
+			if (availableWidth >= minRequiredWidth) {
+				columns = candidate;
+				break;
+			}
+		}
+		const rowWidth = Math.floor(
+			(availableWidth - PIN_GAP * (columns - 1)) / columns
+		);
+		const width = Math.max(
+			PIN_MIN_WIDTH,
+			Math.min(columns >= 4 ? PIN_MAX_WIDTH : rowWidth, rowWidth)
+		);
+		const height = Math.min(PIN_MAX_HEIGHT, Math.max(PIN_MIN_HEIGHT, width));
+		const gridWidth = width * columns + PIN_GAP * (columns - 1);
+		const rows = count === 0 ? 0 : Math.ceil(count / columns);
 
-			const bTop = b.pos;
-			const bBottom = b.pos + b.height;
-			const bCenter =
-				Math.abs(aCenter - bTop) > Math.abs(aCenter - bBottom) ? bBottom : bTop;
+		return {
+			columns,
+			gap: PIN_GAP,
+			width,
+			height,
+			offsetX: Math.max(0, Math.floor((availableWidth - gridWidth) / 2)),
+			totalHeight: rows === 0 ? 0 : rows * height + (rows - 1) * PIN_GAP,
+		};
+	};
 
-			return aCenter - bCenter;
-		});
+	const setTabTransform = (tab: VisualTab, x: number, y: number) => {
+		tab.root.style.transform = tab.tab.pinned
+			? `translate(${x}px, ${y}px)`
+			: `translateY(${y}px)`;
+	};
+
+	const getPinnedInsertIndex = (
+		tab: VisualTab,
+		group: VisualTab[],
+		metrics = getPinnedGridMetrics(group.length)
+	) => {
+		const peers = group.filter((peer) => peer !== tab);
+		const stepX = metrics.width + metrics.gap;
+		const stepY = metrics.height + metrics.gap;
+		const centerX = tab.dragx + metrics.width / 2 - metrics.offsetX;
+		const centerY = tab.dragy + metrics.height / 2;
+		const column = Math.min(
+			metrics.columns - 1,
+			Math.max(0, Math.floor((centerX + metrics.gap / 2) / stepX))
+		);
+		const row = Math.max(0, Math.floor((centerY + metrics.gap / 2) / stepY));
+		const insertIndex = row * metrics.columns + column;
+
+		return Math.min(peers.length, Math.max(0, insertIndex));
+	};
+
+	const getRegularInsertIndex = (
+		tab: VisualTab,
+		group: VisualTab[],
+		height: number,
+		start: number
+	) => {
+		const peers = group.filter((peer) => peer !== tab);
+		const centerY = tab.dragy + (tab.height || height) / 2;
+
+		for (const [index, peer] of peers.entries()) {
+			const peerY =
+				peer.dragy != -1
+					? peer.dragy
+					: peer.y || start + index * (height + TAB_PADDING);
+			const peerMidpoint = peerY + (peer.height || height) / 2;
+
+			if (centerY < peerMidpoint) {
+				return index;
+			}
+		}
+
+		return peers.length;
+	};
+
+	const getOrderedGroup = (
+		group: VisualTab[],
+		metrics: ReturnType<typeof getPinnedGridMetrics>,
+		height: number,
+		start: number
+	) => {
+		const draggingTab =
+			this.currentlydragging === null
+				? null
+				: (group.find((tab) => tab.tab.id === this.currentlydragging) ?? null);
+		if (!draggingTab) return group;
+
+		const peers = group.filter((tab) => tab !== draggingTab);
+		const insertIndex = draggingTab.tab.pinned
+			? getPinnedInsertIndex(draggingTab, group, metrics)
+			: getRegularInsertIndex(draggingTab, group, height, start);
+
+		peers.splice(insertIndex, 0, draggingTab);
+		return peers;
+	};
+
+	const getOrderedTabs = (
+		metrics: ReturnType<typeof getPinnedGridMetrics>,
+		height: number,
+		start: number
+	) => {
+		const visibleTabs = getVisibleTabs();
+		const pinnedTabs = visibleTabs.filter((tab) => tab.tab.pinned);
+		const regularTabs = visibleTabs.filter((tab) => !tab.tab.pinned);
+		const orderedPinnedTabs = getOrderedGroup(
+			pinnedTabs,
+			metrics,
+			height,
+			start
+		);
+		const orderedRegularTabs = getOrderedGroup(
+			regularTabs,
+			metrics,
+			height,
+			start
+		);
+
+		return {
+			pinned: orderedPinnedTabs,
+			regular: orderedRegularTabs,
+			all: [...orderedPinnedTabs, ...orderedRegularTabs],
+		};
+	};
+
+	const getStaticOrderedTabs = (visualTabs: VisualTab[]) => {
+		const visibleTabs = visualTabs.filter((tab) => !tab.closing);
+		return {
+			pinned: visibleTabs.filter((tab) => tab.tab.pinned),
+			regular: visibleTabs.filter((tab) => !tab.tab.pinned),
+		};
+	};
+
+	const syncVisualOrder = (orderedVisibleTabs: VisualTab[]) => {
+		const nextVisualTabs = [...orderedVisibleTabs];
+
+		for (const [index, visualtab] of this.visualtabs.entries()) {
+			if (!visualtab.closing) continue;
+			nextVisualTabs.splice(
+				Math.min(index, nextVisualTabs.length),
+				0,
+				visualtab
+			);
+		}
+
+		const changed =
+			nextVisualTabs.length !== this.visualtabs.length ||
+			nextVisualTabs.some((tab, index) => this.visualtabs[index] !== tab);
+		if (!changed) return;
+
+		this.visualtabs.splice(0, this.visualtabs.length, ...nextVisualTabs);
+	};
+
+	const primeNewVisualTabs = (
+		visualTabs: VisualTab[],
+		newTabs: Set<VisualTab>
+	) => {
+		if (newTabs.size === 0) return;
+
+		const orderedTabs = getStaticOrderedTabs(visualTabs);
+		const pinnedMetrics = getPinnedGridMetrics(orderedTabs.pinned.length);
+		const height = getTabHeight();
+		const width = getRootWidth();
+		const start = getLayoutStart();
+
+		for (const [index, tab] of orderedTabs.pinned.entries()) {
+			if (!newTabs.has(tab)) continue;
+
+			const column = index % pinnedMetrics.columns;
+			const row = Math.floor(index / pinnedMetrics.columns);
+			const x =
+				pinnedMetrics.offsetX +
+				column * (pinnedMetrics.width + pinnedMetrics.gap);
+			const y = row * (pinnedMetrics.height + pinnedMetrics.gap);
+			tab.root.style.width = pinnedMetrics.width + "px";
+			tab.root.style.height = pinnedMetrics.height + "px";
+			setTabTransform(tab, x, y);
+			tab.width = pinnedMetrics.width;
+			tab.height = pinnedMetrics.height;
+			tab.x = x;
+			tab.y = y;
+		}
+
+		let currpos = start;
+		for (const tab of orderedTabs.regular) {
+			if (newTabs.has(tab)) {
+				tab.root.style.width = width + "px";
+				tab.root.style.height = height + "px";
+				setTabTransform(tab, 0, currpos);
+				tab.width = width;
+				tab.height = height;
+				tab.x = 0;
+				tab.y = currpos;
+			}
+
+			currpos += height + TAB_PADDING;
+		}
 	};
 
 	const layoutTabs = (transition: boolean) => {
+		if (!this.pinnedEl) return;
+
+		const pinnedMetrics = getPinnedGridMetrics();
+		this.pinnedEl.style.height = `${pinnedMetrics.totalHeight}px`;
+
 		const height = getTabHeight();
 		const width = getRootWidth();
+		const start = getLayoutStart();
+		const orderedTabs = getOrderedTabs(pinnedMetrics, height, start);
+		syncVisualOrder(orderedTabs.all);
+		const hasOpeningTabs = orderedTabs.all.some((tab) => openingTabs.has(tab));
+		const tabTransition = hasOpeningTabs ? OPEN_TAB_TRANSITION : TAB_TRANSITION;
 
-		reorderTabs();
-
-		let dragpos = -1;
-		let currpos = getLayoutStart();
 		let staggerIndex = 0;
 		let movedTabs = 0;
-		for (const tab of this.visualtabs) {
-			if (tab.closing) {
-				const tabPos = tab.dragpos != -1 ? tab.dragpos : tab.pos;
-				tab.root.style.transform = `translateY(${tabPos}px)`;
-				tab.pos = tabPos;
-				continue;
-			}
+		for (const [index, tab] of orderedTabs.pinned.entries()) {
+			const column = index % pinnedMetrics.columns;
+			const row = Math.floor(index / pinnedMetrics.columns);
+			const tabX =
+				tab.dragx != -1
+					? tab.dragx
+					: pinnedMetrics.offsetX +
+						column * (pinnedMetrics.width + pinnedMetrics.gap);
+			const tabY =
+				tab.dragy != -1
+					? tab.dragy
+					: row * (pinnedMetrics.height + pinnedMetrics.gap);
 
-			tab.root.style.width = width + "px";
-			tab.root.style.height = height + "px";
-
-			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
-			tab.root.style.transform = `translateY(${tabPos}px)`;
-			if (transition && tab.dragpos == -1 && tab.pos != tabPos) {
-				const delay = Math.min(
-					staggerIndex * TAB_STAGGER_STEP,
-					TAB_STAGGER_MAX
-				);
-				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
+			tab.root.style.width = pinnedMetrics.width + "px";
+			tab.root.style.height = pinnedMetrics.height + "px";
+			setTabTransform(tab, tabX, tabY);
+			if (
+				transition &&
+				tab.dragx == -1 &&
+				tab.dragy == -1 &&
+				(tab.x != tabX || tab.y != tabY)
+			) {
+				const delay = hasOpeningTabs
+					? 0
+					: Math.min(staggerIndex * TAB_STAGGER_STEP, TAB_STAGGER_MAX);
+				tab.root.style.transition = `transform ${tabTransition} ${delay}ms`;
 				transitioningTabs++;
 				movedTabs++;
 			}
-			dragpos = Math.max(dragpos, tab.dragpos + height + TAB_PADDING);
+			tab.width = pinnedMetrics.width;
+			tab.height = pinnedMetrics.height;
+			tab.x = tabX;
+			tab.y = tabY;
+			staggerIndex++;
+		}
 
-			tab.pos = tabPos;
+		let afterpos = start;
+		let currpos = start;
+		for (const tab of orderedTabs.regular) {
+			tab.root.style.width = width + "px";
+			tab.root.style.height = height + "px";
+
+			const tabY = tab.dragy != -1 ? tab.dragy : currpos;
+			setTabTransform(tab, 0, tabY);
+			if (transition && tab.dragy == -1 && (tab.x != 0 || tab.y != tabY)) {
+				const delay = hasOpeningTabs
+					? 0
+					: Math.min(staggerIndex * TAB_STAGGER_STEP, TAB_STAGGER_MAX);
+				tab.root.style.transition = `transform ${tabTransition} ${delay}ms`;
+				transitioningTabs++;
+				movedTabs++;
+			}
+
+			tab.width = width;
 			tab.height = height;
+			tab.x = 0;
+			tab.y = tabY;
+			afterpos = Math.max(afterpos, tabY + height + TAB_PADDING);
 			currpos += height + TAB_PADDING;
 			staggerIndex++;
 		}
 
-		const afterpos = Math.max(dragpos, currpos);
+		afterpos = Math.max(afterpos, currpos);
 		if (transition) {
-			const afterDelay = Math.min(
-				Math.max(staggerIndex, movedTabs > 0 ? staggerIndex : 1) *
-					TAB_STAGGER_STEP,
-				TAB_STAGGER_MAX
-			);
-			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
+			const afterDelay = hasOpeningTabs
+				? 0
+				: Math.min(
+						Math.max(staggerIndex, movedTabs > 0 ? staggerIndex : 1) *
+							TAB_STAGGER_STEP,
+						TAB_STAGGER_MAX
+					);
+			this.afterEl.style.transition = `transform ${tabTransition} ${afterDelay}ms`;
 		}
 		this.afterEl.style.transform = `translateY(${afterpos}px)`;
-	};
 
-	const getMaxDragPos = () => {
-		return getLayoutStart() + getRootHeight();
+		for (const tab of this.visualtabs) {
+			if (!tab.closing) continue;
+			const tabX = tab.dragx != -1 ? tab.dragx : tab.x;
+			const tabY = tab.dragy != -1 ? tab.dragy : tab.y;
+			tab.root.style.width = tab.width + "px";
+			tab.root.style.height = tab.height + "px";
+			setTabTransform(tab, tabX, tabY);
+			tab.x = tabX;
+			tab.y = tabY;
+		}
 	};
 
 	const calcDragPos = (e: MouseEvent, tab: VisualTab) => {
-		const maxPos = getMaxDragPos() - tab.root.offsetHeight;
+		if (tab.tab.pinned) {
+			const metrics = getPinnedGridMetrics();
+			this.pinnedEl.style.height = `${metrics.totalHeight}px`;
+			const rect = this.pinnedEl.getBoundingClientRect();
+			const posX = e.clientX - tab.dragoffsetx - rect.left;
+			const posY = e.clientY - tab.dragoffsety - rect.top;
+			const maxX = Math.max(0, rect.width - metrics.width);
+			const maxY = Math.max(0, metrics.totalHeight - metrics.height);
 
-		const pos = e.clientY - tab.dragoffset - getAbsoluteStart();
+			tab.dragx = Math.min(Math.max(0, posX), maxX);
+			tab.dragy = Math.min(Math.max(0, posY), maxY);
+		} else {
+			const tabHeight = tab.root.offsetHeight || getTabHeight();
+			const maxPos = getLayoutStart() + getRootHeight() - tabHeight;
+			const posY = e.clientY - tab.dragoffsety - getAbsoluteStart();
 
-		tab.dragpos = Math.min(Math.max(getLayoutStart(), pos), maxPos);
+			tab.dragx = 0;
+			tab.dragy = Math.min(Math.max(getLayoutStart(), posY), maxPos);
+		}
+
 		layoutTabs(true);
 	};
 
@@ -198,20 +484,35 @@ export function Sidebar(
 
 	const mouseUpHandler = () => {
 		if (this.currentlydragging === null) return;
+
+		const pinnedMetrics = getPinnedGridMetrics();
+		this.pinnedEl.style.height = `${pinnedMetrics.totalHeight}px`;
+		const orderedTabs = getOrderedTabs(
+			pinnedMetrics,
+			getTabHeight(),
+			getLayoutStart()
+		);
+		syncVisualOrder(orderedTabs.all);
+
 		const tab = this.visualtabs.find(
 			(tab) => tab.tab.id === this.currentlydragging
 		)!;
+		const nextOrder = orderedTabs.all.map((visualtab) => visualtab.tab);
 		const dragroot = tab.root.querySelector(".dragroot") as HTMLElement;
 
+		this.currentlydragging = null;
 		dragroot.style.width = "";
+		dragroot.style.height = "";
 		dragroot.style.position = "unset";
-		tab.dragoffset = -1;
-		tab.dragpos = -1;
+		tab.dragoffsetx = -1;
+		tab.dragoffsety = -1;
+		tab.dragx = -1;
+		tab.dragy = -1;
 		layoutTabs(true);
 		if (!tab.root.style.transition) {
-			tab.root.style.zIndex = "0";
+			tab.root.style.zIndex = "1";
 		}
-		this.currentlydragging = null;
+		tabsService.reorderTabs(nextOrder);
 		unlock();
 		window.removeEventListener("mousemove", mouseMoveHandler);
 		window.removeEventListener("mouseup", mouseUpHandler);
@@ -227,11 +528,16 @@ export function Sidebar(
 		tab.root.style.zIndex = "100";
 		const dragroot = tab.root.querySelector(".dragroot") as HTMLElement;
 		dragroot.style.width = rect.width + "px";
+		dragroot.style.height = rect.height + "px";
 		dragroot.style.position = "absolute";
-		tab.dragoffset = e.clientY - rect.top;
-		tab.startdragpos = rect.top;
+		tab.dragoffsetx = e.clientX - rect.left;
+		tab.dragoffsety = e.clientY - rect.top;
+		tab.startdragx = rect.left;
+		tab.startdragy = rect.top;
 
-		if (tab.dragoffset < 0) throw new Error("dragoffset must be positive");
+		if (tab.dragoffsetx < 0 || tab.dragoffsety < 0) {
+			throw new Error("drag offset must be positive");
+		}
 
 		calcDragPos(e, tab);
 
@@ -293,6 +599,7 @@ export function Sidebar(
 
 	use(this.tabs).listen(() => {
 		let newvisualtabs: VisualTab[] = [];
+		const createdVisualTabs = new Set<VisualTab>();
 
 		for (let index = 0; index < this.tabs.length; index++) {
 			let tab = this.tabs[index];
@@ -300,6 +607,13 @@ export function Sidebar(
 			let visualtab = this.visualtabs.find((t) => t.tab === tab);
 
 			if (!visualtab) {
+				use(tab.pinned)
+					.constrain(this)
+					.listen(() => {
+						this.visualtabs = [...this.visualtabs];
+						requestAnimationFrame(() => layoutTabs(false));
+					});
+
 				let dt = (
 					<DragTab
 						id={tab.id}
@@ -319,16 +633,32 @@ export function Sidebar(
 				visualtab = {
 					tab,
 					root: dt,
-					dragoffset: -1,
-					dragpos: -1,
-					startdragpos: -1,
+					dragoffsetx: -1,
+					dragoffsety: -1,
+					dragx: -1,
+					dragy: -1,
+					startdragx: -1,
+					startdragy: -1,
 					closing: false,
+					width: 0,
 					height: 0,
-					pos: getLayoutStart() + index * (getTabHeight() + TAB_PADDING),
+					x: 0,
+					y: tab.pinned
+						? 0
+						: getLayoutStart() + index * (getTabHeight() + TAB_PADDING),
 				};
+				createdVisualTabs.add(visualtab);
 			}
 
 			newvisualtabs.push(visualtab);
+		}
+
+		primeNewVisualTabs(newvisualtabs, createdVisualTabs);
+		if (createdVisualTabs.size > 0) {
+			createdVisualTabs.forEach((tab) => openingTabs.add(tab));
+			window.setTimeout(() => {
+				createdVisualTabs.forEach((tab) => openingTabs.delete(tab));
+			}, 220);
 		}
 
 		for (let vtab of this.visualtabs) {
@@ -388,12 +718,21 @@ export function Sidebar(
 		});
 		resizeObserver.observe(this.container);
 		resizeObserver.observe(this.topEl);
+		resizeObserver.observe(this.pinnedEl);
 		resizeObserver.observe(this.bottomEl);
 		resizeObserver.observe(this.afterEl);
 
 		// Force an initial sync for newly-mounted strips after mode switches.
 		this.tabs = [...this.tabs];
 	};
+
+	const pinnedTabs = (
+		<div class="pins" this={use(this.pinnedEl)}>
+			{use(this.visualtabs)
+				.map((t) => t.filter((f) => f.tab.pinned))
+				.mapEach((tab) => tab.root)}
+		</div>
+	);
 
 	return (
 		<div
@@ -405,9 +744,18 @@ export function Sidebar(
 			)}
 		>
 			<div class="extra top" this={use(this.topEl)}>
-				{this.topContent}
+				{typeof this.topContent === "function" ? (
+					this.topContent(pinnedTabs)
+				) : (
+					<>
+						{this.topContent}
+						{pinnedTabs}
+					</>
+				)}
 			</div>
-			{use(this.visualtabs).mapEach((tab) => tab.root)}
+			{use(this.visualtabs)
+				.map((t) => t.filter((f) => !f.tab.pinned))
+				.mapEach((tab) => tab.root)}
 			<div class="extra after" this={use(this.afterEl)}>
 				<button class="new-tab" on:click={this.addTab}>
 					<Icon icon={iconAdd} />
@@ -447,6 +795,7 @@ Sidebar.style = css`
 		left: 0;
 		width: 100%;
 		position: absolute;
+		z-index: 0;
 	}
 
 	.top,
@@ -467,6 +816,12 @@ Sidebar.style = css`
 
 	.top {
 		top: 0;
+	}
+
+	.pins {
+		position: relative;
+		width: 100%;
+		min-height: 0;
 	}
 
 	.top:empty,

@@ -44,6 +44,7 @@ export function Omnibar(
 	this: FC<{
 		tab: Tab;
 		layout?: "horizontal" | "vertical" | "compact";
+		verticalMiddleContent?: any;
 	}>
 ) {
 	const selectContent = createDelegate<void>();
@@ -269,6 +270,7 @@ export function Omnibar(
 					<div class="button-group nav">{navigationControls}</div>
 					<div class="button-group utilities">{utilityControls}</div>
 				</div>
+				{this.verticalMiddleContent}
 				<div class="omnibox-row">
 					<Omnibox
 						selectContent={selectContent}

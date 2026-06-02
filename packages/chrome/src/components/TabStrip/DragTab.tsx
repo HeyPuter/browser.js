@@ -39,7 +39,7 @@ export function DragTab(
 	const orientation = this.orientation ?? "horizontal";
 	const isVertical = orientation === "vertical";
 
-	this.cx.mount = () => {
+	const applyContextMenu = (pinned: boolean) => {
 		setContextMenu(this.root, [
 			{
 				label: "New tab to the right",
@@ -63,9 +63,9 @@ export function DragTab(
 				},
 			},
 			{
-				label: this.tab.pinned ? "Unpin" : "Pin",
+				label: pinned ? "Unpin" : "Pin",
 				action: () => {
-					this.tab.pinned = !this.tab.pinned;
+					tabsService.setTabPinned(this.tab, !this.tab.pinned);
 				},
 			},
 			{
@@ -90,6 +90,14 @@ export function DragTab(
 				},
 			},
 		]);
+	};
+
+	use(this.tab.pinned).listen((pinned) => {
+		applyContextMenu(pinned);
+	});
+
+	this.cx.mount = () => {
+		applyContextMenu(this.tab.pinned);
 
 		if (isVertical) {
 			// Animate inner content so absolute-positioned root layout is unaffected.
@@ -151,20 +159,21 @@ export function DragTab(
 		}
 	};
 
-	let hoverTimeout: number;
-
 	return (
 		<div
-			style="z-index: 0;"
-			class={use(this.tooltipHovered).map((hovered) =>
-				hovered ? `tab ${orientation} hovered` : `tab ${orientation}`
-			)}
+			style="z-index: 1;"
+			class={use(this.tooltipHovered)
+				.zip(use(this.tab.pinned))
+				.map(
+					([hovered, pinned]) =>
+						`tab ${orientation}${hovered ? " hovered " : ""}${pinned ? " pinned " : ""}`
+				)}
 			data-id={this.id}
 			on:transitionend={(e: TransitionEvent) => {
 				if (e.target !== this.root || e.propertyName !== "transform") return;
 				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
 				this.root.style.transition = "";
-				this.root.style.zIndex = "0";
+				this.root.style.zIndex = "1";
 				this.transitionend();
 			}}
 		>
@@ -203,35 +212,40 @@ export function DragTab(
 						)
 						.or(
 							use(this.orientation)
-								.map((o) => o === "vertical")
+								.zip(use(this.tab.pinned))
+								.map(([o, p]) => o === "vertical" || p)
 								.and(
 									<div class="favicon">
 										<Icon class="favicon-placeholder" icon={iconGlobe} />
 									</div>
 								)
 						)}
-					<span>{use(this.tab.title)}</span>
-					<button
-						class="close"
-						on:click={(e: MouseEvent) => {
-							e.stopPropagation();
-							this.destroy();
-						}}
-						on:auxclick={(e: MouseEvent) => {
-							e.stopPropagation();
-							this.destroy();
-						}}
-						on:contextmenu={(e: MouseEvent) => {
-							e.preventDefault();
-							e.stopPropagation();
-						}}
-						on:mouseenter={(e: MouseEvent) => {
-							this.mouseover();
-							e.stopPropagation();
-						}}
-					>
-						<Icon icon={iconClose} />
-					</button>
+					{use(this.tab.pinned).or(
+						<>
+							<span>{use(this.tab.title)}</span>
+							<button
+								class="close"
+								on:click={(e: MouseEvent) => {
+									e.stopPropagation();
+									this.destroy();
+								}}
+								on:auxclick={(e: MouseEvent) => {
+									e.stopPropagation();
+									this.destroy();
+								}}
+								on:contextmenu={(e: MouseEvent) => {
+									e.preventDefault();
+									e.stopPropagation();
+								}}
+								on:mouseenter={(e: MouseEvent) => {
+									this.mouseover();
+									e.stopPropagation();
+								}}
+							>
+								<Icon icon={iconClose} />
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 		</div>
@@ -251,8 +265,22 @@ DragTab.style = css`
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
 
+	:scope.pinned:not(.vertical) {
+		width: fit-content;
+		max-width: none;
+	}
+
+	:scope.pinned:not(.vertical) .main {
+		justify-content: center;
+		padding: 0;
+	}
+
 	:scope.vertical {
 		display: block;
+	}
+
+	:scope.vertical.pinned {
+		max-width: none;
 	}
 
 	:global(*) > :scope:has(:hover) .hover-area {
@@ -261,6 +289,10 @@ DragTab.style = css`
 
 	:scope.vertical .dragroot {
 		overflow: hidden;
+	}
+
+	:scope.vertical.pinned .dragroot {
+		height: 100%;
 	}
 
 	.hover-area {
@@ -288,6 +320,27 @@ DragTab.style = css`
 		align-items: center;
 		gap: 8px;
 	}
+
+	:scope.vertical.pinned .main {
+		height: 100%;
+		justify-content: center;
+		padding: 0;
+		border-radius: calc(var(--radius) * 2);
+		background: color-mix(in srgb, var(--toolbar_text) 5%, transparent);
+	}
+
+	:scope.vertical.pinned .favicon {
+		width: 18px;
+		height: 18px;
+		color: var(--toolbar_text);
+	}
+
+	:scope.vertical.pinned .favicon img,
+	:scope.vertical.pinned .favicon .favicon-placeholder {
+		width: 18px;
+		height: 18px;
+	}
+
 	.favicon {
 		width: 16px;
 		height: 16px;

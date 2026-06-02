@@ -6,7 +6,6 @@ import { INTERNAL_URL_PROTOCOL } from "../consts.ts";
 import * as tldts from "tldts";
 import { isPuter } from "../index.ts";
 import { focusOmnibox } from "@components/Omnibar/Omnibox.tsx";
-import { uuid } from "../util";
 import { mountedPromise } from "../App.tsx";
 
 export const pushTab = createDelegate<Tab>();
@@ -21,11 +20,43 @@ export class TabsService extends Service {
 	tabs: Tab[] = [];
 	activetab: Tab;
 
+	private partitionPinnedTabs<T extends { pinned: boolean }>(tabs: T[]) {
+		const pinned: T[] = [];
+		const regular: T[] = [];
+
+		for (const tab of tabs) {
+			(tab.pinned ? pinned : regular).push(tab);
+		}
+
+		return [...pinned, ...regular];
+	}
+
+	private normalizeTabOrder() {
+		const nextTabs = this.partitionPinnedTabs(this.tabs);
+		const changed = nextTabs.some((tab, index) => this.tabs[index] !== tab);
+
+		if (changed) {
+			this.tabs = nextTabs;
+		}
+
+		return changed;
+	}
+
+	private watchTab(tab: Tab) {
+		use(tab.pinned)
+			.constrain(this)
+			.listen(() => {
+				this.normalizeTabOrder();
+				this.markDirty();
+			});
+	}
+
 	constructor(data: TabServiceState | null) {
 		super();
 		if (data) {
-			for (const dt of data.tabs) {
-				let tab = Tab.deserialize(dt);
+			for (const dt of this.partitionPinnedTabs(data.tabs)) {
+				const tab = Tab.deserialize(dt);
+				this.watchTab(tab);
 				this.own(tab);
 				this.tabs.push(tab);
 				mountedPromise.then(() => {
@@ -34,8 +65,12 @@ export class TabsService extends Service {
 			}
 			this.activetab =
 				this.tabs.find((tab) => tab.id === data.activetab) || this.tabs[0];
+			if (this.normalizeTabOrder()) {
+				this.markDirty();
+			}
 		} else {
-			let tab = new Tab({});
+			const tab = new Tab({});
+			this.watchTab(tab);
 			this.own(tab);
 			this.tabs.push(tab);
 			this.activetab = tab;
@@ -55,8 +90,14 @@ export class TabsService extends Service {
 		return new TabsService(data);
 	}
 
+	setTabPinned(tab: Tab, pinned: boolean) {
+		if (tab.pinned === pinned) return;
+		tab.pinned = pinned;
+	}
+
 	newTab(url?: URL, focusomnibox: boolean = false) {
-		let tab = new Tab({ url });
+		const tab = new Tab({ url });
+		this.watchTab(tab);
 		this.own(tab);
 		pushTab(tab);
 		this.tabs = [...this.tabs, tab];
@@ -67,27 +108,47 @@ export class TabsService extends Service {
 	}
 
 	newTabRight(ref: Tab, url?: URL) {
-		let tab = new Tab({ url });
+		const tab = new Tab({ url });
+		this.watchTab(tab);
 		this.own(tab);
 		pushTab(tab);
-		let index = this.tabs.indexOf(ref);
-		this.tabs.splice(index + 1, 0, tab);
-		this.tabs = this.tabs;
+		let index = ref.pinned
+			? this.tabs.findIndex((tab) => !tab.pinned)
+			: this.tabs.indexOf(ref) + 1;
+		if (index === -1) {
+			index = this.tabs.length;
+		}
+		this.tabs.splice(index, 0, tab);
+		this.tabs = [...this.tabs];
 		this.activetab = tab;
 		this.markDirty();
 		return tab;
 	}
 
+	reorderTabs(nextTabs: Tab[]) {
+		if (nextTabs.length !== this.tabs.length) return;
+
+		const currentIds = new Set(this.tabs.map((tab) => tab.id));
+		if (nextTabs.some((tab) => !currentIds.has(tab.id))) return;
+
+		const orderedTabs = this.partitionPinnedTabs(nextTabs);
+		const changed = orderedTabs.some((tab, index) => this.tabs[index] !== tab);
+		if (!changed) return;
+
+		this.tabs = [...orderedTabs];
+		this.markDirty();
+	}
+
 	closeTabsToRight(ref: Tab) {
-		let index = this.tabs.indexOf(ref);
-		let toClose = this.tabs.slice(index + 1);
+		const index = this.tabs.indexOf(ref);
+		const toClose = this.tabs.slice(index + 1);
 		toClose.forEach((tab) => {
 			this.destroyTab(tab);
 		});
 	}
 
 	closeOtherTabs(ref: Tab) {
-		let toClose = this.tabs.filter((tab) => tab !== ref);
+		const toClose = this.tabs.filter((tab) => tab !== ref);
 		toClose.forEach((tab) => {
 			this.destroyTab(tab);
 		});
@@ -110,7 +171,7 @@ export class TabsService extends Service {
 	}
 
 	searchNavigate(url: string) {
-		function validTld(hostname: string) {
+		function validTld(_hostname: string) {
 			const res = tldts.parse(url);
 			if (!res.domain) return false;
 			if (res.isIp || res.isIcann) return true;
@@ -124,7 +185,7 @@ export class TabsService extends Service {
 			URL.canParse("https://" + url) &&
 			validTld(new URL("https://" + url).hostname)
 		) {
-			let fullurl = new URL("https://" + url);
+			const fullurl = new URL("https://" + url);
 			this.activetab.pushNavigate(fullurl);
 		} else {
 			const search = `https://google.com/search?q=${encodeURIComponent(url)}`;
