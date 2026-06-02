@@ -11,8 +11,6 @@ export function setupHistoryEmulation({
 				title: ctx.args[1],
 				url: new URL(ctx.args[2], client.url).href,
 			});
-
-			ctx.return(undefined);
 		},
 	});
 
@@ -23,8 +21,6 @@ export function setupHistoryEmulation({
 				title: ctx.args[1],
 				url: new URL(ctx.args[2], client.url).href,
 			});
-
-			ctx.return(undefined);
 		},
 	});
 	client.Proxy("History.prototype.back", {
