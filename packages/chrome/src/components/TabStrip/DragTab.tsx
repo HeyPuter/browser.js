@@ -39,7 +39,7 @@ export function DragTab(
 	const orientation = this.orientation ?? "horizontal";
 	const isVertical = orientation === "vertical";
 
-	this.cx.mount = () => {
+	const updateContextMenu = () => {
 		setContextMenu(this.root, [
 			{
 				label: "New tab to the right",
@@ -90,6 +90,12 @@ export function DragTab(
 				},
 			},
 		]);
+	};
+
+	use(this.tab.pinned).listen(updateContextMenu);
+
+	this.cx.mount = () => {
+		updateContextMenu();
 
 		if (isVertical) {
 			// Animate inner content so absolute-positioned root layout is unaffected.
