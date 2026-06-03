@@ -160,7 +160,7 @@ export function Omnibar(
 
 	const utilityControls = (
 		<>
-			<OmnibarButton active={false} icon={iconExtension}></OmnibarButton>
+			{/* <OmnibarButton active={false} icon={iconExtension}></OmnibarButton> */}
 			{use(downloadsService.sessionDownloadHistory)
 				.map((arr) => arr.length > 0)
 				.and(

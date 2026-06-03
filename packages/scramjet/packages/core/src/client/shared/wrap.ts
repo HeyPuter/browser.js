@@ -42,7 +42,12 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 
 	return function (identifier: any, strict: boolean) {
 		if (identifier === self.location) return client.locationProxy;
-		if (identifier === self.eval) return indirectEval.bind(client, strict);
+		if (identifier === self.eval) {
+			// TODO: make this per-client, don't regen every time
+			const bound = indirectEval.bind(client, strict);
+			client.box.unproxy.set(bound, self.eval);
+			return bound;
+		}
 		if (iswindow) {
 			if (identifier === self.parent) {
 				return wrappedParent;

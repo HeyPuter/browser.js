@@ -55,7 +55,7 @@ export function SettingsPage(
 					{button("appearance", iconBrush, "Appearance")}
 					{button("search", iconSearch, "Search")}
 					{button("privacy", iconPrivacy, "Privacy & Security")}
-					{button("extensions", iconExtension, "Extensions")}
+					{/* {button("extensions", iconExtension, "Extensions")} */}
 					{button("about", iconAbout, "About")}
 				</nav>
 			</div>
@@ -167,7 +167,7 @@ export function SettingsPage(
 					{use(this.selected).map((selected) =>
 						selected === "appearance" ? (
 							<div class="settings-tab">
-								<section class="setting-section">
+								{/* <section class="setting-section">
 									<div class="section-header">
 										<h2>Page Appearance</h2>
 										<p class="description">
@@ -225,7 +225,7 @@ export function SettingsPage(
 											</div>
 										</div>
 									</div>
-								</section>
+								</section> */}
 								<section class="setting-section">
 									<div class="section-header">
 										<h2>Browser Layout (Experimental)</h2>

@@ -41,14 +41,14 @@ export function pageContextItems(
 					navigator.clipboard.writeText(selection.toString());
 				},
 			},
-			{
-				label: "Inspect",
-				action: () => {
-					tab.devtoolsOpen = true;
-					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
-				},
-				icon: iconCode,
-			},
+			// {
+			// 	label: "Inspect",
+			// 	action: () => {
+			// 		tab.devtoolsOpen = true;
+			// 		// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+			// 	},
+			// 	icon: iconCode,
+			// },
 		];
 	}
 
@@ -82,14 +82,14 @@ export function pageContextItems(
 					// TODO
 				},
 			},
-			{
-				label: "Inspect",
-				action: () => {
-					tab.devtoolsOpen = true;
-					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
-				},
-				icon: iconCode,
-			},
+			// {
+			// 	label: "Inspect",
+			// 	action: () => {
+			// 		tab.devtoolsOpen = true;
+			// 		// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+			// 	},
+			// 	icon: iconCode,
+			// },
 		];
 	} else if (anchor) {
 		return [
@@ -125,14 +125,14 @@ export function pageContextItems(
 				},
 				icon: iconSave,
 			},
-			{
-				label: "Inspect",
-				action: () => {
-					tab.devtoolsOpen = true;
-					// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
-				},
-				icon: iconCode,
-			},
+			// {
+			// 	label: "Inspect",
+			// 	action: () => {
+			// 		tab.devtoolsOpen = true;
+			// 		// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+			// 	},
+			// 	icon: iconCode,
+			// },
 		];
 	}
 
@@ -166,13 +166,13 @@ export function pageContextItems(
 			},
 			icon: iconBookmark,
 		},
-		{
-			label: "Inspect",
-			action: () => {
-				tab.devtoolsOpen = true;
-				// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
-			},
-			icon: iconCode,
-		},
+		// {
+		// 	label: "Inspect",
+		// 	action: () => {
+		// 		tab.devtoolsOpen = true;
+		// 		// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
+		// 	},
+		// 	icon: iconCode,
+		// },
 	];
 }

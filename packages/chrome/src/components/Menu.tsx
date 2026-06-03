@@ -45,8 +45,9 @@ export function Menu(
 	const close = () => {
 		unlock();
 
-		window.removeEventListener("click", ev, { capture: true });
+		window.removeEventListener("mousedown", ev, { capture: true });
 		window.removeEventListener("contextmenu", ev, { capture: true });
+		window.removeEventListener("click", ev, { capture: true });
 
 		this.closing = true;
 		this.root.addEventListener("transitionend", () => {
@@ -99,12 +100,13 @@ export function Menu(
 		if (this.x < padding) this.x = padding;
 		if (this.y < padding) this.y = padding;
 
-		window.addEventListener("click", ev, { capture: true });
+		window.addEventListener("mousedown", ev, { capture: true });
 		window.addEventListener("contextmenu", ev, {
 			capture: true,
 		});
+		window.addEventListener("click", ev, { capture: true });
 
-		this.root.addEventListener("click", (e) => {
+		this.root.addEventListener("mousedown", (e) => {
 			e.stopPropagation();
 		});
 	};

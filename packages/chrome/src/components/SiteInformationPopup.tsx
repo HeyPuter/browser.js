@@ -32,14 +32,14 @@ export function SiteInformationPopup(this: FC<{ tab: Tab }>) {
 				</p>
 			</div>
 			<div class="footer section">
-				<div class="entry">
+				{/* <div class="entry">
 					<Icon icon={iconTrash}></Icon>
 					<span>Clear Site Data</span>
 				</div>
 				<div class="entry">
 					<Icon icon={iconSettings}></Icon>
 					<span>Site Settings</span>
-				</div>
+				</div> */}
 			</div>
 		</div>
 	);
