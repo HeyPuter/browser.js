@@ -11,14 +11,19 @@ import { requestUnfocusFrames } from "@components/Shell";
 type VisualTab = {
 	tab: Tab;
 	root: HTMLElement;
-	dragoffset: number;
-	dragpos: number;
-	startdragpos: number;
-	closing: boolean;
 
+	dragoffset: number;
+
+	dragpos: number;
+
+	startdragpos: number;
+
+	closing: boolean;
 	width: number;
+
 	pos: number;
 };
+
 export function TabStrip(
 	this: FC<
 		{
@@ -48,7 +53,7 @@ export function TabStrip(
 
 	const TAB_PADDING = 6;
 	const TAB_MAX_SIZE = 231;
-	// Reorder/move animation for tabs and trailing controls in the strip.
+	const PIN_MAX_SIZE = 36;
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
@@ -67,6 +72,7 @@ export function TabStrip(
 
 		return this.container.offsetWidth - padding - border - left - right - after;
 	};
+
 	const getAbsoluteStart = () => {
 		const rect = this.container.getBoundingClientRect();
 		const style = getComputedStyle(this.container);
@@ -78,21 +84,26 @@ export function TabStrip(
 			parseFloat(style.borderLeftWidth)
 		);
 	};
+
 	const getLayoutStart = () => {
 		return this.leftEl.offsetWidth;
 	};
-
 	const getTabWidth = () => {
 		let total = getRootWidth();
 		const visibleTabCount = this.visualtabs.filter(
 			(tab) => !tab.closing
 		).length;
-		const count = Math.max(visibleTabCount, 1);
+		const visiblePinnedCount = this.visualtabs.filter(
+			(tab) => !tab.closing && tab.tab.pinned
+		).length;
+
+		const nonPinnedCount = visibleTabCount - visiblePinnedCount;
 
 		// remove padding
-		total -= TAB_PADDING * (count - 1);
+		total -= TAB_PADDING * (nonPinnedCount - 1);
+		total -= PIN_MAX_SIZE * visiblePinnedCount;
 
-		const each = total / count;
+		const each = total / nonPinnedCount;
 
 		return Math.min(TAB_MAX_SIZE, Math.floor(each));
 	};
@@ -103,6 +114,15 @@ export function TabStrip(
 
 			const bLeft = b.pos;
 			const bRight = b.pos + b.width;
+
+			if (a.tab.pinned && !b.tab.pinned) {
+				return -1;
+			}
+
+			if (!a.tab.pinned && b.tab.pinned) {
+				return 1;
+			}
+
 			const bCenter =
 				Math.abs(aCenter - bLeft) > Math.abs(aCenter - bRight) ? bRight : bLeft;
 
@@ -119,36 +139,38 @@ export function TabStrip(
 		let currpos = getLayoutStart();
 		let staggerIndex = 0;
 		let movedTabs = 0;
+
 		for (const tab of this.visualtabs) {
 			if (tab.closing) {
-				// Closing tabs animate their own width; keep their current transform while
-				// siblings/new-tab button reflow into post-close slots.
 				const tabPos = tab.dragpos != -1 ? tab.dragpos : tab.pos;
 				tab.root.style.transform = `translateX(${tabPos}px)`;
 				tab.pos = tabPos;
 				continue;
 			}
 
-			tab.root.style.width = width + "px";
+			const tabWidth = tab.tab.pinned ? PIN_MAX_SIZE : width;
+			tab.root.style.width = tabWidth + "px";
 
 			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
-			// Moves each tab horizontally to its computed slot.
+
 			tab.root.style.transform = `translateX(${tabPos}px)`;
+
 			if (transition && tab.dragpos == -1 && tab.pos != tabPos) {
 				const delay = Math.min(
 					staggerIndex * TAB_STAGGER_STEP,
 					TAB_STAGGER_MAX
 				);
-				// Animates tab movement when tabs are inserted/removed/reordered.
 				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
 				transitioningTabs++;
 				movedTabs++;
 			}
-			dragpos = Math.max(dragpos, tab.dragpos + width + TAB_PADDING);
+
+			dragpos = Math.max(dragpos, tab.dragpos + tabWidth + TAB_PADDING);
 
 			tab.pos = tabPos;
-			tab.width = width;
-			currpos += width + TAB_PADDING;
+			tab.width = tabWidth;
+
+			currpos += tabWidth + TAB_PADDING;
 			staggerIndex++;
 		}
 
@@ -157,12 +179,10 @@ export function TabStrip(
 				staggerIndex * TAB_STAGGER_STEP,
 				TAB_STAGGER_MAX
 			);
-			// Animate trailing "after" area (new-tab button container) with stagger too.
 			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
 		}
 
 		const afterpos = Math.max(dragpos, currpos);
-		// Moves the trailing control area to stay after the last tab.
 		this.afterEl.style.transform = `translateX(${afterpos}px)`;
 	};
 
@@ -176,6 +196,7 @@ export function TabStrip(
 		const pos = e.clientX - tab.dragoffset - getAbsoluteStart();
 
 		tab.dragpos = Math.min(Math.max(getLayoutStart(), pos), maxPos);
+
 		layoutTabs(true);
 	};
 
@@ -312,6 +333,16 @@ export function TabStrip(
 		}
 
 		this.visualtabs = newvisualtabs;
+
+		let slotIndex = 0;
+		const slotWidth = getTabWidth();
+		for (const vt of this.visualtabs) {
+			if (!vt.closing && vt.dragpos === -1) {
+				vt.pos = getLayoutStart() + slotIndex * (slotWidth + TAB_PADDING);
+				slotIndex++;
+			}
+		}
+
 		setTimeout(() => layoutTabs(true), 10);
 	});
 

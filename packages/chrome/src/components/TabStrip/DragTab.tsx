@@ -65,7 +65,11 @@ export function DragTab(
 			{
 				label: this.tab.pinned ? "Unpin" : "Pin",
 				action: () => {
-					this.tab.pinned = !this.tab.pinned;
+					if (this.tab.pinned) {
+						tabsService.unpinTab(this.tab);
+					} else {
+						tabsService.pinTab(this.tab);
+					}
 				},
 			},
 			{
@@ -209,35 +213,40 @@ export function DragTab(
 						)
 						.or(
 							use(this.orientation)
-								.map((o) => o === "vertical")
+								.zip(use(this.tab.pinned))
+								.map(([o, p]) => o === "vertical" || p)
 								.and(
 									<div class="favicon">
 										<Icon class="favicon-placeholder" icon={iconGlobe} />
 									</div>
 								)
 						)}
-					<span>{use(this.tab.title)}</span>
-					<button
-						class="close"
-						on:click={(e: MouseEvent) => {
-							e.stopPropagation();
-							this.destroy();
-						}}
-						on:auxclick={(e: MouseEvent) => {
-							e.stopPropagation();
-							this.destroy();
-						}}
-						on:contextmenu={(e: MouseEvent) => {
-							e.preventDefault();
-							e.stopPropagation();
-						}}
-						on:mouseenter={(e: MouseEvent) => {
-							this.mouseover();
-							e.stopPropagation();
-						}}
-					>
-						<Icon icon={iconClose} />
-					</button>
+					{use(this.tab.pinned).or(
+						<>
+							<span>{use(this.tab.title)}</span>
+							<button
+								class="close"
+								on:click={(e: MouseEvent) => {
+									e.stopPropagation();
+									this.destroy();
+								}}
+								on:auxclick={(e: MouseEvent) => {
+									e.stopPropagation();
+									this.destroy();
+								}}
+								on:contextmenu={(e: MouseEvent) => {
+									e.preventDefault();
+									e.stopPropagation();
+								}}
+								on:mouseenter={(e: MouseEvent) => {
+									this.mouseover();
+									e.stopPropagation();
+								}}
+							>
+								<Icon icon={iconClose} />
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 		</div>

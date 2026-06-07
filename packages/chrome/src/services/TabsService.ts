@@ -109,6 +109,30 @@ export class TabsService extends Service {
 		this.markDirty();
 	}
 
+	pinTab(tab: Tab) {
+		let index = this.tabs.indexOf(tab);
+		tab.pinned = true;
+		this.tabs.splice(index, 1);
+		// @ts-ignore
+		const lastPinnedIdx = this.tabs.findLastIndex((t: Tab) => t.pinned);
+		const newidx = lastPinnedIdx === -1 ? 0 : lastPinnedIdx + 1;
+		this.tabs.splice(newidx, 0, tab);
+		this.tabs = this.tabs;
+		this.markDirty();
+	}
+
+	unpinTab(tab: Tab) {
+		let index = this.tabs.indexOf(tab);
+		tab.pinned = false;
+		this.tabs.splice(index, 1);
+		// @ts-ignore
+		const lastPinnedIdx = this.tabs.findLastIndex((t: Tab) => t.pinned);
+		const newidx = lastPinnedIdx === -1 ? 0 : lastPinnedIdx + 1;
+		this.tabs.splice(newidx, 0, tab);
+		this.tabs = this.tabs;
+		this.markDirty();
+	}
+
 	searchNavigate(url: string) {
 		function validTld(hostname: string) {
 			const res = tldts.parse(url);
