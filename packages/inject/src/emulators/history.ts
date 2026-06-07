@@ -6,20 +6,24 @@ export function setupHistoryEmulation({
 }: ExecutionContextWrapper) {
 	client.Proxy("History.prototype.pushState", {
 		apply(ctx) {
+			const relevantclient = client.box.histories.get(ctx.this)!;
+
+			// TODO: should probably not send the pushstate if relevantclient ends up being not top level
 			rpc.call("history_pushState", {
 				state: ctx.args[0],
 				title: ctx.args[1],
-				url: new URL(ctx.args[2], client.url).href,
+				url: new URL(ctx.args[2], relevantclient.url).href,
 			});
 		},
 	});
 
 	client.Proxy("History.prototype.replaceState", {
 		apply(ctx) {
+			const relevantclient = client.box.histories.get(ctx.this)!;
 			rpc.call("history_replaceState", {
 				state: ctx.args[0],
 				title: ctx.args[1],
-				url: new URL(ctx.args[2], client.url).href,
+				url: new URL(ctx.args[2], relevantclient.url).href,
 			});
 		},
 	});
