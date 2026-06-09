@@ -410,7 +410,7 @@ export function VerticalPinTile(
 	this: FC<{
 		tab: Tab;
 		active: boolean;
-		select: () => void;
+		dragStart: (e: MouseEvent) => void;
 		destroy: () => void;
 	}>
 ) {
@@ -427,7 +427,9 @@ export function VerticalPinTile(
 				([title, url]) => title || url.hostname || ""
 			)}
 			on:mousedown={(e: MouseEvent) => {
-				if (e.button === 0) this.select();
+				if (e.button !== 0) return;
+				e.preventDefault();
+				this.dragStart(e);
 			}}
 			on:auxclick={(e: MouseEvent) => {
 				if (e.button === 1) this.destroy();
@@ -471,6 +473,15 @@ VerticalPinTile.style = css`
 		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 
 		outline: 1px solid var(--popup_border);
+	}
+
+	/* Lifted tile while being dragged in the pin grid. Grid items honor z-index
+	   without an explicit position, so it floats above its siblings. */
+	:scope.dragging {
+		z-index: 20;
+		pointer-events: none;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+		outline: 1px solid var(--tab_line);
 	}
 
 	.pin-favicon {
