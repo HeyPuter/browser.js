@@ -1,7 +1,7 @@
 import type { FC } from "dreamland/core";
 import { css } from "dreamland/core";
 import { TabStrip } from "@components/TabStrip/TabStrip";
-import { Sidebar } from "@components/TabStrip/Sidebar";
+import { Sidebar, VerticalPinList } from "@components/TabStrip/Sidebar";
 import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
@@ -148,14 +148,25 @@ export function App(
 							tabsService.destroyTab(tab);
 						}}
 						topContent={
-							layout === "vertical" ? (
+							layout === "hybrid" ? (
+								<VerticalPinList
+									tabs={use(tabsService.tabs)}
+									activetab={use(tabsService.activetab)}
+									destroyTab={(tab: Tab) => tabsService.destroyTab(tab)}
+								/>
+							) : (
 								<div class="vertical-sidebar-header">
 									<Omnibar tab={use(tabsService.activetab)} layout="vertical" />
+									<VerticalPinList
+										tabs={use(tabsService.tabs)}
+										activetab={use(tabsService.activetab)}
+										destroyTab={(tab: Tab) => tabsService.destroyTab(tab)}
+									/>
 									<div class="vertical-sidebar-bookmarks">
 										<BookmarksStrip orientation="vertical" />
 									</div>
 								</div>
-							) : null
+							)
 						}
 					/>
 				) : layout === "compact" ? null : (
@@ -218,12 +229,12 @@ App.style = css`
 	.vertical-sidebar-header {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--tab-padding);
 	}
 
 	.vertical-sidebar-bookmarks {
 		padding-bottom: 0.25rem;
-		border-bottom: 1px solid var(--text-10);
+		border-bottom: 1px solid var(--text-15);
 	}
 `;
 

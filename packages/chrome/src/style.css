@@ -183,3 +183,12 @@ button {
 	scale: 0.8;
 	transition: none;
 }
+
+/* In the hybrid sidebar the pin grid (VerticalPinList) is the only header
+   content, so collapse the header padding when nothing is pinned to avoid a
+   phantom gap above the tab list. In the vertical layout the grid is nested
+   inside .vertical-sidebar-header, so this direct-child rule won't match and
+   the header keeps its normal spacing. */
+#tabstrip .extra.top:has(> .pinned-tabs.empty) {
+	padding: 0;
+}

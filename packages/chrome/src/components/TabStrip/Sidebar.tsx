@@ -1,6 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { DragTab } from "./DragTab";
+import { DragTab, VerticalPinTile } from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
@@ -96,9 +96,19 @@ export function Sidebar(
 	};
 
 	const getTabHeight = () => {
+		// Measure the inner `.main` row rather than the tab root. When a tab
+		// opens (notably a freshly-unpinned tab, which `unpinTab` inserts at the
+		// front of the list so it becomes `firstVisible`), its `.dragroot`
+		// wrapper is height-animated from 0 with `overflow: hidden`, so the root
+		// briefly reports a near-zero height. `.main` keeps its `--tab-height`
+		// throughout that animation, so measuring it avoids reading a transient
+		// height and collapsing the spacing of every tab.
 		const firstVisible = this.visualtabs.find((tab) => !tab.closing);
 		if (firstVisible) {
-			const measured = firstVisible.root.offsetHeight;
+			const main = firstVisible.root.querySelector(
+				".main"
+			) as HTMLElement | null;
+			const measured = main?.offsetHeight ?? 0;
 			if (measured > 0) return measured;
 		}
 
@@ -294,8 +304,17 @@ export function Sidebar(
 	use(this.tabs).listen(() => {
 		let newvisualtabs: VisualTab[] = [];
 
+		// Both sidebar layouts render pinned tabs in the Arc-style grid
+		// (VerticalPinList) instead of the linear list, so skip them here.
+		// `visibleIndex` tracks the slot of the listed tabs for the initial
+		// transition origin.
+		const usesPinnedGrid =
+			this.layout === "vertical" || this.layout === "hybrid";
+		let visibleIndex = 0;
 		for (let index = 0; index < this.tabs.length; index++) {
 			let tab = this.tabs[index];
+
+			if (tab.pinned && usesPinnedGrid) continue;
 
 			let visualtab = this.visualtabs.find((t) => t.tab === tab);
 
@@ -324,11 +343,12 @@ export function Sidebar(
 					startdragpos: -1,
 					closing: false,
 					height: 0,
-					pos: getLayoutStart() + index * (getTabHeight() + TAB_PADDING),
+					pos: getLayoutStart() + visibleIndex * (getTabHeight() + TAB_PADDING),
 				};
 			}
 
 			newvisualtabs.push(visualtab);
+			visibleIndex++;
 		}
 
 		for (let vtab of this.visualtabs) {
@@ -509,5 +529,77 @@ Sidebar.style = css`
 	:global(.sidebar-right *) > :scope .sidebar-resizer {
 		left: -4px;
 		right: auto;
+	}
+`;
+
+/**
+ * Arc-style grid of pinned tabs for the vertical and hybrid sidebars. Renders
+ * each pinned tab as a square favicon tile ({@link VerticalPinTile}) in a
+ * responsive grid. Clicking a tile activates that tab.
+ *
+ * Rendered by App (between the omnibar and bookmarks in the vertical header, and
+ * at the top of the hybrid sidebar) rather than by {@link Sidebar} itself, so it
+ * can sit inside the vertical header between those two pieces. The horizontal
+ * tab strip has its own pin rendering, so this list is sidebar-only.
+ */
+export function VerticalPinList(
+	this: FC<{
+		tabs: Tab[];
+		activetab: Tab;
+		destroyTab: (tab: Tab) => void;
+	}>
+) {
+	// Cache tile elements per-tab so reordering/repinning doesn't recreate DOM
+	// nodes (which would reset their context menus and favicon listeners).
+	const tiles = new Map<Tab, HTMLElement>();
+
+	const getTile = (tab: Tab) => {
+		let cached = tiles.get(tab);
+		if (cached) return cached;
+
+		const tile = (
+			<VerticalPinTile
+				tab={tab}
+				active={use(this.activetab).map((active) => active === tab)}
+				select={() => {
+					this.activetab = tab;
+				}}
+				destroy={() => this.destroyTab(tab)}
+			/>
+		) as HTMLElement;
+
+		tiles.set(tab, tile);
+		return tile;
+	};
+
+	// Drop cached tiles for tabs that are no longer pinned or were closed.
+	use(this.tabs).listen((tabs) => {
+		const pinned = new Set(tabs.filter((tab) => tab.pinned));
+		for (const tab of [...tiles.keys()]) {
+			if (!pinned.has(tab)) tiles.delete(tab);
+		}
+	});
+
+	return (
+		<div
+			class="pinned-tabs"
+			class:empty={use(this.tabs).map((tabs) => !tabs.some((t) => t.pinned))}
+		>
+			{use(this.tabs)
+				.map((tabs) => tabs.filter((tab) => tab.pinned))
+				.mapEach((tab) => getTile(tab))}
+		</div>
+	);
+}
+
+VerticalPinList.style = css`
+	:scope {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+		gap: 6px;
+	}
+
+	:scope.empty {
+		display: none;
 	}
 `;

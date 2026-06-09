@@ -13,6 +13,69 @@ import {
 import { Icon } from "@components/Icon";
 import { tabsService } from "../..";
 
+/**
+ * Builds the shared right-click context menu for a tab. Used by both
+ * {@link DragTab} and {@link VerticalPinTile} so the available actions (and the
+ * Pin/Unpin toggle) stay in sync. Private to this module since both consumers
+ * live here.
+ */
+function buildTabContextMenu(tab: Tab, destroy: () => void) {
+	return [
+		{
+			label: "New tab to the right",
+			icon: iconNew,
+			action: () => {
+				tabsService.newTabRight(tab);
+			},
+		},
+		{
+			label: "Reload",
+			icon: iconRefresh,
+			action: () => {
+				tab.frame.reload();
+			},
+		},
+		{
+			label: "Duplicate",
+			icon: iconDuplicate,
+			action: () => {
+				tabsService.newTabRight(tab, tab.url);
+			},
+		},
+		{
+			label: tab.pinned ? "Unpin" : "Pin",
+			action: () => {
+				if (tab.pinned) {
+					tabsService.unpinTab(tab);
+				} else {
+					tabsService.pinTab(tab);
+				}
+			},
+		},
+		{
+			label: "Close",
+			icon: iconClose,
+			action: () => {
+				destroy();
+			},
+		},
+		{
+			label: "Close other tabs",
+			icon: iconTrash,
+			action: () => {
+				tabsService.closeOtherTabs(tab);
+			},
+		},
+		{
+			label: "Close tabs to the right",
+			icon: iconCloseCircle,
+			action: () => {
+				tabsService.closeTabsToRight(tab);
+			},
+		},
+	];
+}
+
 export function DragTab(
 	this: FC<
 		{
@@ -40,60 +103,7 @@ export function DragTab(
 	const isVertical = orientation === "vertical";
 
 	const updateContextMenu = () => {
-		setContextMenu(this.root, [
-			{
-				label: "New tab to the right",
-				icon: iconNew,
-				action: () => {
-					tabsService.newTabRight(this.tab);
-				},
-			},
-			{
-				label: "Reload",
-				icon: iconRefresh,
-				action: () => {
-					this.tab.frame.reload();
-				},
-			},
-			{
-				label: "Duplicate",
-				icon: iconDuplicate,
-				action: () => {
-					tabsService.newTabRight(this.tab, this.tab.url);
-				},
-			},
-			{
-				label: this.tab.pinned ? "Unpin" : "Pin",
-				action: () => {
-					if (this.tab.pinned) {
-						tabsService.unpinTab(this.tab);
-					} else {
-						tabsService.pinTab(this.tab);
-					}
-				},
-			},
-			{
-				label: "Close",
-				icon: iconClose,
-				action: () => {
-					this.destroy();
-				},
-			},
-			{
-				label: "Close other tabs",
-				icon: iconTrash,
-				action: () => {
-					tabsService.closeOtherTabs(this.tab);
-				},
-			},
-			{
-				label: "Close tabs to the right",
-				icon: iconCloseCircle,
-				action: () => {
-					tabsService.closeTabsToRight(this.tab);
-				},
-			},
-		]);
+		setContextMenu(this.root, buildTabContextMenu(this.tab, this.destroy));
 	};
 
 	use(this.tab.pinned).listen(updateContextMenu);
@@ -386,5 +396,100 @@ DragTab.style = css`
 		height: var(--tab-active-border-radius);
 
 		background: var(--toolbar);
+	}
+`;
+
+/**
+ * A single pinned-tab cell for the vertical/hybrid sidebar's Arc-style pin grid
+ * (see {@link VerticalPinList} in Sidebar.tsx). Renders the tab favicon in a
+ * square tile; left-click activates the tab, middle-click closes it, and
+ * right-click opens the shared {@link buildTabContextMenu}. Horizontal layouts
+ * render their pins inline via {@link DragTab}, so this tile is sidebar-only.
+ */
+export function VerticalPinTile(
+	this: FC<{
+		tab: Tab;
+		active: boolean;
+		select: () => void;
+		destroy: () => void;
+	}>
+) {
+	this.cx.mount = () => {
+		setContextMenu(this.root, buildTabContextMenu(this.tab, this.destroy));
+	};
+
+	return (
+		<div
+			class="pin"
+			class:active={use(this.active)}
+			data-id={this.tab.id}
+			title={use(this.tab.title, this.tab.url).map(
+				([title, url]) => title || url.hostname || ""
+			)}
+			on:mousedown={(e: MouseEvent) => {
+				if (e.button === 0) this.select();
+			}}
+			on:auxclick={(e: MouseEvent) => {
+				if (e.button === 1) this.destroy();
+			}}
+		>
+			<div class="pin-favicon">
+				{use(this.tab.icon)
+					.and(<img alt="" width="16" height="16" src={use(this.tab.icon)} />)
+					.or(<Icon class="favicon-placeholder" icon={iconGlobe} />)}
+			</div>
+		</div>
+	);
+}
+
+VerticalPinTile.style = css`
+	:scope {
+		border-radius: var(--radius);
+		background: var(--background_tab_inactive);
+		color: var(--tab_background_text);
+
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		cursor: pointer;
+		user-select: none;
+		position: relative;
+		transition: background 150ms;
+		height: var(--omnibar-height);
+		outline: 1px solid var(--popup_border);
+		outline-offset: -1px;
+	}
+
+	:scope:hover:not(.active) {
+		background: color-mix(in srgb, currentColor 8%, transparent);
+	}
+
+	:scope.active {
+		background: var(--toolbar);
+		color: var(--toolbar_text);
+		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+
+		outline: 1px solid var(--popup_border);
+	}
+
+	.pin-favicon {
+		width: 18px;
+		height: 18px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-50);
+	}
+
+	.pin-favicon img {
+		width: 16px;
+		height: 16px;
+		object-fit: contain;
+	}
+
+	.pin-favicon .favicon-placeholder {
+		width: 18px;
+		height: 18px;
 	}
 `;
