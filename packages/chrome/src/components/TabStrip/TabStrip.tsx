@@ -99,11 +99,13 @@ export function TabStrip(
 
 		const nonPinnedCount = visibleTabCount - visiblePinnedCount;
 
-		// remove padding
-		total -= TAB_PADDING * (nonPinnedCount - 1);
+		// Remove the padding for every gap between tabs (pinned tabs sit in the
+		// same row, so they contribute gaps too) and the fixed width of each
+		// pinned tab, then split whatever is left between the non-pinned tabs.
+		total -= TAB_PADDING * (visibleTabCount - 1);
 		total -= PIN_MAX_SIZE * visiblePinnedCount;
 
-		const each = total / nonPinnedCount;
+		const each = total / Math.max(nonPinnedCount, 1);
 
 		return Math.min(TAB_MAX_SIZE, Math.floor(each));
 	};

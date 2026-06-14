@@ -727,13 +727,16 @@ export function VerticalPinList(
 			if (targetIndex !== fromIndex) {
 				const pinned = this.tabs.filter((t) => t.pinned);
 				const from = pinned.indexOf(tab);
-				if (from === -1) return;
 				const to = Math.max(0, Math.min(targetIndex, pinned.length - 1));
-				if (from === to) return;
-				pinned.splice(from, 1);
-				pinned.splice(to, 0, tab);
-				tabsService.tabs = [...pinned, ...this.tabs.filter((t) => !t.pinned)];
-				tabsService.markDirty();
+				// Guard against the dragged tab having been unpinned/closed mid-drag
+				// (from === -1) and against a no-op move (from === to). Either way we
+				// still fall through to `drag = null` below so drag state is cleared.
+				if (from !== -1 && from !== to) {
+					pinned.splice(from, 1);
+					pinned.splice(to, 0, tab);
+					tabsService.tabs = [...pinned, ...this.tabs.filter((t) => !t.pinned)];
+					tabsService.markDirty();
+				}
 			}
 		}
 
