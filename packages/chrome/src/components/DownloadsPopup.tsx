@@ -221,10 +221,10 @@ DownloadsPopup.style = css`
 	}
 	progress::-webkit-progress-bar {
 		background-color: var(--text-30);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 	}
 	progress::-webkit-progress-value {
 		background-color: var(--tab_line);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 	}
 `;

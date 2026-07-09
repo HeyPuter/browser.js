@@ -121,7 +121,7 @@ BookmarksStrip.style = css`
 		height: auto;
 		min-height: var(--tab-height);
 		padding: 0.6em 0.75em;
-		border-radius: calc(var(--radius) + 1px);
+		border-radius: calc(var(--radius-md) + 1px);
 		background: var(--toolbar_field);
 	}
 

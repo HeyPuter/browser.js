@@ -32,35 +32,40 @@ iframe {
 }
 html,
 body {
-	/* Theme color mixing variables - reused throughout UI */
-	--text-5: color-mix(in srgb, var(--toolbar_text) 5%, transparent);
-	--text-8: color-mix(in srgb, var(--toolbar_text) 8%, transparent);
-	--text-10: color-mix(in srgb, var(--toolbar_text) 10%, transparent);
-	--text-15: color-mix(in srgb, var(--toolbar_text) 15%, transparent);
-	--text-20: color-mix(in srgb, var(--toolbar_text) 20%, transparent);
-	--text-30: color-mix(in srgb, var(--toolbar_text) 30%, transparent);
-	--text-35: color-mix(in srgb, var(--toolbar_text) 35%, transparent);
-	--text-40: color-mix(in srgb, var(--toolbar_text) 40%, transparent);
-	--text-50: color-mix(in srgb, var(--toolbar_text) 50%, transparent);
-	--text-60: color-mix(in srgb, var(--toolbar_text) 60%, transparent);
-	--text-65: color-mix(in srgb, var(--toolbar_text) 65%, transparent);
-	--text-70: color-mix(in srgb, var(--toolbar_text) 70%, transparent);
+	font-family: var(--font);
+	color: var(--toolbar_text);
+	background: var(--toolbar);
+	accent-color: var(--tab_line);
+	color-scheme: dark;
 
-	--ntp-text-5: color-mix(in srgb, var(--ntp_text) 5%, transparent);
-	--ntp-text-8: color-mix(in srgb, var(--ntp_text) 8%, transparent);
-	--ntp-text-10: color-mix(in srgb, var(--ntp_text) 10%, transparent);
-	--ntp-text-15: color-mix(in srgb, var(--ntp_text) 15%, transparent);
-	--ntp-text-20: color-mix(in srgb, var(--ntp_text) 20%, transparent);
-	--ntp-text-60: color-mix(in srgb, var(--ntp_text) 60%, transparent);
-	--ntp-text-70: color-mix(in srgb, var(--ntp_text) 70%, transparent);
+	--text-5: color-mix(in oklab, var(--toolbar_text) 5%, transparent);
+	--text-8: color-mix(in oklab, var(--toolbar_text) 8%, transparent);
+	--text-10: color-mix(in oklab, var(--toolbar_text) 10%, transparent);
+	--text-15: color-mix(in oklab, var(--toolbar_text) 15%, transparent);
+	--text-20: color-mix(in oklab, var(--toolbar_text) 20%, transparent);
+	--text-30: color-mix(in oklab, var(--toolbar_text) 30%, transparent);
+	--text-35: color-mix(in oklab, var(--toolbar_text) 35%, transparent);
+	--text-40: color-mix(in oklab, var(--toolbar_text) 40%, transparent);
+	--text-50: color-mix(in oklab, var(--toolbar_text) 50%, transparent);
+	--text-60: color-mix(in oklab, var(--toolbar_text) 60%, transparent);
+	--text-65: color-mix(in oklab, var(--toolbar_text) 65%, transparent);
+	--text-70: color-mix(in oklab, var(--toolbar_text) 70%, transparent);
+
+	--ntp-text-5: color-mix(in oklab, var(--ntp_text) 5%, transparent);
+	--ntp-text-8: color-mix(in oklab, var(--ntp_text) 8%, transparent);
+	--ntp-text-10: color-mix(in oklab, var(--ntp_text) 10%, transparent);
+	--ntp-text-15: color-mix(in oklab, var(--ntp_text) 15%, transparent);
+	--ntp-text-20: color-mix(in oklab, var(--ntp_text) 20%, transparent);
+	--ntp-text-60: color-mix(in oklab, var(--ntp_text) 60%, transparent);
+	--ntp-text-70: color-mix(in oklab, var(--ntp_text) 70%, transparent);
 
 	--field-text-50: color-mix(
-		in srgb,
+		in oklab,
 		var(--toolbar_field_text) 50%,
 		transparent
 	);
 	--field-text-60: color-mix(
-		in srgb,
+		in oklab,
 		var(--toolbar_field_text) 60%,
 		transparent
 	);
@@ -88,16 +93,54 @@ body {
 	--accent-shade-40: color-mix(in oklab, black 40%, var(--tab_line));
 	--accent-shade-50: color-mix(in oklab, black 50%, var(--tab_line));
 
-	--radius: 5px;
-	--tab-height: 2.2rem;
-	--omnibar-height: 2.6rem;
-	--tab-padding: 5px;
+	--radius-xs: 3px;
+	--radius-sm: 4px;
+	--radius-md: 5px;
+	--radius-lg: 6px;
+	--radius-xl: 8px;
 
-	font-family: var(--font);
-	color: var(--toolbar_text);
-	background: var(--toolbar);
-	accent-color: var(--tab_line);
-	color-scheme: dark;
+	--space-xs: 0.2rem;
+	--space-sm: 0.35rem;
+	--space-md: 0.55rem;
+	--space-lg: 0.75rem;
+	--space-xl: 0.9rem;
+
+	--tab-height: 2rem;
+	--omnibar-height: 2.5rem;
+}
+
+body.ui-compact {
+	--radius-xs: 2px;
+	--radius-sm: 3px;
+	--radius-md: 4px;
+	--radius-lg: 5px;
+	--radius-xl: 6px;
+
+	--space-xs: 0.15rem;
+	--space-sm: 0.225rem;
+	--space-md: 0.325rem;
+	--space-lg: 0.55rem;
+	--space-xl: 0.75rem;
+
+	--tab-height: 1.75rem;
+	--omnibar-height: 2.25rem;
+}
+
+body.ui-touch {
+	--radius-xs: 5px;
+	--radius-sm: 6px;
+	--radius-md: 8px;
+	--radius-lg: 10px;
+	--radius-xl: 12px;
+
+	--space-xs: 0.3rem;
+	--space-sm: 0.5rem;
+	--space-md: 0.75rem;
+	--space-lg: 1rem;
+	--space-xl: 1.25rem;
+
+	--tab-height: 2.2rem;
+	--omnibar-height: 2.8rem;
 }
 
 ::selection {
@@ -122,20 +165,6 @@ body.light-mode {
 		currentColor 30%,
 		transparent
 	);
-}
-
-body.ui-compact {
-	--tab-height: 1.8rem;
-	--omnibar-height: 2.25rem;
-	--radius: 4px;
-	--tab-padding: 5px;
-}
-
-body.ui-touch {
-	--tab-height: 2.5rem;
-	--omnibar-height: 2.8rem;
-	--radius: 8px;
-	--tab-padding: 7px;
 }
 
 body.full-vertical-tabs {

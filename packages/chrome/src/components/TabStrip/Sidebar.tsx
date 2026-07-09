@@ -451,7 +451,7 @@ Sidebar.style = css`
 		--sidebar-width: 250px;
 		display: block;
 		position: relative;
-		padding: var(--tab-padding) 8px;
+		padding: var(--space-md) 8px;
 		background: var(--frame);
 		height: 100%;
 		z-index: 2;
@@ -508,7 +508,7 @@ Sidebar.style = css`
 		border: none;
 		background: var(--toolbar);
 		color: var(--toolbar_text);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		height: var(--tab-height);
 		width: calc(100% - 16px);
 		cursor: pointer;

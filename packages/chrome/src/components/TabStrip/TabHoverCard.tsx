@@ -54,12 +54,12 @@ TabHoverCard.style = css`
 		z-index: 1000;
 		background: var(--popup);
 		border: 1px solid var(--popup_border);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		width: 18em;
 		gap: 0.25em;
 		flex-direction: column;
 		opacity: 1;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 	}
 	.text {
 		padding: 0.75em 0.67em;

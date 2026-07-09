@@ -229,7 +229,7 @@ App.style = css`
 	.vertical-sidebar-header {
 		display: flex;
 		flex-direction: column;
-		gap: var(--tab-padding);
+		gap: var(--space-md);
 	}
 
 	.vertical-sidebar-bookmarks {

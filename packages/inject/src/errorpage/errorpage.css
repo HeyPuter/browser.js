@@ -52,7 +52,7 @@ body {
 	align-items: flex-start;
 	background: color-mix(in srgb, var(--toolbar_field) 55%, transparent);
 	border: 1px solid var(--text-15);
-	border-radius: calc(var(--radius) * 1.5);
+	border-radius: calc(var(--radius-md) * 1.5);
 	padding: 24px;
 	box-sizing: border-box;
 }
@@ -96,7 +96,7 @@ body {
 	padding: 10px 14px;
 	padding-left: 16px;
 	background: color-mix(in srgb, var(--muted) 6%, transparent);
-	border-radius: var(--radius);
+	border-radius: var(--radius-md);
 	overflow: hidden;
 	color: var(--muted);
 	font-size: 13px;
@@ -114,8 +114,8 @@ body {
 	bottom: 0;
 	width: 2px;
 	background: var(--muted);
-	border-top-left-radius: var(--radius);
-	border-bottom-left-radius: var(--radius);
+	border-top-left-radius: var(--radius-md);
+	border-bottom-left-radius: var(--radius-md);
 }
 
 .controls {
@@ -130,7 +130,7 @@ body {
 	color: inherit;
 	background: var(--toolbar_field);
 	border: 1px solid var(--text-20);
-	border-radius: var(--radius);
+	border-radius: var(--radius-md);
 	padding: 0.5em 1em;
 	font-size: 0.9em;
 	cursor: pointer;

@@ -26,7 +26,7 @@ InactiveBar.style = css`
 		width: 100%;
 		border: none;
 		outline: none;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		margin: 0.25em;
 	}
 
@@ -401,7 +401,7 @@ Omnibox.style = css`
 		width: 100%;
 		z-index: 0;
 		background: var(--toolbar_field);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 	    border: 1px solid var(--text-20);
 	}
 
@@ -426,7 +426,7 @@ Omnibox.style = css`
 		display: none;
 		background: var(--toolbar_field);
 		width: 100%;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		border: 1px solid var(--popup_border);
 		padding-bottom: 0.5em;

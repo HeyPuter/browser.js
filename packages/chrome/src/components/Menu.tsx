@@ -166,7 +166,7 @@ Menu.style = css`
 		left: var(--x);
 		background-color: var(--popup);
 		border: 1px solid var(--popup_border);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		z-index: 1000;
 		display: flex;

@@ -94,7 +94,7 @@ TopSiteButton.style = css`
 		align-items: center;
 		gap: 0.6rem;
 		justify-items: center;
-		border-radius: calc(var(--radius) * 2);
+		border-radius: calc(var(--radius-md) * 2);
 		transition:
 			background-color 0.12s ease-out,
 			color 0.12s ease-out;
@@ -116,7 +116,7 @@ TopSiteButton.style = css`
 		align-self: end;
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-15);
-		border-radius: calc(var(--radius) * 2);
+		border-radius: calc(var(--radius-md) * 2);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -139,7 +139,7 @@ TopSiteButton.style = css`
 	.icon-wrapper {
 		width: var(--top-site-icon-size);
 		height: var(--top-site-icon-size);
-		border-radius: calc(var(--radius) * 1.5);
+		border-radius: calc(var(--radius-md) * 1.5);
 		background: var(--accent-15);
 		color: var(--accent-tint-50);
 		display: flex;

@@ -35,7 +35,7 @@ OmnibarButton.style = css`
 
 		font-size: calc(var(--omnibar-height) * 0.475);
 		color: var(--icons);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 
 		opacity: 0.4;
 	}

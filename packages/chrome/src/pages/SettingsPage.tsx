@@ -396,7 +396,7 @@ export function SettingsPage(
 									)}
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>UI Density (Beta)</h2>
+										<h2>UI Density</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.
 										</p>
@@ -870,7 +870,7 @@ SettingsPage.style = css`
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.75rem 1rem;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		cursor: pointer;
 		transition:
 			background-color 0.05s ease-out,
@@ -1082,7 +1082,7 @@ SettingsPage.style = css`
 
 	.select-input {
 		padding: 0.5rem;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
 		color: var(--toolbar_field_text);
@@ -1101,7 +1101,7 @@ SettingsPage.style = css`
 		border: 1px solid var(--ntp-text-20);
 		color: var(--toolbar_field_text);
 		padding: 0.5rem 1rem;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		font-size: 0.9rem;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -1234,7 +1234,7 @@ SettingsPage.style = css`
 	}
 
 	.theme-card {
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		overflow: hidden;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -1261,7 +1261,7 @@ SettingsPage.style = css`
 
 	.preview-toolbar {
 		flex: 1;
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		padding: 0.5rem;
 		display: flex;
 		gap: 0.5rem;

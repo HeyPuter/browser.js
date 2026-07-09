@@ -304,7 +304,7 @@ DragTab.style = css`
 
 		color: var(--tab_background_text);
 
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		padding: 7px 8px;
 
 		background: var(--background_tab_inactive);
@@ -446,7 +446,7 @@ export function VerticalPinTile(
 
 VerticalPinTile.style = css`
 	:scope {
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		background: var(--background_tab_inactive);
 		color: var(--tab_background_text);
 

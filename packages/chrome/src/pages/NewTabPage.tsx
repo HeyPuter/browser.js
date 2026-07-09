@@ -171,7 +171,7 @@ NewTabPage.style = css`
 		min-height: 3rem;
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-20);
-		border-radius: calc(var(--radius) * 2);
+		border-radius: calc(var(--radius-md) * 2);
 		display: flex;
 		align-items: center;
 		transition:

@@ -81,7 +81,7 @@ BookmarkPopup.style = css`
 	button {
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		padding: 0.5em 1em;
 		font-size: 0.9em;
 		cursor: pointer;

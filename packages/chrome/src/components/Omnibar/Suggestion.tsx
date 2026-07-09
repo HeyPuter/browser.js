@@ -138,7 +138,7 @@ Suggestion.style = css`
 		color: var(--toolbar_text);
 		overflow: hidden;
 
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 	}
 
 	.result-content {
