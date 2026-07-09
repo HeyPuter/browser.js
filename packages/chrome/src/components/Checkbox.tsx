@@ -29,7 +29,7 @@ Checkbox.style = css`
 		border: 1px solid var(--text-20);
 		display: inline-block;
 		position: relative;
-		border-radius: var(--radius);
+		border-radius: min(0.25em, var(--radius));
 		vertical-align: middle;
 		transition:
 			background 120ms ease,
