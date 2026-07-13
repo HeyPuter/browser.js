@@ -56,7 +56,7 @@ Input.style = css`
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
 		border-radius: var(--radius-md);
-		padding: var(--space-lg);
+		padding: var(--space-md) var(--space-lg);
 		font-family: var(--font);
 		font-size: 0.9em;
 		color: var(--toolbar_field_text);

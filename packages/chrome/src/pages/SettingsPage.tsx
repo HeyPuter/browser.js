@@ -1,4 +1,4 @@
-import { css, type Component, type FC } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import type { IconifyIcon } from "@iconify/types";
 import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
@@ -11,14 +11,214 @@ import { THEMES } from "../themes";
 
 import {
 	iconSettings,
+	iconOptions,
 	iconSearchOutline as iconSearch,
 	iconExtension,
 	iconPrivacy,
 	iconAbout,
 	iconBrush,
 	iconError,
+	iconAdd,
+	iconBack,
+	iconClose,
+	iconForwards,
+	iconMore,
+	iconRefresh,
 } from "../icons";
 import { settingsService } from "..";
+
+function ThemePreview(this: FC<{ theme: (typeof THEMES)[number] }>) {
+	const theme = this.theme;
+
+	return (
+		<div
+			aria-hidden="true"
+			style={`--preview-frame: ${theme.tokens.frame}; --preview-toolbar: ${theme.tokens.toolbar}; --preview-toolbar-text: ${theme.tokens.toolbar_text}; --preview-tab-text: ${theme.tokens.tab_background_text}; --preview-field: ${theme.tokens.toolbar_field}; --preview-field-text: ${theme.tokens.toolbar_field_text}; --preview-accent: ${theme.tokens.tab_line}; --preview-icons: ${theme.tokens.icons}; --preview-border: ${theme.tokens.popup_border}; --preview-separator: ${theme.tokens.toolbar_top_separator};`}
+		>
+			<div class="preview-window">
+				<div class="preview-tabstrip">
+					<div class="preview-tab active">
+						<span class="preview-site">
+							<span class="preview-favicon"></span>
+							<span class="preview-tab-title"></span>
+						</span>
+						<Icon class="preview-close" icon={iconClose} />
+					</div>
+					<div class="preview-tab">
+						<span class="preview-site">
+							<span class="preview-favicon"></span>
+							<span class="preview-tab-title short"></span>
+						</span>
+						<Icon class="preview-close" icon={iconClose} />
+					</div>
+					<Icon class="preview-add" icon={iconAdd} />
+				</div>
+				<div class="preview-toolbar">
+					<div class="preview-nav-controls">
+						<Icon class="preview-control" icon={iconBack} />
+						<Icon class="preview-control disabled" icon={iconForwards} />
+						<Icon class="preview-control" icon={iconRefresh} />
+					</div>
+					<div class="preview-field">
+						<Icon class="preview-site-indicator" icon={iconOptions} />
+						<span class="preview-address"></span>
+					</div>
+					<Icon class="preview-menu" icon={iconMore} />
+				</div>
+			</div>
+		</div>
+	);
+}
+
+ThemePreview.style = css`
+	:scope {
+		height: 4rem;
+	}
+
+	.preview-window {
+		height: 100%;
+		overflow: hidden;
+	}
+
+	.preview-tabstrip {
+		height: 2.25rem;
+		padding-inline: 0.2rem;
+		background: var(--preview-frame);
+		color: var(--preview-tab-text);
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+	}
+
+	.preview-tab {
+		width: min(34%, 10rem);
+		min-width: 4.5rem;
+		height: 1.75rem;
+		padding: 0 0.45rem;
+		border-radius: 0.25rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		opacity: 0.68;
+	}
+
+	.preview-tab.active {
+		background: var(--preview-toolbar);
+		color: var(--preview-toolbar-text);
+		opacity: 1;
+		outline: 1px solid var(--preview-border);
+		outline-offset: -1px;
+		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+	}
+
+	.preview-favicon {
+		width: 0.63rem;
+		height: 0.63rem;
+		border-radius: 50%;
+		background: var(--preview-accent);
+		flex: none;
+	}
+
+	.preview-tab-title {
+		width: 58%;
+		height: 2px;
+		border-radius: 1px;
+		background: currentColor;
+		opacity: 0.42;
+	}
+
+	.preview-tab-title.short {
+		width: 42%;
+	}
+
+	.preview-site {
+		display: flex;
+		gap: 0.35rem;
+		flex-grow: 1;
+		align-items: center;
+	}
+
+	.preview-close {
+		width: 0.45rem;
+		height: 0.45rem;
+		flex: none;
+		opacity: 0.65;
+	}
+
+	.preview-add {
+		width: 0.7rem;
+		height: 0.7rem;
+		margin: 0 0 0.2rem 0.1rem;
+		align-self: center;
+		opacity: 0.75;
+		flex: none;
+	}
+
+	.preview-toolbar {
+		height: 2rem;
+		padding: 0.25rem 0.4rem;
+		background: var(--preview-toolbar);
+		border-bottom: 1px solid var(--preview-separator);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--preview-icons);
+	}
+
+	.preview-nav-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--preview-icons);
+		font-size: 0.9rem;
+	}
+
+	.preview-control {
+		width: 0.8rem;
+		height: 0.8rem;
+		flex: none;
+	}
+
+	.preview-control.disabled {
+		opacity: 0.38;
+	}
+
+	.preview-field {
+		height: 1.35rem;
+		min-width: 0;
+		flex: 1;
+		border-radius: 4px;
+		background: var(--preview-field);
+		color: var(--preview-field-text);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0 0.5rem;
+		font-size: 0.8rem;
+	}
+
+	.preview-site-indicator {
+		width: 0.5rem;
+		height: 0.5rem;
+		color: var(--preview-accent);
+		flex: none;
+	}
+
+	.preview-address {
+		width: 26%;
+		height: 2px;
+		border-radius: 1px;
+		background: currentColor;
+		opacity: 0.3;
+	}
+
+	.preview-menu {
+		width: 0.8rem;
+		height: 0.8rem;
+		opacity: 0.8;
+		flex: none;
+	}
+`;
 
 export function SettingsPage(
 	this: FC<{ tab: Tab; selected: string }, { searchQuery: string }>
@@ -61,7 +261,7 @@ export function SettingsPage(
 			</div>
 			<div class="content">
 				<div class="search-container">
-					<Input placeholder="Search" value={use(this.searchQuery)} />
+					<Input placeholder="Find in Settings" value={use(this.searchQuery)} />
 				</div>
 				<div class="settings-content">
 					<h1>
@@ -460,9 +660,8 @@ export function SettingsPage(
 											Customize the look of the browser.
 										</p>
 									</div>
-									<div class="section-content">
+									<div class="section-content" style="padding-left: 0;">
 										<div class="setting-group">
-											<br />
 											<h4>Dark</h4>
 											<div class="theme-grid">
 												{THEMES.filter(
@@ -477,21 +676,7 @@ export function SettingsPage(
 															settingsService.settings.themeId = theme.id;
 														}}
 													>
-														<div class="theme-preview">
-															<div
-																class="preview-toolbar"
-																style={`background: ${theme.preview.toolbar};`}
-															>
-																<div
-																	class="preview-field"
-																	style={`background: ${theme.preview.field};`}
-																></div>
-																<div
-																	class="preview-accent"
-																	style={`background: ${theme.preview.accent};`}
-																></div>
-															</div>
-														</div>
+														<ThemePreview theme={theme} />
 														<div class="theme-info">
 															<h5>{theme.name}</h5>
 															<p>{theme.description}</p>
@@ -514,21 +699,7 @@ export function SettingsPage(
 															settingsService.settings.themeId = theme.id;
 														}}
 													>
-														<div class="theme-preview">
-															<div
-																class="preview-toolbar"
-																style={`background: ${theme.preview.toolbar};`}
-															>
-																<div
-																	class="preview-field"
-																	style={`background: ${theme.preview.field};`}
-																></div>
-																<div
-																	class="preview-accent"
-																	style={`background: ${theme.preview.accent};`}
-																></div>
-															</div>
-														</div>
+														<ThemePreview theme={theme} />
 														<div class="theme-info">
 															<h5>{theme.name}</h5>
 															<p>{theme.description}</p>
@@ -964,7 +1135,7 @@ SettingsPage.style = css`
 	}
 
 	.settings-tab {
-		max-width: 50rem;
+		max-width: max(50rem, 80vw);
 	}
 
 	.setting-section {
@@ -1228,7 +1399,7 @@ SettingsPage.style = css`
 
 	.theme-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 40rem), 1fr));
 		gap: 1rem;
 		margin-top: 0.75rem;
 	}
@@ -1251,41 +1422,12 @@ SettingsPage.style = css`
 		box-shadow: 0 0 0 3px var(--accent-20);
 	}
 
-	.theme-preview {
-		height: 5rem;
-		padding: 0.75rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.preview-toolbar {
-		flex: 1;
-		border-radius: var(--radius-md);
-		padding: 0.5rem;
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-	}
-
-	.preview-field {
-		height: 1.5rem;
-		flex: 1;
-		border-radius: 3px;
-	}
-
-	.preview-accent {
-		width: 1.5rem;
-		height: 1.5rem;
-		border-radius: 50%;
-	}
-
 	.theme-info {
-		padding: 0.75rem 1rem 1rem;
+		padding: var(--space-lg) var(--space-md);
 	}
 
 	.theme-info h5 {
-		margin: 0 0 0.25rem 0;
+		margin: 0.25rem 0;
 		font-size: 0.95rem;
 		font-weight: 600;
 		color: var(--toolbar_field_text);
