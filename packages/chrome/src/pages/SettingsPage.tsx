@@ -428,7 +428,7 @@ export function SettingsPage(
 								</section> */}
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>Browser Layout (Experimental)</h2>
+										<h2>Browser Layout (Beta)</h2>
 										<p class="description">Choose where tabs are displayed.</p>
 									</div>
 									<div class="section-content">
@@ -617,7 +617,12 @@ export function SettingsPage(
 															settingsService.settings.uiProfile = "compact";
 														}}
 													/>
-													<label for="ui-dense">Compact</label>
+													<label for="ui-dense" class="label-multiline">
+														<span>Compact</span>
+														<span class="description">
+															Reduced spacing for smaller screens.
+														</span>
+													</label>
 												</div>
 												<div class="radio-option">
 													<input
@@ -632,7 +637,12 @@ export function SettingsPage(
 															settingsService.settings.uiProfile = "default";
 														}}
 													/>
-													<label for="ui-default">Comfortable</label>
+													<label for="ui-default" class="label-multiline">
+														<span>Comfortable</span>
+														<span class="description">
+															Balanced spacing for most screens.
+														</span>
+													</label>
 												</div>
 												<div class="radio-option">
 													<input
@@ -647,7 +657,12 @@ export function SettingsPage(
 															settingsService.settings.uiProfile = "touch";
 														}}
 													/>
-													<label for="ui-sparse">Cozy</label>
+													<label for="ui-sparse" class="label-multiline">
+														<span>Cozy</span>
+														<span class="description">
+															More sparse layout optimized for touchscreens.
+														</span>
+													</label>
 												</div>
 											</div>
 										</div>
