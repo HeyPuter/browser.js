@@ -43,7 +43,7 @@ Input.style = css`
 	:scope {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5em;
+		gap: var(--space-md);
 		width: 100%;
 	}
 
@@ -56,7 +56,7 @@ Input.style = css`
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
 		border-radius: var(--radius-md);
-		padding: 0.75em;
+		padding: var(--space-lg);
 		font-family: var(--font);
 		font-size: 0.9em;
 		color: var(--toolbar_field_text);

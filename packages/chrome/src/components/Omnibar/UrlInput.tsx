@@ -135,8 +135,7 @@ UrlInput.style = css`
 		display: flex;
 		z-index: 1;
 		align-items: center;
-		padding-left: 0.25em;
-		padding-right: 0.25em;
+		padding-inline: var(--space-xs);
 	}
 
 	:global(.ui-compact) :scope :is(.inactiveurl, .placeholder, input) {
@@ -180,13 +179,12 @@ UrlInput.style = css`
 		font-size: 1.15em;
 		color: var(--toolbar_text);
 		display: flex;
-		margin: 0.25em;
+		margin: var(--space-sm);
 
 		align-self: stretch;
 		align-items: center;
 	}
 	.active .lefticon {
-		margin-right: 0.5em;
-		margin-left: 0.5em;
+		margin-inline: var(--space-md);
 	}
 `;

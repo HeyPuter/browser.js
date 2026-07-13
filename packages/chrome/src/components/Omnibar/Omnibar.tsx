@@ -334,15 +334,16 @@ Omnibar.style = css`
 		z-index: 1;
 		background: var(--toolbar);
 		display: flex;
-		padding: 0 7px 0 7px;
+		padding-inline: var(--space-md);
+		padding-block: 0;
 		height: var(--omnibar-height);
 		align-items: center;
 		position: relative;
-		gap: 0.2em;
+		gap: var(--space-xs);
 	}
 
 	:scope.compact {
-		gap: 0.45rem;
+		gap: var(--space-md);
 	}
 
 	:scope {
@@ -353,7 +354,7 @@ Omnibar.style = css`
 		z-index: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-lg);
 		width: 100%;
 		position: relative;
 	}
@@ -367,11 +368,11 @@ Omnibar.style = css`
 
 	.top-row {
 		justify-content: space-between;
-		gap: 0.5rem;
+		gap: var(--space-lg);
 	}
 
 	.button-group {
-		gap: 0.2em;
+		gap: var(--space-xs);
 	}
 
 	.button-group.utilities {
@@ -388,7 +389,7 @@ Omnibar.style = css`
 
 	.compact-center {
 		flex: 1;
-		gap: 0.45rem;
+		gap: var(--space-md);
 	}
 
 	.compact-omnibox {
@@ -435,7 +436,7 @@ Omnibar.style = css`
 		font-size: 1.25em;
 		background: none;
 		color: var(--toolbar_text);
-		border-radius: 0.2em;
+		border-radius: var(--radius-sm);
 
 		transition: top 0.5s ease;
 	}

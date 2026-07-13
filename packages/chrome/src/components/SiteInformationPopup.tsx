@@ -48,7 +48,7 @@ SiteInformationPopup.style = css`
 	:scope {
 		display: flex;
 		flex-direction: column;
-		gap: 1em;
+		gap: var(--space-xl);
 		width: 20em;
 
 		color: var(--toolbar_text);
@@ -63,13 +63,13 @@ SiteInformationPopup.style = css`
 	}
 
 	.content {
-		padding-inline: 1em;
+		padding-inline: var(--space-xl);
 		font-size: 0.85em;
 		line-height: 1.3;
 	}
 
 	.header {
-		padding: 1em;
+		padding: var(--space-xl);
 		display: flex;
 		border-bottom: 1px solid var(--popup_border);
 	}
@@ -85,12 +85,12 @@ SiteInformationPopup.style = css`
 	}
 
 	.entry {
-		padding: 1em;
-		padding-left: calc(1em - 4px);
+		padding: var(--space-xl);
+		padding-left: calc(var(--space-xl) - 4px);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
-		gap: 0.5em;
+		gap: var(--space-md);
 	}
 	.entry:hover {
 		background: var(--toolbarbutton-hover-background);

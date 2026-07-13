@@ -104,6 +104,7 @@ body {
 	--space-md: 0.55rem;
 	--space-lg: 0.75rem;
 	--space-xl: 0.9rem;
+	--space-xxl: 1.2rem;
 
 	--tab-height: 2rem;
 	--omnibar-height: 2.5rem;
@@ -121,6 +122,7 @@ body.ui-compact {
 	--space-md: 0.325rem;
 	--space-lg: 0.55rem;
 	--space-xl: 0.75rem;
+	--space-xxl: 1rem;
 
 	--tab-height: 1.75rem;
 	--omnibar-height: 2.25rem;
@@ -137,7 +139,8 @@ body.ui-touch {
 	--space-sm: 0.5rem;
 	--space-md: 0.75rem;
 	--space-lg: 1rem;
-	--space-xl: 1.25rem;
+	--space-xl: 1.2rem;
+	--space-xxl: 1.4rem;
 
 	--tab-height: 2.2rem;
 	--omnibar-height: 2.8rem;

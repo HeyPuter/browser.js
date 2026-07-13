@@ -171,7 +171,7 @@ NewTabPage.style = css`
 		min-height: 3rem;
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-20);
-		border-radius: calc(var(--radius-md) * 2);
+		border-radius: var(--radius-xl);
 		display: flex;
 		align-items: center;
 		transition:
@@ -182,7 +182,7 @@ NewTabPage.style = css`
 
 	.icon {
 		font-size: 1.15rem;
-		padding-left: 1rem;
+		padding-left: var(--space-xl);
 		color: var(--field-text-50);
 	}
 
@@ -194,9 +194,7 @@ NewTabPage.style = css`
 	input {
 		font-size: 1.05rem;
 		outline: none;
-		padding: 1em;
-		padding-top: 0.9em;
-		padding-bottom: 0.9em;
+		padding: var(--space-xl);
 		flex: 1;
 		height: 100%;
 		background: none;
@@ -210,12 +208,12 @@ NewTabPage.style = css`
 	}
 
 	.main {
-		margin-top: 1rem;
+		margin-top: var(--space-xl);
 		width: min(100%, 62rem);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.75rem;
+		gap: var(--space-xl);
 	}
 
 	.top-sites {

@@ -84,7 +84,7 @@ TopSiteButton.style = css`
 	.top-site-button {
 		width: 100%;
 		min-width: 0;
-		padding: 0.6rem 0.5rem;
+		padding: var(--space-md);
 		border: none;
 		background: none;
 		color: inherit;
@@ -92,7 +92,7 @@ TopSiteButton.style = css`
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.6rem;
+		gap: var(--space-md);
 		justify-items: center;
 		border-radius: calc(var(--radius-md) * 2);
 		transition:
@@ -112,7 +112,7 @@ TopSiteButton.style = css`
 		width: var(--top-site-tile-size);
 		height: var(--top-site-tile-size);
 		margin: auto;
-		margin-top: 0.75rem;
+		margin-top: var(--space-lg);
 		align-self: end;
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-15);
@@ -169,8 +169,8 @@ TopSiteButton.style = css`
 
 	.context-menu-button {
 		position: absolute;
-		top: 0.5rem;
-		right: 0.3rem;
+		top: var(--space-md);
+		right: var(--space-sm);
 		width: 1.75rem;
 		height: 1.75rem;
 		border: 1px solid var(--text-20);
@@ -202,8 +202,7 @@ TopSiteButton.style = css`
 	.title {
 		width: 100%;
 		min-width: 0;
-		padding-block: 0.2rem;
-		padding-inline: 0.15rem;
+		padding: var(--space-xs);
 		display: flex;
 		justify-content: center;
 		text-align: center;

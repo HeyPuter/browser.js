@@ -106,7 +106,7 @@ DownloadsPopup.style = css`
 	}
 
 	.title {
-		padding: 1em;
+		padding: var(--space-xl);
 		display: flex;
 		border-bottom: 1px solid var(--text-30);
 	}
@@ -141,9 +141,9 @@ DownloadsPopup.style = css`
 	}
 
 	.entry {
-		padding: 1em;
+		padding: var(--space-xl);
 		display: flex;
-		gap: 1em;
+		gap: var(--space-xl);
 		font-size: 0.9em;
 		position: relative;
 	}
@@ -154,7 +154,7 @@ DownloadsPopup.style = css`
 		display: flex;
 		overflow: hidden;
 		flex-direction: column;
-		gap: 0.5em;
+		gap: var(--space-md);
 	}
 	.entry .buttoniconcontainer {
 		display: none;
@@ -166,11 +166,11 @@ DownloadsPopup.style = css`
 		position: absolute;
 		right: 0;
 		top: 0;
-		padding: 1em;
+		padding: var(--space-xl);
 		background: var(--text-15);
 		height: 100%;
 		align-items: start;
-		gap: 1em;
+		gap: var(--space-xl);
 	}
 	.entry .buttoniconcontainer button {
 		font-size: 1.15em;
@@ -196,7 +196,7 @@ DownloadsPopup.style = css`
 	}
 	.footer {
 		border-top: 1px solid var(--text-30);
-		padding: 1em;
+		padding: var(--space-xl);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -214,7 +214,7 @@ DownloadsPopup.style = css`
 		position: absolute;
 		bottom: -0.25em;
 		left: 2em;
-		margin: 0.5em;
+		margin: var(--space-md);
 		width: calc(100% - 4em);
 		height: 0.25em;
 		border: none;

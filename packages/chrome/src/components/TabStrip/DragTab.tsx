@@ -305,13 +305,13 @@ DragTab.style = css`
 		color: var(--tab_background_text);
 
 		border-radius: var(--radius-md);
-		padding: 7px 8px;
+		padding: var(--space-md);
 
 		background: var(--background_tab_inactive);
 
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 	}
 	.favicon {
 		width: 16px;

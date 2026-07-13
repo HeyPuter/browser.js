@@ -79,10 +79,10 @@ DownloadsPage.style = css`
 	.inner {
 		display: flex;
 		align-items: center;
-		gap: 0.5em;
+		gap: var(--space-md);
 		cursor: pointer;
-		padding-block: 0.75em;
-		padding-left: 0.5em;
+		padding-block: var(--space-lg);
+		padding-left: var(--space-md);
 		margin-left: 1.75em;
 		border-bottom: 1px solid var(--ntp-text-10);
 	}
@@ -111,7 +111,7 @@ DownloadsPage.style = css`
 	.text {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25em;
+		gap: var(--space-xs);
 		flex: 1;
 		min-width: 0;
 	}
@@ -122,7 +122,7 @@ DownloadsPage.style = css`
 	}
 	.icons {
 		display: flex;
-		gap: 0.5em;
+		gap: var(--space-md);
 		margin-left: 0.75em;
 	}
 	.icons :global(svg) {

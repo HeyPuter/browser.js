@@ -27,7 +27,7 @@ Button.style = css`
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
 		border-radius: var(--radius-md);
-		padding: 0.5em 1em;
+		padding: var(--space-md) var(--space-xl);
 		font-size: 0.9em;
 		cursor: pointer;
 		color: var(--toolbar_field_text);

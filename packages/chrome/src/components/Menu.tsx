@@ -192,13 +192,13 @@ Menu.style = css`
 		background: none;
 		border: none;
 		font-size: 0.8em;
-		padding: 0.75em 1.25em;
+		padding: var(--space-lg) var(--space-xxl);
 		text-align: left;
 		color: var(--toolbar_text);
 
 		display: flex;
 		align-items: center;
-		gap: 1em;
+		gap: var(--space-xl);
 	}
 
 	img {

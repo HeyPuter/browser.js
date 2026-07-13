@@ -122,17 +122,11 @@ Suggestion.style = css`
 		align-items: center;
 		/*height: 2.5em;*/
 		cursor: pointer;
-		gap: 1em;
+		gap: var(--space-xl);
 
-		margin-left: 0.5em;
-		padding-left: 0.5em;
-
-		margin-right: 0.5em;
-
-		margin-top: 0.25em;
-		padding-top: 0.25em;
-		margin-bottom: 0.25em;
-		padding-bottom: 0.25em;
+		padding-left: var(--space-md);
+		margin-inline: var(--space-md);
+		padding-block: var(--space-sm);
 
 		white-space: nowrap;
 		color: var(--toolbar_text);

@@ -408,12 +408,12 @@ Omnibox.style = css`
 	:scope.vertical-layout.active {
 		width: min(42rem, calc(100vw - 2rem));
 		z-index: 5;
-		right: calc(min(42rem, -2rem + 100vw) - var(--sidebar-width) + 16px);	
+		right: calc(min(42rem, -2rem + 100vw) - var(--sidebar-width) + 16px);
 	}
 
 	.result-icon {
 		align-self: start;
-		margin-top: 0.4em;
+		margin-top: var(--space-sm);
 	}
 
 	.favicon {
@@ -429,7 +429,7 @@ Omnibox.style = css`
 		border-radius: var(--radius-md);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		border: 1px solid var(--popup_border);
-		padding-bottom: 0.5em;
+		padding-bottom: var(--space-md);
 	}
 	.overflow .spacer {
 		display: block;
@@ -440,14 +440,14 @@ Omnibox.style = css`
 
 		border-bottom: 1px solid
 			var(--text-35);
-		margin-bottom: 0.5em;
+		margin-bottom: var(--space-md);
 	}
 
 	.spacertext {
 		display: block;
 		height: 2em;
 		line-height: var(--omnibar-height);
-		padding-left: 1.5em;
+		padding-left: var(--space-xxl);
 		color: var(--text-60);
 		font-size: 0.9em;
 	}

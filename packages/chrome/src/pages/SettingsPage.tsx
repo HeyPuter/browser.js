@@ -868,8 +868,8 @@ SettingsPage.style = css`
 	.nav-button {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem 1rem;
+		gap: var(--space-lg);
+		padding: var(--space-lg) var(--space-xl);
 		border-radius: var(--radius-md);
 		cursor: pointer;
 		transition:
@@ -1019,15 +1019,15 @@ SettingsPage.style = css`
 	.radio-group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-lg);
 	}
 
 	.radio-option,
 	.checkbox-option {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
+		gap: var(--space-md);
+		margin-bottom: var(--space-md);
 	}
 
 	.radio-option:last-child,
@@ -1081,7 +1081,7 @@ SettingsPage.style = css`
 	}
 
 	.select-input {
-		padding: 0.5rem;
+		padding: var(--space-md);
 		border-radius: var(--radius-md);
 		border: 1px solid var(--ntp-text-20);
 		background: var(--toolbar_field);
@@ -1096,11 +1096,11 @@ SettingsPage.style = css`
 	}
 
 	.action-button {
-		margin-top: 1rem;
+		margin-top: var(--space-xl);
 		background: var(--toolbar_field);
 		border: 1px solid var(--ntp-text-20);
 		color: var(--toolbar_field_text);
-		padding: 0.5rem 1rem;
+		padding: var(--space-md) var(--space-xl);
 		border-radius: var(--radius-md);
 		font-size: 0.9rem;
 		cursor: pointer;
@@ -1113,7 +1113,7 @@ SettingsPage.style = css`
 
 	.dev-buttons {
 		display: flex;
-		gap: 0.75rem;
+		gap: var(--space-lg);
 	}
 
 	.extensions-list {

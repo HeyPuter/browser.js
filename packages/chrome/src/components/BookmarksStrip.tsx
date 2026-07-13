@@ -87,20 +87,20 @@ export function BookmarksStrip(
 }
 BookmarksStrip.style = css`
 	:scope {
-		padding: 0.25em;
-		padding-left: 0.5em;
+		padding: var(--space-xs);
+		padding-left: var(--space-md);
 		display: flex;
-		gap: 0.5em;
+		gap: var(--space-md);
 		background: var(--toolbar);
 		color: var(--toolbar_text);
-		height: 2em;
+		height: var(--tab-height);
 	}
 
 	:scope.vertical {
 		padding: 0;
 		height: auto;
 		flex-direction: column;
-		gap: 0.35em;
+		gap: var(--space-sm);
 		background: none;
 	}
 
@@ -108,19 +108,18 @@ BookmarksStrip.style = css`
 		display: flex;
 		align-items: center;
 		height: 100%;
-		gap: 0.25em;
-
-		padding-left: 0.25em;
-		padding-right: 0.25em;
-		border-radius: 3px;
+		gap: var(--space-sm);
+		padding-inline: var(--space-xs);
+		border-radius: var(--radius-xs);
 		color: var(--toolbar_text);
 	}
 
 	:scope.vertical button {
 		width: 100%;
 		height: auto;
+		gap: var(--space-md);
 		min-height: var(--tab-height);
-		padding: 0.6em 0.75em;
+		padding: var(--space-md);
 		border-radius: calc(var(--radius-md) + 1px);
 		background: var(--toolbar_field);
 	}
@@ -132,6 +131,7 @@ BookmarksStrip.style = css`
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		font-size: 0.83rem;
 	}
 
 	button img {

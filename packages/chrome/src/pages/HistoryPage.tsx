@@ -25,7 +25,7 @@ export function HistoryPage(this: FC<{ tab: Tab }>) {
 									console.log(entry);
 								})()}
 							>
-								<Favicon iconUrl={entry.favicon} size="medium"></Favicon>
+								<Favicon iconUrl={entry.favicon} size="small"></Favicon>
 								<span class="title">{entry.title || entry.url.href}</span>
 								<span class="url">{entry.url.hostname}</span>
 							</span>
@@ -47,7 +47,7 @@ HistoryPage.style = css`
 	}
 	nav {
 		width: 100%;
-		padding: 1.5em;
+		padding: var(--space-xxl);
 		background: var(--toolbar);
 	}
 	h1 {
@@ -73,10 +73,10 @@ HistoryPage.style = css`
 		display: flex;
 		align-items: center;
 		cursor: pointer;
-		gap: 0.5em;
-		padding-block: 0.75em;
-		padding-left: 0.5em;
-		margin-left: 1.75em;
+		gap: var(--space-sm);
+		padding-block: var(--space-xl);
+		padding-left: var(--space-sm);
+		margin-left: var(--space-xxl);
 		border-bottom: 1px solid var(--ntp-text-10);
 	}
 	.entry:hover {
@@ -93,6 +93,7 @@ HistoryPage.style = css`
 		white-space: nowrap;
 		overflow: hidden;
 		padding: 0.085em;
+		font-size: 0.85rem;
 		text-overflow: ellipsis;
 	}
 `;

@@ -58,31 +58,32 @@ BookmarkPopup.style = css`
 	:scope {
 		display: flex;
 		flex-direction: column;
-		gap: 1em;
+		gap: var(--space-xl);
 		width: 20em;
-		padding: 0 1em 1em 1em;
+		padding: var(--space-xl);
+		padding-top: 0;
 	}
 	.title {
-		padding: 1em;
+		padding: var(--space-xl);
 		font-weight: bold;
 		border-bottom: 1px solid var(--text-30);
 		text-align: center;
-		margin: 0 -1em;
+		margin-inline: calc(var(--space-xl) * -1);
 	}
 	.field {
-		margin-bottom: 0.5em;
+		margin-bottom: var(--space-md);
 	}
 	.actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: 0.5em;
-		margin-top: 0.5em;
+		gap: var(--space-md);
+		margin-top: var(--space-md);
 	}
 	button {
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
 		border-radius: var(--radius-md);
-		padding: 0.5em 1em;
+		padding: var(--space-md) var(--space-xl);
 		font-size: 0.9em;
 		cursor: pointer;
 		color: var(--toolbar_field_text);

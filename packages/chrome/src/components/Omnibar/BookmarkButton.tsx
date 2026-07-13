@@ -54,15 +54,15 @@ BookmarkButton.style = css`
 		font-size: 1em;
 		color: var(--toolbar_text);
 		display: flex;
-		margin: 0.25em;
-		padding: 0.25em;
+		margin: var(--space-xs);
+		padding: var(--space-xs);
 		box-sizing: border-box;
 		aspect-ratio: 1/1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 
-		border-radius: 0.2em;
+		border-radius: var(--radius-sm);
 	}
 	:scope:hover {
 		background: var(--toolbarbutton-hover-background);

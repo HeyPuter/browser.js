@@ -51,7 +51,6 @@ export function TabStrip(
 
 	const [lock, unlock] = requestUnfocusFrames();
 
-	const TAB_PADDING = 6;
 	const TAB_MAX_SIZE = 231;
 	const PIN_MAX_SIZE = 36;
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
@@ -88,8 +87,13 @@ export function TabStrip(
 	const getLayoutStart = () => {
 		return this.leftEl.offsetWidth;
 	};
+	const getTabPadding = () =>
+		parseFloat(
+			getComputedStyle(this.container).getPropertyValue("--tab-padding")
+		);
 	const getTabWidth = () => {
 		let total = getRootWidth();
+		const tabPadding = getTabPadding();
 		const visibleTabCount = this.visualtabs.filter(
 			(tab) => !tab.closing
 		).length;
@@ -102,7 +106,7 @@ export function TabStrip(
 		// Remove the padding for every gap between tabs (pinned tabs sit in the
 		// same row, so they contribute gaps too) and the fixed width of each
 		// pinned tab, then split whatever is left between the non-pinned tabs.
-		total -= TAB_PADDING * (visibleTabCount - 1);
+		total -= tabPadding * (visibleTabCount - 1);
 		total -= PIN_MAX_SIZE * visiblePinnedCount;
 
 		const each = total / Math.max(nonPinnedCount, 1);
@@ -134,6 +138,7 @@ export function TabStrip(
 
 	const layoutTabs = (transition: boolean) => {
 		const width = getTabWidth();
+		const tabPadding = getTabPadding();
 
 		reorderTabs();
 
@@ -167,12 +172,12 @@ export function TabStrip(
 				movedTabs++;
 			}
 
-			dragpos = Math.max(dragpos, tab.dragpos + tabWidth + TAB_PADDING);
+			dragpos = Math.max(dragpos, tab.dragpos + tabWidth + tabPadding);
 
 			tab.pos = tabPos;
 			tab.width = tabWidth;
 
-			currpos += tabWidth + TAB_PADDING;
+			currpos += tabWidth + tabPadding;
 			staggerIndex++;
 		}
 
@@ -297,7 +302,7 @@ export function TabStrip(
 					startdragpos: -1,
 					closing: false,
 					width: 0,
-					pos: getLayoutStart() + index * (getTabWidth() + TAB_PADDING),
+					pos: getLayoutStart() + index * (getTabWidth() + getTabPadding()),
 				};
 			}
 
@@ -340,7 +345,7 @@ export function TabStrip(
 		const slotWidth = getTabWidth();
 		for (const vt of this.visualtabs) {
 			if (!vt.closing && vt.dragpos === -1) {
-				vt.pos = getLayoutStart() + slotIndex * (slotWidth + TAB_PADDING);
+				vt.pos = getLayoutStart() + slotIndex * (slotWidth + getTabPadding());
 				slotIndex++;
 			}
 		}
@@ -358,6 +363,15 @@ export function TabStrip(
 			layoutTabs(false);
 		};
 		window.addEventListener("resize", resizeHandler);
+		let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
+			if (!this.root.isConnected) {
+				resizeObserver?.disconnect();
+				resizeObserver = null;
+				return;
+			}
+			layoutTabs(false);
+		});
+		resizeObserver.observe(this.container);
 
 		setContextMenu(this.root, [
 			{
@@ -398,9 +412,10 @@ export function TabStrip(
 }
 TabStrip.style = css`
 	:scope {
+		--tab-padding: var(--space-sm);
 		background: var(--frame);
-		padding: var(--space-md);
-		height: calc(var(--tab-height) + calc(var(--space-md) * 2));
+		padding: var(--space-sm);
+		height: calc(var(--tab-height) + calc(var(--space-sm) * 2));
 		z-index: 2;
 		position: relative;
 	}

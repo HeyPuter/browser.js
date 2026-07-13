@@ -51,7 +51,6 @@ export function Sidebar(
 	const SIDEBAR_MIN_WIDTH = this.layout === "vertical" ? 190 : 48;
 	const SIDEBAR_MAX_WIDTH = 520;
 
-	const TAB_PADDING = 6;
 	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
@@ -95,6 +94,10 @@ export function Sidebar(
 	const getLayoutStart = () => {
 		return this.topEl.offsetHeight;
 	};
+	const getTabPadding = () =>
+		parseFloat(
+			getComputedStyle(this.container).getPropertyValue("--tab-padding")
+		);
 
 	const getTabHeight = () => {
 		// Measure the inner `.main` row rather than the tab root. When a tab
@@ -114,9 +117,7 @@ export function Sidebar(
 		}
 
 		const cssHeight = parseFloat(
-			getComputedStyle(document.documentElement)
-				.getPropertyValue("--tab-height")
-				.trim()
+			getComputedStyle(this.container).getPropertyValue("--tab-height").trim()
 		);
 		return Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 36;
 	};
@@ -137,6 +138,7 @@ export function Sidebar(
 	const layoutTabs = (transition: boolean) => {
 		const height = getTabHeight();
 		const width = getRootWidth();
+		const tabPadding = getTabPadding();
 
 		reorderTabs();
 
@@ -166,11 +168,11 @@ export function Sidebar(
 				transitioningTabs++;
 				movedTabs++;
 			}
-			dragpos = Math.max(dragpos, tab.dragpos + height + TAB_PADDING);
+			dragpos = Math.max(dragpos, tab.dragpos + height + tabPadding);
 
 			tab.pos = tabPos;
 			tab.height = height;
-			currpos += height + TAB_PADDING;
+			currpos += height + tabPadding;
 			staggerIndex++;
 		}
 
@@ -344,7 +346,9 @@ export function Sidebar(
 					startdragpos: -1,
 					closing: false,
 					height: 0,
-					pos: getLayoutStart() + visibleIndex * (getTabHeight() + TAB_PADDING),
+					pos:
+						getLayoutStart() +
+						visibleIndex * (getTabHeight() + getTabPadding()),
 				};
 			}
 
@@ -449,9 +453,10 @@ export function Sidebar(
 Sidebar.style = css`
 	:scope {
 		--sidebar-width: 250px;
+		--tab-padding: var(--space-sm);
 		display: block;
 		position: relative;
-		padding: var(--space-md) 8px;
+		padding: var(--space-md);
 		background: var(--frame);
 		height: 100%;
 		z-index: 2;
@@ -478,12 +483,12 @@ Sidebar.style = css`
 
 	.top,
 	.bottom {
-		padding: 0 8px;
-		padding-top: 8px;
+		padding-inline: var(--space-md);
+		padding-top: var(--space-md);
 		flex-direction: column;
 		align-items: stretch;
 		justify-content: flex-start;
-		gap: 8px;
+		gap: var(--space-md);
 	}
 
 	.top {
@@ -510,7 +515,7 @@ Sidebar.style = css`
 		color: var(--toolbar_text);
 		border-radius: var(--radius-md);
 		height: var(--tab-height);
-		width: calc(100% - 16px);
+		width: calc(100% - calc(var(--space-md) * 2));
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -766,8 +771,11 @@ export function VerticalPinList(
 VerticalPinList.style = css`
 	:scope {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
-		gap: 6px;
+		grid-template-columns: repeat(
+			auto-fit,
+			minmax(calc(var(--omnibar-height) + var(--space-xs)), 1fr)
+		);
+		gap: var(--space-sm);
 	}
 
 	:scope.empty {

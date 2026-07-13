@@ -56,16 +56,16 @@ TabHoverCard.style = css`
 		border: 1px solid var(--popup_border);
 		border-radius: var(--radius-md);
 		width: 18em;
-		gap: 0.25em;
+		gap: var(--space-xs);
 		flex-direction: column;
 		opacity: 1;
 		border-radius: var(--radius-md);
 	}
 	.text {
-		padding: 0.75em 0.67em;
+		padding: var(--space-lg);
 		display: flex;
 		flex-direction: column;
-		gap: 0.25em;
+		gap: var(--space-xs);
 	}
 	.title {
 		overflow: clip visible;
