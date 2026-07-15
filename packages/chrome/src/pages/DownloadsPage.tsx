@@ -57,7 +57,7 @@ DownloadsPage.style = css`
 	}
 	nav {
 		width: 100%;
-		padding: 1.5em;
+		padding: var(--space-xxl);
 		background: var(--toolbar);
 	}
 	h1 {
