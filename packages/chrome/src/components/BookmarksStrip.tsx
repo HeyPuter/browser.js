@@ -117,7 +117,7 @@ BookmarksStrip.style = css`
 	:scope.vertical button {
 		width: 100%;
 		height: auto;
-		gap: var(--space-md);
+		gap: var(--space-sm);
 		min-height: var(--tab-height);
 		padding: var(--space-md);
 		border-radius: calc(var(--radius-md) + 1px);
@@ -127,11 +127,16 @@ BookmarksStrip.style = css`
 	button:hover {
 		background: var(--toolbarbutton-hover-background);
 	}
+
 	button span {
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		font-size: 0.83rem;
+	}
+
+	:scope.vertical button span {
+		font-size: 0.75rem;
 	}
 
 	button img {

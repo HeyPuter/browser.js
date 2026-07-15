@@ -511,7 +511,6 @@ Sidebar.style = css`
 
 	.new-tab {
 		border: none;
-		background: var(--toolbar);
 		color: var(--toolbar_text);
 		border-radius: var(--radius-md);
 		height: var(--tab-height);
@@ -520,6 +519,11 @@ Sidebar.style = css`
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		margin-top: var(--space-xs);
+	}
+
+	.new-tab:is(:hover, :active, :focus) {
+		background: var(--toolbar);
 	}
 
 	.sidebar-resizer {

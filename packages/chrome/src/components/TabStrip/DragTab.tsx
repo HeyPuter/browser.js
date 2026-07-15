@@ -320,7 +320,7 @@ DragTab.style = css`
 	}
 	.main span {
 		flex: 1;
-		font-size: 12px;
+		font-size: 0.75rem;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
