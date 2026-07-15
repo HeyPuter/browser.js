@@ -99,6 +99,7 @@ body {
 	--radius-lg: 6px;
 	--radius-xl: 8px;
 
+	--space-xxs: 0.125rem;
 	--space-xs: 0.2rem;
 	--space-sm: 0.35rem;
 	--space-md: 0.55rem;
@@ -117,6 +118,7 @@ body.ui-compact {
 	--radius-lg: 5px;
 	--radius-xl: 6px;
 
+	--space-xxs: 0.075rem;
 	--space-xs: 0.15rem;
 	--space-sm: 0.225rem;
 	--space-md: 0.325rem;
@@ -135,6 +137,7 @@ body.ui-touch {
 	--radius-lg: 10px;
 	--radius-xl: 12px;
 
+	--space-xxs: 0.2rem;
 	--space-xs: 0.3rem;
 	--space-sm: 0.5rem;
 	--space-md: 0.75rem;

@@ -8,6 +8,7 @@ import { Button } from "@components/Button";
 import { Input } from "@components/Input";
 import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
 import { THEMES } from "../themes";
+import type { TabLayoutMode } from "../services/SettingsService";
 
 import {
 	iconSettings,
@@ -216,6 +217,452 @@ ThemePreview.style = css`
 		width: 0.8rem;
 		height: 0.8rem;
 		opacity: 0.8;
+		flex: none;
+	}
+`;
+
+type SidebarLocation = "left" | "right";
+
+const LAYOUT_OPTIONS: readonly {
+	id: TabLayoutMode;
+	name: string;
+	description: string;
+}[] = [
+	{
+		id: "horizontal",
+		name: "Default",
+		description: "Tabs in a single row above the address bar.",
+	},
+	{
+		id: "bottom",
+		name: "Bottom",
+		description: "Tabs along the bottom edge of the window.",
+	},
+	{
+		id: "compact",
+		name: "Compact",
+		description: "Tabs beside the address bar in one compact row.",
+	},
+	{
+		id: "hybrid",
+		name: "Hybrid",
+		description: "Vertical tabs beside a horizontal address bar.",
+	},
+	{
+		id: "vertical",
+		name: "Vertical",
+		description: "Tabs and address controls together in a sidebar.",
+	},
+];
+
+function LayoutPreview(
+	this: FC<{ layout: TabLayoutMode; sidebar?: SidebarLocation }>
+) {
+	const sidebar = this.sidebar ?? "left";
+
+	return (
+		<div
+			aria-hidden="true"
+			class={`layout-preview layout-${this.layout} sidebar-${sidebar}`}
+		>
+			<div class="layout-tab-region">
+				<div class="layout-vertical-field">
+					<span class="layout-field-dot"></span>
+					<span class="layout-field-line"></span>
+				</div>
+				<div class="layout-tabs">
+					<span class="layout-tab active">
+						<span class="layout-favicon"></span>
+						<span class="layout-tab-line"></span>
+					</span>
+					<span class="layout-tab">
+						<span class="layout-favicon secondary"></span>
+						<span class="layout-tab-line short"></span>
+					</span>
+					<span class="layout-tab third">
+						<span class="layout-favicon tertiary"></span>
+						<span class="layout-tab-line"></span>
+					</span>
+				</div>
+			</div>
+
+			<div class="layout-toolbar">
+				<div class="layout-field">
+					<span class="layout-field-dot"></span>
+					<span class="layout-field-line"></span>
+				</div>
+				<div class="layout-inline-tabs">
+					<span class="layout-inline-tab active">
+						<span class="layout-favicon"></span>
+						<span class="layout-tab-line"></span>
+					</span>
+					<span class="layout-inline-tab">
+						<span class="layout-favicon secondary"></span>
+						<span class="layout-tab-line short"></span>
+					</span>
+				</div>
+				<span class="layout-menu-dots">
+					<span></span>
+					<span></span>
+					<span></span>
+				</span>
+			</div>
+
+			<div class="layout-content">
+				<div class="layout-page">
+					<span class="layout-page-heading"></span>
+					<div class="layout-page-body">
+						<span class="layout-page-image"></span>
+						<div class="layout-page-copy">
+							<span></span>
+							<span></span>
+							<span class="short"></span>
+							<span class="shorter"></span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+LayoutPreview.style = css`
+	:scope {
+		display: grid;
+		height: 7.25rem;
+	}
+
+	.layout-preview {
+		height: 100%;
+		overflow: hidden;
+		background: var(--ntp_background);
+		color: var(--toolbar_text);
+	}
+
+	.layout-horizontal {
+		grid-template:
+			"tabs" 1.6rem
+			"toolbar" 1.45rem
+			"content" 1fr / 1fr;
+	}
+
+	.layout-bottom {
+		grid-template:
+			"toolbar" 1.45rem
+			"content" 1fr
+			"tabs" 1.6rem / 1fr;
+	}
+
+	.layout-compact {
+		grid-template:
+			"toolbar" 1.7rem
+			"content" 1fr / 1fr;
+	}
+
+	.layout-hybrid {
+		grid-template:
+			"tabs toolbar" 1.45rem
+			"tabs content" 1fr / 29% 1fr;
+	}
+
+	.layout-hybrid.sidebar-right {
+		grid-template:
+			"toolbar tabs" 1.45rem
+			"content tabs" 1fr / 1fr 29%;
+	}
+
+	.layout-vertical {
+		grid-template: "tabs content" 1fr / 39% 1fr;
+	}
+
+	.layout-vertical.sidebar-right {
+		grid-template: "content tabs" 1fr / 1fr 39%;
+	}
+
+	.layout-tab-region {
+		grid-area: tabs;
+		min-width: 0;
+		min-height: 0;
+		padding: 0.2rem 0.25rem;
+		background: var(--frame);
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		position: relative;
+		z-index: 1;
+	}
+
+	.layout-horizontal .layout-tab-region {
+		border-bottom: 1px solid var(--text-15);
+	}
+
+	.layout-bottom .layout-tab-region {
+		border-top: 1px solid var(--popup_border);
+	}
+
+	.layout-tabs {
+		min-width: 0;
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.18rem;
+	}
+
+	.layout-tab,
+	.layout-inline-tab {
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		color: var(--tab_background_text);
+		opacity: 0.65;
+	}
+
+	.layout-tab {
+		height: 1.1rem;
+		width: 31%;
+		padding-inline: 0.25rem;
+		border-radius: 0.2rem;
+	}
+
+	.layout-tab.active,
+	.layout-inline-tab.active {
+		background: var(--toolbar);
+		color: var(--toolbar_text);
+		opacity: 1;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+	}
+
+	.layout-favicon {
+		width: 0.32rem;
+		height: 0.32rem;
+		border-radius: 50%;
+		background: var(--tab_line);
+		flex: none;
+	}
+
+	.layout-favicon.secondary {
+		background: var(--tab_loading);
+		opacity: 0.75;
+	}
+
+	.layout-favicon.tertiary {
+		background: var(--icons);
+		opacity: 0.55;
+	}
+
+	.layout-tab-line {
+		width: 62%;
+		height: 2px;
+		border-radius: 1px;
+		background: currentColor;
+		opacity: 0.38;
+	}
+
+	.layout-tab-line.short {
+		width: 42%;
+	}
+
+	.layout-toolbar {
+		grid-area: toolbar;
+		min-width: 0;
+		padding: 0.2rem 0.3rem;
+		background: var(--toolbar);
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		position: relative;
+		z-index: 1;
+	}
+
+	.layout-menu-dots {
+		display: flex;
+		align-items: center;
+		gap: 0.09rem;
+		flex: none;
+	}
+
+	.layout-menu-dots span {
+		width: 0.13rem;
+		height: 0.13rem;
+		border-radius: 50%;
+		background: currentColor;
+		opacity: 0.5;
+	}
+
+	.layout-field,
+	.layout-vertical-field {
+		min-width: 0;
+		background: var(--toolbar_field);
+		color: var(--toolbar_field_text);
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		border-radius: 0.2rem;
+		box-shadow: inset 0 0 0 1px var(--text-10);
+	}
+
+	.layout-field {
+		height: 0.85rem;
+		padding-inline: 0.3rem;
+		flex: 1;
+	}
+
+	.layout-field-dot {
+		width: 0.28rem;
+		height: 0.28rem;
+		border-radius: 50%;
+		background: var(--tab_line);
+		flex: none;
+	}
+
+	.layout-field-line {
+		width: 38%;
+		height: 0.16rem;
+		border-radius: 999px;
+		background: currentColor;
+		opacity: 0.22;
+	}
+
+	.layout-inline-tabs,
+	.layout-vertical-field {
+		display: none;
+	}
+
+	.layout-compact .layout-tab-region {
+		display: none;
+	}
+
+	.layout-compact .layout-field {
+		flex: 0 1 38%;
+	}
+
+	.layout-compact .layout-inline-tabs {
+		min-width: 0;
+		align-self: stretch;
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+	}
+
+	.layout-inline-tab {
+		width: 42%;
+		height: 1.1rem;
+		padding-inline: 0.25rem;
+		border-radius: 0.2rem;
+	}
+
+	.layout-hybrid .layout-tab-region,
+	.layout-vertical .layout-tab-region {
+		padding: 0.4rem 0.35rem;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.25rem;
+		border-right: 1px solid var(--text-15);
+	}
+
+	.layout-hybrid.sidebar-right .layout-tab-region,
+	.layout-vertical.sidebar-right .layout-tab-region {
+		border-right: none;
+		border-left: 1px solid var(--text-15);
+	}
+
+	.layout-hybrid .layout-tabs,
+	.layout-vertical .layout-tabs {
+		flex: none;
+		width: 100%;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.18rem;
+	}
+
+	.layout-hybrid .layout-tab,
+	.layout-vertical .layout-tab {
+		width: 100%;
+		height: 0.8rem;
+		padding-inline: 0.2rem;
+	}
+
+	.layout-hybrid .layout-tab.third,
+	.layout-vertical .layout-tab.third {
+		display: flex;
+	}
+
+	.layout-vertical .layout-vertical-field {
+		height: 0.85rem;
+		padding-inline: 0.25rem;
+		display: flex;
+	}
+
+	.layout-vertical .layout-toolbar {
+		display: none;
+	}
+
+	.layout-content {
+		grid-area: content;
+		min-width: 0;
+		min-height: 0;
+		background: var(--ntp_background);
+		color: var(--ntp_text);
+		display: flex;
+		align-items: flex-start;
+		justify-content: flex-start;
+		padding: 0.8rem 0.75rem;
+	}
+
+	.layout-page {
+		width: min(82%, 7rem);
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.38rem;
+	}
+
+	.layout-page-body {
+		width: 100%;
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+	}
+
+	.layout-page-copy {
+		min-width: 0;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.layout-page-copy span {
+		width: 82%;
+		height: 0.16rem;
+		border-radius: 999px;
+		background: currentColor;
+		opacity: 0.12;
+	}
+
+	.layout-page-heading {
+		width: 45%;
+		height: 0.25rem;
+		border-radius: 999px;
+		background: currentColor;
+		opacity: 0.25;
+	}
+
+	.layout-page-copy span.short {
+		width: 62%;
+	}
+
+	.layout-page-copy span.shorter {
+		width: 48%;
+	}
+
+	.layout-page-image {
+		width: 1.35rem;
+		aspect-ratio: 3 / 4;
+		border-radius: 0.22rem;
+		background: var(--ntp-text-10);
 		flex: none;
 	}
 `;
@@ -433,114 +880,46 @@ export function SettingsPage(
 									</div>
 									<div class="section-content">
 										<div class="setting-group">
-											<div class="radio-group">
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="layout-horizontal"
-														name="layout"
-														value="horizontal"
-														checked={use(
-															settingsService.settings.tabLayout
-														).map((v) => v === "horizontal")}
-														on:change={() => {
-															settingsService.settings.tabLayout = "horizontal";
-														}}
-													/>
-													<label
-														for="layout-horizontal"
-														class="label-multiline"
-													>
-														<span>Default</span>
-														<span class="description">
-															Tabs are displayed in a single row above the
-															address bar.
-														</span>
-													</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="layout-bottom"
-														name="layout"
-														value="bottom"
-														checked={use(
-															settingsService.settings.tabLayout
-														).map((v) => v === "bottom")}
-														on:change={() => {
-															settingsService.settings.tabLayout = "bottom";
-														}}
-													/>
-													<label for="layout-bottom" class="label-multiline">
-														<span>Bottom</span>
-														<span class="description">
-															Tabs are displayed at the bottom of the window.
-														</span>
-													</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="layout-compact"
-														name="layout"
-														value="compact"
-														checked={use(
-															settingsService.settings.tabLayout
-														).map((v) => v === "compact")}
-														on:change={() => {
-															settingsService.settings.tabLayout = "compact";
-														}}
-													/>
-													<label for="layout-compact" class="label-multiline">
-														<span>Compact</span>
-														<span class="description">
-															Tabs are displayed next to the address bar.
-														</span>
-													</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="layout-hybrid"
-														name="layout"
-														value="hybrid"
-														checked={use(
-															settingsService.settings.tabLayout
-														).map((v) => v === "hybrid")}
-														on:change={() => {
-															settingsService.settings.tabLayout = "hybrid";
-														}}
-													/>
-													<label for="layout-hybrid" class="label-multiline">
-														<span>Hybrid</span>
-														<span class="description">
-															Tabs are displayed in a vertical sidebar on the
-															left.
-														</span>
-													</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="layout-vertical"
-														name="layout"
-														value="vertical"
-														checked={use(
-															settingsService.settings.tabLayout
-														).map((v) => v === "vertical")}
-														on:change={() => {
-															settingsService.settings.tabLayout = "vertical";
-														}}
-													/>
-													<label for="layout-vertical" class="label-multiline">
-														<span>Vertical</span>
-														<span class="description">
-															Tabs and the address bar are displayed in a single
-															column to the left of the content area.
-														</span>
-													</label>
-												</div>
-											</div>
+											{use(settingsService.settings.verticalTabJustify).map(
+												(sidebar) => (
+													<div class="layout-grid">
+														{LAYOUT_OPTIONS.map((option) => (
+															<label
+																for={`layout-${option.id}`}
+																class="layout-card"
+																class:selected={use(
+																	settingsService.settings.tabLayout
+																).map((value) => value === option.id)}
+															>
+																<input
+																	class="layout-radio"
+																	type="radio"
+																	id={`layout-${option.id}`}
+																	name="layout"
+																	value={option.id}
+																	checked={use(
+																		settingsService.settings.tabLayout
+																	).map((value) => value === option.id)}
+																	on:change={() => {
+																		settingsService.settings.tabLayout =
+																			option.id;
+																	}}
+																/>
+																<LayoutPreview
+																	layout={option.id}
+																	sidebar={sidebar}
+																/>
+																<span class="layout-info">
+																	<span class="layout-name">{option.name}</span>
+																	<span class="description">
+																		{option.description}
+																	</span>
+																</span>
+															</label>
+														))}
+													</div>
+												)
+											)}
 										</div>
 									</div>
 								</section>
@@ -556,40 +935,51 @@ export function SettingsPage(
 											</div>
 											<div class="section-content">
 												<div class="setting-group">
-													<div class="radio-group">
-														<div class="radio-option">
-															<input
-																type="radio"
-																id="sidebar-left"
-																name="sidebar-location"
-																value="left"
-																checked={use(
-																	settingsService.settings.verticalTabJustify
-																).map((v) => v === "left")}
-																on:change={() => {
-																	settingsService.settings.verticalTabJustify =
-																		"left";
-																}}
-															/>
-															<label for="sidebar-left">Left</label>
-														</div>
-														<div class="radio-option">
-															<input
-																type="radio"
-																id="sidebar-right"
-																name="sidebar-location"
-																value="right"
-																checked={use(
-																	settingsService.settings.verticalTabJustify
-																).map((v) => v === "right")}
-																on:change={() => {
-																	settingsService.settings.verticalTabJustify =
-																		"right";
-																}}
-															/>
-															<label for="sidebar-right">Right</label>
-														</div>
-													</div>
+													{use(settingsService.settings.tabLayout).map(
+														(layout) => (
+															<div class="layout-grid sidebar-location-grid">
+																{(["left", "right"] as const).map((sidebar) => (
+																	<label
+																		for={`sidebar-${sidebar}`}
+																		class="layout-card"
+																		class:selected={use(
+																			settingsService.settings
+																				.verticalTabJustify
+																		).map((value) => value === sidebar)}
+																	>
+																		<input
+																			class="layout-radio"
+																			type="radio"
+																			id={`sidebar-${sidebar}`}
+																			name="sidebar-location"
+																			value={sidebar}
+																			checked={use(
+																				settingsService.settings
+																					.verticalTabJustify
+																			).map((value) => value === sidebar)}
+																			on:change={() => {
+																				settingsService.settings.verticalTabJustify =
+																					sidebar;
+																			}}
+																		/>
+																		<LayoutPreview
+																			layout={
+																				layout === "vertical"
+																					? "vertical"
+																					: "hybrid"
+																			}
+																			sidebar={sidebar}
+																		/>
+																		<span class="layout-info compact">
+																			<span class="layout-name">
+																				{sidebar === "left" ? "Left" : "Right"}
+																			</span>
+																		</span>
+																	</label>
+																))}
+															</div>
+														)
+													)}
 												</div>
 											</div>
 										</section>
@@ -1236,6 +1626,85 @@ SettingsPage.style = css`
 	input[type="checkbox"] {
 		accent-color: var(--tab_line);
 		margin: 0;
+	}
+
+	.layout-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr));
+		gap: 0.8rem;
+	}
+
+	.sidebar-location-grid {
+		grid-template-columns: repeat(2, minmax(0, 18rem));
+		max-width: 36.8rem;
+	}
+
+	.layout-card {
+		min-width: 0;
+		border: 1px solid var(--ntp-text-15);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+		background: var(--toolbar_field);
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		transition:
+			border-color 0.15s ease,
+			box-shadow 0.15s ease,
+			transform 0.15s ease;
+	}
+
+	.layout-card:hover {
+		border-color: var(--tab_line);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		transform: translateY(-1px);
+	}
+
+	.layout-card:focus-within {
+		outline: 2px solid var(--tab_line);
+		outline-offset: 2px;
+	}
+
+	.layout-card.selected {
+		border-color: var(--tab_line);
+		box-shadow: 0 0 0 3px var(--accent-20);
+	}
+
+	.layout-radio {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.layout-info {
+		padding: var(--space-lg) var(--space-md);
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 0.25rem;
+		background: var(--toolbar_field);
+		color: var(--toolbar_field_text);
+	}
+
+	.layout-info.compact {
+		flex: none;
+	}
+
+	.layout-name {
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+
+	.layout-info .description {
+		font-size: 0.8rem;
+		line-height: 1.3;
+		color: var(--field-text-60);
 	}
 
 	.setting-hint {

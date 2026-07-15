@@ -226,13 +226,13 @@ App.style = css`
 		border-top: 1px solid var(--text-15);
 	}
 
-	.vertical-sidebar-header {
+	:global(.vertical-sidebar-header) {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);
 	}
 
-	.vertical-sidebar-bookmarks {
+	:global(.vertical-sidebar-bookmarks) {
 		padding-bottom: 0.25rem;
 		border-bottom: 1px solid var(--text-15);
 	}
