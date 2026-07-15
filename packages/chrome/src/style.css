@@ -99,13 +99,13 @@ body {
 	--radius-lg: 6px;
 	--radius-xl: 8px;
 
-	--space-xxs: 0.125rem;
-	--space-xs: 0.2rem;
-	--space-sm: 0.35rem;
-	--space-md: 0.55rem;
+	--space-xxs: 0.15rem;
+	--space-xs: 0.225rem;
+	--space-sm: 0.375rem;
+	--space-md: 0.6rem;
 	--space-lg: 0.75rem;
-	--space-xl: 0.9rem;
-	--space-xxl: 1.2rem;
+	--space-xl: 0.95rem;
+	--space-xxl: 1.25rem;
 
 	--tab-height: 2rem;
 	--omnibar-height: 2.5rem;
@@ -118,11 +118,11 @@ body.ui-compact {
 	--radius-lg: 5px;
 	--radius-xl: 6px;
 
-	--space-xxs: 0.075rem;
-	--space-xs: 0.15rem;
-	--space-sm: 0.225rem;
-	--space-md: 0.325rem;
-	--space-lg: 0.55rem;
+	--space-xxs: 0.1rem;
+	--space-xs: 0.175rem;
+	--space-sm: 0.25rem;
+	--space-md: 0.35rem;
+	--space-lg: 0.6rem;
 	--space-xl: 0.75rem;
 	--space-xxl: 1rem;
 
@@ -137,13 +137,13 @@ body.ui-touch {
 	--radius-lg: 10px;
 	--radius-xl: 12px;
 
-	--space-xxs: 0.2rem;
-	--space-xs: 0.3rem;
+	--space-xxs: 0.175rem;
+	--space-xs: 0.25rem;
 	--space-sm: 0.5rem;
 	--space-md: 0.75rem;
 	--space-lg: 1rem;
-	--space-xl: 1.2rem;
-	--space-xxl: 1.4rem;
+	--space-xl: 1.25rem;
+	--space-xxl: 1.5rem;
 
 	--tab-height: 2.2rem;
 	--omnibar-height: 2.8rem;

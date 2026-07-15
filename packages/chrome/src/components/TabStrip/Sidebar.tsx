@@ -95,8 +95,9 @@ export function Sidebar(
 		return this.topEl.offsetHeight;
 	};
 	const getTabPadding = () =>
+		parseFloat(getComputedStyle(document.documentElement).fontSize) *
 		parseFloat(
-			getComputedStyle(this.container).getPropertyValue("--tab-padding")
+			getComputedStyle(document.documentElement).getPropertyValue("--space-xxs")
 		);
 
 	const getTabHeight = () => {
@@ -117,7 +118,9 @@ export function Sidebar(
 		}
 
 		const cssHeight = parseFloat(
-			getComputedStyle(this.container).getPropertyValue("--tab-height").trim()
+			getComputedStyle(document.documentElement)
+				.getPropertyValue("--space-xs")
+				.trim()
 		);
 		return Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 36;
 	};
@@ -453,7 +456,6 @@ export function Sidebar(
 Sidebar.style = css`
 	:scope {
 		--sidebar-width: 250px;
-		--tab-padding: var(--space-sm);
 		display: block;
 		position: relative;
 		padding: var(--space-md);

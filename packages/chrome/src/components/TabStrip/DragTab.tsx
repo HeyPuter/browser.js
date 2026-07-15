@@ -175,7 +175,7 @@ export function DragTab(
 
 	return (
 		<div
-			style="z-index: 0;"
+			style="z-index: 1;"
 			class={use(this.tooltipHovered).map((hovered) =>
 				hovered ? `tab ${orientation} hovered` : `tab ${orientation}`
 			)}
@@ -184,7 +184,7 @@ export function DragTab(
 				if (e.target !== this.root || e.propertyName !== "transform") return;
 				// Clears programmatically assigned move transition/z-index after tab translate animation ends.
 				this.root.style.transition = "";
-				this.root.style.zIndex = "0";
+				this.root.style.zIndex = "1";
 				this.transitionend();
 			}}
 		>
@@ -290,10 +290,7 @@ DragTab.style = css`
 
 	.hover-area {
 		position: absolute;
-		top: -3px;
-		left: -3px;
-		right: -3px;
-		bottom: -3px;
+		inset: calc(-1 * var(--space-xs));
 		pointer-events: auto;
 	}
 

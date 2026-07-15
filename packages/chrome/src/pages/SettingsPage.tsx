@@ -1427,7 +1427,7 @@ SettingsPage.style = css`
 
 	.sidebar {
 		width: max(20rem, 250px);
-		padding: 2rem;
+		padding: var(--space-xxl);
 		background: var(--toolbar);
 		border-right: 1px solid var(--text-15);
 		display: flex;
@@ -1482,6 +1482,7 @@ SettingsPage.style = css`
 		top: 0;
 		right: 0;
 		width: 24rem;
+		z-index: 5;
 		padding: 1.5rem;
 	}
 
