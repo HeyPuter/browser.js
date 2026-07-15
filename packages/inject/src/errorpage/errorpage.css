@@ -7,7 +7,12 @@
 	--tab_line: #5bb4f4;
 
 	/* Local derived utility tokens used by error page + buttons */
-	--radius: 5px;
+	--radius-xs: 3px;
+	--radius-sm: 4px;
+	--radius-md: 5px;
+	--radius-lg: 6px;
+	--radius-xl: 8px;
+
 	--font:
 		"Inter", "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans",
 		"Helvetica Neue", Arial, sans-serif;
@@ -52,7 +57,7 @@ body {
 	align-items: flex-start;
 	background: color-mix(in srgb, var(--toolbar_field) 55%, transparent);
 	border: 1px solid var(--text-15);
-	border-radius: calc(var(--radius-md) * 1.5);
+	border-radius: var(--radius-xl);
 	padding: 24px;
 	box-sizing: border-box;
 }
@@ -96,14 +101,18 @@ body {
 	padding: 10px 14px;
 	padding-left: 16px;
 	background: color-mix(in srgb, var(--muted) 6%, transparent);
-	border-radius: var(--radius-md);
+	border-radius: var(--radius-sm);
 	overflow: hidden;
 	color: var(--muted);
+	word-break: break-word;
 	font-size: 13px;
 	position: relative;
+}
+
+.err-message,
+.face {
 	font-family:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
-	word-break: break-word;
 }
 
 .err-message::before {
@@ -114,8 +123,8 @@ body {
 	bottom: 0;
 	width: 2px;
 	background: var(--muted);
-	border-top-left-radius: var(--radius-md);
-	border-bottom-left-radius: var(--radius-md);
+	border-top-left-radius: var(--radius-sm);
+	border-bottom-left-radius: var(--radius-sm);
 }
 
 .controls {
