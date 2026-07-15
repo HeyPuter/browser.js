@@ -104,17 +104,13 @@ jobs:
 
       - name: Run package validation tests
         run: pnpm test:package
-        working-directory: packages/scramjet/packages/core
+        working-directory: packages/scramjet
 
   tests:
     name: Run Scramjet Tests
     runs-on: ubuntu-latest
     needs: [build, package-validation]
-    if: false # temporarily disabled
-    env:
-      # Absolute path so the cache step and the install step (which runs from
-      # a nested working-directory) both resolve to the same location.
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -145,38 +141,8 @@ jobs:
           name: scramjet-controller
           path: packages/scramjet/packages/controller/dist
 
-      - name: Cache Playwright browsers
-        id: pw-browsers-cache
-        uses: actions/cache@v4
-        with:
-          path: .playwright-browsers
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
-      - name: Install Playwright system deps
-        if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
-        run: npx playwright install-deps chromium
-        working-directory: packages/scramjet/packages/runway
-
       - name: Install Playwright Chromium
-        if: steps.pw-browsers-cache.outputs.cache-hit != 'true'
-        # The Playwright Azure CDN intermittently stalls mid-download with no
-        # output, so we cap each attempt (the job would otherwise idle for the
-        # full 6h job timeout) and retry a few times before giving up.
-        run: |
-          for attempt in 1 2 3; do
-            echo "::group::playwright install attempt $attempt"
-            if timeout 600 npx playwright install chromium; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "attempt $attempt failed, retrying..."
-            sleep 10
-          done
-          echo "playwright install failed after 3 attempts"
-          exit 1
+        run: npx playwright install --with-deps chromium
         working-directory: packages/scramjet/packages/runway
 
       - name: Run Runway tests
@@ -282,7 +248,7 @@ jobs:
   pages:
     name: Upload to Github Pages
     runs-on: ubuntu-latest
-    needs: [frontend, rewritertests]
+    needs: [frontend, tests, rewritertests]
     permissions: write-all
     if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[PUBLISH]')
 
