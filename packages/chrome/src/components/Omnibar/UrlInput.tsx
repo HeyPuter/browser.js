@@ -7,6 +7,8 @@ import { splitUrl } from "../../util";
 import { INTERNAL_URL_PROTOCOL } from "../../consts";
 import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
 import { BookmarkButton } from "@components/Omnibar/BookmarkButton";
+import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
+import { settingsService } from "../..";
 
 export function UrlInput(
 	this: FC<{
@@ -108,7 +110,13 @@ export function UrlInput(
 						!value && !active && url.href == `${INTERNAL_URL_PROTOCOL}//newtab`
 				)
 				.and(
-					<span class="placeholder">Search with Google or enter address</span>
+					<span class="placeholder">
+						Search with{" "}
+						{use(settingsService.settings.defaultSearchEngine).map(
+							(e) => AVAILABLE_SEARCH_ENGINES[e].name
+						)}{" "}
+						or enter address
+					</span>
 				)}
 
 			{use(this.active).or(
