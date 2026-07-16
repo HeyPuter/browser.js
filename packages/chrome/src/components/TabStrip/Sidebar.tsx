@@ -1,6 +1,10 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { DragTab, VerticalPinTile } from "./DragTab";
+import {
+	createMiddleClickCloseHandler,
+	DragTab,
+	VerticalPinTile,
+} from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
@@ -427,6 +431,10 @@ export function Sidebar(
 		<div
 			id="tabstrip"
 			this={use(this.container)}
+			on:auxclick={createMiddleClickCloseHandler(
+				() => this.visualtabs,
+				(tab) => this.destroyTab(tab)
+			)}
 			style={use(this.sidebarWidth).map(
 				(width) =>
 					`--sidebar-width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`

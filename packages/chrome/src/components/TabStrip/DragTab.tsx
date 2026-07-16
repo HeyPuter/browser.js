@@ -13,12 +13,73 @@ import {
 import { Icon } from "@components/Icon";
 import { tabsService } from "../..";
 
-/**
- * Builds the shared right-click context menu for a tab. Used by both
- * {@link DragTab} and {@link VerticalPinTile} so the available actions (and the
- * Pin/Unpin toggle) stay in sync. Private to this module since both consumers
- * live here.
- */
+type VisualTab = {
+	tab: Tab;
+	root: HTMLElement;
+	closing: boolean;
+};
+
+export function createMiddleClickCloseHandler(
+	getVisualTabs: () => VisualTab[],
+	destroyTab: (tab: Tab) => void
+) {
+	let repeatState: { slot: number; bounds: DOMRect } | null = null;
+	let resetTimeout: number | null = null;
+
+	const resetRepeatState = () => {
+		repeatState = null;
+		if (resetTimeout !== null) clearTimeout(resetTimeout);
+		resetTimeout = null;
+	};
+
+	return (e: MouseEvent) => {
+		console.log(e);
+		if (e.button !== 1) return;
+
+		const visualTabs = getVisualTabs();
+		const liveTabs = visualTabs.filter((tab) => !tab.closing);
+		if (!(e.target instanceof Node)) return;
+
+		const clickedTab = visualTabs.find(
+			(tab) => tab.root === e.target || tab.root.contains(e.target as Node)
+		);
+
+		let slot =
+			clickedTab && !clickedTab.closing ? liveTabs.indexOf(clickedTab) : -1;
+		let bounds: DOMRect | null = null;
+		const stateBounds: DOMRect | undefined = repeatState?.bounds;
+
+		if (slot !== -1 && clickedTab) {
+			bounds = clickedTab.root
+				.querySelector(".hover-area")!
+				.getBoundingClientRect();
+		} else if (
+			stateBounds &&
+			stateBounds.left <= e.clientX &&
+			stateBounds.right >= e.clientX &&
+			stateBounds.top <= e.clientY &&
+			stateBounds.bottom >= e.clientY
+		) {
+			slot = repeatState!.slot;
+			bounds = stateBounds;
+		}
+
+		const tabToClose = liveTabs[slot];
+		if (!tabToClose || !bounds) {
+			resetRepeatState();
+			return;
+		}
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		repeatState = { slot, bounds };
+		if (resetTimeout !== null) clearTimeout(resetTimeout);
+		resetTimeout = setTimeout(resetRepeatState, 800);
+		destroyTab(tabToClose.tab);
+	};
+}
+
 function buildTabContextMenu(tab: Tab, destroy: () => void) {
 	return [
 		{
@@ -195,11 +256,6 @@ export function DragTab(
 					e.stopPropagation();
 					e.preventDefault();
 				}}
-				on:auxclick={(e: MouseEvent) => {
-					if (e.button === 1) {
-						this.destroy();
-					}
-				}}
 				on:mouseenter={() => {
 					this.tooltipHovered = true;
 					this.mouseover();
@@ -237,10 +293,6 @@ export function DragTab(
 							<button
 								class="close"
 								on:click={(e: MouseEvent) => {
-									e.stopPropagation();
-									this.destroy();
-								}}
-								on:auxclick={(e: MouseEvent) => {
 									e.stopPropagation();
 									this.destroy();
 								}}
@@ -429,7 +481,10 @@ export function VerticalPinTile(
 				this.dragStart(e);
 			}}
 			on:auxclick={(e: MouseEvent) => {
-				if (e.button === 1) this.destroy();
+				if (e.button !== 1) return;
+				e.preventDefault();
+				e.stopPropagation();
+				this.destroy();
 			}}
 		>
 			<div class="pin-favicon">

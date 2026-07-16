@@ -5,7 +5,10 @@ import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import type { Tab } from "../../Tab/Tab";
 // import html2canvas from "html2canvas";
 import { setContextMenu } from "@components/Menu";
-import { DragTab } from "@components/TabStrip/DragTab";
+import {
+	createMiddleClickCloseHandler,
+	DragTab,
+} from "@components/TabStrip/DragTab";
 import { requestUnfocusFrames } from "@components/Shell";
 
 type VisualTab = {
@@ -430,6 +433,10 @@ export function TabStrip(
 		<div
 			id="tabstrip"
 			class:inline={this.inline ?? false}
+			on:auxclick={createMiddleClickCloseHandler(
+				() => this.visualtabs,
+				(tab) => this.destroyTab(tab)
+			)}
 			this={use(this.container)}
 		>
 			<div class="extra left" this={use(this.leftEl)}></div>
