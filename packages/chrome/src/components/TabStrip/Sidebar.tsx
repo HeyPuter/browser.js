@@ -316,11 +316,8 @@ export function Sidebar(
 
 		// Both sidebar layouts render pinned tabs in the Arc-style grid
 		// (VerticalPinList) instead of the linear list, so skip them here.
-		// `visibleIndex` tracks the slot of the listed tabs for the initial
-		// transition origin.
 		const usesPinnedGrid =
 			this.layout === "vertical" || this.layout === "hybrid";
-		let visibleIndex = 0;
 		for (let index = 0; index < this.tabs.length; index++) {
 			let tab = this.tabs[index];
 
@@ -345,6 +342,18 @@ export function Sidebar(
 						transitionend={transitionend}
 					/>
 				);
+				const tabHeight = getTabHeight();
+				const previousTab = newvisualtabs[newvisualtabs.length - 1];
+				const nextTab = this.visualtabs.find(
+					(candidate) =>
+						!candidate.closing && !newvisualtabs.includes(candidate)
+				);
+				const initialPos = previousTab
+					? previousTab.pos + previousTab.height + getTabPadding()
+					: (nextTab?.pos ?? getLayoutStart());
+
+				// Absolute-positioned tabs need their slot before the mount animation runs.
+				dt.style.transform = `translateY(${initialPos}px)`;
 				visualtab = {
 					tab,
 					root: dt,
@@ -352,15 +361,12 @@ export function Sidebar(
 					dragpos: -1,
 					startdragpos: -1,
 					closing: false,
-					height: 0,
-					pos:
-						getLayoutStart() +
-						visibleIndex * (getTabHeight() + getTabPadding()),
+					height: tabHeight,
+					pos: initialPos,
 				};
 			}
 
 			newvisualtabs.push(visualtab);
-			visibleIndex++;
 		}
 
 		for (let vtab of this.visualtabs) {

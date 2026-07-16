@@ -33,7 +33,6 @@ export function createMiddleClickCloseHandler(
 	};
 
 	return (e: MouseEvent) => {
-		console.log(e);
 		if (e.button !== 1) return;
 
 		const visualTabs = getVisualTabs();
