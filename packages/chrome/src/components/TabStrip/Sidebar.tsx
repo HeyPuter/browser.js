@@ -9,7 +9,7 @@ import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
-import { tabsService } from "../..";
+import { settingsService, tabsService } from "../..";
 
 type VisualTab = {
 	tab: Tab;
@@ -61,6 +61,9 @@ export function Sidebar(
 
 	let transitioningTabs = 0;
 
+	const getRemAbsoluteSize = (size: number) =>
+		size * parseFloat(getComputedStyle(document.documentElement).fontSize);
+
 	const getRootHeight = () => {
 		const style = getComputedStyle(this.container);
 		const padding =
@@ -98,11 +101,15 @@ export function Sidebar(
 	const getLayoutStart = () => {
 		return this.topEl.offsetHeight;
 	};
-	const getTabPadding = () =>
-		parseFloat(getComputedStyle(document.documentElement).fontSize) *
-		parseFloat(
-			getComputedStyle(document.documentElement).getPropertyValue("--space-xxs")
+	const getTabPadding = () => {
+		return getRemAbsoluteSize(
+			parseFloat(
+				getComputedStyle(document.documentElement).getPropertyValue(
+					"--space-xxs"
+				)
+			)
 		);
+	};
 
 	const getTabHeight = () => {
 		// Measure the inner `.main` row rather than the tab root. When a tab
@@ -121,10 +128,12 @@ export function Sidebar(
 			if (measured > 0) return measured;
 		}
 
-		const cssHeight = parseFloat(
-			getComputedStyle(document.documentElement)
-				.getPropertyValue("--space-xs")
-				.trim()
+		const cssHeight = getRemAbsoluteSize(
+			parseFloat(
+				getComputedStyle(document.documentElement).getPropertyValue(
+					"--space-xs"
+				)
+			)
 		);
 		return Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 36;
 	};
@@ -146,6 +155,7 @@ export function Sidebar(
 		const height = getTabHeight();
 		const width = getRootWidth();
 		const tabPadding = getTabPadding();
+		console.log(height, width, tabPadding);
 
 		reorderTabs();
 
@@ -400,6 +410,12 @@ export function Sidebar(
 
 		this.visualtabs = newvisualtabs;
 		setTimeout(() => layoutTabs(true), 10);
+	});
+
+	// force sync when density profile changes
+	use(settingsService.settings.uiProfile).listen(() => {
+		this.tabs = [...this.tabs];
+		layoutTabs(true);
 	});
 
 	this.cx.mount = () => {

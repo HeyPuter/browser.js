@@ -335,10 +335,6 @@ DragTab.style = css`
 		anchor-name: --hovered-tab;
 	}
 
-	:scope.vertical .dragroot {
-		overflow: hidden;
-	}
-
 	.hover-area {
 		position: absolute;
 		inset: calc(-1 * var(--space-xs));
