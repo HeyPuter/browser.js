@@ -28,7 +28,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 export function createIndirectEval(client: ScramjetClient) {
 	const indirection = client.global.eval;
-	return new Proxy(client.global.eval, {
+	const proxy = new Proxy(client.global.eval, {
 		apply(_target, _thisArg, args) {
 			let js = args[0];
 			// > If the argument of eval() is not a string, eval() returns the argument unchanged
@@ -46,4 +46,7 @@ export function createIndirectEval(client: ScramjetClient) {
 			);
 		},
 	});
+	client.box.unproxy.set(proxy, client.global.eval);
+
+	return proxy;
 }
