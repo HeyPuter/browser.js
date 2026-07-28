@@ -59,7 +59,7 @@ export class Tab extends StatefulClass {
 		this.url ??= new URL(`${INTERNAL_URL_PROTOCOL}//newtab`);
 		this.id ??= uuid("tab-");
 
-		this.session = new TabSession();
+		this.session = new TabSession(this, this.id);
 		this.history = new History(this, history);
 		this.own(this.history);
 		this.waitForInit = new Promise((resolve) => {

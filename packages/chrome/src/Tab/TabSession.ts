@@ -1,35 +1,36 @@
 import { rewriteUrl } from "@mercuryworkshop/scramjet/bundled";
 import { Controller, controllerForURL } from "../proxy/Controller";
 import { CDPConnection } from "../CDP";
-import { contexts } from "../proxy/scramjet";
+import { contexts, ProxyFrameContext } from "../proxy/scramjet";
+import type { Tab } from "./Tab";
 
 export class TabSession {
 	frame: HTMLIFrameElement;
 	frameWindowProxy!: WindowProxy;
 	devtoolsFrame: HTMLIFrameElement;
 	controller: Controller | null = null;
-	constructor() {
+	contexts: ProxyFrameContext[] = [];
+	rootcontext: ProxyFrameContext | null = null;
+	constructor(
+		public tab: Tab,
+		public id: string
+	) {
 		this.frame = document.createElement("iframe");
 		this.devtoolsFrame = document.createElement("iframe");
-		setTimeout(() => {
-			this.devtoolsFrame.onload = async () => {
-				const ctx = contexts.find(
-					(ctx) => ctx.windowproxy === this.frame.contentWindow
+		this.devtoolsFrame.onload = async () => {
+			const session = new CDPConnection((msh) => {
+				this.devtoolsFrame.contentWindow.InspectorFrontendAPI.dispatchMessage(
+					msh
 				);
-				let session = new CDPConnection((msh) => {
-					this.devtoolsFrame.contentWindow.InspectorFrontendAPI.dispatchMessage(
-						msh
-					);
-				}, ctx.id);
-				this.devtoolsFrame.contentWindow.InspectorFrontendHost.sendMessageToBackend =
-					(message) => {
-						console.warn(message);
-						session.sendMessage(message);
-					};
-			};
+			}, this);
+			this.devtoolsFrame.contentWindow.InspectorFrontendHost.sendMessageToBackend =
+				(message) => {
+					console.warn(message);
+					session.sendMessage(message);
+				};
+		};
 
-			this.devtoolsFrame.src = "front_end/inspector.html";
-		}, 1000);
+		this.devtoolsFrame.src = "front_end/inspector.html";
 	}
 
 	mounted() {

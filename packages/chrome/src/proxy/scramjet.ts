@@ -89,9 +89,26 @@ export function reduceSequence(sequence: FrameSequence): Window | null {
 	}, self.top);
 }
 
-class ProxyFrameContext {
+export class ContextRegistry {
+	contexts: ProxyFrameContext[] = [];
+
+	registerContext(context: ProxyFrameContext, tab: Tab) {
+		this.contexts.push(context);
+		context.tab = tab;
+	}
+
+	contextsOfTab(tab: Tab): ProxyFrameContext[] {
+		return this.contexts.filter((ctx) => ctx.tab === tab);
+	}
+}
+export const contexts = new ContextRegistry();
+
+let globalContextIdCounter = 0;
+export class ProxyFrameContext {
 	rpc: RpcHelper<Chromebound, Framebound>;
 	windowproxy: Window | null = null;
+	public tab: Tab | null = null;
+	public cdpId: number = globalContextIdCounter++;
 	constructor(
 		public controller: Controller,
 		public id: string
@@ -105,7 +122,9 @@ class ProxyFrameContext {
 						tabsService.tabs.find(
 							(t) => t.session.frame.contentWindow === this.windowproxy
 						) || null;
+					// this is the root frame for this tab
 					if (!tab) return;
+					tab.session.rootcontext = this;
 
 					if (tab.history.justTriggeredNavigation) {
 						// url bar was typed in, we triggered this navigation, don't push a new state since we already did
@@ -178,7 +197,10 @@ class ProxyFrameContext {
 					];
 				},
 				registerFrameContext: async ({ id: childId }) => {
-					contexts.push(new ProxyFrameContext(this.controller, childId));
+					contexts.registerContext(
+						new ProxyFrameContext(this.controller, childId),
+						tab!
+					);
 				},
 				setCookies: async ({ cookies }) => {
 					for (const { url, cookie } of cookies) {
@@ -190,12 +212,14 @@ class ProxyFrameContext {
 					}
 					profileService.markDirty();
 
-					for (const ctx of contexts) {
+					// TODO properly instance here with a method on registry
+					for (const ctx of contexts.contexts) {
 						if (ctx === this) continue;
 						if (!ctx.alive()) continue;
 						void ctx.rpc.call("setCookies", { cookies });
 					}
 				},
+				cdpevent: async ({}) => {},
 				wsconnect: async ({ url, protocols, requestHeaders, port }) => {
 					let resolve!: (arg: Chromebound["wsconnect"][1]) => void;
 					const promise = new Promise<Chromebound["wsconnect"][1]>(
@@ -285,8 +309,6 @@ class ProxyFrameContext {
 	}
 }
 
-export let contexts: ProxyFrameContext[] = [];
-window.contexts = contexts;
 function escapeHtml(text: string): string {
 	const div = document.createElement("div");
 	div.textContent = text;
@@ -296,7 +318,7 @@ function escapeHtml(text: string): string {
 export function renderErrorPage(controller: Controller, error: Error): string {
 	const contextId = "context-" + makeId();
 	let frameContext = new ProxyFrameContext(controller, contextId);
-	contexts.push(frameContext);
+	contexts.registerContext(frameContext, null);
 
 	const theme = getTheme(settingsService.settings.themeId);
 
