@@ -1,3 +1,4 @@
+/// <reference types="@rspack/core/module" />
 import { Protocol } from "devtools-protocol";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 
@@ -12,7 +13,17 @@ export function setupCDPServer({ self, rpc, client }: ExecutionContextWrapper) {
 }
 
 export class CDPSession {
+	runtimeEnabled = false;
 	objects = new ObjectManager(this);
+	constructor(public context: ExecutionContextWrapper) {}
+	async request(method: string, params: any): Promise<any> {
+		if (method in cdpBindings) {
+			const binding = cdpBindings[method as CdpCommand] as CdpBinding<any>;
+			return await binding.call(this, params);
+		} else {
+			console.warn(`ignoring ${method}`);
+		}
+	}
 }
 
 export type CdpCommand = keyof ProtocolMapping.Commands;
@@ -25,6 +36,7 @@ export type CdpCommandReturn<T extends CdpCommand> =
 
 type MaybePromise<T> = T | Promise<T>;
 type CdpBinding<T extends CdpCommand> = (
+	this: CDPSession,
 	args: CdpCommandArgs<T>
 ) => MaybePromise<CdpCommandReturn<T>>;
 
@@ -38,3 +50,9 @@ export function bindCDP<T extends CdpCommand>(
 ): void {
 	(cdpBindings as Record<CdpCommand, unknown>)[method] = binding;
 }
+
+const domains = import.meta.webpackContext("./domains", {
+	recursive: true,
+	regExp: /\.ts$/,
+});
+for (const key of domains.keys()) domains(key);

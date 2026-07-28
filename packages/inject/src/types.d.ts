@@ -55,6 +55,7 @@ export type Chromebound = {
 	load: [
 		{
 			url: string;
+			executionContextId: string;
 			sequence: FrameSequence;
 		},
 	];
@@ -92,6 +93,12 @@ export type Chromebound = {
 			cookies: { cookie: string; url: string }[];
 		},
 	];
+	cdpevent: [
+		{
+			method: string;
+			params: any;
+		},
+	];
 };
 
 export type Framebound = {
@@ -120,6 +127,15 @@ export type Framebound = {
 		},
 	];
 	updateTheme: [ThemeDefinition];
+	cdprequest: [
+		{
+			method: string;
+			params: any;
+		},
+		{
+			result: any;
+		},
+	];
 };
 
 export type InjectScramjetInit = {

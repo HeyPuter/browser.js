@@ -22,7 +22,7 @@ import { setupAnchorHandler } from "./emulators/anchors";
 import { setupWindowOpen } from "./emulators/windowopen";
 import { RemoteTransport } from "./transport";
 import { setupAlwaysLastBubble } from "./emulators/alwaysLastBubble";
-import { setupCDPServer } from "./CDP";
+import { CDPSession, setupCDPServer } from "./CDP";
 
 function makeContextId(): string {
 	return "context-" + Math.random().toString(36).substring(2, 10);
@@ -51,6 +51,7 @@ export class ExecutionContextWrapper {
 	public rpc!: RpcHelper<Framebound, Chromebound>;
 	public client!: ScramjetClient;
 	private cookieJar = new CookieJar();
+	private executionContextId;
 	constructor(
 		public self: typeof globalThis,
 		private init: InjectScramjetInit
@@ -59,8 +60,13 @@ export class ExecutionContextWrapper {
 		this.cookieJar.load(init.cookies);
 		this.loadScramjet();
 
+		// use the scramjet id for the execution context id
+		this.executionContextId = init.id;
+
 		// this entry point is still called in web workers
 		if (!iswindow) return;
+
+		const cdpsession = new CDPSession(this);
 
 		const history_replaceState = self.History.prototype.replaceState;
 		this.rpc = new RpcHelper(
@@ -98,6 +104,10 @@ export class ExecutionContextWrapper {
 				updateTheme: async (theme) => {
 					applyTheme(theme);
 				},
+				cdprequest: async ({ method, params }) => {
+					const result = await cdpsession.request(method, params);
+					return [{ result }, []];
+				},
 			},
 			init.id,
 			(message, transfer) => {
@@ -131,6 +141,7 @@ export class ExecutionContextWrapper {
 
 		this.rpc.call("load", {
 			url: this.client.url.href,
+			executionContextId: this.executionContextId,
 			sequence: findSequence(top!, self as any)!,
 		});
 	}

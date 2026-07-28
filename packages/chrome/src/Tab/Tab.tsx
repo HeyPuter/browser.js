@@ -42,7 +42,7 @@ export class Tab extends StatefulClass {
 
 	internalpage: HTMLElement | null = null;
 
-	devtoolsOpen: boolean = false;
+	devtoolsOpen: boolean = true;
 	devtoolsWidth = 200;
 
 	loadProgress: number = 0;

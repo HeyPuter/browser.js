@@ -50,7 +50,7 @@ export class ObjectManager {
 			type,
 			subtype,
 			className,
-
+			description,
 			objectId: id,
 		};
 	}

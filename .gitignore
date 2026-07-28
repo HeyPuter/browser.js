@@ -6,6 +6,7 @@ test-results
 package-lock.json
 rebuild.sh
 .DS_STORE
+packages/chrome/public/front_end
 
 packages/scramjet/packages/runway/coverage
 packages/scramjet/packages/runway/src/tests/wpt/vendored/fetch/metadata/generated/

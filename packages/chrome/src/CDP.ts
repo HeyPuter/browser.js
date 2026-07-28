@@ -1,6 +1,7 @@
 import type Protocol from "devtools-protocol";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import type { Tab } from "./Tab/Tab";
+import { contexts } from "./proxy/scramjet";
 
 export type CdpCommand = keyof ProtocolMapping.Commands;
 export type CdpCommandArgs<T extends CdpCommand> =
@@ -33,8 +34,12 @@ export function bindCDP<T extends CdpCommand>(
 }
 
 export class CDPConnection {
-	boundSessionId: string;
-	constructor(public cb: (message: string) => void) {
+	boundTargetId: string | null = null;
+	constructor(
+		public cb: (message: string) => void,
+		targetId: string
+	) {
+		this.boundTargetId = targetId;
 		setTimeout(() => {
 			this.triggerEvent("Runtime.executionContextCreated", {
 				context: {
@@ -64,6 +69,22 @@ export class CDPConnection {
 
 		const domain = method.split(".")[0];
 		if (["Page", "Runtime", "DOM"].includes(domain)) {
+			const context = contexts.find((c) => c.id === this.boundTargetId!);
+
+			context?.rpc
+				.call("cdprequest", {
+					method,
+					params,
+				})
+				.then((result) => {
+					this.cb(
+						JSON.stringify({
+							id,
+							result: result.result,
+						})
+					);
+				});
+			return;
 		}
 
 		const binding = cdpBindings[method];
@@ -76,7 +97,7 @@ export class CDPConnection {
 				})
 			);
 		} else {
-			console.error("ignoring", method);
+			console.error("ignoring-", method);
 		}
 	}
 }
