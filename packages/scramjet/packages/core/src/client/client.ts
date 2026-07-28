@@ -44,6 +44,7 @@ import {
 	Object_defineProperties,
 	_Map,
 } from "@/shared/snapshot";
+import { createIndirectEval } from "./shared/eval";
 
 export type ScramjetClientInit = {
 	context: ScramjetContext;
@@ -183,6 +184,7 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 
 export class ScramjetClient {
 	locationProxy: any;
+	indirectEval: any;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
 
@@ -260,6 +262,7 @@ export class ScramjetClient {
 			global.document[SCRAMJETCLIENT] = this;
 		}
 
+		this.indirectEval = createIndirectEval(this);
 		this.wrapfn = createWrapFn(this, global);
 		this.natives = {
 			store: new Proxy(
