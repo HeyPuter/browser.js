@@ -309,6 +309,13 @@ export function DragTab(
 						</>
 					)}
 				</div>
+				{/* Bottom bar + curved "feet" of the Chrome-style tab shape. Inert
+				    (display: none) unless the `style-chrome` UI style is active. */}
+				{use(this.active).and(
+					<div class="belowcontainer">
+						<div class="below"></div>
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -323,6 +330,7 @@ DragTab.style = css`
 		--tab-active-border-width: 11px;
 		--tab-active-border-radius: 10px;
 		--tab-active-border-radius-neg: -10px;
+		--tab-chrome-active-radius: 12px;
 
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
@@ -418,13 +426,33 @@ DragTab.style = css`
 		outline-offset: -1px;
 	}
 
+	/* --- Chrome-style tab shaping (uiStyle: "chrome") ----------------------
+	   Ported from aboutbrowser-v2 (src/components/tabs.tsx).
+
+	   The trapezoid is built from two pieces rather than an SVG:
+	     - .main gets rounded top corners and square bottom corners, so it reads
+	       as the body of the tab.
+	     - .belowcontainer is a zero-height anchor immediately after .main;
+	       .below hangs out of it to fill the tab strip's bottom padding with
+	       the toolbar color, fusing the active tab into the toolbar below it.
+	       Its ::before/::after are toolbar-colored blocks sitting just outside
+	       each bottom corner, with a radial-gradient mask carving a transparent
+	       circle out of their inner top corner. What's left is the concave
+	       curve that flares away from the tab.
+
+	   .below's height must match the strip's bottom padding (--space-sm in
+	   TabStrip.style) or the tab won't reach the toolbar.
+
+	   Scoped to the horizontal strip: the bottom/compact/vertical layouts have
+	   no toolbar directly beneath the tabs for the shape to merge into. */
 	.belowcontainer {
 		position: relative;
+		display: none;
 	}
 	.below {
 		position: absolute;
-		bottom: -6px;
-		height: 6px;
+		bottom: calc(-1 * var(--space-sm));
+		height: var(--space-sm);
 		width: 100%;
 
 		background: var(--toolbar);
@@ -440,6 +468,40 @@ DragTab.style = css`
 		height: var(--tab-active-border-radius);
 
 		background: var(--toolbar);
+	}
+
+	.below::before {
+		left: var(--tab-active-border-radius-neg);
+		mask-image: radial-gradient(
+			circle at 0 0,
+			transparent var(--tab-active-border-radius),
+			black 0
+		);
+	}
+
+	.below::after {
+		right: var(--tab-active-border-radius-neg);
+		mask-image: radial-gradient(
+			circle at var(--tab-active-border-width) 0,
+			transparent var(--tab-active-border-radius),
+			black 0
+		);
+	}
+
+	:global(.style-chrome.layout-horizontal) :scope .belowcontainer {
+		display: block;
+	}
+
+	:global(.style-chrome.layout-horizontal) :scope .main {
+		border-radius: var(--tab-active-border-radius)
+			var(--tab-active-border-radius) 0 0;
+	}
+
+	:global(.style-chrome.layout-horizontal) :scope .main.active {
+		border-radius: var(--tab-chrome-active-radius)
+			var(--tab-chrome-active-radius) 0 0;
+		box-shadow: none;
+		outline: none;
 	}
 `;
 

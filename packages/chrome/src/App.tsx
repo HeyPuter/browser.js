@@ -71,8 +71,23 @@ export function App(
 
 	applyProfile();
 
+	// Widget styling ("Style" in settings): swaps the shape/chrome of UI
+	// elements without touching colors. `style-chrome` gives the tab strip the
+	// classic Chrome trapezoid tabs; see DragTab.style.
+	const applyStyle = () => {
+		const style = settingsService.settings.uiStyle;
+		document.body.classList.toggle("style-default", style !== "chrome");
+		document.body.classList.toggle("style-chrome", style === "chrome");
+	};
+
+	applyStyle();
+
 	const applyLayout = () => {
 		const layout = settingsService.settings.tabLayout;
+		document.body.classList.toggle(
+			"layout-horizontal",
+			layout === "horizontal"
+		);
 		document.body.classList.toggle("layout-bottom", layout === "bottom");
 		document.body.classList.toggle("layout-compact", layout === "compact");
 		const verticalTabs = layout === "hybrid" || layout === "vertical";
@@ -103,6 +118,7 @@ export function App(
 	use(settingsService.settings.themeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
+	use(settingsService.settings.uiStyle).listen(applyStyle);
 	use(settingsService.settings.tabLayout).listen(applyLayout);
 	use(settingsService.settings.verticalTabJustify).listen(applyLayout);
 

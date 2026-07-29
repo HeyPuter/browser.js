@@ -875,6 +875,61 @@ export function SettingsPage(
 								</section> */}
 								<section class="setting-section">
 									<div class="section-header">
+										<h2>Style</h2>
+										<p class="description">
+											Choose the shape and framing of the browser's UI elements.
+											Independent of the colors below.
+										</p>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="radio-group">
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-style-default"
+														name="ui-style"
+														value="default"
+														checked={use(settingsService.settings.uiStyle).map(
+															(style) => style !== "chrome"
+														)}
+														on:change={() => {
+															settingsService.settings.uiStyle = "default";
+														}}
+													/>
+													<label for="ui-style-default" class="label-multiline">
+														<span>Browser.js</span>
+														<span class="description">
+															Rounded, floating tabs and controls.
+														</span>
+													</label>
+												</div>
+												<div class="radio-option">
+													<input
+														type="radio"
+														id="ui-style-chrome"
+														name="ui-style"
+														value="chrome"
+														checked={use(settingsService.settings.uiStyle).map(
+															(style) => style === "chrome"
+														)}
+														on:change={() => {
+															settingsService.settings.uiStyle = "chrome";
+														}}
+													/>
+													<label for="ui-style-chrome" class="label-multiline">
+														<span>Chromium</span>
+														<span class="description">
+															Classic trapezoid tabs fused into the toolbar.
+														</span>
+													</label>
+												</div>
+											</div>
+										</div>
+									</div>
+								</section>
+								<section class="setting-section">
+									<div class="section-header">
 										<h2>Browser Layout (Beta)</h2>
 										<p class="description">Choose where tabs are displayed.</p>
 									</div>
@@ -1060,9 +1115,9 @@ export function SettingsPage(
 								</section>
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>Browser Theme</h2>
+										<h2>Colors</h2>
 										<p class="description">
-											Customize the look of the browser.
+											Customize the color palette of the browser.
 										</p>
 									</div>
 									<div class="section-content" style="padding-left: 0;">

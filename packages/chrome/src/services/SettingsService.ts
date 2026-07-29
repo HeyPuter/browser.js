@@ -14,6 +14,7 @@ export type Settings = {
 	verticalTabJustify: "left" | "right";
 	sidebarWidth: number | null;
 	uiProfile: "default" | "compact" | "touch";
+	uiStyle: "default" | "chrome";
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
@@ -27,6 +28,7 @@ export type Settings = {
 };
 
 export type TabLayoutMode = Settings["tabLayout"];
+export type UiStyleMode = Settings["uiStyle"];
 
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
@@ -34,6 +36,7 @@ const DEFAULT_SETTINGS: Settings = {
 	verticalTabJustify: "left",
 	sidebarWidth: null,
 	uiProfile: "default",
+	uiStyle: "default",
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
 	defaultZoom: 100,
@@ -54,6 +57,7 @@ export type SettingsServiceState = {
 		sidebarWidth: number | null;
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
+		uiStyle: "default" | "chrome";
 		startupPage: "new-tab" | "continue";
 		defaultZoom: number;
 		showBookmarksBar: boolean;
@@ -72,7 +76,9 @@ export class SettingsService extends Service {
 	constructor(data: SettingsServiceState | null) {
 		super();
 		if (data) {
-			this.settings = createState(data.settings);
+			// Spread over the defaults so settings added after a profile was last
+			// written come up with their default value instead of `undefined`.
+			this.settings = createState({ ...DEFAULT_SETTINGS, ...data.settings });
 		} else {
 			this.settings = createState(DEFAULT_SETTINGS);
 		}
@@ -93,6 +99,7 @@ export class SettingsService extends Service {
 				sidebarWidth: this.settings.sidebarWidth,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,
+				uiStyle: this.settings.uiStyle,
 				startupPage: this.settings.startupPage,
 				defaultZoom: this.settings.defaultZoom,
 				showBookmarksBar: this.settings.showBookmarksBar,
