@@ -327,10 +327,13 @@ DragTab.style = css`
 		user-select: none;
 		position: absolute;
 
-		--tab-active-border-width: 11px;
-		--tab-active-border-radius: 10px;
-		--tab-active-border-radius-neg: -10px;
-		--tab-chrome-active-radius: 12px;
+		--tab-active-border-width: calc(var(--radius-lg) + 1px);
+		--tab-active-border-radius: var(--radius-lg);
+		--tab-active-border-radius-neg: calc(-1 * var(--radius-lg));
+		--tab-chrome-active-radius: calc(var(--radius-xl) + var(--radius-xs));
+		--tab-top-border-radius: calc(
+			var(--tab-chrome-active-radius) - var(--space-sm) - var(--radius-xs)
+		);
 
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
@@ -493,15 +496,19 @@ DragTab.style = css`
 	}
 
 	:global(.style-chrome.layout-horizontal) :scope .main {
-		border-radius: var(--tab-active-border-radius)
-			var(--tab-active-border-radius) 0 0;
+		border-radius: var(--tab-top-border-radius);
+		padding: var(--space-sm) var(--space-lg);
 	}
 
 	:global(.style-chrome.layout-horizontal) :scope .main.active {
-		border-radius: var(--tab-chrome-active-radius)
-			var(--tab-chrome-active-radius) 0 0;
+		border-radius: var(--tab-top-border-radius) var(--tab-top-border-radius) 0 0;
+	}
+	:global(.style-chrome) :scope .main.active {
 		box-shadow: none;
 		outline: none;
+	}
+	:global(.style-chrome .layout-compact) :scope .main.active {
+		background: var(--toolbar_field);
 	}
 `;
 

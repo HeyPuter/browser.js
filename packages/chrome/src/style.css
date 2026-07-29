@@ -149,6 +149,39 @@ body.ui-touch {
 	--omnibar-height: 2.8rem;
 }
 
+body.style-chrome {
+	--radius-xs: 5px;
+	--radius-sm: 7px;
+	--radius-md: 9px;
+	--radius-lg: 11px;
+	--radius-xl: 13px;
+}
+body.style-chrome.layout-horizontal {
+	--tab-height: 1.75rem;
+}
+
+body.style-chrome.ui-touch {
+	--radius-xs: 8px;
+	--radius-sm: 10px;
+	--radius-md: 12px;
+	--radius-lg: 14px;
+	--radius-xl: 16px;
+}
+body.style-chrome.ui-touch.layout-horizontal {
+	--tab-height: 2rem;
+}
+
+body.style-chrome.ui-compact {
+	--radius-xs: 4px;
+	--radius-sm: 5px;
+	--radius-md: 7px;
+	--radius-lg: 9px;
+	--radius-xl: 11px;
+}
+body.style-chrome.ui-compact.layout-horizontal {
+	--tab-height: 1.5rem;
+}
+
 ::selection {
 	background: var(--accent-30);
 }

@@ -64,6 +64,9 @@ BookmarkButton.style = css`
 
 		border-radius: var(--radius-sm);
 	}
+	:global(.style-chrome *) > :scope {
+		border-radius: 50%;
+	}
 	:scope:hover {
 		background: var(--toolbarbutton-hover-background);
 	}

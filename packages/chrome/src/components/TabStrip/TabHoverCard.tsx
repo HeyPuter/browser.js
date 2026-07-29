@@ -37,7 +37,7 @@ TabHoverCard.style = css`
 		position: absolute;
 		position-anchor: --hovered-tab;
 		position-visibility: anchors-valid;
-		top: anchor(bottom);
+		top: calc(anchor(bottom) + 2px);
 		left: anchor(left);
 		/* transitions and some other styles are defined in ./TabStrip.tsx */
 	}

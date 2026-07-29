@@ -39,6 +39,9 @@ OmnibarButton.style = css`
 
 		opacity: 0.4;
 	}
+	:global(.style-chrome *) > :scope {
+		border-radius: 50%;
+	}
 	:scope.active:hover {
 		background: var(--toolbarbutton-hover-background);
 	}

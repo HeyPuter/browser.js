@@ -96,7 +96,7 @@ export function TabStrip(
 	const getTabPadding = () =>
 		parseFloat(getComputedStyle(document.documentElement).fontSize) *
 		parseFloat(
-			getComputedStyle(document.documentElement).getPropertyValue("--space-xs")
+			getComputedStyle(document.documentElement).getPropertyValue("--space-sm")
 		);
 	const getTabWidth = () => {
 		let total = getRootWidth();

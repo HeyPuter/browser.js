@@ -30,6 +30,10 @@ InactiveBar.style = css`
 		margin: 0.25em;
 	}
 
+	:global(.style-chrome *) > :scope {
+		border-radius: 9999px;
+	}
+
 	:scope.subtle.active {
 		border: 1px solid var(--tab_line);
 	}

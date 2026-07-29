@@ -46,6 +46,11 @@ SiteOptionsButton.style = css`
 		justify-content: center;
 		background: var(--toolbar);
 	}
+
+	:global(.style-chrome *) > :scope {
+		border-radius: 50%;
+	}
+
 	:scope:hover {
 		background: var(--toolbarbutton-hover-background);
 	}
