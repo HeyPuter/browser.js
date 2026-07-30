@@ -176,7 +176,7 @@ Menu.style = css`
 
 		transition:
 			opacity 0.1s ease,
-			transform 0.12s cubic-bezier(0.35, 0.15, 0, 1.8);
+			transform 0.12s var(--ease-popup);
 		opacity: 1;
 		transform: scaleX(100%) scaleY(100%);
 		transform-origin: var(--transform-origin-x) var(--transform-origin-y);

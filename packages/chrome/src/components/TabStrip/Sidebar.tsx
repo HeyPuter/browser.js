@@ -10,6 +10,7 @@ import { Icon } from "@components/Icon";
 import { iconAdd } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
 import { settingsService, tabsService } from "../..";
+import { easing } from "../../easing";
 
 type VisualTab = {
 	tab: Tab;
@@ -55,7 +56,7 @@ export function Sidebar(
 	const SIDEBAR_MIN_WIDTH = this.layout === "vertical" ? 190 : 48;
 	const SIDEBAR_MAX_WIDTH = 520;
 
-	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
+	const TAB_TRANSITION = () => `225ms ${easing("--ease-tab-move")}`;
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
 
@@ -181,7 +182,7 @@ export function Sidebar(
 					staggerIndex * TAB_STAGGER_STEP,
 					TAB_STAGGER_MAX
 				);
-				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
+				tab.root.style.transition = `transform ${TAB_TRANSITION()} ${delay}ms`;
 				transitioningTabs++;
 				movedTabs++;
 			}
@@ -200,7 +201,7 @@ export function Sidebar(
 					TAB_STAGGER_STEP,
 				TAB_STAGGER_MAX
 			);
-			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
+			this.afterEl.style.transition = `transform ${TAB_TRANSITION()} ${afterDelay}ms`;
 		}
 		this.afterEl.style.transform = `translateY(${afterpos}px)`;
 	};
@@ -393,7 +394,7 @@ export function Sidebar(
 					],
 					{
 						duration: 150,
-						easing: "cubic-bezier(.29,.44,.3,.94)",
+						easing: easing("--ease-tab-close"),
 						fill: "forwards",
 					}
 				);
@@ -624,7 +625,8 @@ export function VerticalPinList(
 
 	const [lock, unlock] = requestUnfocusFrames();
 	const DRAG_THRESHOLD = 4;
-	const REFLOW_TRANSITION = "transform 200ms cubic-bezier(.43,.52,0,1.15)";
+	const REFLOW_TRANSITION = () =>
+		`transform 200ms ${easing("--ease-tab-move")}`;
 
 	type DragState = {
 		tab: Tab;
@@ -715,7 +717,7 @@ export function VerticalPinList(
 			const toRect = drag.rects[slot];
 			const dx = toRect.left - fromRect.left;
 			const dy = toRect.top - fromRect.top;
-			el.style.transition = REFLOW_TRANSITION;
+			el.style.transition = REFLOW_TRANSITION();
 			el.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : "";
 		}
 	};

@@ -109,6 +109,40 @@ body {
 
 	--tab-height: 2rem;
 	--omnibar-height: 2.5rem;
+
+	/* Chromium's gfx::Tween curve table, ported 1:1 from
+	   ui/gfx/animation/tween.cc. Not one curve in Chromium overshoots — every
+	   control point has y within [0, 1]. These are constants; the semantic
+	   --ease-* tokens below are what actually switch per UI style.
+
+	   EASE_OUT and EASE_IN are polynomials in Chromium (1-(1-t)^2 and t^2). Both
+	   convert *exactly* to a cubic bezier by degree-elevating the quadratic and
+	   pinning the x control points to 1/3 and 2/3, which makes x(t) = t.
+	   EASE_IN_OUT is piecewise quadratic, so it has no exact single-bezier form;
+	   the value below fits it to within 0.005. */
+	--tween-ease-out: cubic-bezier(0.33, 0.67, 0.67, 1); /* 1-(1-t)^2 */
+	--tween-ease-in: cubic-bezier(0.33, 0, 0.67, 0.33); /* t^2 */
+	--tween-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1); /* fit */
+	--tween-ease-out-2: cubic-bezier(0.4, 0, 0, 1);
+	--tween-ease-out-3: cubic-bezier(0.6, 0, 0, 1);
+	--tween-ease-in-out-2: cubic-bezier(0.33, 0, 0.67, 1);
+	--tween-fast-out-slow-in: cubic-bezier(0.4, 0, 0.2, 1);
+	--tween-fast-out-slow-in-2: cubic-bezier(0.2, 0, 0.2, 1);
+	--tween-linear-out-slow-in: cubic-bezier(0, 0, 0.2, 1);
+	--tween-fast-out-linear-in: cubic-bezier(0.4, 0, 1, 1);
+
+	/* Semantic easing tokens — default (bouncy) set. Overridden below for
+	   body.style-chrome. See easing.ts for the Chromium code that picks the
+	   curve for each equivalent native animation. */
+	--ease-tab-move: cubic-bezier(0.43, 0.52, 0, 1.15);
+	--ease-tab-open: cubic-bezier(0.25, 0.5, 0, 1.15);
+	--ease-tab-close: cubic-bezier(0.29, 0.44, 0.3, 0.94);
+	--ease-hovercard-fade: ease;
+	--ease-hovercard-slide: cubic-bezier(0.33, 0.22, 0.18, 1.17);
+	--ease-popup: cubic-bezier(0.35, 0.15, 0, 1.8);
+	--ease-omnibox: cubic-bezier(0, 1.33, 0.5, 1);
+	--ease-control: cubic-bezier(0.43, 0.91, 0.34, 1.3);
+	--ease-hover: ease;
 }
 
 body.ui-compact {
@@ -155,6 +189,36 @@ body.style-chrome {
 	--radius-md: 9px;
 	--radius-lg: 11px;
 	--radius-xl: 13px;
+
+	/* Chromium doesn't bounce. Remap every semantic easing token onto the
+	   gfx::Tween curve Chromium uses for the equivalent native animation. */
+
+	/* All tab slot movement (open, close, reorder, reflow) goes through
+	   TabContainerImpl::AnimateViewTo -> views::BoundsAnimator, which defaults
+	   to gfx::Tween::EASE_OUT (ui/views/animation/bounds_animator.h:207). */
+	--ease-tab-move: var(--tween-ease-out);
+	--ease-tab-open: var(--tween-ease-out);
+	--ease-tab-close: var(--tween-ease-out);
+
+	/* views::WidgetFadeAnimator and views::BubbleSlideAnimator both default to
+	   gfx::Tween::FAST_OUT_SLOW_IN (widget_fade_animator.h:145,
+	   bubble_slide_animator.h:118). Chromium hover cards fade and slide; they
+	   never scale, so the scale pop loses its overshoot here. */
+	--ease-hovercard-fade: var(--tween-fast-out-slow-in);
+	--ease-hovercard-slide: var(--tween-fast-out-slow-in);
+
+	/* OmniboxPopupViewViews animates with FAST_OUT_SLOW_IN
+	   (omnibox_popup_view_views.cc:220). */
+	--ease-popup: var(--tween-fast-out-slow-in);
+	--ease-omnibox: var(--tween-fast-out-slow-in);
+
+	/* Ink drop highlight uses gfx::Tween::EASE_IN_OUT
+	   (ui/views/animation/ink_drop_highlight.cc:138). */
+	--ease-control: var(--tween-ease-in-out);
+
+	/* gfx::SlideAnimation, which drives LocationBarView's hover animation,
+	   defaults to gfx::Tween::EASE_OUT (slide_animation.h:108). */
+	--ease-hover: var(--tween-ease-out);
 }
 body.style-chrome.layout-horizontal {
 	--tab-height: 1.75rem;
@@ -237,10 +301,10 @@ button {
 
 #tabstrip #hovercard {
 	transition:
-		opacity 0.2s ease 700ms,
-		scale 0.2s cubic-bezier(0.43, 0.91, 0.34, 1.3) 700ms,
+		opacity 0.2s var(--ease-hovercard-fade) 700ms,
+		scale 0.2s var(--ease-hovercard-fade) 700ms,
 		visibility 0s,
-		left 0.2s cubic-bezier(0.33, 0.22, 0.18, 1.17);
+		left 0.2s var(--ease-hovercard-slide);
 	scale: 1;
 }
 

@@ -10,11 +10,15 @@ export function Icon(
 	}>
 ) {
 	this.cx.mount = () => {
-		const update = (icon: IconifyIcon) => {
-			this.root.innerHTML = icon.body;
+		// Listen on `icon.body` rather than on `icon` itself. Icons from
+		// ../icons are stateful objects whose glyph is swapped in place when the
+		// UI style changes (see `setIconStyle`), so their identity stays put;
+		// watching the field picks up both that and a swapped-out `icon` prop.
+		const update = (body: string) => {
+			this.root.innerHTML = body;
 		};
-		use(this.icon).listen(update);
-		update(this.icon);
+		use(this.icon.body).listen(update);
+		update(this.icon.body);
 	};
 
 	return (

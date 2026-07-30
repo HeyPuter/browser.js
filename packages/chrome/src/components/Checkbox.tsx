@@ -49,7 +49,7 @@ Checkbox.style = css`
 		text-shadow: 0 0.055em 0.05em var(--accent-shade-20);
 		font-size: 0.8em;
 		transform: scale(0);
-		transition: transform 120ms cubic-bezier(0.43, 0.91, 0.34, 1.3);
+		transition: transform 120ms var(--ease-control);
 		pointer-events: none;
 	}
 

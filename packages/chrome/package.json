@@ -18,6 +18,7 @@
 		"@heyputer/puter.js": "^2.1.2",
 		"@iconify/types": "^2.0.0",
 		"@ktibow/iconset-ion": "^8.0.13",
+		"@ktibow/iconset-material-symbols": "^0.0.1764827375",
 		"@mercuryworkshop/epoxy-transport": "catalog:",
 		"@mercuryworkshop/libcurl-transport": "catalog:",
 		"@mercuryworkshop/proxy-transports": "catalog:",

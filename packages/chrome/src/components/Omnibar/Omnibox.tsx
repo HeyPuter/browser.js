@@ -397,7 +397,7 @@ Omnibox.style = css`
 		display: flex;
 		height: 100%;
 		overflow: visible;
-		transition: width 150ms cubic-bezier(0,1.33,.5,1);
+		transition: width 150ms var(--ease-omnibox);
 	}
 
 	:scope.vertical-layout {

@@ -6,6 +6,7 @@ import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
 import { getTheme } from "./themes";
+import { setIconStyle } from "./icons";
 import { contexts } from "./proxy/scramjet";
 import { INTERNAL_URL_PROTOCOL } from "./consts";
 import { Shell } from "@components/Shell";
@@ -73,11 +74,13 @@ export function App(
 
 	// Widget styling ("Style" in settings): swaps the shape/chrome of UI
 	// elements without touching colors. `style-chrome` gives the tab strip the
-	// classic Chrome trapezoid tabs; see DragTab.style.
+	// classic Chrome trapezoid tabs; see DragTab.style. It also swaps the icon
+	// set from Ionicons to Material Symbols; see icons.ts.
 	const applyStyle = () => {
 		const style = settingsService.settings.uiStyle;
 		document.body.classList.toggle("style-default", style !== "chrome");
 		document.body.classList.toggle("style-chrome", style === "chrome");
+		setIconStyle(style);
 	};
 
 	applyStyle();

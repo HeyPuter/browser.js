@@ -1,70 +1,219 @@
-// Centralized icon re-exports
-// Export commonly-used icons from @ktibow/iconset-ion so other files can import from "/icons"
+// Centralized icon definitions.
 //
-// Example usage after refactor:
-// import { iconBack, iconMore } from "/icons";
+// Every icon is declared exactly once, as a *pair* of glyphs: the Ionicons
+// glyph used by the default (Browser.js) UI style, and the Material Symbols
+// glyph used by the Chromium UI style — Chrome itself draws its UI with
+// Material Symbols Rounded, so matching it is what makes the style read as
+// "Chromium" rather than "Browser.js with trapezoid tabs".
+//
+// Call sites stay style-agnostic. They import a single name and render it:
+//
+//   import { iconBack } from "../icons";
+//   <Icon icon={iconBack} />
+//
+// ...and never learn which set is active. `icon()` below returns a stateful
+// object whose `body`/`width`/`height` are proxied to the active glyph, so
+// flipping the style at runtime mutates every icon in place and each mounted
+// <Icon> re-renders itself (see Icon.tsx, which listens on `icon.body`).
+//
+// The style is pushed in from App.tsx's `applyStyle()` via `setIconStyle()`
+// rather than read from settingsService here, to keep this module free of
+// imports from the service layer.
 
-export { default as iconBack } from "@ktibow/iconset-ion/arrow-back";
-export { default as iconForwards } from "@ktibow/iconset-ion/arrow-forward";
+import type { IconifyIcon } from "@iconify/types";
+import { createState, stateProxy } from "dreamland/core";
 
-export { default as iconRefresh } from "@ktibow/iconset-ion/refresh";
-export { default as iconRefreshOutline } from "@ktibow/iconset-ion/refresh-outline";
+// Ionicons — default style. Keep in the same order as the Material Symbols
+// block below; these two lists are plumbing for the declarations at the
+// bottom of the file, which are the actual source of truth for each pairing.
+import ionBack from "@ktibow/iconset-ion/arrow-back";
+import ionForwards from "@ktibow/iconset-ion/arrow-forward";
+import ionRefresh from "@ktibow/iconset-ion/refresh";
+import ionRefreshOutline from "@ktibow/iconset-ion/refresh-outline";
+import ionBookmark from "@ktibow/iconset-ion/bookmark-outline";
+import ionCode from "@ktibow/iconset-ion/code-outline";
+import ionLink from "@ktibow/iconset-ion/link-outline";
+import ionAdd from "@ktibow/iconset-ion/add";
+import ionNew from "@ktibow/iconset-ion/duplicate-outline";
+import ionCopy from "@ktibow/iconset-ion/copy-outline";
+import ionSave from "@ktibow/iconset-ion/save-outline";
+import ionOpen from "@ktibow/iconset-ion/open-outline";
+import ionBrush from "@ktibow/iconset-ion/brush-outline";
+import ionTrash from "@ktibow/iconset-ion/trash-outline";
+import ionClose from "@ktibow/iconset-ion/close";
+import ionCloseOutline from "@ktibow/iconset-ion/close-outline";
+import ionCloseCircle from "@ktibow/iconset-ion/close-circle-outline";
+import ionFolder from "@ktibow/iconset-ion/folder-outline";
+import ionPause from "@ktibow/iconset-ion/pause-outline";
+import ionStar from "@ktibow/iconset-ion/star-outline";
+import ionStarFilled from "@ktibow/iconset-ion/star";
+import ionExtension from "@ktibow/iconset-ion/extension-puzzle-outline";
+import ionDownload from "@ktibow/iconset-ion/download-outline";
+import ionMore from "@ktibow/iconset-ion/more";
+import ionExit from "@ktibow/iconset-ion/exit-outline";
+import ionTime from "@ktibow/iconset-ion/time-outline";
+import ionInfo from "@ktibow/iconset-ion/information-circle-outline";
+import ionSettings from "@ktibow/iconset-ion/settings-outline";
+import ionOptions from "@ktibow/iconset-ion/options-outline";
+import ionSearch from "@ktibow/iconset-ion/search";
+import ionSearchOutline from "@ktibow/iconset-ion/search-outline";
+import ionTrendingUp from "@ktibow/iconset-ion/trending-up";
+import ionShield from "@ktibow/iconset-ion/shield-checkmark-outline";
+import ionError from "@ktibow/iconset-ion/alert-circle-outline";
+import ionCheckmark from "@ktibow/iconset-ion/checkmark-circle-outline";
+import ionGlobe from "@ktibow/iconset-ion/globe-outline";
+import ionEarth from "@ktibow/iconset-ion/earth-outline";
+import ionServer from "@ktibow/iconset-ion/server-outline";
+import ionDesktop from "@ktibow/iconset-ion/desktop-outline";
+import ionCloud from "@ktibow/iconset-ion/cloud-outline";
 
-export { default as iconBookmark } from "@ktibow/iconset-ion/bookmark-outline";
-export { default as iconCode } from "@ktibow/iconset-ion/code-outline";
+// Material Symbols — Chromium style. The `-rounded` variants are what Chrome
+// ships; names without a `-rounded` suffix simply don't have a distinct
+// rounded cut in the icon set.
+import msBack from "@ktibow/iconset-material-symbols/arrow-back-rounded";
+import msForwards from "@ktibow/iconset-material-symbols/arrow-forward-rounded";
+import msRefresh from "@ktibow/iconset-material-symbols/refresh-rounded";
+import msBookmark from "@ktibow/iconset-material-symbols/bookmark-outline-rounded";
+import msCode from "@ktibow/iconset-material-symbols/code-rounded";
+import msLink from "@ktibow/iconset-material-symbols/link-rounded";
+import msAdd from "@ktibow/iconset-material-symbols/add-rounded";
+import msNew from "@ktibow/iconset-material-symbols/add-box-outline-rounded";
+import msCopy from "@ktibow/iconset-material-symbols/content-copy-outline-rounded";
+import msSave from "@ktibow/iconset-material-symbols/save-outline-rounded";
+import msOpen from "@ktibow/iconset-material-symbols/open-in-new-rounded";
+import msBrush from "@ktibow/iconset-material-symbols/brush-outline";
+import msTrash from "@ktibow/iconset-material-symbols/delete-outline-rounded";
+import msClose from "@ktibow/iconset-material-symbols/close-rounded";
+import msCloseCircle from "@ktibow/iconset-material-symbols/cancel-outline-rounded";
+import msFolder from "@ktibow/iconset-material-symbols/folder-outline-rounded";
+import msPause from "@ktibow/iconset-material-symbols/pause-rounded";
+import msStar from "@ktibow/iconset-material-symbols/star-outline-rounded";
+import msStarFilled from "@ktibow/iconset-material-symbols/star-rounded";
+import msExtension from "@ktibow/iconset-material-symbols/extension-outline-rounded";
+import msDownload from "@ktibow/iconset-material-symbols/download-rounded";
+import msMore from "@ktibow/iconset-material-symbols/more-vert";
+import msExit from "@ktibow/iconset-material-symbols/logout-rounded";
+import msTime from "@ktibow/iconset-material-symbols/history-rounded";
+import msInfo from "@ktibow/iconset-material-symbols/info-outline-rounded";
+import msSettings from "@ktibow/iconset-material-symbols/settings-outline-rounded";
+import msOptions from "@ktibow/iconset-material-symbols/tune-rounded";
+import msSearch from "@ktibow/iconset-material-symbols/search-rounded";
+import msTrendingUp from "@ktibow/iconset-material-symbols/trending-up-rounded";
+import msShield from "@ktibow/iconset-material-symbols/verified-user-outline-rounded";
+import msError from "@ktibow/iconset-material-symbols/error-outline-rounded";
+import msCheckmark from "@ktibow/iconset-material-symbols/check-circle-outline-rounded";
+import msGlobe from "@ktibow/iconset-material-symbols/language";
+import msEarth from "@ktibow/iconset-material-symbols/public";
+import msServer from "@ktibow/iconset-material-symbols/dns-outline";
+import msDesktop from "@ktibow/iconset-material-symbols/desktop-windows-outline-rounded";
+import msCloud from "@ktibow/iconset-material-symbols/cloud-outline";
 
-export { default as iconLink } from "@ktibow/iconset-ion/link-outline";
+/** Mirrors `Settings["uiStyle"]`, duplicated to avoid importing the services. */
+export type IconStyle = "default" | "chrome";
 
-export { default as iconAdd } from "@ktibow/iconset-ion/add";
-// duplicate-outline is used in multiple places (alias both `iconNew` and `iconAddFromDuplicate`)
-export { default as iconNew } from "@ktibow/iconset-ion/duplicate-outline";
-export { default as iconAddFromDuplicate } from "@ktibow/iconset-ion/duplicate-outline";
-export { default as iconDuplicate } from "@ktibow/iconset-ion/copy-outline"; // alias for copy-outline usage
-export { default as iconCopy } from "@ktibow/iconset-ion/copy-outline";
+const style = createState<{ current: IconStyle }>({ current: "default" });
 
-export { default as iconSave } from "@ktibow/iconset-ion/save-outline";
+/**
+ * Switch every icon in the app over to the glyph set for `next`. Called from
+ * App.tsx whenever the `uiStyle` setting changes.
+ */
+export function setIconStyle(next: IconStyle) {
+	style.current = next;
+}
 
-export { default as iconOpen } from "@ktibow/iconset-ion/open-outline";
-export { default as iconBrush } from "@ktibow/iconset-ion/brush-outline";
-export { default as iconTrash } from "@ktibow/iconset-ion/trash-outline";
+/**
+ * Pair a default-style glyph with its Chromium-style counterpart.
+ *
+ * The returned object is a stateful `IconifyIcon` whose fields are proxied to
+ * whichever glyph the current style selects. Its identity never changes, so it
+ * can be stored in menu descriptors, compared, and passed around like a plain
+ * icon; consumers that want to react to a style flip listen on a field
+ * (`icon.body`) rather than on the object.
+ */
+function icon(def: IconifyIcon, chrome: IconifyIcon): IconifyIcon {
+	const active = use(style.current).map((s) => (s === "chrome" ? chrome : def));
+	const state = createState({} as IconifyIcon);
 
-export { default as iconClose } from "@ktibow/iconset-ion/close";
-export { default as iconCloseOutline } from "@ktibow/iconset-ion/close-outline";
-export { default as iconCloseCircle } from "@ktibow/iconset-ion/close-circle-outline";
+	stateProxy(
+		state,
+		"body",
+		active.map((i) => i.body)
+	);
+	stateProxy(
+		state,
+		"width",
+		active.map((i) => i.width)
+	);
+	stateProxy(
+		state,
+		"height",
+		active.map((i) => i.height)
+	);
 
-export { default as iconFolder } from "@ktibow/iconset-ion/folder-outline";
-export { default as iconPause } from "@ktibow/iconset-ion/pause-outline";
+	return state;
+}
 
-export { default as iconStar } from "@ktibow/iconset-ion/star-outline";
-export { default as iconStarFilled } from "@ktibow/iconset-ion/star";
+export const iconBack = icon(ionBack, msBack);
+export const iconForwards = icon(ionForwards, msForwards);
 
-export { default as iconExtension } from "@ktibow/iconset-ion/extension-puzzle-outline";
-export { default as iconDownload } from "@ktibow/iconset-ion/download-outline";
+export const iconRefresh = icon(ionRefresh, msRefresh);
+export const iconRefreshOutline = icon(ionRefreshOutline, msRefresh);
 
-export { default as iconMore } from "@ktibow/iconset-ion/more";
-export { default as iconExit } from "@ktibow/iconset-ion/exit-outline";
+export const iconBookmark = icon(ionBookmark, msBookmark);
+export const iconCode = icon(ionCode, msCode);
 
-export { default as iconTime } from "@ktibow/iconset-ion/time-outline";
-export { default as iconInfo } from "@ktibow/iconset-ion/information-circle-outline";
-// alias commonly used name
-export { default as iconAbout } from "@ktibow/iconset-ion/information-circle-outline";
+export const iconLink = icon(ionLink, msLink);
 
-export { default as iconSettings } from "@ktibow/iconset-ion/settings-outline";
-export { default as iconOptions } from "@ktibow/iconset-ion/options-outline";
+export const iconAdd = icon(ionAdd, msAdd);
+export const iconNew = icon(ionNew, msNew);
+export const iconDuplicate = icon(ionCopy, msCopy);
 
-export { default as iconSearch } from "@ktibow/iconset-ion/search";
-export { default as iconSearchOutline } from "@ktibow/iconset-ion/search-outline";
-export { default as iconTrendingUp } from "@ktibow/iconset-ion/trending-up";
+export const iconSave = icon(ionSave, msSave);
 
-export { default as iconShield } from "@ktibow/iconset-ion/shield-checkmark-outline";
-// alias used in codebase
-export { default as iconPrivacy } from "@ktibow/iconset-ion/shield-checkmark-outline";
+export const iconOpen = icon(ionOpen, msOpen);
+export const iconBrush = icon(ionBrush, msBrush);
+export const iconTrash = icon(ionTrash, msTrash);
 
-export { default as iconError } from "@ktibow/iconset-ion/alert-circle-outline";
-export { default as iconCheckmark } from "@ktibow/iconset-ion/checkmark-circle-outline";
+export const iconClose = icon(ionClose, msClose);
+export const iconCloseOutline = icon(ionCloseOutline, msClose);
+export const iconCloseCircle = icon(ionCloseCircle, msCloseCircle);
 
-export { default as iconGlobe } from "@ktibow/iconset-ion/globe-outline";
-export { default as iconEarth } from "@ktibow/iconset-ion/earth-outline";
-export { default as iconServer } from "@ktibow/iconset-ion/server-outline";
-export { default as iconDesktop } from "@ktibow/iconset-ion/desktop-outline";
-export { default as iconCloud } from "@ktibow/iconset-ion/cloud-outline";
+export const iconFolder = icon(ionFolder, msFolder);
+export const iconPause = icon(ionPause, msPause);
+
+export const iconStar = icon(ionStar, msStar);
+export const iconStarFilled = icon(ionStarFilled, msStarFilled);
+
+export const iconExtension = icon(ionExtension, msExtension);
+export const iconDownload = icon(ionDownload, msDownload);
+
+export const iconMore = icon(ionMore, msMore);
+export const iconExit = icon(ionExit, msExit);
+
+export const iconTime = icon(ionTime, msTime);
+export const iconInfo = icon(ionInfo, msInfo);
+
+export const iconSettings = icon(ionSettings, msSettings);
+export const iconOptions = icon(ionOptions, msOptions);
+
+export const iconSearch = icon(ionSearch, msSearch);
+export const iconSearchOutline = icon(ionSearchOutline, msSearch);
+export const iconTrendingUp = icon(ionTrendingUp, msTrendingUp);
+
+export const iconShield = icon(ionShield, msShield);
+
+export const iconError = icon(ionError, msError);
+export const iconCheckmark = icon(ionCheckmark, msCheckmark);
+
+export const iconGlobe = icon(ionGlobe, msGlobe);
+export const iconEarth = icon(ionEarth, msEarth);
+export const iconServer = icon(ionServer, msServer);
+export const iconDesktop = icon(ionDesktop, msDesktop);
+export const iconCloud = icon(ionCloud, msCloud);
+
+// Aliases used elsewhere in the codebase. These deliberately share identity
+// with the icon they alias.
+export const iconAddFromDuplicate = iconNew;
+export const iconCopy = iconDuplicate;
+export const iconAbout = iconInfo;
+export const iconPrivacy = iconShield;

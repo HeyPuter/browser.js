@@ -10,6 +10,7 @@ import {
 	DragTab,
 } from "@components/TabStrip/DragTab";
 import { requestUnfocusFrames } from "@components/Shell";
+import { easing } from "../../easing";
 
 type VisualTab = {
 	tab: Tab;
@@ -56,9 +57,8 @@ export function TabStrip(
 
 	const TAB_MAX_SIZE = 231;
 	const PIN_MAX_SIZE = 36;
-	const TAB_TRANSITION = "225ms cubic-bezier(.43,.52,0,1.15)";
+	const TAB_TRANSITION = () => `225ms ${easing("--ease-tab-move")}`;
 	const TAB_OPEN_DURATION = 200;
-	const TAB_OPEN_EASING = "cubic-bezier(.25,.5,0,1.15)";
 	const TAB_STAGGER_STEP = 18;
 	const TAB_STAGGER_MAX = 144;
 
@@ -178,7 +178,7 @@ export function TabStrip(
 					staggerIndex * TAB_STAGGER_STEP,
 					TAB_STAGGER_MAX
 				);
-				tab.root.style.transition = `transform ${TAB_TRANSITION} ${delay}ms`;
+				tab.root.style.transition = `transform ${TAB_TRANSITION()} ${delay}ms`;
 				transitioningTabs++;
 				movedTabs++;
 			}
@@ -205,7 +205,7 @@ export function TabStrip(
 				[{ transform: currentTransform }, { transform: afterTransform }],
 				{
 					duration: TAB_OPEN_DURATION,
-					easing: TAB_OPEN_EASING,
+					easing: easing("--ease-tab-open"),
 				}
 			);
 			afterAnimation = animation;
@@ -227,7 +227,7 @@ export function TabStrip(
 				staggerIndex * TAB_STAGGER_STEP,
 				TAB_STAGGER_MAX
 			);
-			this.afterEl.style.transition = `transform ${TAB_TRANSITION} ${afterDelay}ms`;
+			this.afterEl.style.transition = `transform ${TAB_TRANSITION()} ${afterDelay}ms`;
 		}
 
 		this.afterEl.style.transform = afterTransform;
@@ -375,7 +375,7 @@ export function TabStrip(
 					],
 					{
 						duration: 150,
-						easing: "cubic-bezier(.29,.44,.3,.94)",
+						easing: easing("--ease-tab-close"),
 						fill: "forwards",
 					}
 				);

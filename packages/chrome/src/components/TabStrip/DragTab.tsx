@@ -12,6 +12,7 @@ import {
 } from "../../icons";
 import { Icon } from "@components/Icon";
 import { tabsService } from "../..";
+import { easing } from "../../easing";
 
 type VisualTab = {
 	tab: Tab;
@@ -200,7 +201,7 @@ export function DragTab(
 					],
 					{
 						duration: 200,
-						easing: "cubic-bezier(.25,.5,0,1.15)",
+						easing: easing("--ease-tab-open"),
 						fill: "forwards",
 					}
 				);
@@ -224,7 +225,7 @@ export function DragTab(
 				],
 				{
 					duration: 200,
-					easing: "cubic-bezier(.25,.5,0,1.15)",
+					easing: easing("--ease-tab-open"),
 					fill: "forwards",
 				}
 			);
@@ -414,7 +415,7 @@ DragTab.style = css`
 
 	:scope:has(.hover-area:hover) .main:not(.active),
 	:scope:has(.close:hover) .main:not(.active) {
-		transition: background 250ms;
+		transition: background 250ms var(--ease-hover);
 		background-color: color-mix(in srgb, currentColor 7%, transparent);
 		/*background: var(--background_tab);*/
 		/*color: var(-);*/
@@ -573,7 +574,7 @@ VerticalPinTile.style = css`
 		cursor: pointer;
 		user-select: none;
 		position: relative;
-		transition: background 150ms;
+		transition: background 150ms var(--ease-hover);
 		height: var(--omnibar-height);
 		outline: 1px solid var(--popup_border);
 		outline-offset: -1px;
