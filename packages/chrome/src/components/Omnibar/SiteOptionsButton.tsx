@@ -47,7 +47,8 @@ SiteOptionsButton.style = css`
 		background: var(--toolbar);
 	}
 
-	:global(.style-chrome *) > :scope {
+	/* Circular hit target at the roundest end of the scale, as in Chromium. */
+	:global(.roundness-round *) > :scope {
 		border-radius: 50%;
 	}
 

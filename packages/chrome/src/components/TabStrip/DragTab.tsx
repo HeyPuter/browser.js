@@ -310,8 +310,8 @@ export function DragTab(
 						</>
 					)}
 				</div>
-				{/* Bottom bar + curved "feet" of the Chrome-style tab shape. Inert
-				    (display: none) unless the `style-chrome` UI style is active. */}
+				{/* Bottom bar + curved "feet" of the attached tab shape. Inert
+				    (display: none) unless the `attached` tab style is active. */}
 				{use(this.active).and(
 					<div class="belowcontainer">
 						<div class="below"></div>
@@ -331,10 +331,12 @@ DragTab.style = css`
 		--tab-active-border-width: calc(var(--radius-lg) + 1px);
 		--tab-active-border-radius: var(--radius-lg);
 		--tab-active-border-radius-neg: calc(-1 * var(--radius-lg));
-		--tab-chrome-active-radius: calc(var(--radius-xl) + var(--radius-xs));
-		--tab-top-border-radius: calc(
-			var(--tab-chrome-active-radius) - var(--space-sm) - var(--radius-xs)
-		);
+		/* Top corners of an attached tab. An attached tab spends the strip's
+		   bottom padding on its feet, so that comes off the radius to keep the
+		   visible corner in proportion with the rest of the roundness scale.
+		   Clamped at zero for the sharp scale, where the padding is larger than
+		   the radius and a negative value would void the declaration. */
+		--tab-top-border-radius: max(0px, calc(var(--radius-xl) - var(--space-sm)));
 
 		--tab-selected-textcolor: var(--toolbar_text);
 	}
@@ -430,7 +432,7 @@ DragTab.style = css`
 		outline-offset: -1px;
 	}
 
-	/* --- Chrome-style tab shaping (uiStyle: "chrome") ----------------------
+	/* --- Attached tab shaping (tabStyle: "attached") -----------------------
 	   Ported from aboutbrowser-v2 (src/components/tabs.tsx).
 
 	   The trapezoid is built from two pieces rather than an SVG:
@@ -492,23 +494,29 @@ DragTab.style = css`
 		);
 	}
 
-	:global(.style-chrome.layout-horizontal) :scope .belowcontainer {
+	:global(.tabs-attached.layout-horizontal) :scope .belowcontainer {
 		display: block;
 	}
 
-	:global(.style-chrome.layout-horizontal) :scope .main {
+	:global(.tabs-attached.layout-horizontal) :scope .main {
 		border-radius: var(--tab-top-border-radius);
 		padding: var(--space-sm) var(--space-lg);
 	}
 
-	:global(.style-chrome.layout-horizontal) :scope .main.active {
+	:global(.tabs-attached.layout-horizontal) :scope .main.active {
 		border-radius: var(--tab-top-border-radius) var(--tab-top-border-radius) 0 0;
 	}
-	:global(.style-chrome) :scope .main.active {
+
+	/* An attached tab is contiguous with the toolbar, so the lift the floating
+	   style gets from a shadow and a hairline outline would just draw a seam. */
+	:global(.tabs-attached) :scope .main.active {
 		box-shadow: none;
 		outline: none;
 	}
-	:global(.style-chrome .layout-compact) :scope .main.active {
+
+	/* The compact layout has no strip for a tab to attach to — tabs sit inline
+	   with the omnibar — so the active tab is distinguished by fill instead. */
+	:global(.tabs-attached.layout-compact) :scope .main.active {
 		background: var(--toolbar_field);
 	}
 `;

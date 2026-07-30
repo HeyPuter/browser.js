@@ -6,6 +6,7 @@ import {
 	DEFAULT_THEME_ID,
 } from "../themes";
 import type { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
+import type { AnimationStyle, IconSet, Roundness, TabStyle } from "../tweaks";
 import { Service } from "./Service";
 
 export type Settings = {
@@ -14,7 +15,12 @@ export type Settings = {
 	verticalTabJustify: "left" | "right";
 	sidebarWidth: number | null;
 	uiProfile: "default" | "compact" | "touch";
-	uiStyle: "default" | "chrome";
+	// Style tweaks. Independent axes, each with a build-time configurable
+	// default; see ../tweaks.ts.
+	roundness: Roundness;
+	tabStyle: TabStyle;
+	iconSet: IconSet;
+	animations: AnimationStyle;
 	themeId: ThemeId;
 	startupPage: "new-tab" | "continue";
 	defaultZoom: number;
@@ -28,7 +34,6 @@ export type Settings = {
 };
 
 export type TabLayoutMode = Settings["tabLayout"];
-export type UiStyleMode = Settings["uiStyle"];
 
 const DEFAULT_SETTINGS: Settings = {
 	appearance: "system",
@@ -36,7 +41,8 @@ const DEFAULT_SETTINGS: Settings = {
 	verticalTabJustify: "left",
 	sidebarWidth: null,
 	uiProfile: "default",
-	uiStyle: "default",
+	// Baked in at build time from the VITE_TWEAK_* environment variables.
+	...__DEFAULT_TWEAKS__,
 	themeId: DEFAULT_THEME_ID,
 	startupPage: "continue",
 	defaultZoom: 100,
@@ -57,7 +63,10 @@ export type SettingsServiceState = {
 		sidebarWidth: number | null;
 		themeId: ThemeId;
 		uiProfile: "default" | "compact" | "touch";
-		uiStyle: "default" | "chrome";
+		roundness: Roundness;
+		tabStyle: TabStyle;
+		iconSet: IconSet;
+		animations: AnimationStyle;
 		startupPage: "new-tab" | "continue";
 		defaultZoom: number;
 		showBookmarksBar: boolean;
@@ -99,7 +108,10 @@ export class SettingsService extends Service {
 				sidebarWidth: this.settings.sidebarWidth,
 				themeId: this.settings.themeId,
 				uiProfile: this.settings.uiProfile,
-				uiStyle: this.settings.uiStyle,
+				roundness: this.settings.roundness,
+				tabStyle: this.settings.tabStyle,
+				iconSet: this.settings.iconSet,
+				animations: this.settings.animations,
 				startupPage: this.settings.startupPage,
 				defaultZoom: this.settings.defaultZoom,
 				showBookmarksBar: this.settings.showBookmarksBar,

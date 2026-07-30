@@ -39,7 +39,8 @@ OmnibarButton.style = css`
 
 		opacity: 0.4;
 	}
-	:global(.style-chrome *) > :scope {
+	/* Circular hit target at the roundest end of the scale, as in Chromium. */
+	:global(.roundness-round *) > :scope {
 		border-radius: 50%;
 	}
 	:scope.active:hover {

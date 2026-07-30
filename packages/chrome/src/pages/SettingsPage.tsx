@@ -7,8 +7,9 @@ import { Checkbox } from "@components/Checkbox";
 import { Button } from "@components/Button";
 import { Input } from "@components/Input";
 import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
-import { THEMES } from "../themes";
+import { THEMES, type ThemeDefinition } from "../themes";
 import type { TabLayoutMode } from "../services/SettingsService";
+import { TWEAKS, TWEAK_KEYS, type TweakKey, type Tweaks } from "../tweaks";
 
 import {
 	iconSettings,
@@ -667,6 +668,95 @@ LayoutPreview.style = css`
 	}
 `;
 
+/**
+ * The theme picker for one appearance, as a section of the Themes pane.
+ */
+function themeSection(
+	appearance: ThemeDefinition["appearance"],
+	title: string,
+	description: string
+) {
+	return (
+		<section class="setting-section">
+			<div class="section-header">
+				<h2>{title}</h2>
+				<p class="description">{description}</p>
+			</div>
+			<div class="section-content" style="padding-left: 0;">
+				<div class="theme-grid">
+					{THEMES.filter((theme) => theme.appearance === appearance).map(
+						(theme) => (
+							<div
+								class="theme-card"
+								class:selected={use(settingsService.settings.themeId).map(
+									(id) => id === theme.id
+								)}
+								on:click={() => {
+									settingsService.settings.themeId = theme.id;
+								}}
+							>
+								<ThemePreview theme={theme} />
+								<div class="theme-info">
+									<h5>{theme.name}</h5>
+									<p>{theme.description}</p>
+								</div>
+							</div>
+						)
+					)}
+				</div>
+			</div>
+		</section>
+	);
+}
+
+/**
+ * One radio group for a single tweak axis, generated from that axis' entry in
+ * `TWEAKS` so the Appearance pane never drifts out of step with tweaks.ts.
+ */
+function tweakSection<K extends TweakKey>(key: K) {
+	const definition = TWEAKS[key];
+	// `Settings` carries the tweak keys verbatim; the cast is only so that TS
+	// relates `key` to the option type, which it can't do by indexing the wider
+	// `Settings` with a type parameter.
+	const tweaks = settingsService.settings as Tweaks;
+
+	return (
+		<section class="setting-section">
+			<div class="section-header">
+				<h2>{definition.title}</h2>
+				<p class="description">{definition.description}</p>
+			</div>
+			<div class="section-content">
+				<div class="setting-group">
+					<div class="radio-group">
+						{definition.options.map((option) => (
+							<div class="radio-option">
+								<input
+									type="radio"
+									id={`tweak-${definition.slug}-${option.id}`}
+									name={`tweak-${definition.slug}`}
+									value={option.id}
+									checked={use(tweaks[key]).map((value) => value === option.id)}
+									on:change={() => {
+										tweaks[key] = option.id;
+									}}
+								/>
+								<label
+									for={`tweak-${definition.slug}-${option.id}`}
+									class="label-multiline"
+								>
+									<span>{option.name}</span>
+									<span class="description">{option.description}</span>
+								</label>
+							</div>
+						))}
+					</div>
+				</div>
+			</div>
+		</section>
+	);
+}
+
 export function SettingsPage(
 	this: FC<{ tab: Tab; selected: string }, { searchQuery: string }>
 ) {
@@ -699,7 +789,8 @@ export function SettingsPage(
 				<h1>Settings</h1>
 				<nav class="navigation">
 					{button("general", iconSettings, "General")}
-					{button("appearance", iconBrush, "Appearance")}
+					{button("appearance", iconOptions, "Appearance")}
+					{button("themes", iconBrush, "Themes")}
 					{button("search", iconSearch, "Search")}
 					{button("privacy", iconPrivacy, "Privacy & Security")}
 					{/* {button("extensions", iconExtension, "Extensions")} */}
@@ -875,61 +966,6 @@ export function SettingsPage(
 								</section> */}
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>Style</h2>
-										<p class="description">
-											Choose the shape and framing of the browser's UI elements.
-											Independent of the colors below.
-										</p>
-									</div>
-									<div class="section-content">
-										<div class="setting-group">
-											<div class="radio-group">
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="ui-style-default"
-														name="ui-style"
-														value="default"
-														checked={use(settingsService.settings.uiStyle).map(
-															(style) => style !== "chrome"
-														)}
-														on:change={() => {
-															settingsService.settings.uiStyle = "default";
-														}}
-													/>
-													<label for="ui-style-default" class="label-multiline">
-														<span>Browser.js</span>
-														<span class="description">
-															Rounded, floating tabs and controls.
-														</span>
-													</label>
-												</div>
-												<div class="radio-option">
-													<input
-														type="radio"
-														id="ui-style-chrome"
-														name="ui-style"
-														value="chrome"
-														checked={use(settingsService.settings.uiStyle).map(
-															(style) => style === "chrome"
-														)}
-														on:change={() => {
-															settingsService.settings.uiStyle = "chrome";
-														}}
-													/>
-													<label for="ui-style-chrome" class="label-multiline">
-														<span>Chromium</span>
-														<span class="description">
-															Classic trapezoid tabs fused into the toolbar.
-														</span>
-													</label>
-												</div>
-											</div>
-										</div>
-									</div>
-								</section>
-								<section class="setting-section">
-									<div class="section-header">
 										<h2>Browser Layout (Beta)</h2>
 										<p class="description">Choose where tabs are displayed.</p>
 									</div>
@@ -1041,7 +1077,7 @@ export function SettingsPage(
 									)}
 								<section class="setting-section">
 									<div class="section-header">
-										<h2>UI Density</h2>
+										<h2>Density</h2>
 										<p class="description">
 											Adjust the spacing and sizing of UI elements.
 										</p>
@@ -1113,63 +1149,28 @@ export function SettingsPage(
 										</div>
 									</div>
 								</section>
-								<section class="setting-section">
-									<div class="section-header">
-										<h2>Colors</h2>
-										<p class="description">
-											Customize the color palette of the browser.
-										</p>
-									</div>
-									<div class="section-content" style="padding-left: 0;">
-										<div class="setting-group">
-											<h4>Dark</h4>
-											<div class="theme-grid">
-												{THEMES.filter(
-													(theme) => theme.appearance === "dark"
-												).map((theme) => (
-													<div
-														class="theme-card"
-														class:selected={use(
-															settingsService.settings.themeId
-														).map((id) => id === theme.id)}
-														on:click={() => {
-															settingsService.settings.themeId = theme.id;
-														}}
-													>
-														<ThemePreview theme={theme} />
-														<div class="theme-info">
-															<h5>{theme.name}</h5>
-															<p>{theme.description}</p>
-														</div>
-													</div>
-												))}
-											</div>
-											<br />
-											<h4>Light</h4>
-											<div class="theme-grid">
-												{THEMES.filter(
-													(theme) => theme.appearance === "light"
-												).map((theme) => (
-													<div
-														class="theme-card"
-														class:selected={use(
-															settingsService.settings.themeId
-														).map((id) => id === theme.id)}
-														on:click={() => {
-															settingsService.settings.themeId = theme.id;
-														}}
-													>
-														<ThemePreview theme={theme} />
-														<div class="theme-info">
-															<h5>{theme.name}</h5>
-															<p>{theme.description}</p>
-														</div>
-													</div>
-												))}
-											</div>
-										</div>
-									</div>
-								</section>
+								{/* The style tweaks: independent axes of shape, motion and
+								    iconography. Coarse layout choices come first, so these
+								    read as a progression from structure down to detail. */}
+								{TWEAK_KEYS.map((key) => tweakSection(key))}
+							</div>
+						) : null
+					)}
+
+					{/* Themes Tab */}
+					{use(this.selected).map((selected) =>
+						selected === "themes" ? (
+							<div class="settings-tab">
+								{themeSection(
+									"dark",
+									"Dark",
+									"Palettes with a dark toolbar and tab strip."
+								)}
+								{themeSection(
+									"light",
+									"Light",
+									"Palettes with a light toolbar and tab strip."
+								)}
 							</div>
 						) : null
 					)}
@@ -1937,9 +1938,14 @@ SettingsPage.style = css`
 		}
 	}
 
+	/* The track floor has to stay well under .settings-tab's width or auto-fit
+	   can never fit a second column, which with two dozen themes leaves the
+	   pane several screens long. 22rem gives two columns at the narrowest pane
+	   and three on a wide window, and is still wide enough for ThemePreview to
+	   read as a browser window. */
 	.theme-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 40rem), 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
 		gap: 1rem;
 		margin-top: 0.75rem;
 	}

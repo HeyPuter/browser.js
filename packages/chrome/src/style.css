@@ -93,6 +93,9 @@ body {
 	--accent-shade-40: color-mix(in oklab, black 40%, var(--tab_line));
 	--accent-shade-50: color-mix(in oklab, black 50%, var(--tab_line));
 
+	/* Corner radii for the "balanced" roundness tweak; the compact/touch
+	   density variants are below, and the other two roundness tweaks override
+	   the whole scale further down. */
 	--radius-xs: 3px;
 	--radius-sm: 4px;
 	--radius-md: 5px;
@@ -113,7 +116,7 @@ body {
 	/* Chromium's gfx::Tween curve table, ported 1:1 from
 	   ui/gfx/animation/tween.cc. Not one curve in Chromium overshoots — every
 	   control point has y within [0, 1]. These are constants; the semantic
-	   --ease-* tokens below are what actually switch per UI style.
+	   --ease-* tokens below are what actually switch per animations tweak.
 
 	   EASE_OUT and EASE_IN are polynomials in Chromium (1-(1-t)^2 and t^2). Both
 	   convert *exactly* to a cubic bezier by degree-elevating the quadratic and
@@ -131,8 +134,8 @@ body {
 	--tween-linear-out-slow-in: cubic-bezier(0, 0, 0.2, 1);
 	--tween-fast-out-linear-in: cubic-bezier(0.4, 0, 1, 1);
 
-	/* Semantic easing tokens — default (bouncy) set. Overridden below for
-	   body.style-chrome. See easing.ts for the Chromium code that picks the
+	/* Semantic easing tokens — the "bouncy" animations tweak. Overridden below
+	   for body.anim-smooth. See easing.ts for the Chromium code that picks the
 	   curve for each equivalent native animation. */
 	--ease-tab-move: cubic-bezier(0.43, 0.52, 0, 1.15);
 	--ease-tab-open: cubic-bezier(0.25, 0.5, 0, 1.15);
@@ -183,16 +186,70 @@ body.ui-touch {
 	--omnibar-height: 2.8rem;
 }
 
-body.style-chrome {
+/* --- Tweaks -----------------------------------------------------------------
+   Independent axes of the visual style, each toggled as a body class from
+   App.tsx's applyTweaks(). See src/tweaks.ts for the settings behind them.
+
+   These rules deliberately sit after the ui-compact/ui-touch density blocks
+   above: a roundness class has the same specificity as a density class, so
+   source order is what lets it win. The two-class combinations below then beat
+   both. */
+
+/* Roundness: "sharp". Unlike the other two scales this one isn't varied per
+   density — at 0–4px a one pixel difference between densities isn't visible,
+   and hard edges are the point. */
+body.roundness-sharp {
+	--radius-xs: 0px;
+	--radius-sm: 1px;
+	--radius-md: 2px;
+	--radius-lg: 3px;
+	--radius-xl: 4px;
+}
+
+/* Roundness: "round". The Chromium-matching scale. */
+body.roundness-round {
 	--radius-xs: 5px;
 	--radius-sm: 7px;
 	--radius-md: 9px;
 	--radius-lg: 11px;
 	--radius-xl: 13px;
+}
 
-	/* Chromium doesn't bounce. Remap every semantic easing token onto the
-	   gfx::Tween curve Chromium uses for the equivalent native animation. */
+body.roundness-round.ui-compact {
+	--radius-xs: 4px;
+	--radius-sm: 5px;
+	--radius-md: 7px;
+	--radius-lg: 9px;
+	--radius-xl: 11px;
+}
 
+body.roundness-round.ui-touch {
+	--radius-xs: 8px;
+	--radius-sm: 10px;
+	--radius-md: 12px;
+	--radius-lg: 14px;
+	--radius-xl: 16px;
+}
+
+/* Tab style: "attached". An attached tab spends the strip's bottom padding on
+   its feet instead of on a gap, so it runs shorter than a floating one to keep
+   the strip the same overall height. The shaping lives in DragTab.style. */
+body.tabs-attached.layout-horizontal {
+	--tab-height: 1.75rem;
+}
+
+body.tabs-attached.ui-compact.layout-horizontal {
+	--tab-height: 1.5rem;
+}
+
+body.tabs-attached.ui-touch.layout-horizontal {
+	--tab-height: 2rem;
+}
+
+/* Animations: "smooth". Chromium doesn't bounce, so remap every semantic
+   easing token onto the gfx::Tween curve Chromium uses for the equivalent
+   native animation. */
+body.anim-smooth {
 	/* All tab slot movement (open, close, reorder, reflow) goes through
 	   TabContainerImpl::AnimateViewTo -> views::BoundsAnimator, which defaults
 	   to gfx::Tween::EASE_OUT (ui/views/animation/bounds_animator.h:207). */
@@ -219,31 +276,6 @@ body.style-chrome {
 	/* gfx::SlideAnimation, which drives LocationBarView's hover animation,
 	   defaults to gfx::Tween::EASE_OUT (slide_animation.h:108). */
 	--ease-hover: var(--tween-ease-out);
-}
-body.style-chrome.layout-horizontal {
-	--tab-height: 1.75rem;
-}
-
-body.style-chrome.ui-touch {
-	--radius-xs: 8px;
-	--radius-sm: 10px;
-	--radius-md: 12px;
-	--radius-lg: 14px;
-	--radius-xl: 16px;
-}
-body.style-chrome.ui-touch.layout-horizontal {
-	--tab-height: 2rem;
-}
-
-body.style-chrome.ui-compact {
-	--radius-xs: 4px;
-	--radius-sm: 5px;
-	--radius-md: 7px;
-	--radius-lg: 9px;
-	--radius-xl: 11px;
-}
-body.style-chrome.ui-compact.layout-horizontal {
-	--tab-height: 1.5rem;
 }
 
 ::selection {

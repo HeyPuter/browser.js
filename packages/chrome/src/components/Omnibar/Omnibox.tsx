@@ -30,7 +30,9 @@ InactiveBar.style = css`
 		margin: 0.25em;
 	}
 
-	:global(.style-chrome *) > :scope {
+	/* At the roundest end of the scale the address bar goes fully pill-shaped,
+	   as Chromium's omnibox does. */
+	:global(.roundness-round *) > :scope {
 		border-radius: 9999px;
 	}
 

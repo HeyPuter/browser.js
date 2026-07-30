@@ -1,31 +1,32 @@
 // Centralized icon definitions.
 //
 // Every icon is declared exactly once, as a *pair* of glyphs: the Ionicons
-// glyph used by the default (Browser.js) UI style, and the Material Symbols
-// glyph used by the Chromium UI style — Chrome itself draws its UI with
-// Material Symbols Rounded, so matching it is what makes the style read as
-// "Chromium" rather than "Browser.js with trapezoid tabs".
+// glyph and its Material Symbols counterpart. Which of the two is drawn is the
+// `iconSet` tweak (see tweaks.ts); Chrome itself draws its UI with Material
+// Symbols Rounded, so that set is what makes the browser read as Chromium
+// rather than as Browser.js with a Chromium-shaped tab strip.
 //
-// Call sites stay style-agnostic. They import a single name and render it:
+// Call sites stay set-agnostic. They import a single name and render it:
 //
 //   import { iconBack } from "../icons";
 //   <Icon icon={iconBack} />
 //
 // ...and never learn which set is active. `icon()` below returns a stateful
 // object whose `body`/`width`/`height` are proxied to the active glyph, so
-// flipping the style at runtime mutates every icon in place and each mounted
+// flipping the set at runtime mutates every icon in place and each mounted
 // <Icon> re-renders itself (see Icon.tsx, which listens on `icon.body`).
 //
-// The style is pushed in from App.tsx's `applyStyle()` via `setIconStyle()`
-// rather than read from settingsService here, to keep this module free of
-// imports from the service layer.
+// The set is pushed in from App.tsx's `applyTweaks()` via `setIconSet()` rather
+// than read from settingsService here, to keep this module free of imports from
+// the service layer.
 
 import type { IconifyIcon } from "@iconify/types";
 import { createState, stateProxy } from "dreamland/core";
+import type { IconSet } from "./tweaks";
 
-// Ionicons — default style. Keep in the same order as the Material Symbols
-// block below; these two lists are plumbing for the declarations at the
-// bottom of the file, which are the actual source of truth for each pairing.
+// Ionicons. Keep in the same order as the Material Symbols block below; these
+// two lists are plumbing for the declarations at the bottom of the file, which
+// are the actual source of truth for each pairing.
 import ionBack from "@ktibow/iconset-ion/arrow-back";
 import ionForwards from "@ktibow/iconset-ion/arrow-forward";
 import ionRefresh from "@ktibow/iconset-ion/refresh";
@@ -67,9 +68,9 @@ import ionServer from "@ktibow/iconset-ion/server-outline";
 import ionDesktop from "@ktibow/iconset-ion/desktop-outline";
 import ionCloud from "@ktibow/iconset-ion/cloud-outline";
 
-// Material Symbols — Chromium style. The `-rounded` variants are what Chrome
-// ships; names without a `-rounded` suffix simply don't have a distinct
-// rounded cut in the icon set.
+// Material Symbols. The `-rounded` variants are what Chrome ships; names
+// without a `-rounded` suffix simply don't have a distinct rounded cut in the
+// icon set.
 import msBack from "@ktibow/iconset-material-symbols/arrow-back-rounded";
 import msForwards from "@ktibow/iconset-material-symbols/arrow-forward-rounded";
 import msRefresh from "@ktibow/iconset-material-symbols/refresh-rounded";
@@ -108,30 +109,29 @@ import msServer from "@ktibow/iconset-material-symbols/dns-outline";
 import msDesktop from "@ktibow/iconset-material-symbols/desktop-windows-outline-rounded";
 import msCloud from "@ktibow/iconset-material-symbols/cloud-outline";
 
-/** Mirrors `Settings["uiStyle"]`, duplicated to avoid importing the services. */
-export type IconStyle = "default" | "chrome";
-
-const style = createState<{ current: IconStyle }>({ current: "default" });
+const set = createState<{ current: IconSet }>({ current: "ionicons" });
 
 /**
- * Switch every icon in the app over to the glyph set for `next`. Called from
- * App.tsx whenever the `uiStyle` setting changes.
+ * Switch every icon in the app over to the glyph set `next`. Called from
+ * App.tsx whenever the `iconSet` tweak changes.
  */
-export function setIconStyle(next: IconStyle) {
-	style.current = next;
+export function setIconSet(next: IconSet) {
+	set.current = next;
 }
 
 /**
- * Pair a default-style glyph with its Chromium-style counterpart.
+ * Pair an Ionicons glyph with its Material Symbols counterpart.
  *
  * The returned object is a stateful `IconifyIcon` whose fields are proxied to
- * whichever glyph the current style selects. Its identity never changes, so it
- * can be stored in menu descriptors, compared, and passed around like a plain
- * icon; consumers that want to react to a style flip listen on a field
+ * whichever glyph the active set selects. Its identity never changes, so it can
+ * be stored in menu descriptors, compared, and passed around like a plain icon;
+ * consumers that want to react to the set changing listen on a field
  * (`icon.body`) rather than on the object.
  */
-function icon(def: IconifyIcon, chrome: IconifyIcon): IconifyIcon {
-	const active = use(style.current).map((s) => (s === "chrome" ? chrome : def));
+function icon(ion: IconifyIcon, material: IconifyIcon): IconifyIcon {
+	const active = use(set.current).map((s) =>
+		s === "material" ? material : ion
+	);
 	const state = createState({} as IconifyIcon);
 
 	stateProxy(

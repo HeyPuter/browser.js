@@ -6,7 +6,8 @@ import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
 import { getTheme } from "./themes";
-import { setIconStyle } from "./icons";
+import { setIconSet } from "./icons";
+import { TWEAKS, TWEAK_KEYS, tweakClass } from "./tweaks";
 import { contexts } from "./proxy/scramjet";
 import { INTERNAL_URL_PROTOCOL } from "./consts";
 import { Shell } from "@components/Shell";
@@ -72,18 +73,25 @@ export function App(
 
 	applyProfile();
 
-	// Widget styling ("Style" in settings): swaps the shape/chrome of UI
-	// elements without touching colors. `style-chrome` gives the tab strip the
-	// classic Chrome trapezoid tabs; see DragTab.style. It also swaps the icon
-	// set from Ionicons to Material Symbols; see icons.ts.
-	const applyStyle = () => {
-		const style = settingsService.settings.uiStyle;
-		document.body.classList.toggle("style-default", style !== "chrome");
-		document.body.classList.toggle("style-chrome", style === "chrome");
-		setIconStyle(style);
+	// Style tweaks ("Tweaks" in settings): the shape, motion and iconography of
+	// UI elements, independent of the colors. Each axis contributes exactly one
+	// body class, `<slug>-<value>`, which style.css and the component
+	// stylesheets key off; see tweaks.ts. Icons are the one axis CSS can't
+	// express, so it's pushed into icons.ts instead.
+	const applyTweaks = () => {
+		for (const key of TWEAK_KEYS) {
+			const active = settingsService.settings[key];
+			for (const option of TWEAKS[key].options) {
+				document.body.classList.toggle(
+					tweakClass(key, option.id),
+					option.id === active
+				);
+			}
+		}
+		setIconSet(settingsService.settings.iconSet);
 	};
 
-	applyStyle();
+	applyTweaks();
 
 	const applyLayout = () => {
 		const layout = settingsService.settings.tabLayout;
@@ -121,7 +129,10 @@ export function App(
 	use(settingsService.settings.themeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
-	use(settingsService.settings.uiStyle).listen(applyStyle);
+	use(settingsService.settings.roundness).listen(applyTweaks);
+	use(settingsService.settings.tabStyle).listen(applyTweaks);
+	use(settingsService.settings.iconSet).listen(applyTweaks);
+	use(settingsService.settings.animations).listen(applyTweaks);
 	use(settingsService.settings.tabLayout).listen(applyLayout);
 	use(settingsService.settings.verticalTabJustify).listen(applyLayout);
 
