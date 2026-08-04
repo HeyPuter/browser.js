@@ -1,7 +1,7 @@
 import { createDelegate, css, Pointer, type FC } from "dreamland/core";
 import { Checkbox } from "@components/Checkbox";
 import { Icon } from "@components/Icon";
-import type { IconifyIcon } from "@iconify/types";
+import type { IconDescription } from "../icons";
 import { emToPx } from "../util";
 import { isPuter } from "..";
 import { requestUnfocusFrames } from "@components/Shell";
@@ -231,7 +231,7 @@ type MenuItem =
 			label: string;
 			action?: () => void;
 			checkbox?: Pointer<boolean>;
-			icon?: IconifyIcon;
+			icon?: IconDescription;
 			image?: string;
 	  }
 	| "-";

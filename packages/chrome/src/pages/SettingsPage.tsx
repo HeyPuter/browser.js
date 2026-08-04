@@ -1,6 +1,5 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
-import type { IconifyIcon } from "@iconify/types";
 import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
 import { Icon } from "@components/Icon";
 import { Checkbox } from "@components/Checkbox";
@@ -26,6 +25,7 @@ import {
 	iconForwards,
 	iconMore,
 	iconRefresh,
+	type IconDescription,
 } from "../icons";
 import { settingsService } from "..";
 
@@ -762,7 +762,7 @@ export function SettingsPage(
 ) {
 	this.searchQuery = "";
 
-	const button = (id: string, icon: IconifyIcon, name: string) => {
+	const button = (id: string, icon: IconDescription, name: string) => {
 		return (
 			<div
 				class="nav-button"

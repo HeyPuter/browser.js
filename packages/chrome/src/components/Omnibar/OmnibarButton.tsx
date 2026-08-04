@@ -1,10 +1,10 @@
-import type { IconifyIcon } from "@iconify/types";
 import { css, type FC } from "dreamland/core";
 import { Icon } from "@components/Icon";
+import type { IconDescription } from "../../icons";
 
 export function OmnibarButton(
 	this: FC<{
-		icon: IconifyIcon;
+		icon: IconDescription;
 		click?: (e: MouseEvent) => void;
 		rightclick?: (e: MouseEvent) => void;
 		active?: boolean;

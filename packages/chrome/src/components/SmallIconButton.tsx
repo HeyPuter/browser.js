@@ -1,11 +1,11 @@
-import type { IconifyIcon } from "@iconify/types";
 import { css, type FC } from "dreamland/core";
 import { Icon } from "@components/Icon";
+import type { IconDescription } from "../icons";
 
 export function SmallIconButton(
 	this: FC<{
 		click: (e: MouseEvent) => void;
-		icon: IconifyIcon;
+		icon: IconDescription;
 	}>
 ) {
 	return (

@@ -1,5 +1,5 @@
 import type { IconifyIcon } from "@iconify/types";
-import { createState, stateProxy } from "dreamland/core";
+import { createState, type Pointer } from "dreamland/core";
 import type { IconSet } from "./tweaks";
 
 // Ionicons
@@ -84,47 +84,22 @@ import msDesktop from "@ktibow/iconset-material-symbols/desktop-windows-outline-
 import msCloud from "@ktibow/iconset-material-symbols/cloud-outline";
 
 const set = createState<{ current: IconSet }>({ current: "ionicons" });
-
-/**
- * Switch every icon in the app over to the glyph set `next`. Called from
- * App.tsx whenever the `iconSet` tweak changes.
- */
 export function setIconSet(next: IconSet) {
 	set.current = next;
 }
 
-/**
- * Pair an Ionicons glyph with its Material Symbols counterpart.
- *
- * The returned object is a stateful `IconifyIcon` whose fields are proxied to
- * whichever glyph the active set selects. Its identity never changes, so it can
- * be stored in menu descriptors, compared, and passed around like a plain icon;
- * consumers that want to react to the set changing listen on a field
- * (`icon.body`) rather than on the object.
- */
-function icon(ion: IconifyIcon, material: IconifyIcon): IconifyIcon {
-	const active = use(set.current).map((s) =>
-		s === "material" ? material : ion
-	);
-	const state = createState({} as IconifyIcon);
-
-	stateProxy(
-		state,
-		"body",
-		active.map((i) => i.body)
-	);
-	stateProxy(
-		state,
-		"width",
-		active.map((i) => i.width)
-	);
-	stateProxy(
-		state,
-		"height",
-		active.map((i) => i.height)
-	);
-
-	return state;
+export type IconDescription = [ion: IconifyIcon, material: IconifyIcon];
+// get an icondescription given two icons (one for each set)
+function icon(ion: IconifyIcon, material: IconifyIcon): IconDescription {
+	return [ion, material];
+}
+// resolve an IconDescription to the correct icon based on the current icon set
+export function resolveIcon(
+	desc: Pointer<IconDescription>
+): Pointer<IconifyIcon> {
+	return desc
+		.zip(use(set.current))
+		.map(([[ion, material], s]) => (s === "material" ? material : ion));
 }
 
 export const iconBack = icon(ionBack, msBack);
