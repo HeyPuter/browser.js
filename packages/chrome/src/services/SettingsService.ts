@@ -1,10 +1,6 @@
 import { createState, stateListen } from "dreamland/core";
 import type { Stateful } from "dreamland/core";
-import {
-	type AppearancePreference,
-	type ThemeId,
-	DEFAULT_THEME_ID,
-} from "../themes";
+import type { AppearancePreference, ThemeId } from "../themes";
 import type { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
 import type { AnimationStyle, IconSet, Roundness, TabStyle } from "../tweaks";
 import { Service } from "./Service";
@@ -35,26 +31,6 @@ export type Settings = {
 
 export type TabLayoutMode = Settings["tabLayout"];
 
-const DEFAULT_SETTINGS: Settings = {
-	appearance: "system",
-	tabLayout: "horizontal",
-	verticalTabJustify: "left",
-	sidebarWidth: null,
-	uiProfile: "default",
-	// Baked in at build time from the VITE_TWEAK_* environment variables.
-	...__DEFAULT_TWEAKS__,
-	themeId: DEFAULT_THEME_ID,
-	startupPage: "continue",
-	defaultZoom: 100,
-	showBookmarksBar: false,
-	defaultSearchEngine: "google",
-	searchSuggestionsEnabled: true,
-	blockTrackers: true,
-	clearHistoryOnExit: false,
-	doNotTrack: true,
-	extensionsDevMode: false,
-};
-
 export type SettingsServiceState = {
 	settings: {
 		appearance: AppearancePreference;
@@ -84,13 +60,7 @@ export class SettingsService extends Service {
 
 	constructor(data: SettingsServiceState | null) {
 		super();
-		if (data) {
-			// Spread over the defaults so settings added after a profile was last
-			// written come up with their default value instead of `undefined`.
-			this.settings = createState({ ...DEFAULT_SETTINGS, ...data.settings });
-		} else {
-			this.settings = createState(DEFAULT_SETTINGS);
-		}
+		this.settings = createState(data ? data.settings : __DEFAULT_SETTINGS__);
 		let oldvalues: Map<any, any> = new Map();
 		stateListen(this.settings, (newvalue, prop) => {
 			if (oldvalues.get(prop) === newvalue) return;

@@ -1,32 +1,8 @@
-// Centralized icon definitions.
-//
-// Every icon is declared exactly once, as a *pair* of glyphs: the Ionicons
-// glyph and its Material Symbols counterpart. Which of the two is drawn is the
-// `iconSet` tweak (see tweaks.ts); Chrome itself draws its UI with Material
-// Symbols Rounded, so that set is what makes the browser read as Chromium
-// rather than as Browser.js with a Chromium-shaped tab strip.
-//
-// Call sites stay set-agnostic. They import a single name and render it:
-//
-//   import { iconBack } from "../icons";
-//   <Icon icon={iconBack} />
-//
-// ...and never learn which set is active. `icon()` below returns a stateful
-// object whose `body`/`width`/`height` are proxied to the active glyph, so
-// flipping the set at runtime mutates every icon in place and each mounted
-// <Icon> re-renders itself (see Icon.tsx, which listens on `icon.body`).
-//
-// The set is pushed in from App.tsx's `applyTweaks()` via `setIconSet()` rather
-// than read from settingsService here, to keep this module free of imports from
-// the service layer.
-
 import type { IconifyIcon } from "@iconify/types";
 import { createState, stateProxy } from "dreamland/core";
 import type { IconSet } from "./tweaks";
 
-// Ionicons. Keep in the same order as the Material Symbols block below; these
-// two lists are plumbing for the declarations at the bottom of the file, which
-// are the actual source of truth for each pairing.
+// Ionicons
 import ionBack from "@ktibow/iconset-ion/arrow-back";
 import ionForwards from "@ktibow/iconset-ion/arrow-forward";
 import ionRefresh from "@ktibow/iconset-ion/refresh";
@@ -68,9 +44,7 @@ import ionServer from "@ktibow/iconset-ion/server-outline";
 import ionDesktop from "@ktibow/iconset-ion/desktop-outline";
 import ionCloud from "@ktibow/iconset-ion/cloud-outline";
 
-// Material Symbols. The `-rounded` variants are what Chrome ships; names
-// without a `-rounded` suffix simply don't have a distinct rounded cut in the
-// icon set.
+// Material Symbols
 import msBack from "@ktibow/iconset-material-symbols/arrow-back-rounded";
 import msForwards from "@ktibow/iconset-material-symbols/arrow-forward-rounded";
 import msRefresh from "@ktibow/iconset-material-symbols/refresh-rounded";

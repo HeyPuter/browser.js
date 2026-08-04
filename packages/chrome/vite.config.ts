@@ -4,7 +4,6 @@ import path from "path";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import { jsxPlugin } from "dreamland/vite";
-import { resolveDefaultTweaks } from "./src/tweaks";
 
 export default defineConfig({
 	plugins: [
@@ -32,11 +31,27 @@ export default defineConfig({
 	],
 	define: {
 		__COPYRIGHT_YEAR__: JSON.stringify(new Date().getFullYear()),
-		// Build-time defaults for the UI style tweaks, from the VITE_TWEAK_*
-		// environment variables. Validated here so a bad value fails the build;
-		// read `__DEFAULT_TWEAKS__` rather than `import.meta.env` so consumers
-		// can't skip that validation. See src/tweaks.ts.
-		__DEFAULT_TWEAKS__: JSON.stringify(resolveDefaultTweaks(process.env)),
+		__DEFAULT_SETTINGS__: {
+			appearance: "system",
+			tabLayout: "horizontal",
+			verticalTabJustify: "left",
+			sidebarWidth: null,
+			uiProfile: "default",
+			themeId: "dark",
+			roundness: "balanced",
+			tabStyle: "floating",
+			iconSet: "ionicons",
+			animations: "bouncy",
+			startupPage: "continue",
+			defaultZoom: 100,
+			showBookmarksBar: false,
+			defaultSearchEngine: "google",
+			searchSuggestionsEnabled: true,
+			blockTrackers: true,
+			clearHistoryOnExit: false,
+			doNotTrack: true,
+			extensionsDevMode: false,
+		},
 	},
 	resolve: {
 		alias: {
