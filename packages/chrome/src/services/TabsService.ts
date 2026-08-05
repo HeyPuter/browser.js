@@ -48,7 +48,7 @@ export class TabsService extends Service {
 			if (
 				openUrl &&
 				URL.canParse(openUrl) &&
-				document.referrer === "developer.puter.com"
+				document.referrer === "https://developer.puter.com/"
 			) {
 				const url = new URL(openUrl);
 				const foundTab = this.tabs.find((tab) => tab.url.href === url.href);
