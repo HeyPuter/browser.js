@@ -5,6 +5,8 @@ export type ThemeId =
 	| "light-high-contrast"
 	| "dark"
 	| "dark-high-contrast"
+	| "neutral-light"
+	| "neutral-dark"
 	| "oled-dark"
 	| "catppuccin-mocha"
 	| "catppuccin-macchiato"
@@ -174,6 +176,64 @@ export const THEMES: readonly ThemeDefinition[] = [
 			popup_border: "#8b949e",
 			toolbar_top_separator: "#30363d",
 			tab_loading: "#63b3ff",
+		},
+	},
+	{
+		id: "neutral-light",
+		name: "Neutral Light",
+		appearance: "light",
+		description: "A light theme with a neutral color palette.",
+		preview: {
+			toolbar: "#ffffff",
+			field: "#efeded",
+			text: "#1f1f1f",
+			accent: "#0b57d0",
+		},
+		tokens: {
+			frame: "#e3e3e3",
+			toolbar: "#ffffff",
+			toolbar_text: "#1f1f1f",
+			tab_background_text: "#474747",
+			toolbar_field: "#efeded",
+			toolbar_field_text: "#1f1f1f",
+			tab_line: "#0b57d0",
+			popup: "#ffffff",
+			popup_text: "#1f1f1f",
+			icons: "#474747",
+			ntp_background: "#ffffff",
+			ntp_text: "#000000",
+			popup_border: "#e1e3e1",
+			toolbar_top_separator: "#c7c7c7",
+			tab_loading: "#0b57d0",
+		},
+	},
+	{
+		id: "neutral-dark",
+		name: "Neutral Dark",
+		appearance: "dark",
+		description: "A dark theme with a neutral color palette.",
+		preview: {
+			toolbar: "#3c3c3c",
+			field: "#282828",
+			text: "#e3e3e3",
+			accent: "#a8c7fa",
+		},
+		tokens: {
+			frame: "#1f2020",
+			toolbar: "#3c3c3c",
+			toolbar_text: "#e3e3e3",
+			tab_background_text: "#c7c7c7",
+			toolbar_field: "#282828",
+			toolbar_field_text: "#e3e3e3",
+			tab_line: "#a8c7fa",
+			popup: "#1f1f1f",
+			popup_text: "#e3e3e3",
+			icons: "#c7c7c7",
+			ntp_background: "#3c3c3c",
+			ntp_text: "#e8eaed",
+			popup_border: "#444746",
+			toolbar_top_separator: "#3c3c3c",
+			tab_loading: "#a8c7fa",
 		},
 	},
 	{
