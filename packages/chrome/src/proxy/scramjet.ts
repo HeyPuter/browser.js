@@ -261,9 +261,9 @@ class ProxyFrameContext {
 						this.windowproxy.postMessage(message, "*", transfer);
 					} else {
 						// TODO :(
-						this.windowproxy[Symbol.for("scramjet client global")].natives.call(
-							"window.postMessage",
-							this.windowproxy,
+						const client =
+							this.windowproxy[Symbol.for("scramjet client global")];
+						new client.native.window(this.windowproxy).postMessage(
 							message,
 							"*",
 							transfer
