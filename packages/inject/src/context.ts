@@ -100,9 +100,7 @@ export class ExecutionContextWrapper {
 			},
 			init.id,
 			(message, transfer) => {
-				this.client.natives.call(
-					"window.postMessage",
-					chromeframe,
+				new this.client.native.window(chromeframe).postMessage(
 					message,
 					"*",
 					transfer

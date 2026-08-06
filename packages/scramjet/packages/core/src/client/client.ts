@@ -45,6 +45,7 @@ import {
 	_Map,
 	Object_getOwnPropertyDescriptors,
 	Object_getOwnPropertyNames,
+	Object_getPrototypeOf,
 } from "@/shared/snapshot";
 import { createIndirectEval } from "./shared/eval";
 
@@ -246,7 +247,8 @@ export class ScramjetClient {
 											`No native setter ${method.toString()} found for ${prototype}`
 										);
 									}
-									return desc.set.call(object, value);
+									desc.set.call(object, value);
+									return true;
 								},
 							}
 						);
@@ -260,10 +262,16 @@ export class ScramjetClient {
 		for (const key of Object_getOwnPropertyNames(this.global)) {
 			const value = this.global[key];
 			if (typeof value === "function" && "prototype" in value) {
-				this.nativeStore.set(
-					key,
-					Object_getOwnPropertyDescriptors(value.prototype)
-				);
+				const walk = (proto: any) => {
+					const prototype = Object_getPrototypeOf(proto);
+					if (!prototype) return;
+					this.nativeStore.set(
+						key,
+						Object_getOwnPropertyDescriptors(prototype)
+					);
+					walk(prototype);
+				};
+				walk(value.prototype);
 			}
 		}
 		// special case, globalThis does have a prototype but the methods are bound to the object itself
