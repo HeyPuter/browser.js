@@ -4,19 +4,51 @@
 export const Function_prototype_call = globalThis.Function.prototype.call;
 export const Function_prototype_apply = globalThis.Function.prototype.apply;
 export const Function_prototype_bind = globalThis.Function.prototype.bind;
+export const Function_call = Function_prototype_call.bind(
+	Function_prototype_call
+);
+export const Function_apply = Function_prototype_call.bind(
+	Function_prototype_apply
+);
+export const Function_bind = Function_prototype_call.bind(
+	Function_prototype_bind
+);
 
 export const String = globalThis.String;
 export const String_fromCodePoint = globalThis.String.fromCodePoint;
 export const String_fromCharCode = globalThis.String.fromCharCode;
 export const String_prototype_toLowerCase =
 	globalThis.String.prototype.toLowerCase;
+export const String_prototype_split = globalThis.String.prototype.split;
+export const String_prototype_trim = globalThis.String.prototype.trim;
+export const String_prototype_startsWith =
+	globalThis.String.prototype.startsWith;
+export const String_prototype_charCodeAt =
+	globalThis.String.prototype.charCodeAt;
 export const String_toLowerCase = Function_prototype_call.bind(
 	String_prototype_toLowerCase
+);
+export const String_charCodeAt = Function_prototype_call.bind(
+	String_prototype_charCodeAt
+);
+export const String_split = Function_prototype_call.bind(
+	String_prototype_split
+);
+export const String_trim = Function_prototype_call.bind(String_prototype_trim);
+export const String_startsWith = Function_prototype_call.bind(
+	String_prototype_startsWith
 );
 
 export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
 export const Number_isSafeInteger = globalThis.Number.isSafeInteger;
+export const Number_isFinite = globalThis.Number.isFinite;
+
+export const BigInt = globalThis.BigInt;
+export const BigInt_asIntN = globalThis.BigInt.asIntN;
+export const BigInt_asUintN = globalThis.BigInt.asUintN;
+
+export const Symbol_iterator = globalThis.Symbol.iterator;
 
 export const Object_keys = globalThis.Object.keys;
 export const Object_values = globalThis.Object.values;
@@ -67,8 +99,11 @@ export const URL_revokeObjectURL = globalThis.URL.revokeObjectURL.bind(
 );
 
 export const Error = globalThis.Error;
+export const TypeError = globalThis.TypeError;
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;
+export const Math_trunc = globalThis.Math.trunc;
+export const Math_fround = globalThis.Math.fround;
 
 export const Promise_all = globalThis.Promise.all.bind(globalThis.Promise);
 export const Promise_race = globalThis.Promise.race.bind(globalThis.Promise);

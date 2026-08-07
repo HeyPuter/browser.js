@@ -1,0 +1,1106 @@
+/**
+ * WebIDL -> TypeScript type resolution.
+ *
+ * This is the type layer that makes `@Arguments`/`@Returns`/`@Type` on an
+ * {@link Interceptor} check out. Every decorator argument is a literal slice of
+ * WebIDL grammar (`"ByteString"`, `"USVString?"`, `"sequence<DOMString>"`,
+ * `"(DOMString or Blob)"`, `"optional boolean async = true"`) and this file
+ * turns those strings into the TS types they denote so the decorator can
+ * verify the member it's attached to.
+ *
+ * The grammar handled here is the subset of
+ * https://webidl.spec.whatwg.org/#idl-types that shows up in real specs:
+ *
+ *   type          := extAttrs? ( primitive | named | parameterized | union ) "?"?
+ *   parameterized := ( "sequence" | "FrozenArray" | "ObservableArray" | "Promise" ) "<" type ">"
+ *                  | "record" "<" stringType "," type ">"
+ *   union         := "(" type ( " or " type )+ ")"
+ *   argument      := extAttrs? "optional"? type "..."? identifier? ( " = " default )?
+ *
+ * Names that aren't primitives are resolved against {@link IDLNamedTypes}
+ * first, then against the global scope (every `[Exposed]` interface has an
+ * interface object, so `Blob` -> `typeof Blob` -> `Blob`). Dictionaries,
+ * enums, typedefs and callback interfaces have no interface object, so they
+ * have to live in {@link IDLNamedTypes} — add an entry when you hit one.
+ *
+ * NOTE: decorators here are the 2022-03 standard proposal, not the legacy
+ * TS ones. swc needs `jsc.parser.decorators: true` and
+ * `jsc.transform.decoratorVersion: "2022-03"` to compile them.
+ */
+
+import {
+	_WeakMap,
+	BigInt,
+	BigInt_asIntN,
+	BigInt_asUintN,
+	Math_fround,
+	Math_trunc,
+	Number,
+	Number_isFinite,
+	Object_keys,
+	Reflect_apply,
+	String,
+	String_charCodeAt,
+	String_fromCharCode,
+	Symbol_iterator,
+} from "@/shared/snapshot";
+import type { AnyFunction } from "@/types";
+
+// ---------------------------------------------------------------------------
+// the actual name -> type table
+// ---------------------------------------------------------------------------
+
+/**
+ * WebIDL primitive, string and buffer-alias types. These are the names that
+ * can't be looked up in the global scope because they either aren't values at
+ * all (`long`) or are typedefs with no interface object (`BufferSource`).
+ */
+export interface IDLPrimitives {
+	// https://webidl.spec.whatwg.org/#idl-undefined
+	undefined: undefined;
+	/** legacy spelling, a handful of unmigrated specs still use it */
+	void: undefined;
+
+	// https://webidl.spec.whatwg.org/#idl-boolean
+	boolean: boolean;
+
+	// https://webidl.spec.whatwg.org/#idl-integer-types
+	byte: number;
+	octet: number;
+	short: number;
+	"unsigned short": number;
+	long: number;
+	"unsigned long": number;
+	"long long": number;
+	"unsigned long long": number;
+
+	// https://webidl.spec.whatwg.org/#idl-floating-point-types
+	float: number;
+	"unrestricted float": number;
+	double: number;
+	"unrestricted double": number;
+
+	// https://webidl.spec.whatwg.org/#idl-bigint
+	bigint: bigint;
+
+	// https://webidl.spec.whatwg.org/#idl-string-types
+	// all three are `string` in JS; the distinction is *coercion* behavior
+	// (ByteString throws outside latin1, USVString replaces lone surrogates),
+	// which is a runtime concern, not a type-level one
+	DOMString: string;
+	ByteString: string;
+	USVString: string;
+	/** cssom's typedef for DOMString */
+	CSSOMString: string;
+
+	// https://webidl.spec.whatwg.org/#idl-object
+	object: object;
+	// https://webidl.spec.whatwg.org/#idl-symbol
+	symbol: symbol;
+	// https://webidl.spec.whatwg.org/#idl-any
+	any: any;
+
+	// https://webidl.spec.whatwg.org/#common-BufferSource — typedefs, no
+	// interface object, so they'd otherwise fail to resolve
+	BufferSource: ArrayBufferView | ArrayBuffer;
+	AllowSharedBufferSource: ArrayBufferView | ArrayBuffer | SharedArrayBuffer;
+	ArrayBufferView: ArrayBufferView;
+}
+
+/**
+ * Dictionaries, enums, typedefs and callback interfaces. None of these have an
+ * interface object, so the global-scope fallback can't find them and they have
+ * to be listed by hand.
+ *
+ * Seeded with what the client modules currently touch. If `FromIDL` hands you
+ * an {@link IDLUnresolved} for a name that really does exist in a spec, the fix
+ * is an entry here.
+ */
+export interface IDLNamedTypes {
+	// --- callback interfaces / callback functions -------------------------
+	EventListener: EventListener;
+	EventHandler: ((event: Event) => any) | null;
+	EventHandlerNonNull: (event: Event) => any;
+	Function: AnyFunction;
+	VoidFunction: () => void;
+	QueuingStrategySize: (chunk: any) => number;
+
+	// --- typedefs --------------------------------------------------------
+	XMLHttpRequestBodyInit:
+		| Blob
+		| BufferSource
+		| FormData
+		| URLSearchParams
+		| string;
+	BodyInit: ReadableStream | XMLHttpRequestBodyInit;
+	HeadersInit: [string, string][] | Record<string, string> | Headers;
+	RequestInfo: Request | string;
+	BlobPart: BufferSource | Blob | string;
+	Transferable: ArrayBuffer | MessagePort | ImageBitmap | OffscreenCanvas;
+	TimerHandler: string | AnyFunction;
+	MessageEventSource: WindowProxy | MessagePort | ServiceWorker;
+	WindowProxy: Window;
+
+	// --- enums (lib.dom models these as string literal unions) -----------
+	RequestMode: RequestMode;
+	RequestCredentials: RequestCredentials;
+	RequestCache: RequestCache;
+	RequestRedirect: RequestRedirect;
+	RequestDestination: RequestDestination;
+	ReferrerPolicy: ReferrerPolicy;
+	ResponseType: ResponseType;
+	XMLHttpRequestResponseType: XMLHttpRequestResponseType;
+	BinaryType: BinaryType;
+	WorkerType: WorkerType;
+	ShadowRootMode: ShadowRootMode;
+	InsertPosition: InsertPosition;
+	DocumentReadyState: DocumentReadyState;
+	ScrollBehavior: ScrollBehavior;
+
+	// --- dictionaries ----------------------------------------------------
+	RequestInit: RequestInit;
+	ResponseInit: ResponseInit;
+	BlobPropertyBag: BlobPropertyBag;
+	WorkerOptions: WorkerOptions;
+	RegistrationOptions: RegistrationOptions;
+	EventInit: EventInit;
+	CustomEventInit: CustomEventInit;
+	MessageEventInit: MessageEventInit;
+	AddEventListenerOptions: AddEventListenerOptions;
+	EventListenerOptions: EventListenerOptions;
+	StructuredSerializeOptions: StructuredSerializeOptions;
+	WindowPostMessageOptions: WindowPostMessageOptions;
+	ShadowRootInit: ShadowRootInit;
+	GetRootNodeOptions: GetRootNodeOptions;
+	ScrollIntoViewOptions: ScrollIntoViewOptions;
+}
+
+// ---------------------------------------------------------------------------
+// type-level string helpers
+// ---------------------------------------------------------------------------
+
+type Whitespace = " " | "\n" | "\t";
+
+type Trim<S extends string> = S extends `${Whitespace}${infer R}`
+	? Trim<R>
+	: S extends `${infer R}${Whitespace}`
+		? Trim<R>
+		: S;
+
+/** Number of occurrences of `C` in `S`. */
+type Count<
+	S extends string,
+	C extends string,
+	N extends readonly 0[] = [],
+> = S extends `${infer _}${C}${infer Rest}`
+	? Count<Rest, C, [...N, 0]>
+	: N["length"];
+
+/**
+ * Whether every `<` and `(` in `S` is closed. Used to tell a real ` or `
+ * separator from one nested inside a parameterized type — `(long or
+ * sequence<(DOMString or Blob)>)` has three ` or `s but only one of them is
+ * the top-level separator.
+ */
+type Balanced<S extends string> =
+	Count<S, "<"> extends Count<S, ">">
+		? Count<S, "("> extends Count<S, ")">
+			? true
+			: false
+		: false;
+
+/** `"unsigned long size"` -> `["unsigned long", "size"]`, splitting on the *last* space. */
+type SplitLastWord<
+	S extends string,
+	Head extends string = "",
+> = S extends `${infer Word} ${infer Rest}`
+	? SplitLastWord<Rest, Head extends "" ? Word : `${Head} ${Word}`>
+	: [Head, S];
+
+/** A bare identifier — no type punctuation, so it can only be an argument name. */
+type IsPlainIdentifier<S extends string> = S extends ""
+	? false
+	: S extends `${string}${"<" | ">" | "(" | ")" | "?" | "," | "." | "[" | "]" | " "}${string}`
+		? false
+		: true;
+
+/** The primitives whose *own* spelling contains a space. */
+type MultiWordPrimitive =
+	| "unsigned short"
+	| "unsigned long"
+	| "long long"
+	| "unsigned long long"
+	| "unrestricted float"
+	| "unrestricted double";
+
+/**
+ * Drop a trailing argument name: `"USVString url"` -> `"USVString"`.
+ *
+ * Has to be careful in three directions — `"unsigned long"` is a type whose
+ * last word looks like a name, `"record<DOMString, DOMString>"` contains a
+ * space that isn't a name boundary, and `"DOMString..."` has no name at all.
+ */
+type StripArgumentName<S extends string> = S extends MultiWordPrimitive
+	? S
+	: SplitLastWord<S> extends [
+				infer Head extends string,
+				infer Last extends string,
+		  ]
+		? Head extends ""
+			? S
+			: IsPlainIdentifier<Last> extends true
+				? Balanced<Head> extends true
+					? Trim<Head>
+					: S
+				: S
+		: S;
+
+/** `"[EnforceRange] unsigned long x"` -> `"unsigned long x"` */
+type StripExtendedAttributes<S extends string> =
+	S extends `[${string}]${infer Rest}` ? Trim<Rest> : S;
+
+/** `"boolean async = true"` -> `"boolean async"` */
+type StripDefault<S extends string> = S extends `${infer T} = ${string}`
+	? Trim<T>
+	: S;
+
+type StripOptional<S extends string> = S extends `optional ${infer T}`
+	? Trim<T>
+	: S;
+
+type StripVariadic<S extends string> = S extends `${infer T}...` ? Trim<T> : S;
+
+// ---------------------------------------------------------------------------
+// FromIDL — the resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Marker returned for a name that resolves to nothing. It's a distinct branded
+ * type rather than `unknown` so a typo shows up in the tooltip instead of
+ * silently widening.
+ */
+export interface IDLUnresolved<Name extends string> {
+	readonly __idlUnresolved: Name;
+}
+
+/**
+ * Resolve a WebIDL type string to the TypeScript type it denotes.
+ *
+ * ```ts
+ * FromIDL<"ByteString">                  // string
+ * FromIDL<"ByteString?">                 // string | null
+ * FromIDL<"unsigned long long">          // number
+ * FromIDL<"sequence<USVString>">         // string[]
+ * FromIDL<"Promise<undefined>">          // Promise<undefined>
+ * FromIDL<"record<DOMString, any>">      // Record<string, any>
+ * FromIDL<"(DOMString or Blob)?">        // string | Blob | null
+ * FromIDL<"FrozenArray<Element>">        // readonly Element[]
+ * ```
+ */
+export type FromIDL<S extends string> = ResolveType<
+	StripExtendedAttributes<Trim<S>>
+>;
+
+type ResolveType<S extends string> =
+	// nullable — anchored at the end, so `sequence<DOMString?>` isn't caught here
+	S extends `${infer Inner}?`
+		? ResolveType<Trim<Inner>> | null
+		: // union
+			S extends `(${infer Inner})`
+			? Balanced<Inner> extends true
+				? ResolveUnion<SplitUnionMembers<Trim<Inner>>>
+				: IDLUnresolved<S>
+			: // parameterized
+				S extends `sequence<${infer T}>`
+				? FromIDL<T>[]
+				: S extends `FrozenArray<${infer T}>`
+					? readonly FromIDL<T>[]
+					: S extends `ObservableArray<${infer T}>`
+						? FromIDL<T>[]
+						: S extends `Promise<${infer T}>`
+							? Promise<FromIDL<T>>
+							: S extends `record<${infer K},${infer V}>`
+								? Record<Extract<FromIDL<K>, PropertyKey>, FromIDL<V>>
+								: ResolveName<S>;
+
+/**
+ * Split the inside of a union on top-level ` or `. Takes the leftmost ` or `
+ * and only treats it as a separator once the accumulated left side is
+ * balanced, otherwise it belongs to a nested type.
+ */
+type SplitUnionMembers<
+	S extends string,
+	Pending extends string = "",
+	Acc extends readonly string[] = [],
+> = S extends `${infer Head} or ${infer Rest}`
+	? Balanced<`${Pending}${Head}`> extends true
+		? SplitUnionMembers<Rest, "", [...Acc, `${Pending}${Head}`]>
+		: SplitUnionMembers<Rest, `${Pending}${Head} or `, Acc>
+	: [...Acc, `${Pending}${S}`];
+
+type ResolveUnion<M extends readonly string[]> = M extends readonly [
+	infer H extends string,
+	...infer R extends readonly string[],
+]
+	? FromIDL<H> | ResolveUnion<R>
+	: never;
+
+/**
+ * Resolve an identifier. Primitives, then the hand-maintained table, then the
+ * global scope — an interface's IDL name is its interface object's name, so
+ * `"HTMLIFrameElement"` finds `typeof HTMLIFrameElement` and unwraps to the
+ * instance type.
+ */
+type ResolveName<S extends string> = S extends keyof IDLPrimitives
+	? IDLPrimitives[S]
+	: S extends keyof IDLNamedTypes
+		? IDLNamedTypes[S]
+		: S extends keyof GlobalThis
+			? InterfaceInstance<GlobalThis[S]>
+			: IDLUnresolved<S>;
+
+type InterfaceInstance<Ctor> = Ctor extends abstract new (
+	...args: never
+) => infer I
+	? I
+	: Ctor extends { prototype: infer P }
+		? P
+		: Ctor;
+
+// ---------------------------------------------------------------------------
+// validation
+// ---------------------------------------------------------------------------
+
+/**
+ * The names in `S` that don't resolve, or `never` if the whole string is
+ * understood. Kept separate from {@link FromIDL} rather than sniffing the
+ * result for {@link IDLUnresolved} — `FromIDL<"any">` is `any`, which absorbs
+ * any such check.
+ */
+export type UnresolvedIDLNames<S extends string> = CheckType<
+	StripExtendedAttributes<Trim<S>>
+>;
+
+type CheckType<S extends string> = S extends `${infer Inner}?`
+	? CheckType<Trim<Inner>>
+	: S extends `(${infer Inner})`
+		? Balanced<Inner> extends true
+			? CheckUnion<SplitUnionMembers<Trim<Inner>>>
+			: S
+		: S extends `sequence<${infer T}>`
+			? UnresolvedIDLNames<T>
+			: S extends `FrozenArray<${infer T}>`
+				? UnresolvedIDLNames<T>
+				: S extends `ObservableArray<${infer T}>`
+					? UnresolvedIDLNames<T>
+					: S extends `Promise<${infer T}>`
+						? UnresolvedIDLNames<T>
+						: S extends `record<${infer K},${infer V}>`
+							? UnresolvedIDLNames<K> | UnresolvedIDLNames<V>
+							: S extends
+										| keyof IDLPrimitives
+										| keyof IDLNamedTypes
+										| keyof GlobalThis
+								? never
+								: S;
+
+type CheckUnion<M extends readonly string[]> = M extends readonly [
+	infer H extends string,
+	...infer R extends readonly string[],
+]
+	? UnresolvedIDLNames<H> | CheckUnion<R>
+	: never;
+
+/**
+ * What a decorator factory returns when one of its IDL strings is garbage.
+ * It has no call signature, so the decorator position reports
+ * `This expression is not callable` and the tooltip names the bad type.
+ */
+export interface IDLTypeError<Name extends string> {
+	readonly __unknownWebIDLType: Name;
+}
+
+/** `Decorator` when every name in `S` resolves, an {@link IDLTypeError} otherwise. */
+type Checked<S extends string, Decorator> = [UnresolvedIDLNames<S>] extends [
+	never,
+]
+	? Decorator
+	: IDLTypeError<UnresolvedIDLNames<S>>;
+
+/** As {@link Checked}, but over a whole argument list. */
+type CheckedAll<A extends readonly string[], Decorator> = [
+	UnresolvedIDLNames<A[number]>,
+] extends [never]
+	? Decorator
+	: IDLTypeError<UnresolvedIDLNames<A[number]>>;
+
+// ---------------------------------------------------------------------------
+// argument lists
+// ---------------------------------------------------------------------------
+
+/** `"optional [Clamp] unsigned long n = 0"` -> `"unsigned long"` */
+export type ArgumentType<S extends string> = StripVariadic<
+	StripArgumentName<
+		StripDefault<StripExtendedAttributes<StripOptional<Trim<S>>>>
+	>
+>;
+
+type IsOptionalArg<S extends string> =
+	StripExtendedAttributes<Trim<S>> extends `optional ${string}` ? true : false;
+
+type IsVariadicArg<S extends string> =
+	StripArgumentName<
+		StripDefault<StripExtendedAttributes<StripOptional<Trim<S>>>>
+	> extends `${string}...`
+		? true
+		: false;
+
+/**
+ * Turn a list of WebIDL argument declarations into a TS parameter tuple.
+ *
+ * ```ts
+ * IDLArguments<["ByteString", "USVString"]>
+ * //   [string, string]
+ * IDLArguments<["ByteString method", "USVString url", "optional boolean async = true"]>
+ * //   [string, string, (boolean | undefined)?]
+ * IDLArguments<["USVString... urls"]>
+ * //   string[]
+ * ```
+ *
+ * WebIDL forbids a required argument after an optional one, so once an
+ * `optional` is seen the whole remaining tail is optional — which is exactly
+ * `Partial` over the mapped tail.
+ */
+export type IDLArguments<A extends readonly string[]> = A extends readonly [
+	infer H extends string,
+	...infer R extends readonly string[],
+]
+	? IsVariadicArg<H> extends true
+		? FromIDL<ArgumentType<H>>[]
+		: IsOptionalArg<H> extends true
+			? Partial<MapArguments<A>>
+			: [FromIDL<ArgumentType<H>>, ...IDLArguments<R>]
+	: [];
+
+type MapArguments<A extends readonly string[]> = {
+	-readonly [K in keyof A]: FromIDL<ArgumentType<Extract<A[K], string>>>;
+};
+
+// ---------------------------------------------------------------------------
+// decorators
+// ---------------------------------------------------------------------------
+
+/**
+ * The IDL a member declared about itself, recorded for whatever installs the
+ * interceptor — argument coercion, overload dispatch, arity errors.
+ */
+export type IDLMemberSignature = {
+	/** one entry per declared argument, verbatim */
+	arguments?: readonly string[];
+	/** operation return type */
+	returns?: string;
+	/** attribute type */
+	type?: string;
+};
+
+// keyed on the function object rather than `context.metadata`, which swc
+// doesn't implement for 2022-03 decorators
+const signatures = new _WeakMap([]) as WeakMap<AnyFunction, IDLMemberSignature>;
+
+function record(fn: AnyFunction, patch: IDLMemberSignature) {
+	const existing = signatures.get(fn);
+	if (existing) {
+		signatures.set(fn, { ...existing, ...patch });
+	} else {
+		signatures.set(fn, patch);
+	}
+}
+
+/**
+ * The IDL declared on `fn` by the decorators above, if any. `fn` is the raw
+ * method / getter / setter off the interceptor's prototype — read it out of a
+ * property descriptor, not off the instance.
+ */
+export function idlSignature(fn: AnyFunction): IDLMemberSignature | undefined {
+	return signatures.get(fn);
+}
+
+/**
+ * Declare an operation's argument types.
+ *
+ * ```ts
+ * @Arguments("ByteString method", "USVString url")
+ * override open(method, url) { ... }
+ * ```
+ *
+ * Constrains the decorated method to accept {@link IDLArguments} of what was
+ * declared, so the declaration can't drift from the signature `Interceptor`
+ * inherited from the real interface.
+ */
+export function Arguments<const A extends readonly string[]>(
+	...types: A
+): CheckedAll<
+	A,
+	<This, Value extends (...args: IDLArguments<A>) => any>(
+		value: Value,
+		context: ClassMethodDecoratorContext<This, Value>
+	) => void
+> {
+	return ((value: AnyFunction) => {
+		record(value, { arguments: types });
+	}) as never;
+}
+
+/**
+ * Declare an operation's return type.
+ *
+ * ```ts
+ * @Returns("ByteString?")
+ * override getResponseHeader(name) { ... }
+ * ```
+ */
+export function Returns<const S extends string>(
+	type: S
+): Checked<
+	S,
+	<This, Value extends (...args: never) => FromIDL<S>>(
+		value: Value,
+		context: ClassMethodDecoratorContext<This, Value>
+	) => void
+> {
+	return ((value: AnyFunction) => {
+		record(value, { returns: type });
+	}) as never;
+}
+
+/**
+ * Declare an attribute's type. Goes on the getter, the setter, or both.
+ *
+ * ```ts
+ * @Type("USVString")
+ * override get responseURL() { ... }
+ * ```
+ */
+export function Type<const S extends string>(
+	type: S
+): Checked<
+	S,
+	{
+		<This, Value extends FromIDL<S>>(
+			value: (this: This) => Value,
+			context: ClassGetterDecoratorContext<This, Value>
+		): void;
+		<This, Value extends FromIDL<S>>(
+			value: (this: This, value: Value) => void,
+			context: ClassSetterDecoratorContext<This, Value>
+		): void;
+	}
+> {
+	return ((value: AnyFunction) => {
+		record(value, { type });
+	}) as never;
+}
+
+// ---------------------------------------------------------------------------
+// runtime validation and coercion
+//
+// The type layer above checks the IDL against the TS signature at build time.
+// This is the other half: at call time, coerce a real argument list per the
+// same declarations.
+//
+// Why this exists at all: ES-to-IDL conversion invokes page code (`toString`,
+// `valueOf`, `Symbol.iterator`). If an interceptor body reads an argument raw
+// and then hands that same raw value to the native, the page's code runs twice
+// where a real browser runs it once — observable as a fingerprint, and
+// exploitable, because the second call can return something other than what we
+// validated and rewrote. Coercing up front means the body only ever sees
+// primitives, and the native only ever sees what the body approved.
+//
+// https://webidl.spec.whatwg.org/#es-type-mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Coerces `args` in place and returns whether they satisfy the declared IDL.
+ *
+ * `false` means the call is invalid and `args` has been left exactly as it was
+ * found, so the caller can hand it to the native and let *that* throw. We
+ * deliberately don't raise our own TypeError: every rejection here is one the
+ * native also rejects, and letting it do so means the page sees the authentic
+ * message rather than our approximation of it.
+ */
+export type IDLValidator = (args: unknown[]) => boolean;
+
+/** Just the slice of `SingletonBox` needed to brand-check interface arguments. */
+export type IDLBrandChecker = {
+	ctors: Record<string, unknown>;
+	instanceof(value: unknown, name: string): boolean;
+};
+
+/** Converts one argument, or calls `idlReject`. */
+type IDLCoerce = (value: unknown) => unknown;
+
+type IDLParameter = {
+	optional: boolean;
+	variadic: boolean;
+	coerce: IDLCoerce;
+};
+
+/**
+ * Thrown by a coercer to unwind out of a conversion. Deliberately not an Error
+ * — it must be distinguishable from a genuine throw out of page code, which
+ * has to propagate rather than being turned into a fall-through.
+ */
+const IDL_REJECTED = { scramjet: "idl-rejected" };
+
+function idlReject(): never {
+	throw IDL_REJECTED;
+}
+
+/** The primitives whose own spelling contains a space. */
+const IDL_MULTIWORD_PRIMITIVES = [
+	"unsigned short",
+	"unsigned long",
+	"long long",
+	"unsigned long long",
+	"unrestricted float",
+	"unrestricted double",
+];
+
+const idlPassthrough: IDLCoerce = (value) => value;
+
+/**
+ * Compile a declared IDL argument list into a validator.
+ *
+ * Compile once when the member is installed, never per call — the result
+ * closes over a prebuilt array of coercers, but building it parses IDL.
+ *
+ * ```ts
+ * const validate = compileIDLValidator(client.box, [
+ *   "ByteString method",
+ *   "USVString url",
+ *   "optional boolean async = true",
+ * ]);
+ * if (!validate(args)) return Function_apply(native, that, args);
+ * ```
+ */
+export function compileIDLValidator(
+	box: IDLBrandChecker,
+	idl: readonly string[]
+): IDLValidator {
+	const params: IDLParameter[] = [];
+	// WebIDL forbids a required argument after an optional one, so the required
+	// count is just the position of the last non-optional
+	let required = 0;
+
+	for (let i = 0; i < idl.length; i++) {
+		const param = parseIDLArgument(box, idl[i]);
+		params[i] = param;
+		if (!param.optional && !param.variadic) required = i + 1;
+	}
+
+	return (args: unknown[]) => {
+		if (args.length < required) return false;
+
+		// a rejected conversion must leave nothing behind — the native is about
+		// to be handed this same array and has to see the original values
+		const original: unknown[] = [];
+		for (let i = 0; i < args.length; i++) original[i] = args[i];
+
+		try {
+			for (let i = 0; i < params.length; i++) {
+				const param = params[i];
+
+				if (param.variadic) {
+					for (let j = i; j < args.length; j++) {
+						args[j] = param.coerce(args[j]);
+					}
+
+					return true;
+				}
+
+				if (i >= args.length) return true;
+				// an optional argument explicitly passed as undefined is "not
+				// present" per spec, and the native fills in the IDL default.
+				// coercing would turn that into a real value and lose the default
+				if (param.optional && args[i] === undefined) continue;
+
+				args[i] = param.coerce(args[i]);
+			}
+
+			return true;
+		} catch (err) {
+			// a throw out of the page's own toString/valueOf is not a rejection;
+			// it's the call's real outcome and has to keep going up
+			if (err !== IDL_REJECTED) throw err;
+
+			for (let i = 0; i < args.length; i++) args[i] = original[i];
+
+			return false;
+		}
+	};
+}
+
+/**
+ * The validator for one interceptor member, or `undefined` if it declared no
+ * IDL. Pass `setter` for the write half of an attribute, whose single argument
+ * is the attribute's own `@Type`.
+ */
+export function memberValidator(
+	box: IDLBrandChecker,
+	fn: AnyFunction | undefined,
+	setter?: boolean
+): IDLValidator | undefined {
+	if (!fn) return undefined;
+
+	const signature = signatures.get(fn);
+	if (!signature) return undefined;
+
+	if (setter) {
+		return signature.type
+			? compileIDLValidator(box, [signature.type])
+			: undefined;
+	}
+
+	return signature.arguments
+		? compileIDLValidator(box, signature.arguments)
+		: undefined;
+}
+
+// --- IDL string parsing, the runtime mirror of the type layer above ---------
+
+function idlBalanced(s: string): boolean {
+	let depth = 0;
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (c === "<" || c === "(") depth++;
+		else if (c === ">" || c === ")") depth--;
+	}
+
+	return depth === 0;
+}
+
+/** A bare identifier, so it can only be an argument name and not part of a type. */
+function idlPlainIdentifier(s: string): boolean {
+	if (!s) return false;
+
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (
+			c === "<" ||
+			c === ">" ||
+			c === "(" ||
+			c === ")" ||
+			c === "?" ||
+			c === "," ||
+			c === "." ||
+			c === "[" ||
+			c === "]"
+		) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/** `"[EnforceRange] unsigned long x"` -> `"unsigned long x"` */
+function stripIDLExtendedAttributes(s: string): string {
+	if (s[0] !== "[") return s;
+
+	const end = s.indexOf("]");
+	if (end === -1) return s;
+
+	return s.slice(end + 1).trim();
+}
+
+/**
+ * Drop a trailing argument name: `"USVString url"` -> `"USVString"`.
+ *
+ * Careful in three directions — `"unsigned long"` is a type whose last word
+ * looks like a name, `"record<DOMString, DOMString>"` has a space that isn't a
+ * name boundary, and `"DOMString..."` has no name at all.
+ */
+function stripIDLArgumentName(s: string): string {
+	if (IDL_MULTIWORD_PRIMITIVES.indexOf(s) !== -1) return s;
+
+	const space = s.lastIndexOf(" ");
+	if (space <= 0) return s;
+
+	const head = s.slice(0, space);
+	if (!idlPlainIdentifier(s.slice(space + 1))) return s;
+	if (!idlBalanced(head)) return s;
+
+	return head.trim();
+}
+
+function parseIDLArgument(
+	box: IDLBrandChecker,
+	declaration: string
+): IDLParameter {
+	let s = stripIDLExtendedAttributes(declaration.trim());
+
+	let optional = false;
+	if (s.startsWith("optional ")) {
+		optional = true;
+		s = stripIDLExtendedAttributes(s.slice(9).trim());
+	}
+
+	const defaulted = s.indexOf(" = ");
+	if (defaulted !== -1) {
+		optional = true;
+		s = s.slice(0, defaulted).trim();
+	}
+
+	s = stripIDLArgumentName(s);
+
+	let variadic = false;
+	if (s.endsWith("...")) {
+		variadic = true;
+		s = s.slice(0, -3).trim();
+	}
+
+	return { optional, variadic, coerce: compileIDLType(box, s) };
+}
+
+function compileIDLType(box: IDLBrandChecker, idl: string): IDLCoerce {
+	const s = stripIDLExtendedAttributes(idl.trim());
+
+	if (s.endsWith("?")) {
+		const inner = compileIDLType(box, s.slice(0, -1));
+
+		return (value) =>
+			value === null || value === undefined ? null : inner(value);
+	}
+
+	// a union needs every member's full type to run the IDL union algorithm,
+	// and guessing would mean touching the value more than once, which is the
+	// one thing this pass exists to prevent. leave it to the native
+	if (s[0] === "(") return idlPassthrough;
+
+	// Promise<T> conversion is just "resolve it", which the native does anyway
+	if (s.startsWith("Promise<")) return idlPassthrough;
+
+	const generic = s.indexOf("<");
+	if (generic !== -1 && s.endsWith(">")) {
+		const name = s.slice(0, generic);
+		const parameters = s.slice(generic + 1, -1);
+
+		if (
+			name === "sequence" ||
+			name === "FrozenArray" ||
+			name === "ObservableArray"
+		) {
+			const item = compileIDLType(box, parameters);
+
+			return (value) => coerceIDLSequence(value, item);
+		}
+
+		if (name === "record") {
+			// the key is always a string type, so the first comma is the split
+			const comma = parameters.indexOf(",");
+			if (comma !== -1) {
+				const item = compileIDLType(box, parameters.slice(comma + 1));
+
+				return (value) => coerceIDLRecord(value, item);
+			}
+		}
+
+		return idlPassthrough;
+	}
+
+	const primitive = IDL_PRIMITIVE_COERCERS[s];
+	if (primitive) return primitive;
+
+	// an interface type is a brand check, not a conversion, so no page code runs
+	if (box.ctors[s]) {
+		return (value) => (box.instanceof(value, s) ? value : idlReject());
+	}
+
+	// a dictionary, enum, callback, typedef or something we don't model. the
+	// native still enforces it, we just can't front-run the conversion
+	return idlPassthrough;
+}
+
+// --- the conversions themselves --------------------------------------------
+
+/** https://webidl.spec.whatwg.org/#es-DOMString */
+function toIDLDOMString(value: unknown): string {
+	// String(symbol) is special-cased to succeed in JS, but IDL says throw
+	if (typeof value === "symbol") idlReject();
+
+	return String(value);
+}
+
+/** https://webidl.spec.whatwg.org/#es-USVString — lone surrogates become U+FFFD */
+function toIDLScalarValueString(s: string): string {
+	let surrogate = false;
+	for (let i = 0; i < s.length; i++) {
+		const c = String_charCodeAt(s, i);
+		if (c >= 0xd800 && c <= 0xdfff) {
+			surrogate = true;
+			break;
+		}
+	}
+	if (!surrogate) return s;
+
+	let out = "";
+	for (let i = 0; i < s.length; i++) {
+		const c = String_charCodeAt(s, i);
+
+		if (c < 0xd800 || c > 0xdfff) {
+			out += String_fromCharCode(c);
+			continue;
+		}
+
+		if (c <= 0xdbff && i + 1 < s.length) {
+			const low = String_charCodeAt(s, i + 1);
+			if (low >= 0xdc00 && low <= 0xdfff) {
+				out += String_fromCharCode(c, low);
+				i++;
+				continue;
+			}
+		}
+
+		out += "�";
+	}
+
+	return out;
+}
+
+/**
+ * https://webidl.spec.whatwg.org/#js-long-long — 32 bits and under fall out of
+ * the bitwise operators, but 64 needs real modular arithmetic.
+ */
+function toIDLInt64(value: unknown, signed: boolean): number {
+	let x = Number(value);
+	// covers NaN and both infinities
+	if (!Number_isFinite(x)) return 0;
+
+	x = Math_trunc(x);
+	if (x === 0) return 0;
+
+	const big = BigInt(x);
+
+	return Number(signed ? BigInt_asIntN(64, big) : BigInt_asUintN(64, big));
+}
+
+function coerceIDLSequence(value: unknown, item: IDLCoerce): unknown[] {
+	if (
+		value === null ||
+		(typeof value !== "object" && typeof value !== "function")
+	) {
+		idlReject();
+	}
+
+	const method = (value as any)[Symbol_iterator];
+	if (typeof method !== "function") idlReject();
+
+	// the iterator is page-controlled; `next` is looked up on it per step,
+	// which is what the spec's iterable-to-sequence algorithm does too
+	const iterator = Reflect_apply(method, value, []) as {
+		next(): { done?: boolean; value: unknown };
+	};
+	const out: unknown[] = [];
+
+	for (;;) {
+		const step = iterator.next();
+		if (step.done) break;
+		// not out.push — Array.prototype is page-reachable
+		out[out.length] = item(step.value);
+	}
+
+	return out;
+}
+
+function coerceIDLRecord(
+	value: unknown,
+	item: IDLCoerce
+): Record<string, unknown> {
+	if (
+		value === null ||
+		(typeof value !== "object" && typeof value !== "function")
+	) {
+		idlReject();
+	}
+
+	const keys = Object_keys(value as object);
+	const out: Record<string, unknown> = {};
+
+	for (let i = 0; i < keys.length; i++) {
+		out[keys[i]] = item((value as any)[keys[i]]);
+	}
+
+	return out;
+}
+
+/** https://webidl.spec.whatwg.org/#js-type-mapping */
+const IDL_PRIMITIVE_COERCERS: Record<string, IDLCoerce> = {
+	any: idlPassthrough,
+	undefined: () => undefined,
+	// legacy spelling, still in a few unmigrated specs
+	void: () => undefined,
+
+	boolean: (value) => !!value,
+
+	// the bitwise operators already implement ToInt32/ToUint32, which is exactly
+	// the spec's ToNumber -> NaN and infinities to 0 -> truncate -> modulo 2^n.
+	// each runs ToNumber exactly once
+	byte: (value: any) => (value << 24) >> 24,
+	octet: (value: any) => value & 0xff,
+	short: (value: any) => (value << 16) >> 16,
+	"unsigned short": (value: any) => value & 0xffff,
+	long: (value: any) => value | 0,
+	"unsigned long": (value: any) => value >>> 0,
+	"long long": (value) => toIDLInt64(value, true),
+	"unsigned long long": (value) => toIDLInt64(value, false),
+
+	float: (value) => {
+		const x = Number(value);
+		if (!Number_isFinite(x)) idlReject();
+
+		const rounded = Math_fround(x);
+		// a finite double can still round out of single-precision range
+		if (!Number_isFinite(rounded)) idlReject();
+
+		return rounded;
+	},
+	"unrestricted float": (value) => Math_fround(Number(value)),
+	double: (value) => {
+		const x = Number(value);
+		if (!Number_isFinite(x)) idlReject();
+
+		return x;
+	},
+	"unrestricted double": (value) => Number(value),
+
+	bigint: (value) => {
+		// ToBigInt rejects Numbers, unlike the BigInt constructor
+		if (typeof value === "number") idlReject();
+
+		return BigInt(value as any);
+	},
+
+	DOMString: (value) => toIDLDOMString(value),
+	CSSOMString: (value) => toIDLDOMString(value),
+	USVString: (value) => toIDLScalarValueString(toIDLDOMString(value)),
+	ByteString: (value) => {
+		const s = toIDLDOMString(value);
+		for (let i = 0; i < s.length; i++) {
+			if (String_charCodeAt(s, i) > 0xff) idlReject();
+		}
+
+		return s;
+	},
+
+	object: (value) => {
+		if (
+			value === null ||
+			(typeof value !== "object" && typeof value !== "function")
+		) {
+			idlReject();
+		}
+
+		return value;
+	},
+	symbol: (value) => (typeof value === "symbol" ? value : idlReject()),
+};

@@ -34,6 +34,7 @@ import {
 	_URL,
 	Error,
 	String,
+	Object_entries,
 	Reflect_get,
 	Array_isArray,
 	Reflect_has,
@@ -46,7 +47,11 @@ import {
 	Object_getOwnPropertyDescriptors,
 	Object_getOwnPropertyNames,
 	Object_getPrototypeOf,
+	Object_setPrototypeOf,
+	Function_call,
+	Function_apply,
 } from "@/shared/snapshot";
+import { memberValidator, type IDLValidator } from "./webidl";
 import { createIndirectEval } from "./shared/eval";
 
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
@@ -828,6 +833,86 @@ return { apply, construct };
 
 		Object_defineProperty(target, prop, desc);
 	}
+
+	Intercept<T extends string>(name: T, handler: any): void {
+		const split = name.split(".");
+		const target = split.reduce((a, b) => a?.[b], this.global);
+		if (!target) return;
+		const descs = Object_getOwnPropertyDescriptors(handler.prototype);
+
+		const fakePrototype = {};
+		Object_defineProperties(fakePrototype, this.nativeStore.get(name));
+		Object_setPrototypeOf(handler.prototype, fakePrototype);
+
+		for (const [prop, classDesc] of Object_entries(descs)) {
+			if (prop === "constructor") continue;
+			const oldDescriptor = Object_getOwnPropertyDescriptor(target, prop);
+
+			delete target[prop];
+
+			const newDescriptor: PropertyDescriptor = {};
+
+			const attemptToCallHandler = (
+				handler: (...args: any[]) => any,
+				that: any,
+				args: any[],
+				old: (...args: any[]) => any,
+				validate: IDLValidator | undefined
+			) => {
+				// coerce the arguments per the member's declared IDL before the
+				// interceptor body can look at them, so a hostile toString/valueOf
+				// runs exactly once. a rejection means the call is invalid, so skip
+				// our body entirely and let the native throw the real TypeError
+				if (validate && !validate(args)) {
+					return Function_apply(old, that, args);
+				}
+
+				return Function_apply(handler, that, args);
+			};
+
+			const createProxy = (
+				handler: (...args: any[]) => any,
+				old: (...args: any[]) => any,
+				validate: IDLValidator | undefined
+			) => {
+				return new Proxy(old, {
+					apply(_, thisArg, args) {
+						return attemptToCallHandler(handler, thisArg, args, old, validate);
+					},
+				});
+			};
+
+			// a getter takes no arguments, so there is nothing to validate on one
+			if (classDesc.get)
+				newDescriptor.get = createProxy(
+					classDesc.get,
+					oldDescriptor.get,
+					undefined
+				);
+			if (classDesc.set)
+				newDescriptor.set = createProxy(
+					classDesc.set,
+					oldDescriptor.set,
+					memberValidator(this.box, classDesc.set, true)
+				);
+			if (classDesc.value)
+				newDescriptor.value = createProxy(
+					classDesc.value,
+					oldDescriptor.value,
+					memberValidator(this.box, classDesc.value)
+				);
+
+			if (oldDescriptor.writable)
+				newDescriptor.writable = oldDescriptor.writable;
+			if (oldDescriptor.enumerable)
+				newDescriptor.enumerable = oldDescriptor.enumerable;
+			if (oldDescriptor.configurable)
+				newDescriptor.configurable = oldDescriptor.configurable;
+
+			Object_defineProperty(target, prop, newDescriptor);
+		}
+	}
+
 	rewriteUrl(url: string | URL, options?: RewriteUrlOptions): string {
 		return rewriteUrl(url, this.context, this.meta, options);
 	}
