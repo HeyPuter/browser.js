@@ -6,6 +6,8 @@ import {
 	Object_defineProperty,
 	Object_getOwnPropertyDescriptor,
 	atob,
+	String_startsWith,
+	String_toLowerCase,
 } from "@/shared/snapshot";
 import { bytesToBase64 } from "@/shared/util";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
@@ -21,6 +23,7 @@ import {
 	isScriptType,
 } from "@/shared/mime";
 import { ForeignContext } from "@/shared/rewriters/html";
+import { Arguments, Type } from "@client/webidl";
 
 export function foreignContextForElement(
 	client: ScramjetClient,
@@ -321,94 +324,108 @@ export default function (client: ScramjetClient, self: typeof window) {
 		// it has no setter
 	});
 
-	client.Proxy("Element.prototype.removeAttribute", {
-		apply(ctx) {
-			const name = String(ctx.args[0]);
-			if (name.startsWith("scramjet-attr")) return ctx.return(undefined);
-			if (new client.native.Element(ctx.this).hasAttribute(name)) {
-				ctx.fn.call(ctx.this, `scramjet-attr-${ctx.args[0]}`);
+	client.Intercept(
+		class extends Element {
+			#isInternal(name: string): boolean {
+				return String_startsWith(name, "scramjet-attr-");
 			}
-		},
-	});
-
-	client.Proxy("Element.prototype.toggleAttribute", {
-		apply(ctx) {
-			const name = String(ctx.args[0]);
-			if (name.startsWith("scramjet-attr")) return ctx.return(false);
-			if (new client.native.Element(ctx.this).hasAttribute(name)) {
-				ctx.fn.call(ctx.this, `scramjet-attr-${ctx.args[0]}`);
+			removeAttribute(qualifiedName: string): void {
+				if (this.#isInternal(qualifiedName)) return;
+				if (!super.hasAttribute(qualifiedName)) return;
+				super.removeAttribute(`scramjet-attr-${qualifiedName}`);
+				super.removeAttribute(qualifiedName);
 			}
-		},
-	});
 
-	client.Trap("Element.prototype.innerHTML", {
-		set(ctx, value: string) {
-			// null specifically becomes "" and not "null". undefined does not
-			if (value === null) return;
-			const html = String(value);
-			let newval;
-			const scriptBlockType = client.box.instanceof(
-				ctx.this,
-				"HTMLScriptElement"
-			)
-				? scriptBlockTypeForElement(client, ctx.this)
-				: null;
-			if (
-				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
-				isScriptType(scriptBlockType)
-			) {
-				newval = rewriteJs(
-					html,
-					"(anonymous script element)",
-					client.context,
-					client.meta,
-					isModuleScriptType(scriptBlockType)
-				);
-				new client.native.Element(ctx.this).setAttribute(
-					"scramjet-attr-script-source-src",
-					bytesToBase64(TextEncoder_encode(newval))
-				);
-			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				newval = rewriteCss(html, client.context, client.meta);
-			} else {
-				try {
-					newval = rewriteHtml(html, client.context, client.meta, {
-						loadScripts: false,
-						inline: true,
-						source: client.url.href,
-						apisource: "set Element.prototype.innerHTML",
-						foreignContext: foreignContextForElement(client, ctx.this),
-					});
-				} catch {
-					newval = html;
+			@Arguments("DOMString", "boolean?")
+			toggleAttribute(qualifiedName: string, force?: boolean): boolean {
+				if (this.#isInternal(qualifiedName)) return false;
+				// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
+				// no op here?
+				// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
+				qualifiedName = String_toLowerCase(qualifiedName);
+				// 3. Let attribute be the first attribute in this’s attribute list whose qualified name is qualifiedName, and null otherwise.
+				const hasAttribute = super.hasAttribute(qualifiedName);
+				// 4. If attribute is null:
+				if (hasAttribute === false) {
+					if (force === false) return false;
+					// If force is not given or true
+					super.toggleAttribute(`scramjet-attr-${qualifiedName}`, true);
+					super.toggleAttribute(qualifiedName, true);
+					return true;
 				}
+				if (force === true) return true;
+				// If force is not given or false
+				super.toggleAttribute(`scramjet-attr-${qualifiedName}`, false);
+				super.toggleAttribute(qualifiedName, false);
+				return false;
 			}
 
-			ctx.set(newval);
-		},
-		get(ctx) {
-			if (client.box.instanceof(ctx.this, "HTMLScriptElement")) {
-				const scriptSource = new client.native.Element(ctx.this).getAttribute(
-					"scramjet-attr-script-source-src"
-				);
-
-				if (scriptSource) {
-					return atob(scriptSource);
+			@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
+			set innerHTML(value: string) {
+				let newval;
+				const scriptBlockType = client.box.instanceof(
+					ctx.this,
+					"HTMLScriptElement"
+				)
+					? scriptBlockTypeForElement(client, ctx.this)
+					: null;
+				if (
+					client.box.instanceof(ctx.this, "HTMLScriptElement") &&
+					isScriptType(scriptBlockType)
+				) {
+					newval = rewriteJs(
+						html,
+						"(anonymous script element)",
+						client.context,
+						client.meta,
+						isModuleScriptType(scriptBlockType)
+					);
+					new client.native.Element(ctx.this).setAttribute(
+						"scramjet-attr-script-source-src",
+						bytesToBase64(TextEncoder_encode(newval))
+					);
+				} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
+					newval = rewriteCss(html, client.context, client.meta);
+				} else {
+					try {
+						newval = rewriteHtml(html, client.context, client.meta, {
+							loadScripts: false,
+							inline: true,
+							source: client.url.href,
+							apisource: "set Element.prototype.innerHTML",
+							foreignContext: foreignContextForElement(client, ctx.this),
+						});
+					} catch {
+						newval = html;
+					}
 				}
 
-				return ctx.get();
-			}
-			if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				return ctx.get();
+				ctx.set(newval);
 			}
 
-			return unrewriteHtml(
-				ctx.get(),
-				foreignContextForElement(client, ctx.this)
-			);
-		},
-	});
+			get innerHTML(): string {
+				if (client.box.instanceof(this, "HTMLScriptElement")) {
+					const scriptSource = super.getAttribute(
+						"scramjet-attr-script-source-src"
+					);
 
+					if (scriptSource) {
+						return atob(scriptSource);
+					}
+
+					return super.innerHTML;
+				}
+				if (client.box.instanceof(this, "HTMLStyleElement")) {
+					return super.innerHTML;
+				}
+
+				return unrewriteHtml(
+					super.innerHTML,
+					foreignContextForElement(client, this)
+				);
+			}
+		}
+	);
 	const rewriteTextForElement = (element: Element, value: string) => {
 		const scriptBlockType = client.box.instanceof(element, "HTMLScriptElement")
 			? scriptBlockTypeForElement(client, element)
@@ -567,41 +584,30 @@ export default function (client: ScramjetClient, self: typeof window) {
 			if (ctx.args[0]) ctx.args[0] = client.rewriteUrl(ctx.args[0]);
 		},
 	});
-	client.Proxy("Text.prototype.appendData", {
-		apply(ctx) {
-			const text = String(ctx.args[0]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[0] = rewriteTextForElement(parent, text);
-		},
-	});
 
-	client.Proxy("Text.prototype.insertData", {
-		apply(ctx) {
-			const text = String(ctx.args[1]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[1] = rewriteTextForElement(parent, text);
-		},
-	});
-
-	client.Proxy("Text.prototype.replaceData", {
-		apply(ctx) {
-			const text = String(ctx.args[2]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[2] = rewriteTextForElement(parent, text);
-		},
-	});
-
-	client.Trap("Text.prototype.wholeText", {
-		get(ctx) {
-			const parent = new client.native.Node(ctx.this).parentElement;
-			return getTextForElement(parent, ctx.get());
-		},
-		set(ctx, v) {
-			const text = String(v);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			return ctx.set(rewriteTextForElement(parent, text));
-		},
-	});
+	client.Intercept(
+		class extends Text {
+			appendData(data: string): void {
+				super.appendData(rewriteTextForElement(super.parentElement, data));
+			}
+			insertData(offset: number, data: string): void {
+				super.insertData(
+					offset,
+					rewriteTextForElement(super.parentElement, data)
+				);
+			}
+			replaceData(offset: number, count: number, data: string): void {
+				super.replaceData(
+					offset,
+					count,
+					rewriteTextForElement(super.parentElement, data)
+				);
+			}
+			get wholeText(): string {
+				return getTextForElement(super.parentElement, super.wholeText);
+			}
+		}
+	);
 
 	client.Proxy("HTMLAnchorElement.prototype.toString", {
 		apply(ctx) {

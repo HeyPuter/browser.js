@@ -2,7 +2,6 @@ import { ScramjetClient } from "@client/index";
 
 export default function (client: ScramjetClient) {
 	client.Intercept(
-		"Navigator",
 		class extends Navigator {
 			sendBeacon(url: string | URL, data?: BodyInit | null): boolean {
 				return super.sendBeacon(client.rewriteUrl(url));

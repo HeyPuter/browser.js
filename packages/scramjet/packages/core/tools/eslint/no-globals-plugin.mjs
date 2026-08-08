@@ -19,6 +19,26 @@ function getGlobalScope(scope) {
 	return s;
 }
 
+/**
+ * `class extends XMLHttpRequest` in an interceptor names the real interface so
+ * TypeScript resolves `super.open(...)` against lib.dom. Intercept() replaces
+ * the prototype link with the snapshotted natives before anything calls
+ * through it, so the global is read to establish typing, not to reach the
+ * page's version of the API.
+ *
+ * Only a bare identifier directly in the heritage position is exempt — a
+ * member expression like `class extends globalThis.Foo` still reports.
+ */
+function isClassHeritage(identifier) {
+	const parent = identifier.parent;
+
+	return (
+		!!parent &&
+		(parent.type === "ClassDeclaration" || parent.type === "ClassExpression") &&
+		parent.superClass === identifier
+	);
+}
+
 const noGlobalsPlugin = {
 	rules: {
 		"no-globals": {
@@ -62,6 +82,9 @@ const noGlobalsPlugin = {
 
 						function reportGlobal(identifier) {
 							if (!identifier || allowlist.has(identifier.name)) {
+								return;
+							}
+							if (isClassHeritage(identifier)) {
 								return;
 							}
 							if (reported.has(identifier)) {

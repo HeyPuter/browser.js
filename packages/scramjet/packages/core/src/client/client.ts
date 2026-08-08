@@ -834,21 +834,24 @@ return { apply, construct };
 		Object_defineProperty(target, prop, desc);
 	}
 
-	Intercept<T extends string>(name: T, handler: any): void {
-		const split = name.split(".");
-		const target = split.reduce((a, b) => a?.[b], this.global);
-		if (!target) return;
+	Intercept<T extends string>(handler: any): void {
+		const foreignbaseclass = Object_getPrototypeOf(handler.prototype);
+		const baseclass = this.global[foreignbaseclass.name];
+		if (!baseclass) return;
 		const descs = Object_getOwnPropertyDescriptors(handler.prototype);
 
 		const fakePrototype = {};
-		Object_defineProperties(fakePrototype, this.nativeStore.get(name));
+		Object_defineProperties(
+			fakePrototype,
+			this.nativeStore.get(baseclass.name)
+		);
 		Object_setPrototypeOf(handler.prototype, fakePrototype);
 
 		for (const [prop, classDesc] of Object_entries(descs)) {
 			if (prop === "constructor") continue;
-			const oldDescriptor = Object_getOwnPropertyDescriptor(target, prop);
+			const oldDescriptor = Object_getOwnPropertyDescriptor(baseclass, prop);
 
-			delete target[prop];
+			delete baseclass[prop];
 
 			const newDescriptor: PropertyDescriptor = {};
 
@@ -909,7 +912,7 @@ return { apply, construct };
 			if (oldDescriptor.configurable)
 				newDescriptor.configurable = oldDescriptor.configurable;
 
-			Object_defineProperty(target, prop, newDescriptor);
+			Object_defineProperty(baseclass, prop, newDescriptor);
 		}
 	}
 

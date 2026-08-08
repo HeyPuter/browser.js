@@ -108,6 +108,28 @@ export interface IDLPrimitives {
 }
 
 /**
+ * Trusted Types. lib.dom has no declarations for these as of TS 5.9 — only
+ * prose mentions in `document.write`'s JSDoc — so they can't come from the
+ * global-scope fallback, but they appear in the IDL of most of the sinks
+ * scramjet rewrites (`innerHTML`, `outerHTML`, `srcdoc`, `document.write`,
+ * `setHTMLUnsafe`, script `src`/`text`).
+ *
+ * https://w3c.github.io/trusted-types/dist/spec/#trusted-html
+ */
+export interface TrustedHTML {
+	toString(): string;
+	toJSON(): string;
+}
+export interface TrustedScript {
+	toString(): string;
+	toJSON(): string;
+}
+export interface TrustedScriptURL {
+	toString(): string;
+	toJSON(): string;
+}
+
+/**
  * Dictionaries, enums, typedefs and callback interfaces. None of these have an
  * interface object, so the global-scope fallback can't find them and they have
  * to be listed by hand.
@@ -117,6 +139,11 @@ export interface IDLPrimitives {
  * is an entry here.
  */
 export interface IDLNamedTypes {
+	// --- trusted types ----------------------------------------------------
+	TrustedHTML: TrustedHTML;
+	TrustedScript: TrustedScript;
+	TrustedScriptURL: TrustedScriptURL;
+
 	// --- callback interfaces / callback functions -------------------------
 	EventListener: EventListener;
 	EventHandler: ((event: Event) => any) | null;
@@ -402,7 +429,12 @@ type CheckType<S extends string> = S extends `${infer Inner}?`
 										| keyof IDLNamedTypes
 										| keyof GlobalThis
 								? never
-								: S;
+								: // a bare ` or ` this far down means the parentheses were
+									// left off, which is easy to do when copying a member's
+									// IDL out of a spec, where the type is written inline
+									S extends `${string} or ${string}`
+									? `${S}  <- a union needs parentheses: "(${S})"`
+									: S;
 
 type CheckUnion<M extends readonly string[]> = M extends readonly [
 	infer H extends string,
@@ -813,6 +845,96 @@ function stripIDLExtendedAttributes(s: string): string {
 	return s.slice(end + 1).trim();
 }
 
+function hasIDLExtendedAttribute(s: string, name: string): boolean {
+	if (s[0] !== "[") return false;
+
+	const end = s.indexOf("]");
+
+	return end !== -1 && s.slice(1, end).indexOf(name) !== -1;
+}
+
+/** The string types, the only ones a union can fall back to unambiguously. */
+const IDL_STRING_TYPES = [
+	"DOMString",
+	"ByteString",
+	"USVString",
+	"CSSOMString",
+];
+
+/** Split the inside of a union on top-level ` or `. */
+function splitIDLUnionMembers(s: string): string[] {
+	const out: string[] = [];
+	let depth = 0;
+	let start = 0;
+
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (c === "<" || c === "(") depth++;
+		else if (c === ">" || c === ")") depth--;
+		else if (depth === 0 && c === " " && s.slice(i, i + 4) === " or ") {
+			out[out.length] = s.slice(start, i);
+			i += 3;
+			start = i + 1;
+		}
+	}
+	out[out.length] = s.slice(start);
+
+	return out;
+}
+
+/**
+ * The general IDL union algorithm needs the full type of every member, but the
+ * shape that actually shows up in the sinks we intercept is
+ * `(SomeInterface or DOMString)` — `innerHTML`, `srcdoc`, `document.write` and
+ * friends are all `(TrustedHTML or DOMString)`. That one is unambiguous: brand
+ * check each interface member in order, and anything else is the string.
+ *
+ * This is worth doing rather than passing through, because these are exactly
+ * the members whose bodies stringify the value and then hand it to the native.
+ * Without coercion here, a hostile `toString` runs twice and the second call
+ * can return markup the rewriter never saw.
+ *
+ * Anything more complicated than one string member falls back to passthrough.
+ */
+function compileIDLUnion(box: IDLBrandChecker, inner: string): IDLCoerce {
+	const members = splitIDLUnionMembers(inner);
+	const interfaces: string[] = [];
+	let fallback: IDLCoerce | undefined;
+
+	for (let i = 0; i < members.length; i++) {
+		const raw = members[i].trim();
+		const name = stripIDLExtendedAttributes(raw);
+
+		if (IDL_STRING_TYPES.indexOf(name) !== -1) {
+			// two string members can't be told apart, so give up
+			if (fallback) return idlPassthrough;
+			fallback = compileIDLType(box, raw);
+			continue;
+		}
+
+		if (box.ctors[name]) {
+			interfaces[interfaces.length] = name;
+			continue;
+		}
+
+		// a dictionary, enum, sequence, numeric or unknown member — the spec's
+		// disambiguation rules for those need more type information than we have
+		return idlPassthrough;
+	}
+
+	if (!fallback) return idlPassthrough;
+
+	const stringify = fallback;
+
+	return (value) => {
+		for (let i = 0; i < interfaces.length; i++) {
+			if (box.instanceof(value, interfaces[i])) return value;
+		}
+
+		return stringify(value);
+	};
+}
+
 /**
  * Drop a trailing argument name: `"USVString url"` -> `"USVString"`.
  *
@@ -837,11 +959,20 @@ function parseIDLArgument(
 	box: IDLBrandChecker,
 	declaration: string
 ): IDLParameter {
-	let s = stripIDLExtendedAttributes(declaration.trim());
+	const raw = declaration.trim();
+	// the attribute has to be read before it is stripped. it can't be left on
+	// for compileIDLType, because stripIDLArgumentName would then mistake the
+	// last word of `[Clamp] unsigned long` for an argument name
+	let nullToEmpty = hasIDLExtendedAttribute(raw, "LegacyNullToEmptyString");
+	let s = stripIDLExtendedAttributes(raw);
 
 	let optional = false;
 	if (s.startsWith("optional ")) {
 		optional = true;
+		nullToEmpty ||= hasIDLExtendedAttribute(
+			s.slice(9).trim(),
+			"LegacyNullToEmptyString"
+		);
 		s = stripIDLExtendedAttributes(s.slice(9).trim());
 	}
 
@@ -859,23 +990,33 @@ function parseIDLArgument(
 		s = s.slice(0, -3).trim();
 	}
 
-	return { optional, variadic, coerce: compileIDLType(box, s) };
+	return { optional, variadic, coerce: compileIDLType(box, s, nullToEmpty) };
 }
 
-function compileIDLType(box: IDLBrandChecker, idl: string): IDLCoerce {
-	const s = stripIDLExtendedAttributes(idl.trim());
+function compileIDLType(
+	box: IDLBrandChecker,
+	idl: string,
+	inheritedNullToEmpty?: boolean
+): IDLCoerce {
+	const raw = idl.trim();
+	// https://webidl.spec.whatwg.org/#LegacyNullToEmptyString — null becomes ""
+	// instead of "null". `innerHTML = null` clearing an element rather than
+	// writing the text "null" is this attribute, so it is not cosmetic
+	const nullToEmpty =
+		inheritedNullToEmpty ||
+		hasIDLExtendedAttribute(raw, "LegacyNullToEmptyString");
+	const s = stripIDLExtendedAttributes(raw);
 
 	if (s.endsWith("?")) {
-		const inner = compileIDLType(box, s.slice(0, -1));
+		const inner = compileIDLType(box, s.slice(0, -1), nullToEmpty);
 
 		return (value) =>
 			value === null || value === undefined ? null : inner(value);
 	}
 
-	// a union needs every member's full type to run the IDL union algorithm,
-	// and guessing would mean touching the value more than once, which is the
-	// one thing this pass exists to prevent. leave it to the native
-	if (s[0] === "(") return idlPassthrough;
+	if (s[0] === "(" && s.endsWith(")")) {
+		return compileIDLUnion(box, s.slice(1, -1));
+	}
 
 	// Promise<T> conversion is just "resolve it", which the native does anyway
 	if (s.startsWith("Promise<")) return idlPassthrough;
@@ -909,7 +1050,14 @@ function compileIDLType(box: IDLBrandChecker, idl: string): IDLCoerce {
 	}
 
 	const primitive = IDL_PRIMITIVE_COERCERS[s];
-	if (primitive) return primitive;
+	if (primitive) {
+		// the extended attribute is only ever spec'd on string types
+		if (nullToEmpty && IDL_STRING_TYPES.indexOf(s) !== -1) {
+			return (value) => (value === null ? "" : primitive(value));
+		}
+
+		return primitive;
+	}
 
 	// an interface type is a brand check, not a conversion, so no page code runs
 	if (box.ctors[s]) {

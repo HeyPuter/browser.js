@@ -1,5 +1,5 @@
 import { ScramjetClient } from "@client/index";
-import { unrewriteLinkHeader } from "./xmlhttprequest";
+import { unrewriteLinkHeader } from "./XMLHttpRequest";
 import { String } from "@/shared/snapshot";
 
 /**

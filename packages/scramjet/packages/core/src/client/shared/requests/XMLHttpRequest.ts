@@ -3,6 +3,8 @@ import {
 	String_startsWith,
 	String_toLowerCase,
 } from "@/shared/snapshot";
+import type { ScramjetContext } from "@/shared";
+import { unrewriteUrl } from "@rewriters/url";
 import { ScramjetClient } from "@client/client";
 import { Arguments, Returns, Type } from "@client/webidl";
 
