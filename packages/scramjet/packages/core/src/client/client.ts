@@ -50,8 +50,13 @@ import {
 	Object_setPrototypeOf,
 	Function_call,
 	Function_apply,
+	Object_assign,
 } from "@/shared/snapshot";
-import { memberValidator, type IDLValidator } from "./webidl";
+import {
+	isConstructorMember,
+	memberValidator,
+	type IDLValidator,
+} from "./webidl";
 import { createIndirectEval } from "./shared/eval";
 
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
@@ -266,17 +271,17 @@ export class ScramjetClient {
 	saveNatives() {
 		for (const key of Object_getOwnPropertyNames(this.global)) {
 			const value = this.global[key];
+			if (key === "Document") debugger;
 			if (typeof value === "function" && "prototype" in value) {
+				const natives = {};
 				const walk = (proto: any) => {
+					Object_assign(natives, Object_getOwnPropertyDescriptors(proto));
 					const prototype = Object_getPrototypeOf(proto);
 					if (!prototype) return;
-					this.nativeStore.set(
-						key,
-						Object_getOwnPropertyDescriptors(prototype)
-					);
 					walk(prototype);
 				};
 				walk(value.prototype);
+				this.nativeStore.set(key, natives);
 			}
 		}
 		// special case, globalThis does have a prototype but the methods are bound to the object itself
@@ -834,12 +839,12 @@ return { apply, construct };
 		Object_defineProperty(target, prop, desc);
 	}
 
-	Intercept<T extends string>(handler: any): void {
-		const foreignbaseclass = Object_getPrototypeOf(handler.prototype);
+	Intercept(handler: any): void {
+		const foreignbaseclass = Object_getPrototypeOf(handler);
 		const baseclass = this.global[foreignbaseclass.name];
 		if (!baseclass) return;
-		const descs = Object_getOwnPropertyDescriptors(handler.prototype);
 
+		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
 		const fakePrototype = {};
 		Object_defineProperties(
 			fakePrototype,
@@ -847,62 +852,63 @@ return { apply, construct };
 		);
 		Object_setPrototypeOf(handler.prototype, fakePrototype);
 
-		for (const [prop, classDesc] of Object_entries(descs)) {
-			if (prop === "constructor") continue;
-			const oldDescriptor = Object_getOwnPropertyDescriptor(baseclass, prop);
+		const attemptToCallHandler = (
+			handler: (...args: any[]) => any,
+			that: any,
+			args: any[],
+			old: (...args: any[]) => any,
+			validate: IDLValidator | undefined
+		) => {
+			// coerce the arguments per the member's declared IDL before the
+			// interceptor body can look at them, so a hostile toString/valueOf
+			// runs exactly once. a rejection means the call is invalid, so skip
+			// our body entirely and let the native throw the real TypeError
+			if (validate && !validate(args)) {
+				return Function_apply(old, that, args);
+			}
 
-			delete baseclass[prop];
+			return Function_apply(handler, that, args);
+		};
+
+		const createProxy = (
+			handler: (...args: any[]) => any,
+			old: (...args: any[]) => any,
+			validate: IDLValidator | undefined
+		) => {
+			return new Proxy(old, {
+				apply(_, thisArg, args) {
+					return attemptToCallHandler(handler, thisArg, args, old, validate);
+				},
+			});
+		};
+
+		const writePrototypeField = (
+			key: string,
+			prototype: any,
+			handlerDescriptor: PropertyDescriptor
+		) => {
+			const oldDescriptor = Object_getOwnPropertyDescriptor(prototype, key);
 
 			const newDescriptor: PropertyDescriptor = {};
 
-			const attemptToCallHandler = (
-				handler: (...args: any[]) => any,
-				that: any,
-				args: any[],
-				old: (...args: any[]) => any,
-				validate: IDLValidator | undefined
-			) => {
-				// coerce the arguments per the member's declared IDL before the
-				// interceptor body can look at them, so a hostile toString/valueOf
-				// runs exactly once. a rejection means the call is invalid, so skip
-				// our body entirely and let the native throw the real TypeError
-				if (validate && !validate(args)) {
-					return Function_apply(old, that, args);
-				}
-
-				return Function_apply(handler, that, args);
-			};
-
-			const createProxy = (
-				handler: (...args: any[]) => any,
-				old: (...args: any[]) => any,
-				validate: IDLValidator | undefined
-			) => {
-				return new Proxy(old, {
-					apply(_, thisArg, args) {
-						return attemptToCallHandler(handler, thisArg, args, old, validate);
-					},
-				});
-			};
-
 			// a getter takes no arguments, so there is nothing to validate on one
-			if (classDesc.get)
+			if (handlerDescriptor.get)
 				newDescriptor.get = createProxy(
-					classDesc.get,
+					handlerDescriptor.get,
 					oldDescriptor.get,
 					undefined
 				);
-			if (classDesc.set)
+			if (handlerDescriptor.set)
 				newDescriptor.set = createProxy(
-					classDesc.set,
+					handlerDescriptor.set,
 					oldDescriptor.set,
-					memberValidator(this.box, classDesc.set, true)
+					memberValidator(this.box, handlerDescriptor.set, true)
 				);
-			if (classDesc.value)
+			if (handlerDescriptor.value)
 				newDescriptor.value = createProxy(
-					classDesc.value,
+					handlerDescriptor.value,
 					oldDescriptor.value,
-					memberValidator(this.box, classDesc.value)
+					memberValidator(this.box, handlerDescriptor.value)
 				);
 
 			if (oldDescriptor.writable)
@@ -912,7 +918,50 @@ return { apply, construct };
 			if (oldDescriptor.configurable)
 				newDescriptor.configurable = oldDescriptor.configurable;
 
-			Object_defineProperty(baseclass, prop, newDescriptor);
+			delete prototype[key];
+			Object_defineProperty(prototype, key, newDescriptor);
+		};
+
+		const prototypeDescs = Object_getOwnPropertyDescriptors(handler.prototype);
+		for (const [prop, classDesc] of Object_entries(prototypeDescs)) {
+			if (
+				prop === "constructor" ||
+				prop === "prototype" ||
+				prop === "length" ||
+				prop === "name"
+			)
+				continue;
+			if (isConstructorMember(classDesc)) continue;
+			writePrototypeField(prop, baseclass.prototype, classDesc);
+		}
+		const staticDescs = Object_getOwnPropertyDescriptors(handler);
+		for (const [prop, handlerDesc] of Object_entries(staticDescs)) {
+			if (
+				prop === "constructor" ||
+				prop === "prototype" ||
+				prop === "length" ||
+				prop === "name"
+			)
+				continue;
+			const value = handlerDesc.value;
+			if (value && isConstructorMember(value)) {
+				const nativeCtor = this.nativeStore.get("window")[baseclass.name].value;
+				// constructor isn't a field, replace the entire class on the global with a proxy
+				this.global[baseclass.name] = new Proxy(baseclass, {
+					construct(_, args) {
+						return attemptToCallHandler(
+							value,
+							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
+							args,
+							baseclass,
+							memberValidator(this.box, value)
+						);
+					},
+				});
+			} else {
+				// normal static method
+				writePrototypeField(prop, baseclass, handlerDesc);
+			}
 		}
 	}
 

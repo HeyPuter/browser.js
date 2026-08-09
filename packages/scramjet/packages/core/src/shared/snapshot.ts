@@ -65,6 +65,8 @@ export const Object_defineProperty = globalThis.Object.defineProperty;
 export const Object_defineProperties = globalThis.Object.defineProperties;
 export const Object_setPrototypeOf = globalThis.Object.setPrototypeOf;
 export const Object_getPrototypeOf = globalThis.Object.getPrototypeOf;
+export const Object_create = globalThis.Object.create;
+export const Object_assign = globalThis.Object.assign;
 
 export const Reflect_get = globalThis.Reflect.get;
 export const Reflect_set = globalThis.Reflect.set;

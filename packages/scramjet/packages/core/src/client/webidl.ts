@@ -461,10 +461,31 @@ type Checked<S extends string, Decorator> = [UnresolvedIDLNames<S>] extends [
 
 /** As {@link Checked}, but over a whole argument list. */
 type CheckedAll<A extends readonly string[], Decorator> = [
-	UnresolvedIDLNames<A[number]>,
+	UnresolvedIDLArgumentNames<A[number]>,
 ] extends [never]
 	? Decorator
-	: IDLTypeError<UnresolvedIDLNames<A[number]>>;
+	: IDLTypeError<UnresolvedIDLArgumentNames<A[number]>>;
+
+/** An argument declaration with `optional` and any extended attributes removed. */
+type ArgumentBody<S extends string> = StripOptional<
+	StripExtendedAttributes<Trim<S>>
+>;
+
+/**
+ * As {@link UnresolvedIDLNames}, but for a whole argument *declaration* rather
+ * than a bare type — `@Arguments` is given things like `"optional DOMString"`,
+ * `"ByteString method"` and `"USVString... urls"`, none of which are types.
+ * {@link ArgumentType} reduces one to the type it declares.
+ */
+export type UnresolvedIDLArgumentNames<S extends string> =
+	// the missing-parentheses case has to be caught before the argument name is
+	// stripped, or the suggested spelling comes back mangled: the name-stripper
+	// reads the last word of `TrustedHTML or DOMString` as an argument name
+	ArgumentBody<S> extends `${string} or ${string}`
+		? ArgumentBody<S> extends `(${string}`
+			? UnresolvedIDLNames<ArgumentType<S>>
+			: `${ArgumentBody<S>}  <- a union needs parentheses: "(${ArgumentBody<S>})"`
+		: UnresolvedIDLNames<ArgumentType<S>>;
 
 // ---------------------------------------------------------------------------
 // argument lists
@@ -533,6 +554,8 @@ export type IDLMemberSignature = {
 	returns?: string;
 	/** attribute type */
 	type?: string;
+	/** this member is the interface's constructor, whatever it is named */
+	construct?: boolean;
 };
 
 // keyed on the function object rather than `context.metadata`, which swc
@@ -555,6 +578,42 @@ function record(fn: AnyFunction, patch: IDLMemberSignature) {
  */
 export function idlSignature(fn: AnyFunction): IDLMemberSignature | undefined {
 	return signatures.get(fn);
+}
+
+/**
+ * Mark a member as the interface's constructor.
+ *
+ * A class body can only have one `constructor`, and it can't run before the
+ * base is constructed, which is no use for an interceptor that wants to alter
+ * what gets built. So the constructor is declared as an ordinary method and
+ * tagged — the name is arbitrary, `Intercept` finds it by the tag and installs
+ * it as a construct trap on the interface object rather than as a method on
+ * the prototype.
+ *
+ * ```ts
+ * @Constructor
+ * @Arguments("optional DOMString src")
+ * ctor(src) {
+ *   return new super.constructor(client.rewriteUrl(src));
+ * }
+ * ```
+ *
+ * Returning nothing constructs normally with the arguments as coerced by
+ * {@link Arguments}, which is usually what you want once they've been checked.
+ */
+export function Constructor<
+	This,
+	Value extends (this: This, ...args: any) => any,
+>(value: Value, _context: ClassMethodDecoratorContext<This, Value>): void {
+	record(value, { construct: true });
+}
+
+/** Whether `fn` was tagged {@link Constructor}. */
+export function isConstructorMember(fn: unknown): boolean {
+	return (
+		typeof fn === "function" &&
+		signatures.get(fn as AnyFunction)?.construct === true
+	);
 }
 
 /**

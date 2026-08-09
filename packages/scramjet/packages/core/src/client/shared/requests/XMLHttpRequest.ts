@@ -10,7 +10,6 @@ import { Arguments, Returns, Type } from "@client/webidl";
 
 export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(
-		"XMLHttpRequest",
 		class extends XMLHttpRequest {
 			@Arguments("ByteString", "USVString")
 			open(method: string, url: string) {

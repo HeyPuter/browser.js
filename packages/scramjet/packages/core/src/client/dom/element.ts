@@ -587,9 +587,17 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 	client.Intercept(
 		class extends Text {
+			get wholeText(): string {
+				return getTextForElement(super.parentElement, super.wholeText);
+			}
+		}
+	);
+	client.Intercept(
+		class extends CharacterData {
 			appendData(data: string): void {
 				super.appendData(rewriteTextForElement(super.parentElement, data));
 			}
+			// TODO: this is completely broken if done partially
 			insertData(offset: number, data: string): void {
 				super.insertData(
 					offset,
@@ -602,9 +610,6 @@ export default function (client: ScramjetClient, self: typeof window) {
 					count,
 					rewriteTextForElement(super.parentElement, data)
 				);
-			}
-			get wholeText(): string {
-				return getTextForElement(super.parentElement, super.wholeText);
 			}
 		}
 	);
