@@ -108,28 +108,6 @@ export interface IDLPrimitives {
 }
 
 /**
- * Trusted Types. lib.dom has no declarations for these as of TS 5.9 — only
- * prose mentions in `document.write`'s JSDoc — so they can't come from the
- * global-scope fallback, but they appear in the IDL of most of the sinks
- * scramjet rewrites (`innerHTML`, `outerHTML`, `srcdoc`, `document.write`,
- * `setHTMLUnsafe`, script `src`/`text`).
- *
- * https://w3c.github.io/trusted-types/dist/spec/#trusted-html
- */
-export interface TrustedHTML {
-	toString(): string;
-	toJSON(): string;
-}
-export interface TrustedScript {
-	toString(): string;
-	toJSON(): string;
-}
-export interface TrustedScriptURL {
-	toString(): string;
-	toJSON(): string;
-}
-
-/**
  * Dictionaries, enums, typedefs and callback interfaces. None of these have an
  * interface object, so the global-scope fallback can't find them and they have
  * to be listed by hand.
@@ -140,6 +118,8 @@ export interface TrustedScriptURL {
  */
 export interface IDLNamedTypes {
 	// --- trusted types ----------------------------------------------------
+	// from @types/trusted-types, which declares these globally. they have no
+	// interface object, so the global-scope fallback can't reach them
 	TrustedHTML: TrustedHTML;
 	TrustedScript: TrustedScript;
 	TrustedScriptURL: TrustedScriptURL;
@@ -261,7 +241,7 @@ type MultiWordPrimitive =
 	| "unrestricted double";
 
 /**
- * Drop a trailing argument name: `"USVString url"` -> `"USVString"`.
+ * Drop a trailing argument name: `"USVString"` -> `"USVString"`.
  *
  * Has to be careful in three directions — `"unsigned long"` is a type whose
  * last word looks like a name, `"record<DOMString, DOMString>"` contains a
@@ -473,8 +453,8 @@ type ArgumentBody<S extends string> = StripOptional<
 
 /**
  * As {@link UnresolvedIDLNames}, but for a whole argument *declaration* rather
- * than a bare type — `@Arguments` is given things like `"optional DOMString"`,
- * `"ByteString method"` and `"USVString... urls"`, none of which are types.
+ * than a bare type — `@Arguments` is given things like `"optional DOMString"`
+ * and `"USVString..."`, neither of which is a type.
  * {@link ArgumentType} reduces one to the type it declares.
  */
 export type UnresolvedIDLArgumentNames<S extends string> =
@@ -511,10 +491,17 @@ type IsVariadicArg<S extends string> =
 /**
  * Turn a list of WebIDL argument declarations into a TS parameter tuple.
  *
+ * Argument names and defaults are tolerated so a declaration can be pasted
+ * straight out of a spec, but neither is read — the name is discarded, and a
+ * default only marks the argument optional, which `optional` already did. By
+ * convention call sites write neither: the name lives on the method parameter
+ * and the default lives in the method signature, where they actually do
+ * something.
+ *
  * ```ts
  * IDLArguments<["ByteString", "USVString"]>
  * //   [string, string]
- * IDLArguments<["ByteString method", "USVString url", "optional boolean async = true"]>
+ * IDLArguments<["ByteString", "USVString", "optional boolean"]>
  * //   [string, string, (boolean | undefined)?]
  * IDLArguments<["USVString... urls"]>
  * //   string[]
@@ -592,7 +579,7 @@ export function idlSignature(fn: AnyFunction): IDLMemberSignature | undefined {
  *
  * ```ts
  * @Constructor
- * @Arguments("optional DOMString src")
+ * @Arguments("optional DOMString")
  * ctor(src) {
  *   return new super.constructor(client.rewriteUrl(src));
  * }
@@ -620,7 +607,7 @@ export function isConstructorMember(fn: unknown): boolean {
  * Declare an operation's argument types.
  *
  * ```ts
- * @Arguments("ByteString method", "USVString url")
+ * @Arguments("ByteString", "USVString")
  * override open(method, url) { ... }
  * ```
  *
@@ -767,8 +754,8 @@ const idlPassthrough: IDLCoerce = (value) => value;
  *
  * ```ts
  * const validate = compileIDLValidator(client.box, [
- *   "ByteString method",
- *   "USVString url",
+ *   "ByteString",
+ *   "USVString",
  *   "optional boolean async = true",
  * ]);
  * if (!validate(args)) return Function_apply(native, that, args);
@@ -995,7 +982,7 @@ function compileIDLUnion(box: IDLBrandChecker, inner: string): IDLCoerce {
 }
 
 /**
- * Drop a trailing argument name: `"USVString url"` -> `"USVString"`.
+ * Drop a trailing argument name: `"USVString"` -> `"USVString"`.
  *
  * Careful in three directions — `"unsigned long"` is a type whose last word
  * looks like a name, `"record<DOMString, DOMString>"` has a space that isn't a

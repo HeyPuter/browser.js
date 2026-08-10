@@ -946,17 +946,17 @@ return { apply, construct };
 			const value = handlerDesc.value;
 			if (value && isConstructorMember(value)) {
 				const nativeCtor = this.nativeStore.get("window")[baseclass.name].value;
+				const validate = memberValidator(this.box, value);
 				// constructor isn't a field, replace the entire class on the global with a proxy
 				this.global[baseclass.name] = new Proxy(baseclass, {
-					construct(_, args) {
-						return attemptToCallHandler(
+					construct: (_, args) =>
+						attemptToCallHandler(
 							value,
 							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
 							args,
 							baseclass,
-							memberValidator(this.box, value)
-						);
-					},
+							validate
+						),
 				});
 			} else {
 				// normal static method

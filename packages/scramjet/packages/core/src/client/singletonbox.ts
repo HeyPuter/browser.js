@@ -4,16 +4,26 @@ import { SourceMaps } from "./shared/sourcemaps";
 import {
 	Object_getOwnPropertyNames,
 	Object_getOwnPropertyDescriptor,
+	_WeakMap,
+	_Map,
 } from "@/shared/snapshot";
+import {
+	FakeWebSocketState,
+	FakeWebSocketStreamState,
+} from "./shared/requests/websocket";
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
-	globals: Map<Self, ScramjetClient> = new Map();
-	documents: Map<Document, ScramjetClient> = new Map();
-	histories: Map<History, ScramjetClient> = new Map();
-	locations: Map<Location, ScramjetClient> = new Map();
-	writeRewriters = new WeakMap<Document, IncrementalHtmlRewriter>();
-	unproxy = new Map<any, any>();
+	globals: _Map<Self, ScramjetClient> = new _Map();
+	documents: _Map<Document, ScramjetClient> = new _Map();
+	histories: _Map<History, ScramjetClient> = new _Map();
+	locations: _Map<Location, ScramjetClient> = new _Map();
+	writeRewriters: _WeakMap<Document, IncrementalHtmlRewriter> = new _WeakMap();
+	unproxy: _Map<any, any> = new _Map();
+
+	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap();
+	socketstreammap: _WeakMap<WebSocketStream, FakeWebSocketStreamState> =
+		new _WeakMap();
 
 	ctors: Record<string, Function[]> = {};
 
