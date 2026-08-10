@@ -174,6 +174,7 @@ export interface IDLNamedTypes {
 	// --- dictionaries ----------------------------------------------------
 	RequestInit: RequestInit;
 	ResponseInit: ResponseInit;
+	MultiCacheQueryOptions: MultiCacheQueryOptions;
 	BlobPropertyBag: BlobPropertyBag;
 	WorkerOptions: WorkerOptions;
 	RegistrationOptions: RegistrationOptions;
@@ -1029,6 +1030,7 @@ function parseIDLArgument(
 	// for compileIDLType, because stripIDLArgumentName would then mistake the
 	// last word of `[Clamp] unsigned long` for an argument name
 	let nullToEmpty = hasIDLExtendedAttribute(raw, "LegacyNullToEmptyString");
+	let enforceRange = hasIDLExtendedAttribute(raw, "EnforceRange");
 	let s = stripIDLExtendedAttributes(raw);
 
 	let optional = false;
@@ -1038,6 +1040,7 @@ function parseIDLArgument(
 			s.slice(9).trim(),
 			"LegacyNullToEmptyString"
 		);
+		enforceRange ||= hasIDLExtendedAttribute(s.slice(9).trim(), "EnforceRange");
 		s = stripIDLExtendedAttributes(s.slice(9).trim());
 	}
 
@@ -1055,13 +1058,18 @@ function parseIDLArgument(
 		s = s.slice(0, -3).trim();
 	}
 
-	return { optional, variadic, coerce: compileIDLType(box, s, nullToEmpty) };
+	return {
+		optional,
+		variadic,
+		coerce: compileIDLType(box, s, nullToEmpty, enforceRange),
+	};
 }
 
 function compileIDLType(
 	box: IDLBrandChecker,
 	idl: string,
-	inheritedNullToEmpty?: boolean
+	inheritedNullToEmpty?: boolean,
+	enforceRange?: boolean
 ): IDLCoerce {
 	const raw = idl.trim();
 	// https://webidl.spec.whatwg.org/#LegacyNullToEmptyString — null becomes ""
@@ -1073,7 +1081,12 @@ function compileIDLType(
 	const s = stripIDLExtendedAttributes(raw);
 
 	if (s.endsWith("?")) {
-		const inner = compileIDLType(box, s.slice(0, -1), nullToEmpty);
+		const inner = compileIDLType(
+			box,
+			s.slice(0, -1),
+			nullToEmpty,
+			enforceRange
+		);
 
 		return (value) =>
 			value === null || value === undefined ? null : inner(value);
@@ -1116,6 +1129,12 @@ function compileIDLType(
 
 	const primitive = IDL_PRIMITIVE_COERCERS[s];
 	if (primitive) {
+		// EnforceRange failures must throw after a single ToNumber. A validator
+		// rejection delegates to the native binding and would otherwise repeat a
+		// page-controlled valueOf(), so leave this conversion entirely to native.
+		// https://webidl.spec.whatwg.org/#EnforceRange
+		if (enforceRange) return idlPassthrough;
+
 		// the extended attribute is only ever spec'd on string types
 		if (nullToEmpty && IDL_STRING_TYPES.indexOf(s) !== -1) {
 			return (value) => (value === null ? "" : primitive(value));

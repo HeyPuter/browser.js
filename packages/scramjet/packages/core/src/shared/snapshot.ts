@@ -23,6 +23,8 @@ export const String_prototype_split = globalThis.String.prototype.split;
 export const String_prototype_trim = globalThis.String.prototype.trim;
 export const String_prototype_startsWith =
 	globalThis.String.prototype.startsWith;
+export const String_prototype_indexOf = globalThis.String.prototype.indexOf;
+export const String_prototype_substring = globalThis.String.prototype.substring;
 export const String_prototype_charCodeAt =
 	globalThis.String.prototype.charCodeAt;
 export const String_toLowerCase = Function_prototype_call.bind(
@@ -37,6 +39,12 @@ export const String_split = Function_prototype_call.bind(
 export const String_trim = Function_prototype_call.bind(String_prototype_trim);
 export const String_startsWith = Function_prototype_call.bind(
 	String_prototype_startsWith
+);
+export const String_indexOf = Function_prototype_call.bind(
+	String_prototype_indexOf
+);
+export const String_substring = Function_prototype_call.bind(
+	String_prototype_substring
 );
 
 export const Number = globalThis.Number;

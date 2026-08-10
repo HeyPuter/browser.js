@@ -1,18 +1,28 @@
 import { ScramjetClient } from "@client/index";
-import { String } from "@/shared/snapshot";
+import { Arguments, Returns, Type } from "@client/webidl";
+import { String_indexOf, String_substring } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient) {
-	client.Proxy("IDBFactory.prototype.open", {
-		apply(ctx) {
-			ctx.args[0] = `${client.url.origin}@${ctx.args[0]}`;
-		},
-	});
+	client.Intercept(
+		class extends IDBFactory {
+			@Returns("IDBOpenDBRequest")
+			@Arguments("DOMString", "optional [EnforceRange] unsigned long long")
+			open(name: string, version?: number): IDBOpenDBRequest {
+				name = `${client.url.origin}@${name}`;
 
-	client.Trap("IDBDatabase.prototype.name", {
-		get(ctx) {
-			const name = String(ctx.get());
+				return super.open(name, version);
+			}
+		}
+	);
 
-			return name.substring(name.indexOf("@") + 1);
-		},
-	});
+	client.Intercept(
+		class extends IDBDatabase {
+			@Type("DOMString")
+			get name(): string {
+				const name = super.name;
+
+				return String_substring(name, String_indexOf(name, "@") + 1);
+			}
+		}
+	);
 }
