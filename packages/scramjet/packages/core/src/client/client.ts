@@ -141,7 +141,7 @@ export type Trap<T extends string> = {
 };
 
 export type ScramjetModule = {
-	enabled: (client: ScramjetClient) => boolean | undefined;
+	enabled: (client: ScramjetClient, self: GlobalThis) => boolean | undefined;
 	disabled: (client: ScramjetClient, self: GlobalThis) => void | undefined;
 	order: number | undefined;
 	default: (client: ScramjetClient, self: GlobalThis) => void;
@@ -271,7 +271,6 @@ export class ScramjetClient {
 	saveNatives() {
 		for (const key of Object_getOwnPropertyNames(this.global)) {
 			const value = this.global[key];
-			if (key === "Document") debugger;
 			if (typeof value === "function" && "prototype" in value) {
 				const natives = {};
 				const walk = (proto: any) => {
@@ -524,7 +523,7 @@ export class ScramjetClient {
 		});
 
 		for (const module of modules) {
-			if (!module.enabled || module.enabled(this))
+			if (!module.enabled || module.enabled(this, this.global))
 				module.default(this, this.global);
 			else if (module.disabled) module.disabled(this, this.global);
 		}
@@ -841,7 +840,11 @@ return { apply, construct };
 
 	Intercept(handler: any): void {
 		const foreignbaseclass = Object_getPrototypeOf(handler);
-		const baseclass = this.global[foreignbaseclass.name];
+		let classname = foreignbaseclass.name;
+		if (classname === "Window") {
+			classname = "window";
+		}
+		const baseclass = this.global[classname];
 		if (!baseclass) return;
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions

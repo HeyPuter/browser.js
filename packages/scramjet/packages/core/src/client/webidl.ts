@@ -148,6 +148,13 @@ export interface IDLNamedTypes {
 	MessageEventSource: WindowProxy | MessagePort | ServiceWorker;
 	WindowProxy: Window;
 
+	// --- websockets ------------------------------------------------------
+	// declared in global.d.ts. dictionaries are interfaces, not values, so
+	// unlike `WebSocketStream` itself they never reach `keyof GlobalThis`
+	WebSocketCloseInfo: WebSocketCloseInfo;
+	WebSocketOpenInfo: WebSocketOpenInfo;
+	WebSocketStreamOptions: WebSocketStreamOptions;
+
 	// --- enums (lib.dom models these as string literal unions) -----------
 	RequestMode: RequestMode;
 	RequestCredentials: RequestCredentials;
@@ -568,31 +575,43 @@ export function idlSignature(fn: AnyFunction): IDLMemberSignature | undefined {
 }
 
 /**
- * Mark a member as the interface's constructor.
+ * Mark a static member as the interface's constructor, and declare the
+ * constructor's argument types. This is {@link Arguments} plus the tag — a
+ * constructor never wants one without the other.
  *
- * A class body can only have one `constructor`, and it can't run before the
- * base is constructed, which is no use for an interceptor that wants to alter
- * what gets built. So the constructor is declared as an ordinary method and
- * tagged — the name is arbitrary, `Intercept` finds it by the tag and installs
- * it as a construct trap on the interface object rather than as a method on
- * the prototype.
+ * A class body can only have one `constructor`, and TypeScript refuses to
+ * decorate it (TS1206: decorators are not valid here), which is why the
+ * constructor is declared as an ordinary static and tagged instead. The name
+ * is arbitrary — `Intercept` finds it by the tag and installs it as a construct
+ * trap on the interface object rather than as a member on the prototype.
+ *
+ * It has to be `static` so `this` types as the class constructor, which is what
+ * makes `new this(...)` typecheck. At runtime `this` is the *native*
+ * constructor, so `new this(...)` reaches the real one without going back
+ * through the proxy.
  *
  * ```ts
- * @Constructor
- * @Arguments("optional DOMString")
- * ctor(src) {
- *   return new super.constructor(client.rewriteUrl(src));
+ * @Constructor("optional DOMString")
+ * static konstructor(src?: string) {
+ *   return new this(client.rewriteUrl(src));
  * }
  * ```
  *
- * Returning nothing constructs normally with the arguments as coerced by
- * {@link Arguments}, which is usually what you want once they've been checked.
+ * Returning nothing constructs normally with the arguments as coerced here,
+ * which is usually what you want once they've been checked.
  */
-export function Constructor<
-	This,
-	Value extends (this: This, ...args: any) => any,
->(value: Value, _context: ClassMethodDecoratorContext<This, Value>): void {
-	record(value, { construct: true });
+export function Constructor<const A extends readonly string[]>(
+	...types: A
+): CheckedAll<
+	A,
+	<This, Value extends (...args: IDLArguments<A>) => any>(
+		value: Value,
+		context: ClassMethodDecoratorContext<This, Value>
+	) => void
+> {
+	return ((value: AnyFunction) => {
+		record(value, { arguments: types, construct: true });
+	}) as never;
 }
 
 /** Whether `fn` was tagged {@link Constructor}. */

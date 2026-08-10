@@ -1,6 +1,7 @@
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./XMLHttpRequest";
 import { String } from "@/shared/snapshot";
+import { Arguments, Constructor, Returns, Type } from "@client/webidl";
 
 /**
  * Capture the page's intended `init.mode` / `init.credentials` and forward
@@ -18,28 +19,43 @@ function rewriteUrlOptionsForFetch(init: RequestInit | undefined) {
 	};
 }
 
-export default function (client: ScramjetClient) {
-	client.Proxy("fetch", {
-		apply(ctx) {
-			if (client.box.instanceof(ctx.args[0], "Request")) return;
-			const url = String(ctx.args[0]);
-			ctx.args[0] = client.rewriteUrl(
-				url,
-				rewriteUrlOptionsForFetch(ctx.args[1] as RequestInit | undefined)
-			);
-		},
-	});
+export default function (client: ScramjetClient, self: Self) {
+	client.Intercept(
+		class extends Window {
+			@Arguments("RequestInfo", "optional RequestInit")
+			@Returns("Promise<Response>")
+			static fetch(input: RequestInfo, requestInit: RequestInit = {}) {
+				if (typeof input === "string") {
+					input = client.rewriteUrl(
+						input,
+						rewriteUrlOptionsForFetch(requestInit)
+					);
+				}
 
-	client.Proxy("Request", {
-		construct(ctx) {
-			if (client.box.instanceof(ctx.args[0], "Request")) return;
-			const url = String(ctx.args[0]);
-			ctx.args[0] = client.rewriteUrl(
-				url,
-				rewriteUrlOptionsForFetch(ctx.args[1] as RequestInit | undefined)
-			);
-		},
-	});
+				return this.fetch(input, requestInit);
+			}
+		}
+	);
+
+	client.Intercept(
+		class extends Request {
+			@Constructor("RequestInfo", "optional RequestInit")
+			static konstructor(input: RequestInfo, requestInit: RequestInit = {}) {
+				if (typeof input === "string") {
+					input = client.rewriteUrl(
+						input,
+						rewriteUrlOptionsForFetch(requestInit)
+					);
+				}
+				return new this(input, requestInit);
+			}
+
+			@Type("USVString")
+			get url() {
+				return client.unrewriteUrl(super.url);
+			}
+		}
+	);
 
 	client.Trap(["Request.prototype.url", "Response.prototype.url"], {
 		get(ctx) {
