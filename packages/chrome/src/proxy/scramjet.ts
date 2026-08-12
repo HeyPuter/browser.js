@@ -355,7 +355,7 @@ export function createFetchHandler(controller: Controller) {
 	) => {
 		const contextId = "context-" + makeId();
 		let frameContext = new ProxyFrameContext(controller, contextId);
-		contexts.push(frameContext);
+		contexts.registerContext(frameContext, null);
 
 		const initHeaders = htmlcontext.headers ?? [];
 		const history = htmlcontext.history ?? [];

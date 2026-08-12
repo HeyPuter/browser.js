@@ -55,7 +55,7 @@ export function App(
 			document.body.style.setProperty(`--${key}`, value);
 		}
 
-		for (const context of contexts) {
+		for (const context of contexts.contexts) {
 			context.rpc.call("updateTheme", theme);
 		}
 	};

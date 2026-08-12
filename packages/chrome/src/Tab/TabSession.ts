@@ -17,20 +17,22 @@ export class TabSession {
 	) {
 		this.frame = document.createElement("iframe");
 		this.devtoolsFrame = document.createElement("iframe");
-		this.devtoolsFrame.onload = async () => {
-			const session = new CDPConnection((msh) => {
-				this.devtoolsFrame.contentWindow.InspectorFrontendAPI.dispatchMessage(
-					msh
-				);
-			}, this);
-			this.devtoolsFrame.contentWindow.InspectorFrontendHost.sendMessageToBackend =
-				(message) => {
-					console.warn(message);
-					session.sendMessage(message);
-				};
-		};
+		tab.waitForInit.then(() => {
+			this.devtoolsFrame.onload = async () => {
+				const session = new CDPConnection((msh) => {
+					this.devtoolsFrame.contentWindow.InspectorFrontendAPI.dispatchMessage(
+						msh
+					);
+				}, this);
+				this.devtoolsFrame.contentWindow.InspectorFrontendHost.sendMessageToBackend =
+					(message) => {
+						console.warn(message);
+						session.sendMessage(message);
+					};
+			};
 
-		this.devtoolsFrame.src = "front_end/inspector.html";
+			this.devtoolsFrame.src = "front_end/inspector.html";
+		});
 	}
 
 	mounted() {
