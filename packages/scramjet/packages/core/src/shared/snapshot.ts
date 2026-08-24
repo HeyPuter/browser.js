@@ -83,6 +83,22 @@ export const Reflect_ownKeys = globalThis.Reflect.ownKeys;
 export const Reflect_construct = globalThis.Reflect.construct;
 export const Reflect_apply = globalThis.Reflect.apply;
 
+export const ArrayBuffer_isView = globalThis.ArrayBuffer.isView;
+// WebIDL discriminates buffer types on internal slots, and the byteLength
+// getters are the only reachable test for those slots. Unlike `instanceof` they
+// are realm-independent and cannot be forged with a Symbol.toStringTag
+export const ArrayBuffer_prototype_byteLength = Object_getOwnPropertyDescriptor(
+	globalThis.ArrayBuffer.prototype,
+	"byteLength"
+)!.get!;
+// absent unless the page is cross-origin isolated
+export const SharedArrayBuffer_prototype_byteLength =
+	typeof globalThis.SharedArrayBuffer === "function"
+		? Object_getOwnPropertyDescriptor(
+				globalThis.SharedArrayBuffer.prototype,
+				"byteLength"
+			)?.get
+		: undefined;
 export const Array_from = globalThis.Array.from;
 export const Array_isArray = globalThis.Array.isArray;
 export const Array_of = globalThis.Array.of;

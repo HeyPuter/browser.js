@@ -1,17 +1,29 @@
 import { ScramjetClient } from "@client/index";
-import { String } from "@/shared/snapshot";
+import { Constructor, Type, idlBoolean, idlDictionary } from "@client/webidl";
 
 export default function (client: ScramjetClient) {
-	client.Proxy("EventSource", {
-		construct(ctx) {
-			const url = String(ctx.args[0]);
-			ctx.args[0] = client.rewriteUrl(url);
-		},
-	});
+	client.Intercept(
+		class extends EventSource {
+			// https://html.spec.whatwg.org/multipage/server-sent-events.html#the-eventsource-interface
+			@Constructor("USVString", "optional EventSourceInit")
+			static konstructor(url: string, eventSourceInitDict?: EventSourceInit) {
+				const dict = idlDictionary(eventSourceInitDict, "EventSourceInit");
+				const raw = dict.withCredentials;
+				const withCredentials = raw === undefined ? false : idlBoolean(raw);
 
-	client.Trap("EventSource.prototype.url", {
-		get(ctx) {
-			return client.unrewriteUrl(ctx.get());
-		},
-	});
+				return new this(
+					client.rewriteUrl(url, {
+						mode: "cors",
+						credentials: withCredentials ? "include" : undefined,
+					}),
+					{ withCredentials }
+				);
+			}
+
+			@Type("USVString")
+			get url(): string {
+				return client.unrewriteUrl(super.url);
+			}
+		}
+	);
 }

@@ -30,6 +30,8 @@
 
 import {
 	_WeakMap,
+	ArrayBuffer_isView,
+	ArrayBuffer_prototype_byteLength,
 	BigInt,
 	BigInt_asIntN,
 	BigInt_asUintN,
@@ -41,6 +43,7 @@ import {
 	Reflect_apply,
 	String,
 	String_charCodeAt,
+	SharedArrayBuffer_prototype_byteLength,
 	String_fromCharCode,
 	Symbol_iterator,
 	TypeError,
@@ -104,6 +107,8 @@ export interface IDLPrimitives {
 	// https://webidl.spec.whatwg.org/#common-BufferSource — typedefs, no
 	// interface object, so they'd otherwise fail to resolve
 	BufferSource: ArrayBufferView | ArrayBuffer;
+	/** css font loading's spelling of the same thing */
+	BinaryData: ArrayBufferView | ArrayBuffer;
 	AllowSharedBufferSource: ArrayBufferView | ArrayBuffer | SharedArrayBuffer;
 	ArrayBufferView: ArrayBufferView;
 }
@@ -196,6 +201,8 @@ export interface IDLNamedTypes {
 	CookieListItem: CookieListItem;
 	CookieStoreGetOptions: CookieStoreGetOptions;
 	CookieStoreDeleteOptions: CookieStoreDeleteOptions;
+	EventSourceInit: EventSourceInit;
+	FontFaceDescriptors: FontFaceDescriptors;
 }
 
 // ---------------------------------------------------------------------------
@@ -1503,4 +1510,50 @@ export function idlDictionary(
 	}
 
 	return value as Record<string, unknown>;
+}
+
+/**
+ * Whether `value` takes the buffer branch of a union like
+ * `(DOMString or BinaryData)`.
+ *
+ * The discrimination is on internal slots, and `instanceof` does not test those.
+ * A prototype is settable, so
+ *
+ *     Object.setPrototypeOf({ toString: () => "url(...)" }, ArrayBuffer.prototype)
+ *
+ * satisfies an instanceof check while the binding still sends it down the
+ * string member and runs that toString. Skipping a rewrite on the strength of
+ * an instanceof and then handing the value to the native is therefore a bypass
+ * rather than a missed optimisation - the native produces the page's string and
+ * uses it unrewritten. Reading the slots cannot be spoofed that way.
+ *
+ * A SharedArrayBuffer answers true here even though `BinaryData` rejects it.
+ * That is deliberate: it carries [[ArrayBufferData]], so the union sends it to
+ * the buffer member and the conversion *there* is what throws. Answering false
+ * would stringify it instead, and the page would see a parse error from
+ * "[object SharedArrayBuffer]" rather than the TypeError it is owed.
+ * https://webidl.spec.whatwg.org/#es-union
+ */
+export function idlIsBufferSource(value: unknown): boolean {
+	if (ArrayBuffer_isView(value)) return true;
+
+	try {
+		Reflect_apply(ArrayBuffer_prototype_byteLength, value, []);
+
+		return true;
+	} catch {
+		// not an ArrayBuffer
+	}
+
+	if (SharedArrayBuffer_prototype_byteLength) {
+		try {
+			Reflect_apply(SharedArrayBuffer_prototype_byteLength, value, []);
+
+			return true;
+		} catch {
+			// nor a SharedArrayBuffer
+		}
+	}
+
+	return false;
 }

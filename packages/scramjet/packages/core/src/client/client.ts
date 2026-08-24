@@ -888,6 +888,7 @@ return { apply, construct };
 			handlerDescriptor: PropertyDescriptor
 		) => {
 			const oldDescriptor = Object_getOwnPropertyDescriptor(prototype, key);
+			if (!oldDescriptor) return;
 
 			const newDescriptor: PropertyDescriptor = {};
 
