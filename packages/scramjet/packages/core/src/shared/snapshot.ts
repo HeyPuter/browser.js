@@ -113,6 +113,12 @@ export const SharedArrayBuffer_prototype_byteLength =
 export const Array_from = globalThis.Array.from;
 export const Array_isArray = globalThis.Array.isArray;
 export const Array_of = globalThis.Array.of;
+export const Array_sort = Function_prototype_call.bind(
+	globalThis.Array.prototype.sort
+) as <T>(array: T[], compare?: (a: T, b: T) => number) => T[];
+export const Array_join = Function_prototype_call.bind(
+	globalThis.Array.prototype.join
+) as (array: unknown[], separator?: string) => string;
 
 export const JSON_parse = globalThis.JSON.parse;
 export const JSON_stringify = globalThis.JSON.stringify;

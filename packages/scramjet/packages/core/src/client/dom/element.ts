@@ -23,7 +23,9 @@ import {
 	isScriptType,
 } from "@/shared/mime";
 import { ForeignContext } from "@/shared/rewriters/html";
-import { Arguments, Type } from "@client/webidl";
+import { Arguments, Returns, Type } from "@client/webidl";
+
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 export function foreignContextForElement(
 	client: ScramjetClient,
@@ -326,8 +328,24 @@ export default function (client: ScramjetClient, self: typeof window) {
 	const isInternal = (name: string) => {
 		return String_startsWith(name, "scramjet-attr-");
 	};
+	/**
+	 * Step 2 of https://dom.spec.whatwg.org/#dom-element-toggleattribute — the
+	 * lowercasing is conditional. An SVG or MathML element keeps `viewBox` as
+	 * `viewBox`, and folding it writes a different, meaningless attribute.
+	 */
+	const qualifiedAttributeName = (element: Element, name: string) => {
+		const nElement = new client.native.Element(element);
+
+		return nElement.namespaceURI === HTML_NAMESPACE &&
+			client.box.instanceof(nElement.ownerDocument, "HTMLDocument")
+			? String_toLowerCase(name)
+			: name;
+	};
+
 	client.Intercept(
 		class extends Element {
+			@Arguments("DOMString")
+			@Returns("undefined")
 			removeAttribute(qualifiedName: string): void {
 				if (isInternal(qualifiedName)) return;
 				if (!super.hasAttribute(qualifiedName)) return;
@@ -335,13 +353,18 @@ export default function (client: ScramjetClient, self: typeof window) {
 				super.removeAttribute(qualifiedName);
 			}
 
-			@Arguments("DOMString", "boolean?")
+			// `force` is `optional boolean`, not a nullable required one. declaring
+			// it required made every one-argument call fail validation and fall
+			// through to the native, which toggled the real attribute and left the
+			// `scramjet-attr-` mirror behind to answer getAttribute() forever
+			@Arguments("DOMString", "optional boolean")
+			@Returns("boolean")
 			toggleAttribute(qualifiedName: string, force?: boolean): boolean {
 				if (isInternal(qualifiedName)) return false;
 				// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
 				// no op here?
 				// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
-				qualifiedName = String_toLowerCase(qualifiedName);
+				qualifiedName = qualifiedAttributeName(this, qualifiedName);
 				// 3. Let attribute be the first attribute in this’s attribute list whose qualified name is qualifiedName, and null otherwise.
 				const hasAttribute = super.hasAttribute(qualifiedName);
 				// 4. If attribute is null:
@@ -361,6 +384,11 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 			@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
 			set innerHTML(value: string) {
+				// the IDL union hands a TrustedHTML through as the object it is -
+				// that is what the brand check is for - and on an engine with no
+				// TrustedHTML at all the whole union degrades to a passthrough. the
+				// rewriters take a string either way
+				value = String(value);
 				let newval;
 				const scriptBlockType = client.box.instanceof(this, "HTMLScriptElement")
 					? scriptBlockTypeForElement(client, this)
@@ -645,17 +673,20 @@ export default function (client: ScramjetClient, self: typeof window) {
 		}
 	);
 
-	client.Trap(
-		[
-			"HTMLIFrameElement.prototype.contentDocument",
-			"HTMLFrameElement.prototype.contentDocument",
-			"HTMLObjectElement.prototype.contentDocument",
-			"HTMLEmbedElement.prototype.contentDocument",
-		],
-		{
+	// registered one interface at a time so the native lookup is keyed on the
+	// interface the trap was installed for. reading it off `this.constructor
+	// .name` instead takes the name from the page - a shadowed `constructor`, or
+	// just a subclass, names an interface the native store has never heard of,
+	// and `client.native[...]` throws that straight out of the getter
+	for (const iface of [
+		"HTMLIFrameElement",
+		"HTMLFrameElement",
+		"HTMLObjectElement",
+		"HTMLEmbedElement",
+	]) {
+		client.Trap(`${iface}.prototype.contentDocument`, {
 			get(ctx) {
-				const realwin = new client.native[ctx.this.constructor.name](ctx.this)
-					.contentWindow;
+				const realwin = new client.native[iface](ctx.this).contentWindow;
 				if (!realwin) return realwin;
 
 				if (!(SCRAMJETCLIENT in realwin)) {
@@ -664,8 +695,8 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 				return realwin.document;
 			},
-		}
-	);
+		});
+	}
 
 	client.Proxy(
 		[

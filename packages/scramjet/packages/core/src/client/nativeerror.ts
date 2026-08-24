@@ -102,11 +102,9 @@ type ArityInit = NativeErrorSite & {
 };
 
 export class NativeErrors {
-	/* eslint-disable scramjet-core/no-globals -- type positions, not reads */
 	private readonly DOMException: typeof DOMException;
 	private readonly TypeError: typeof TypeError;
 	private readonly RangeError: typeof RangeError;
-	/* eslint-enable scramjet-core/no-globals */
 	private readonly captureStackTrace?: (
 		target: object,
 		caller?: AnyFunction

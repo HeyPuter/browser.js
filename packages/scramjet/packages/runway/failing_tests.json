@@ -1,6 +1,5 @@
 {
 	"tests": [
-		"cachestorage-query-ignore-search",
 		"cssurls-author-string-preserved",
 		"cssurls-computed-style",
 		"cssurls-cssom-write-serialization",

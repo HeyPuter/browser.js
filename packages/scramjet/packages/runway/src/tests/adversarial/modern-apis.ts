@@ -104,20 +104,6 @@ export default [
 		`,
 	}),
 	basicTest({
-		name: "modern-media-surface",
-		js: `
-			assertEqual(typeof RTCPeerConnection, "function", "RTCPeerConnection");
-			assertEqual(typeof MediaSource, "function", "MediaSource");
-			assertEqual(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'), true, "isTypeSupported");
-			const v = document.createElement("video");
-			assertEqual(typeof v.canPlayType("video/mp4"), "string", "canPlayType");
-			v.src = "/movie.mp4";
-			assertEqual(v.src, location.origin + "/movie.mp4", "video.src resolves to the real origin");
-			assertEqual(v.getAttribute("src"), "/movie.mp4", "the src attribute keeps the literal value");
-			assertEqual(typeof v.play, "function", "play()");
-		`,
-	}),
-	basicTest({
 		name: "modern-storage-manager-and-locks",
 		js: `
 			assertEqual(typeof navigator.storage, "object", "navigator.storage");

@@ -1,6 +1,9 @@
 import { ScramjetClient } from "@client/index";
 import { Constructor, Type, idlBoolean, idlDictionary } from "@client/webidl";
 
+export const enabled = (client: ScramjetClient, self: Self) =>
+	"EventSource" in self;
+
 export default function (client: ScramjetClient) {
 	client.Intercept(
 		class extends EventSource {

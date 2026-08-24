@@ -28,7 +28,7 @@ export default function (client: ScramjetClient, self: Self) {
 				Object_setPrototypeOf(fakeWebSocketStream, this.prototype);
 				fakeWebSocketStream.constructor = this;
 
-				const barews = client.bare.createWebSocket(url, options.protocols, [
+				const barews = client.bare.createWebSocket(url, options?.protocols, [
 					["User-Agent", self.navigator.userAgent],
 					["Origin", client.url.origin],
 				]);

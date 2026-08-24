@@ -54,6 +54,11 @@ export class ScramjetHeaders {
 		this.headers[key.toLowerCase()] = v;
 	}
 
+	append(key: string, v: string) {
+		const lk = key.toLowerCase();
+		this.headers[lk] = lk in this.headers ? `${this.headers[lk]}, ${v}` : v;
+	}
+
 	get(key: string): string | null {
 		const lk = key.toLowerCase();
 		if (lk in this.headers) {

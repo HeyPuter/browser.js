@@ -8,32 +8,32 @@ import {
 	_Map,
 	_WeakSet,
 } from "@/shared/snapshot";
-import {
-	FakeWebSocketState,
-	FakeWebSocketStreamState,
-} from "./shared/requests/websocket";
+import { FakeWebSocketState } from "./shared/requests/WebSocket";
+import { FakeWebSocketStreamState } from "./shared/requests/WebSocketStream";
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
-	globals: _Map<Self, ScramjetClient> = new _Map();
-	documents: _Map<Document, ScramjetClient> = new _Map();
-	histories: _Map<History, ScramjetClient> = new _Map();
+	globals: _Map<Self, ScramjetClient> = new _Map([]);
+	documents: _Map<Document, ScramjetClient> = new _Map([]);
+	histories: _Map<History, ScramjetClient> = new _Map([]);
 	/**
 	 * Keyed on each realm's `Object.prototype`, which every object created in
 	 * that realm reaches at the end of its prototype chain. One entry per realm
 	 * rather than one per interface.
 	 */
-	realms: _Map<object, ScramjetClient> = new _Map();
-	locations: _Map<Location, ScramjetClient> = new _Map();
-	functions: _Map<typeof Function, ScramjetClient> = new _Map();
-	writeRewriters: _WeakMap<Document, IncrementalHtmlRewriter> = new _WeakMap();
-	taggedHeaders: _WeakSet<Headers> = new _WeakSet();
-	taggedResponses: _WeakSet<Response> = new _WeakSet();
-	unproxy: _Map<any, any> = new _Map();
+	realms: _Map<object, ScramjetClient> = new _Map([]);
+	locations: _Map<Location, ScramjetClient> = new _Map([]);
+	functions: _Map<typeof Function, ScramjetClient> = new _Map([]);
+	writeRewriters: _WeakMap<Document, IncrementalHtmlRewriter> = new _WeakMap(
+		[]
+	);
+	taggedHeaders: _WeakSet<Headers> = new _WeakSet([]);
+	taggedResponses: _WeakSet<Response> = new _WeakSet([]);
+	unproxy: _Map<any, any> = new _Map([]);
 
-	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap();
+	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap([]);
 	socketstreammap: _WeakMap<WebSocketStream, FakeWebSocketStreamState> =
-		new _WeakMap();
+		new _WeakMap([]);
 
 	ctors: Record<string, Function[]> = {};
 

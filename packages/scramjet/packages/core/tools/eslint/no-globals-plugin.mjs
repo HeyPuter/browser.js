@@ -39,6 +39,25 @@ function isClassHeritage(identifier) {
 	);
 }
 
+/**
+ * `typeof Window` in a type annotation. The scope analyser files these as
+ * *value* references, because a type query names a value rather than a type —
+ * but it is erased before anything runs, so it reads no global. Covers the
+ * qualified form (`typeof a.b`) too, where only the leftmost name is
+ * referenced.
+ */
+function isTypeQuery(identifier) {
+	let node = identifier;
+	let parent = node.parent;
+
+	while (parent?.type === "TSQualifiedName" && parent.left === node) {
+		node = parent;
+		parent = node.parent;
+	}
+
+	return parent?.type === "TSTypeQuery" && parent.exprName === node;
+}
+
 const noGlobalsPlugin = {
 	rules: {
 		"no-globals": {
@@ -84,7 +103,7 @@ const noGlobalsPlugin = {
 							if (!identifier || allowlist.has(identifier.name)) {
 								return;
 							}
-							if (isClassHeritage(identifier)) {
+							if (isClassHeritage(identifier) || isTypeQuery(identifier)) {
 								return;
 							}
 							if (reported.has(identifier)) {

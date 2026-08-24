@@ -77,7 +77,6 @@ declare const dbg: {
 	time: (meta: URLMeta, before: number, type: string) => void;
 };
 
-// eslint-disable-next-line scramjet-core/no-globals
 declare type GlobalThis = typeof globalThis;
 declare type Self = Window & GlobalThis;
 

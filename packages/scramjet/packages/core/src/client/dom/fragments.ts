@@ -9,8 +9,9 @@ function foreignContextForRange(
 	range: Range
 ): ForeignContext {
 	const nRange = new client.native.Range(range);
-	const nNode = new client.native.Node(nRange.startContainer);
-	const element = nNode.nodeType === 1 ? nNode : nNode.parentElement;
+	const node = nRange.startContainer;
+	const nNode = new client.native.Node(node);
+	const element = nNode.nodeType === 1 ? node : nNode.parentElement;
 	if (!element) return "html";
 	if (client.box.instanceof(element, "SVGElement")) return "svg";
 	if (client.box.instanceof(element, "MathMLElement")) return "math";
