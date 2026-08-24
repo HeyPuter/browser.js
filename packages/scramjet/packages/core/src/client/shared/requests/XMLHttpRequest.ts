@@ -1,10 +1,10 @@
 import {
+	String_indexOf,
 	String_split,
-	String_startsWith,
+	String_substring,
 	String_toLowerCase,
 } from "@/shared/snapshot";
-import type { ScramjetContext } from "@/shared";
-import { unrewriteUrl } from "@rewriters/url";
+import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
 import { ScramjetClient } from "@client/client";
 import { Arguments, Returns, Type } from "@client/webidl";
 
@@ -19,46 +19,44 @@ export default function (client: ScramjetClient, self: Self) {
 
 			@Type("USVString")
 			get responseURL() {
-				return client.rewriteUrl(super.responseURL);
+				return client.unrewriteUrl(super.responseURL);
 			}
 
 			@Returns("ByteString?")
 			@Arguments("ByteString")
 			getResponseHeader(name: string): string | null {
-				const value = super.getResponseHeader(name);
-				if (value === null) return null;
-				if (name.toLowerCase() === "link") {
-					return client.unrewriteUrl(value);
-				}
-				return value;
+				return super.getResponseHeader(carriedHeaderName(name));
 			}
 
 			@Returns("ByteString")
-			@Arguments("ByteString")
+			@Arguments()
 			getAllResponseHeaders(): string {
-				const headerstring = super.getAllResponseHeaders();
-				if (!headerstring) return headerstring;
-				const headers = String_split(headerstring, "\r\n");
+				const raw = super.getAllResponseHeaders();
+				if (!raw) return raw;
 
-				for (const i in headers) {
-					const header = headers[i];
-					if (String_startsWith(String_toLowerCase(header), "link:")) {
-						headers[i] = `Link: ${unrewriteLinkHeader(
-							header.slice(5).trim(),
-							client.context
-						)}`;
-					}
+				const restored: string[] = [];
+				const lines = String_split(raw, "\r\n");
+
+				for (let i = 0; i < lines.length; i++) {
+					const colon = String_indexOf(lines[i], ":");
+					if (colon === -1) continue;
+
+					const name = uncarriedHeaderName(
+						String_substring(lines[i], 0, colon)
+					);
+					if (name === null) continue;
+
+					// the value keeps the separator and its leading space verbatim
+					restored[restored.length] =
+						String_toLowerCase(name) + String_substring(lines[i], colon);
 				}
 
-				return headers.join("\r\n");
+				// a carrier sorts under `x-`, and the name it stands for almost never
+				// does, so the list has to be re-sorted rather than filtered in place
+				restored.sort();
+
+				return restored.length ? restored.join("\r\n") + "\r\n" : "";
 			}
 		}
-	);
-}
-
-export function unrewriteLinkHeader(header: string, context: ScramjetContext) {
-	return header.replace(
-		/<([^>]+)>/gi,
-		(_match, p1) => `<${unrewriteUrl(p1, context)}>`
 	);
 }

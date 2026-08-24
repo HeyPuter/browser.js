@@ -1,6 +1,6 @@
 import { ScramjetClient } from "@client/index";
-import { unrewriteLinkHeader } from "./XMLHttpRequest";
 import { Arguments, Constructor, Returns, Type } from "@client/webidl";
+import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
 
 /**
  * Capture the page's intended `init.mode` / `init.credentials` and forward
@@ -85,6 +85,17 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 	);
 
+	const toNativeHeaders = (headers: Headers) => {
+		const nWindow = new client.native.window(self);
+		const nHeaders = new client.native.Headers(headers);
+		const newHeaders = new nWindow.Headers();
+		for (const [key, value] of nHeaders.entries()) {
+			const original = uncarriedHeaderName(key);
+			if (original !== null) newHeaders.set(original, value);
+		}
+		return newHeaders;
+	};
+
 	client.Intercept(
 		class extends Headers {
 			@Arguments("ByteString")
@@ -92,11 +103,43 @@ export default function (client: ScramjetClient, self: Self) {
 			get(name: string): string | null {
 				const value = super.get(name);
 				if (client.box.taggedHeaders.has(this)) {
-					const orig = super.get(`X-Scramjet-${name}`);
-					if (orig) return orig;
+					return super.get(carriedHeaderName(name));
 				}
 				return value;
 			}
+			@Arguments("ByteString")
+			@Returns("boolean")
+			has(name: string): boolean {
+				if (client.box.taggedHeaders.has(this)) {
+					return super.has(carriedHeaderName(name));
+				}
+				return super.has(name);
+			}
+			keys(): HeadersIterator<string> {
+				if (client.box.taggedHeaders.has(this)) {
+					return toNativeHeaders(this).keys();
+				}
+				return super.keys();
+			}
+			values(): HeadersIterator<string> {
+				if (client.box.taggedHeaders.has(this)) {
+					return toNativeHeaders(this).values();
+				}
+				return super.values();
+			}
+			entries(): HeadersIterator<[string, string]> {
+				if (client.box.taggedHeaders.has(this)) {
+					return toNativeHeaders(this).entries();
+				}
+				return super.entries();
+			}
+			forEach(callbackfn: any, thisArg?: any): void {
+				if (client.box.taggedHeaders.has(this)) {
+					return toNativeHeaders(this).forEach(callbackfn, thisArg);
+				}
+				return super.forEach(callbackfn, thisArg);
+			}
 		}
 	);
+	self.Headers.prototype[self.Symbol.iterator] = self.Headers.prototype.entries;
 }

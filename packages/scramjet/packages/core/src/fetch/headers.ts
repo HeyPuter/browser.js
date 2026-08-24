@@ -1,6 +1,7 @@
 import {
 	rewriteUrl,
 	ScramjetContext,
+	carriedHeaderName,
 	ScramjetHeaders,
 	unrewriteUrl,
 	URLMeta,
@@ -70,7 +71,7 @@ export async function rewriteResponseHeaders(
 			// this is purely for browser consumption via Headers.get, and set-cookie is always hidden from js
 			continue;
 		}
-		headers.set(`X-Scramjet-${key}`, value);
+		headers.set(carriedHeaderName(key), value);
 	}
 
 	for (const cspHeader of SEC_HEADERS) {
