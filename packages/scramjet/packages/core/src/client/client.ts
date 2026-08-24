@@ -31,6 +31,7 @@ import {
 } from "@/fetch";
 import { AnyFunction } from "@/types";
 import {
+	AsyncFunction_prototype,
 	_URL,
 	Error,
 	String,
@@ -58,6 +59,7 @@ import {
 	type IDLValidator,
 } from "./webidl";
 import { createIndirectEval } from "./shared/eval";
+import { NativeErrors } from "./nativeerror";
 
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
 type IfEquals<T, U, Y = unknown, N = never> =
@@ -189,6 +191,8 @@ export class ScramjetClient {
 	indirectEval: any;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
+	/** builds errors a page cannot tell from the browser's own */
+	errors: NativeErrors;
 
 	wrapfn: (i: any, ...args: any) => any;
 
@@ -313,6 +317,7 @@ export class ScramjetClient {
 		}
 
 		this.saveNatives();
+		this.errors = new NativeErrors(global as Self);
 
 		this.box.registerClient(this, global as Self);
 
@@ -857,7 +862,8 @@ return { apply, construct };
 			that: any,
 			args: any[],
 			old: (...args: any[]) => any,
-			validate: IDLValidator | undefined
+			validate: IDLValidator | undefined,
+			isAsync: boolean
 		) => {
 			// coerce the arguments per the member's declared IDL before the
 			// interceptor body can look at them, so a hostile toString/valueOf
@@ -865,6 +871,12 @@ return { apply, construct };
 			// our body entirely and let the native throw the real TypeError
 			if (validate && !validate(args)) {
 				return Function_apply(old, that, args);
+			}
+
+			if (isAsync) {
+				return this.relevantPromise(that, () =>
+					Function_apply(handler, that, args)
+				);
 			}
 
 			return Function_apply(handler, that, args);
@@ -875,9 +887,20 @@ return { apply, construct };
 			old: (...args: any[]) => any,
 			validate: IDLValidator | undefined
 		) => {
+			// settled once, at install time, rather than on every call
+			const isAsync =
+				Object_getPrototypeOf(handler) === AsyncFunction_prototype;
+
 			return new Proxy(old, {
 				apply(_, thisArg, args) {
-					return attemptToCallHandler(handler, thisArg, args, old, validate);
+					return attemptToCallHandler(
+						handler,
+						thisArg,
+						args,
+						old,
+						validate,
+						isAsync
+					);
 				},
 			});
 		};
@@ -956,7 +979,8 @@ return { apply, construct };
 							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
 							args,
 							baseclass,
-							validate
+							validate,
+							false
 						),
 				});
 			} else {
@@ -987,25 +1011,35 @@ return { apply, construct };
 		return this.context.config;
 	}
 
+	// The client whose realm created `obj`.
+	// note: this is based on a heuristic that can be fooled, i don't know of a 100% reliable way to do this
+	relevantClient(obj: any): ScramjetClient {
+		let current = obj;
+
+		// bounded: a page can build an arbitrarily long prototype chain
+		for (let i = 0; i < 64; i++) {
+			if (current === null || current === undefined) break;
+
+			const next = Object_getPrototypeOf(current);
+			if (next === null) return this.box.realms.get(current) ?? this;
+
+			current = next;
+		}
+
+		return this;
+	}
+
+	// generate a promise in the same realm as the relevant object
 	relevantPromise<T>(
 		relevantObject: any,
 		callback: () => Promise<T>
 	): Promise<T> {
-		// TODO: this is pretty bad? but i think the only other way is to keep a map of every single constructor
-		// and even then i think that can be overwritten?
-		const relevantClient = this.box.functions.get(
-			relevantObject.constructor.constructor
-		);
-		const promisector = relevantClient.native.window(
-			relevantClient.global
-		).Promise;
-		return new promisector(async (resolve, reject) => {
-			try {
-				const result = await callback();
-				resolve(result);
-			} catch (err) {
-				reject(err);
-			}
+		const RelevantPromise = this.relevantClient(relevantObject).nativeStore.get(
+			"window"
+		)!.Promise.value as PromiseConstructor;
+
+		return new RelevantPromise<T>((resolve, reject) => {
+			callback().then(resolve, reject);
 		});
 	}
 }

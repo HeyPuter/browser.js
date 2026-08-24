@@ -323,14 +323,13 @@ export default function (client: ScramjetClient, self: typeof window) {
 		},
 		// it has no setter
 	});
-
+	const isInternal = (name: string) => {
+		return String_startsWith(name, "scramjet-attr-");
+	};
 	client.Intercept(
 		class extends Element {
-			#isInternal(name: string): boolean {
-				return String_startsWith(name, "scramjet-attr-");
-			}
 			removeAttribute(qualifiedName: string): void {
-				if (this.#isInternal(qualifiedName)) return;
+				if (isInternal(qualifiedName)) return;
 				if (!super.hasAttribute(qualifiedName)) return;
 				super.removeAttribute(`scramjet-attr-${qualifiedName}`);
 				super.removeAttribute(qualifiedName);
@@ -338,7 +337,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 			@Arguments("DOMString", "boolean?")
 			toggleAttribute(qualifiedName: string, force?: boolean): boolean {
-				if (this.#isInternal(qualifiedName)) return false;
+				if (isInternal(qualifiedName)) return false;
 				// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
 				// no op here?
 				// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
@@ -363,44 +362,41 @@ export default function (client: ScramjetClient, self: typeof window) {
 			@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
 			set innerHTML(value: string) {
 				let newval;
-				const scriptBlockType = client.box.instanceof(
-					ctx.this,
-					"HTMLScriptElement"
-				)
-					? scriptBlockTypeForElement(client, ctx.this)
+				const scriptBlockType = client.box.instanceof(this, "HTMLScriptElement")
+					? scriptBlockTypeForElement(client, this)
 					: null;
 				if (
-					client.box.instanceof(ctx.this, "HTMLScriptElement") &&
+					client.box.instanceof(this, "HTMLScriptElement") &&
 					isScriptType(scriptBlockType)
 				) {
 					newval = rewriteJs(
-						html,
+						value,
 						"(anonymous script element)",
 						client.context,
 						client.meta,
 						isModuleScriptType(scriptBlockType)
 					);
-					new client.native.Element(ctx.this).setAttribute(
+					new client.native.Element(this).setAttribute(
 						"scramjet-attr-script-source-src",
 						bytesToBase64(TextEncoder_encode(newval))
 					);
-				} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-					newval = rewriteCss(html, client.context, client.meta);
+				} else if (client.box.instanceof(this, "HTMLStyleElement")) {
+					newval = rewriteCss(value, client.context, client.meta);
 				} else {
 					try {
-						newval = rewriteHtml(html, client.context, client.meta, {
+						newval = rewriteHtml(value, client.context, client.meta, {
 							loadScripts: false,
 							inline: true,
 							source: client.url.href,
 							apisource: "set Element.prototype.innerHTML",
-							foreignContext: foreignContextForElement(client, ctx.this),
+							foreignContext: foreignContextForElement(client, this),
 						});
 					} catch {
-						newval = html;
+						newval = value;
 					}
 				}
 
-				ctx.set(newval);
+				super.innerHTML = newval;
 			}
 
 			get innerHTML(): string {

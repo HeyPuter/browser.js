@@ -1472,7 +1472,7 @@ export function idlBoolean(value: unknown): boolean {
 export function idlDouble(value: unknown): number {
 	const x = Number(value);
 	if (!Number_isFinite(x)) {
-		throw new TypeError("The provided double value is non-finite");
+		throw new TypeError("The provided double value is non-finite.");
 	}
 
 	return x;

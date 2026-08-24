@@ -40,6 +40,10 @@ export const String_trim = Function_prototype_call.bind(String_prototype_trim);
 export const String_startsWith = Function_prototype_call.bind(
 	String_prototype_startsWith
 );
+export const String_prototype_endsWith = globalThis.String.prototype.endsWith;
+export const String_endsWith = Function_prototype_call.bind(
+	String_prototype_endsWith
+) as (s: string, search: string) => boolean;
 export const String_indexOf = Function_prototype_call.bind(
 	String_prototype_indexOf
 );
@@ -83,6 +87,13 @@ export const Reflect_ownKeys = globalThis.Reflect.ownKeys;
 export const Reflect_construct = globalThis.Reflect.construct;
 export const Reflect_apply = globalThis.Reflect.apply;
 
+// %AsyncFunction.prototype%, the only runtime signal distinguishing a member
+// declared `async` from one that merely happens to return a promise. Requires
+// the bundle's jsc.target to stay at es2017 or later: lower it and swc lowers
+// async functions to generators, and every async member silently stops matching
+export const AsyncFunction_prototype = globalThis.Object.getPrototypeOf(
+	async function () {}
+);
 export const ArrayBuffer_isView = globalThis.ArrayBuffer.isView;
 // WebIDL discriminates buffer types on internal slots, and the byteLength
 // getters are the only reachable test for those slots. Unlike `instanceof` they
@@ -125,6 +136,9 @@ export const URL_revokeObjectURL = globalThis.URL.revokeObjectURL.bind(
 );
 
 export const Error = globalThis.Error;
+// V8 writes a stack's header line with exactly this, for a DOMException as much
+// as for an Error, so a hand-built stack has to use it too
+export const Error_prototype_toString = globalThis.Error.prototype.toString;
 export const TypeError = globalThis.TypeError;
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;

@@ -22,15 +22,14 @@ export default function (client: ScramjetClient, self: Self) {
 		class extends Cache {
 			@Returns("Promise<(Response or undefined)>")
 			@Arguments("(Request or USVString)", "optional CacheQueryOptions")
-			match(
+			async match(
 				request: RequestInfo,
 				options: CacheQueryOptions = {}
 			): Promise<Response | undefined> {
-				return client.relevantPromise(this, async () => {
-					const matched = await super.match(rewriteRequest(request), options);
-					client.box.taggedResponses.add(matched);
-					return matched;
-				});
+				const matched = await super.match(rewriteRequest(request), options);
+				client.box.taggedResponses.add(matched);
+
+				return matched;
 			}
 
 			@Returns("Promise<sequence<Response>>")
@@ -38,34 +37,31 @@ export default function (client: ScramjetClient, self: Self) {
 				"optional (Request or USVString)",
 				"optional CacheQueryOptions"
 			)
-			matchAll(
+			async matchAll(
 				request?: RequestInfo,
 				options: CacheQueryOptions = {}
 			): Promise<readonly Response[]> {
-				return client.relevantPromise(this, async () => {
-					request = request === undefined ? undefined : rewriteRequest(request);
-					const matches = await super.matchAll(request, options);
-					for (const match of matches) {
-						client.box.taggedResponses.add(match);
-					}
-					return matches;
-				});
+				request = request === undefined ? undefined : rewriteRequest(request);
+				const matches = await super.matchAll(request, options);
+				for (const match of matches) {
+					client.box.taggedResponses.add(match);
+				}
+
+				return matches;
 			}
 
 			@Returns("Promise<undefined>")
 			@Arguments("(Request or USVString)")
-			add(request: RequestInfo): Promise<void> {
-				return client.relevantPromise(this, async () => {
-					const response = await client.native
-						.window(self)
-						.fetch(rewriteRequest(request));
-					await super.put(realUrl(request), response);
-				});
+			async add(request: RequestInfo): Promise<void> {
+				const response = await client.native
+					.window(self)
+					.fetch(rewriteRequest(request));
+				await super.put(realUrl(request), response);
 			}
 
 			@Returns("Promise<undefined>")
 			@Arguments("sequence<(Request or USVString)>")
-			addAll(requests: RequestInfo[]): Promise<void> {
+			async addAll(requests: RequestInfo[]): Promise<void> {
 				const promises: Promise<void>[] = [];
 				for (const request of requests) {
 					promises.push(
@@ -77,9 +73,7 @@ export default function (client: ScramjetClient, self: Self) {
 						})()
 					);
 				}
-				return client.relevantPromise(this, async () => {
-					return await Promise_all(promises);
-				});
+				await Promise_all(promises);
 			}
 
 			@Returns("Promise<undefined>")
@@ -128,7 +122,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 			@Returns("Promise<(Response or undefined)>")
 			@Arguments("(Request or USVString)", "optional MultiCacheQueryOptions")
-			match(
+			async match(
 				request: RequestInfo,
 				options: MultiCacheQueryOptions = {}
 			): Promise<Response | undefined> {
@@ -155,11 +149,10 @@ export default function (client: ScramjetClient, self: Self) {
 				}
 
 				// TODO: this leaks across origins but i don't care
-				return client.relevantPromise(this, async () => {
-					const match = await super.match(request, options);
-					client.box.taggedResponses.add(match);
-					return match;
-				});
+				const match = await super.match(request, options);
+				client.box.taggedResponses.add(match);
+
+				return match;
 			}
 
 			@Returns("Promise<boolean>")
