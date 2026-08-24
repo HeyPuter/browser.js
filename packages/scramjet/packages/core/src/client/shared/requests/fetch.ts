@@ -1,6 +1,5 @@
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./XMLHttpRequest";
-import { String } from "@/shared/snapshot";
 import { Arguments, Constructor, Returns, Type } from "@client/webidl";
 
 /**
@@ -20,9 +19,13 @@ function rewriteUrlOptionsForFetch(init: RequestInit | undefined) {
 }
 
 export default function (client: ScramjetClient, self: Self) {
+	const nativeWindow = new client.native.window(self);
+
 	client.Intercept(
 		class extends Window {
-			@Arguments("RequestInfo", "optional RequestInit")
+			// RequestInfo is the Fetch typedef `(Request or USVString)`.
+			// https://fetch.spec.whatwg.org/#requestinfo
+			@Arguments("(Request or USVString)", "optional RequestInit")
 			@Returns("Promise<Response>")
 			static fetch(input: RequestInfo, requestInit: RequestInit = {}) {
 				if (typeof input === "string") {
@@ -32,14 +35,19 @@ export default function (client: ScramjetClient, self: Self) {
 					);
 				}
 
-				return this.fetch(input, requestInit);
+				// TODO: how do i handle promised realms?
+				return (async () => {
+					const response = await nativeWindow.fetch(input, requestInit);
+					client.box.taggedResponses.add(response);
+					return response;
+				})();
 			}
 		}
 	);
 
 	client.Intercept(
 		class extends Request {
-			@Constructor("RequestInfo", "optional RequestInit")
+			@Constructor("(Request or USVString)", "optional RequestInit")
 			static konstructor(input: RequestInfo, requestInit: RequestInit = {}) {
 				if (typeof input === "string") {
 					input = client.rewriteUrl(
@@ -56,28 +64,39 @@ export default function (client: ScramjetClient, self: Self) {
 			}
 		}
 	);
-
-	client.Trap(["Request.prototype.url", "Response.prototype.url"], {
-		get(ctx) {
-			return client.unrewriteUrl(ctx.get() as string);
-		},
-	});
-
-	// TODO: this needs to be only for response objects created from a fetch
-	client.Trap("Response.prototype.headers", {
-		get(ctx) {
-			const headers = ctx.get() as Headers;
-			const newHeaders = new Headers();
-
-			for (const [key, value] of headers.entries()) {
-				if (key.toLowerCase() === "link") {
-					newHeaders.append(key, unrewriteLinkHeader(value, client.context));
-				} else {
-					newHeaders.append(key, value);
+	client.Intercept(
+		class extends Response {
+			@Type("USVString")
+			get url(): string {
+				if (client.box.taggedResponses.has(this)) {
+					return client.unrewriteUrl(super.url);
 				}
+				return super.url;
 			}
+			@Type("Headers")
+			get headers(): Headers {
+				const headers = super.headers;
+				if (client.box.taggedResponses.has(this)) {
+					// this is a response object that came from a network request. tag it so that the headers can be replaced later
+					client.box.taggedHeaders.add(headers);
+				}
+				return headers;
+			}
+		}
+	);
 
-			return newHeaders;
-		},
-	});
+	client.Intercept(
+		class extends Headers {
+			@Arguments("ByteString")
+			@Returns("ByteString?")
+			get(name: string): string | null {
+				const value = super.get(name);
+				if (client.box.taggedHeaders.has(this)) {
+					const orig = super.get(`X-Scramjet-${name}`);
+					if (orig) return orig;
+				}
+				return value;
+			}
+		}
+	);
 }

@@ -1,8 +1,6 @@
 {
 	"tests": [
-		"cachestorage-add-and-addall",
-		"cachestorage-keys-not-namespaced",
-		"cachestorage-request-keys-urls",
+		"cachestorage-query-ignore-search",
 		"cssurls-author-string-preserved",
 		"cssurls-computed-style",
 		"cssurls-cssom-write-serialization",

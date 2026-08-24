@@ -43,6 +43,7 @@ import {
 	String_charCodeAt,
 	String_fromCharCode,
 	Symbol_iterator,
+	TypeError,
 } from "@/shared/snapshot";
 import type { AnyFunction } from "@/types";
 
@@ -147,6 +148,7 @@ export interface IDLNamedTypes {
 	TimerHandler: string | AnyFunction;
 	MessageEventSource: WindowProxy | MessagePort | ServiceWorker;
 	WindowProxy: Window;
+	CookieList: CookieList;
 
 	// --- websockets ------------------------------------------------------
 	// declared in global.d.ts. dictionaries are interfaces, not values, so
@@ -170,10 +172,12 @@ export interface IDLNamedTypes {
 	InsertPosition: InsertPosition;
 	DocumentReadyState: DocumentReadyState;
 	ScrollBehavior: ScrollBehavior;
+	CookieSameSite: CookieSameSite;
 
 	// --- dictionaries ----------------------------------------------------
 	RequestInit: RequestInit;
 	ResponseInit: ResponseInit;
+	CacheQueryOptions: CacheQueryOptions;
 	MultiCacheQueryOptions: MultiCacheQueryOptions;
 	BlobPropertyBag: BlobPropertyBag;
 	WorkerOptions: WorkerOptions;
@@ -188,6 +192,10 @@ export interface IDLNamedTypes {
 	ShadowRootInit: ShadowRootInit;
 	GetRootNodeOptions: GetRootNodeOptions;
 	ScrollIntoViewOptions: ScrollIntoViewOptions;
+	CookieInit: CookieInit;
+	CookieListItem: CookieListItem;
+	CookieStoreGetOptions: CookieStoreGetOptions;
+	CookieStoreDeleteOptions: CookieStoreDeleteOptions;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +307,36 @@ export interface IDLUnresolved<Name extends string> {
 }
 
 /**
+ * Which way a value is crossing the IDL boundary.
+ *
+ * WebIDL's ES type mapping is written for values coming *in* — an argument
+ * being converted to an IDL type — and that's the direction `"in"` models. A
+ * return type is checked the other way round: the member hands a value back,
+ * and the declaration only has to *accept* what it produces. TypeScript spells
+ * two of those outbound types more loosely than the spec does, so checking a
+ * return against the inbound resolution rejects correct code:
+ *
+ *   - `undefined` is `void`. A method with no `return` types as `void`, and
+ *     lib.dom writes `Promise<void>` where the IDL says `Promise<undefined>`
+ *     (`Cache.add`, `Cache.put`, ...). `void` is not assignable to `undefined`.
+ *   - `sequence<T>` is `readonly T[]`. The spec's sequence is a fresh mutable
+ *     array, but a member is free to hand back a readonly view of one, and
+ *     lib.dom does exactly that for `Cache.matchAll` and `Cache.keys`.
+ *     `readonly T[]` is not assignable to `T[]`.
+ *
+ * Both differences are widenings — every `T[]` is a `readonly T[]`, every
+ * `undefined` is a `void` — so `"out"` accepts everything `"in"` does and
+ * nothing beyond those two shapes.
+ *
+ * One caveat comes with the `undefined` -> `void` mapping: TypeScript lets a
+ * function returning anything satisfy a `=> void` constraint, so a top-level
+ * `@Returns("undefined")` stops constraining the return type. That is the same
+ * hole every `=> void` constraint has, and it only opens at the top level —
+ * inside `Promise<...>` the type argument is checked exactly.
+ */
+type IDLDirection = "in" | "out";
+
+/**
  * Resolve a WebIDL type string to the TypeScript type it denotes.
  *
  * ```ts
@@ -311,32 +349,46 @@ export interface IDLUnresolved<Name extends string> {
  * FromIDL<"(DOMString or Blob)?">        // string | Blob | null
  * FromIDL<"FrozenArray<Element>">        // readonly Element[]
  * ```
+ *
+ * Pass `"out"` for a type in return position — see {@link IDLDirection}.
+ *
+ * ```ts
+ * FromIDL<"Promise<undefined>", "out">        // Promise<void>
+ * FromIDL<"Promise<sequence<Response>>", "out">  // Promise<readonly Response[]>
+ * ```
  */
-export type FromIDL<S extends string> = ResolveType<
-	StripExtendedAttributes<Trim<S>>
->;
+export type FromIDL<
+	S extends string,
+	D extends IDLDirection = "in",
+> = ResolveType<StripExtendedAttributes<Trim<S>>, D>;
 
-type ResolveType<S extends string> =
+type ResolveType<S extends string, D extends IDLDirection> =
 	// nullable — anchored at the end, so `sequence<DOMString?>` isn't caught here
 	S extends `${infer Inner}?`
-		? ResolveType<Trim<Inner>> | null
+		? ResolveType<Trim<Inner>, D> | null
 		: // union
 			S extends `(${infer Inner})`
 			? Balanced<Inner> extends true
-				? ResolveUnion<SplitUnionMembers<Trim<Inner>>>
+				? ResolveUnion<SplitUnionMembers<Trim<Inner>>, D>
 				: IDLUnresolved<S>
 			: // parameterized
 				S extends `sequence<${infer T}>`
-				? FromIDL<T>[]
+				? D extends "out"
+					? readonly FromIDL<T, D>[]
+					: FromIDL<T, D>[]
 				: S extends `FrozenArray<${infer T}>`
-					? readonly FromIDL<T>[]
-					: S extends `ObservableArray<${infer T}>`
-						? FromIDL<T>[]
+					? readonly FromIDL<T, D>[]
+					: // an ObservableArray is only ever an attribute's type, and its
+						// setter takes a real mutable array, so it stays mutable both ways
+						S extends `ObservableArray<${infer T}>`
+						? FromIDL<T, D>[]
 						: S extends `Promise<${infer T}>`
-							? Promise<FromIDL<T>>
-							: S extends `record<${infer K},${infer V}>`
-								? Record<Extract<FromIDL<K>, PropertyKey>, FromIDL<V>>
-								: ResolveName<S>;
+							? Promise<FromIDL<T, D>>
+							: // a record's key type is a string type whichever way it's
+								// crossing, so only the value follows the direction
+								S extends `record<${infer K},${infer V}>`
+								? Record<Extract<FromIDL<K>, PropertyKey>, FromIDL<V, D>>
+								: ResolveName<S, D>;
 
 /**
  * Split the inside of a union on top-level ` or `. Takes the leftmost ` or `
@@ -353,11 +405,27 @@ type SplitUnionMembers<
 		: SplitUnionMembers<Rest, `${Pending}${Head} or `, Acc>
 	: [...Acc, `${Pending}${S}`];
 
-type ResolveUnion<M extends readonly string[]> = M extends readonly [
+/**
+ * Whether `S` has a ` or ` at its own level — i.e. whether it is a union
+ * written without its parentheses.
+ *
+ * Testing for ` or ` anywhere is not enough: `sequence<(Request or USVString)>`
+ * is a perfectly parenthesized union nested inside a parameterized type, and
+ * neither is checking for a leading `(`, which misses that same case.
+ * {@link SplitUnionMembers} already knows how to tell a real separator from a
+ * nested one, and it yields a single member exactly when there is none.
+ */
+type HasTopLevelUnion<S extends string> =
+	SplitUnionMembers<S> extends readonly [string] ? false : true;
+
+type ResolveUnion<
+	M extends readonly string[],
+	D extends IDLDirection,
+> = M extends readonly [
 	infer H extends string,
 	...infer R extends readonly string[],
 ]
-	? FromIDL<H> | ResolveUnion<R>
+	? FromIDL<H, D> | ResolveUnion<R, D>
 	: never;
 
 /**
@@ -366,13 +434,19 @@ type ResolveUnion<M extends readonly string[]> = M extends readonly [
  * `"HTMLIFrameElement"` finds `typeof HTMLIFrameElement` and unwraps to the
  * instance type.
  */
-type ResolveName<S extends string> = S extends keyof IDLPrimitives
-	? IDLPrimitives[S]
-	: S extends keyof IDLNamedTypes
-		? IDLNamedTypes[S]
-		: S extends keyof GlobalThis
-			? InterfaceInstance<GlobalThis[S]>
-			: IDLUnresolved<S>;
+type ResolveName<S extends string, D extends IDLDirection> = S extends
+	| "undefined"
+	| "void"
+	? D extends "out"
+		? void
+		: undefined
+	: S extends keyof IDLPrimitives
+		? IDLPrimitives[S]
+		: S extends keyof IDLNamedTypes
+			? IDLNamedTypes[S]
+			: S extends keyof GlobalThis
+				? InterfaceInstance<GlobalThis[S]>
+				: IDLUnresolved<S>;
 
 type InterfaceInstance<Ctor> = Ctor extends abstract new (
 	...args: never
@@ -417,10 +491,10 @@ type CheckType<S extends string> = S extends `${infer Inner}?`
 										| keyof IDLNamedTypes
 										| keyof GlobalThis
 								? never
-								: // a bare ` or ` this far down means the parentheses were
-									// left off, which is easy to do when copying a member's
-									// IDL out of a spec, where the type is written inline
-									S extends `${string} or ${string}`
+								: // a top-level ` or ` this far down means the parentheses
+									// were left off, which is easy to do when copying a
+									// member's IDL out of a spec, where it's written inline
+									HasTopLevelUnion<S> extends true
 									? `${S}  <- a union needs parentheses: "(${S})"`
 									: S;
 
@@ -469,10 +543,8 @@ export type UnresolvedIDLArgumentNames<S extends string> =
 	// the missing-parentheses case has to be caught before the argument name is
 	// stripped, or the suggested spelling comes back mangled: the name-stripper
 	// reads the last word of `TrustedHTML or DOMString` as an argument name
-	ArgumentBody<S> extends `${string} or ${string}`
-		? ArgumentBody<S> extends `(${string}`
-			? UnresolvedIDLNames<ArgumentType<S>>
-			: `${ArgumentBody<S>}  <- a union needs parentheses: "(${ArgumentBody<S>})"`
+	HasTopLevelUnion<ArgumentBody<S>> extends true
+		? `${ArgumentBody<S>}  <- a union needs parentheses: "(${ArgumentBody<S>})"`
 		: UnresolvedIDLNames<ArgumentType<S>>;
 
 // ---------------------------------------------------------------------------
@@ -656,12 +728,15 @@ export function Arguments<const A extends readonly string[]>(
  * @Returns("ByteString?")
  * override getResponseHeader(name) { ... }
  * ```
+ *
+ * The declared type only has to *accept* what the member returns, so it is
+ * resolved in the `"out"` direction — see {@link IDLDirection}.
  */
 export function Returns<const S extends string>(
 	type: S
 ): Checked<
 	S,
-	<This, Value extends (...args: never) => FromIDL<S>>(
+	<This, Value extends (...args: never) => FromIDL<S, "out">>(
 		value: Value,
 		context: ClassMethodDecoratorContext<This, Value>
 	) => void
@@ -1336,3 +1411,96 @@ const IDL_PRIMITIVE_COERCERS: Record<string, IDLCoerce> = {
 	},
 	symbol: (value) => (typeof value === "symbol" ? value : idlReject()),
 };
+
+// ---------------------------------------------------------------------------
+// conversions for a member that reimplements rather than delegates
+//
+// `compileIDLValidator` front-runs the ES-to-IDL conversion so an interceptor
+// body only ever sees converted values — but it can't do that for a dictionary
+// argument. Telling `{name: x}` from `{name: y}` needs the dictionary's own
+// member types, which the decorator's string doesn't carry, so a dictionary is
+// passed through raw and the native binding converts it.
+//
+// That works for a body that hands the dictionary onward. A body that reads
+// the members itself and never calls the native — `CookieStore`, whose whole
+// state lives in the cookie jar rather than in the browser — has no native
+// conversion to inherit, so it has to run these itself.
+//
+// They throw a real TypeError rather than the validator's rejection sentinel:
+// a rejection means "let the native throw the authentic error instead", and
+// here there is no native call left to delegate to.
+//
+// The one rule that matters when calling these: a dictionary member is a
+// page-controlled getter, so read it into a local exactly once, and read the
+// members in the order WebIDL converts them (lexicographic by name, inherited
+// dictionaries first).
+// https://webidl.spec.whatwg.org/#es-dictionary
+// ---------------------------------------------------------------------------
+
+/** https://webidl.spec.whatwg.org/#es-DOMString */
+export function idlDOMString(value: unknown): string {
+	// String(symbol) is special-cased to succeed in JS, but IDL says throw
+	if (typeof value === "symbol") {
+		throw new TypeError("Cannot convert a Symbol value to a string");
+	}
+
+	return String(value);
+}
+
+/** https://webidl.spec.whatwg.org/#es-USVString */
+export function idlUSVString(value: unknown): string {
+	return toIDLScalarValueString(idlDOMString(value));
+}
+
+/** https://webidl.spec.whatwg.org/#es-boolean */
+export function idlBoolean(value: unknown): boolean {
+	return !!value;
+}
+
+/**
+ * https://webidl.spec.whatwg.org/#es-double — `double` is restricted, so a
+ * non-finite value is a TypeError rather than a NaN. `DOMHighResTimeStamp` is
+ * a typedef for it.
+ */
+export function idlDouble(value: unknown): number {
+	const x = Number(value);
+	if (!Number_isFinite(x)) {
+		throw new TypeError("The provided double value is non-finite");
+	}
+
+	return x;
+}
+
+/** https://webidl.spec.whatwg.org/#es-enumeration */
+export function idlEnum<T extends string>(
+	value: unknown,
+	values: readonly T[],
+	name: string
+): T {
+	const s = idlDOMString(value);
+	for (let i = 0; i < values.length; i++) {
+		if (values[i] === s) return values[i];
+	}
+
+	throw new TypeError(
+		`The provided value '${s}' is not a valid enum value of type ${name}.`
+	);
+}
+
+/**
+ * https://webidl.spec.whatwg.org/#es-dictionary — undefined and null are both
+ * the empty dictionary, anything else non-object is a TypeError. The members
+ * themselves are still raw; convert each one with the helpers above.
+ */
+export function idlDictionary(
+	value: unknown,
+	name: string
+): Record<string, unknown> {
+	if (value === undefined || value === null) return {};
+
+	if (typeof value !== "object" && typeof value !== "function") {
+		throw new TypeError(`The provided value is not of type '${name}'.`);
+	}
+
+	return value as Record<string, unknown>;
+}

@@ -6,6 +6,7 @@ import {
 	Object_getOwnPropertyDescriptor,
 	_WeakMap,
 	_Map,
+	_WeakSet,
 } from "@/shared/snapshot";
 import {
 	FakeWebSocketState,
@@ -18,7 +19,10 @@ export class SingletonBox {
 	documents: _Map<Document, ScramjetClient> = new _Map();
 	histories: _Map<History, ScramjetClient> = new _Map();
 	locations: _Map<Location, ScramjetClient> = new _Map();
+	functions: _Map<typeof Function, ScramjetClient> = new _Map();
 	writeRewriters: _WeakMap<Document, IncrementalHtmlRewriter> = new _WeakMap();
+	taggedHeaders: _WeakSet<Headers> = new _WeakSet();
+	taggedResponses: _WeakSet<Response> = new _WeakSet();
 	unproxy: _Map<any, any> = new _Map();
 
 	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap();
@@ -37,6 +41,7 @@ export class SingletonBox {
 		this.documents.set(global.document, client);
 		this.locations.set(global.location, client);
 		this.histories.set(global.history, client);
+		this.functions.set(global.Function, client);
 
 		Object_getOwnPropertyNames(global).forEach((prop) => {
 			const desc = Object_getOwnPropertyDescriptor(global, prop);

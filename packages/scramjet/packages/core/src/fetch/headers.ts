@@ -65,6 +65,13 @@ export async function rewriteResponseHeaders(
 	rawHeaders: RawHeaders
 ): Promise<ScramjetHeaders> {
 	const headers = ScramjetHeaders.fromRawHeaders(rawHeaders);
+	for (const [key, value] of rawHeaders) {
+		if (key.toLowerCase().startsWith("set-cookie")) {
+			// this is purely for browser consumption via Headers.get, and set-cookie is always hidden from js
+			continue;
+		}
+		headers.set(`X-Scramjet-${key}`, value);
+	}
 
 	for (const cspHeader of SEC_HEADERS) {
 		headers.delete(cspHeader);

@@ -22,7 +22,7 @@ import {
 	rewriteResponseHeaders,
 	worstFetchSite,
 } from "./headers";
-import { _URL } from "@/shared/snapshot";
+import { _URL, URL_revokeObjectURL } from "@/shared/snapshot";
 
 export async function doHandleFetch(
 	handler: ScramjetFetchHandler,
@@ -275,7 +275,7 @@ async function handleBlobOrDataUrlFetch(
 		headers.set("Cross-Origin-Embedder-Policy", "require-corp");
 	}
 
-	if (parsed.isFakeDataURL) URL.revokeObjectURL(dataUrl);
+	if (parsed.isFakeDataURL) URL_revokeObjectURL(dataUrl);
 
 	return {
 		body,

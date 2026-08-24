@@ -849,10 +849,7 @@ return { apply, construct };
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
 		const fakePrototype = {};
-		Object_defineProperties(
-			fakePrototype,
-			this.nativeStore.get(baseclass.name)
-		);
+		Object_defineProperties(fakePrototype, this.nativeStore.get(classname));
 		Object_setPrototypeOf(handler.prototype, fakePrototype);
 
 		const attemptToCallHandler = (
@@ -987,5 +984,27 @@ return { apply, construct };
 
 	get config(): ScramjetConfig {
 		return this.context.config;
+	}
+
+	relevantPromise<T>(
+		relevantObject: any,
+		callback: () => Promise<T>
+	): Promise<T> {
+		// TODO: this is pretty bad? but i think the only other way is to keep a map of every single constructor
+		// and even then i think that can be overwritten?
+		const relevantClient = this.box.functions.get(
+			relevantObject.constructor.constructor
+		);
+		const promisector = relevantClient.native.window(
+			relevantClient.global
+		).Promise;
+		return new promisector(async (resolve, reject) => {
+			try {
+				const result = await callback();
+				resolve(result);
+			} catch (err) {
+				reject(err);
+			}
+		});
 	}
 }

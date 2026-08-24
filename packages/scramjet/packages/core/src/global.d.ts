@@ -80,3 +80,25 @@ declare const dbg: {
 // eslint-disable-next-line scramjet-core/no-globals
 declare type GlobalThis = typeof globalThis;
 declare type Self = Window & GlobalThis;
+
+/**
+ * lib.dom declares `CookieListItem` as `{ name?, value? }`, which is what the
+ * Cookie Store spec's *idl-less* prose once said. The spec's dictionary — and
+ * what Chrome actually resolves `cookieStore.get()` with — carries the full
+ * attribute set, so declare the rest here.
+ *
+ * Merges with the lib.dom interface rather than replacing it; this file is a
+ * script, so a top-level interface is already global.
+ *
+ * https://cookiestore.spec.whatwg.org/#dictdef-cookielistitem
+ */
+interface CookieListItem {
+	/** null for a host-only cookie */
+	domain?: string | null;
+	path?: string;
+	/** ms since the epoch, null for a session cookie */
+	expires?: DOMHighResTimeStamp | null;
+	secure?: boolean;
+	sameSite?: CookieSameSite;
+	partitioned?: boolean;
+}
