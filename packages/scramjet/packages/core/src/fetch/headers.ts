@@ -59,6 +59,31 @@ function rewriteLinkHeader(
 	});
 }
 
+/**
+ * Copy every original header under the carrier prefix.
+ *
+ * The client-side `Headers`, `XMLHttpRequest` and cache views read *only* the
+ * carriers, so a response that reaches the page without them reads back as
+ * having no headers at all rather than as having its own. Every path in
+ * `doHandleFetch` that returns a response the page can observe has to call
+ * this, not just the network one - `blob:` and `data:` URLs are rewritten to
+ * proxy URLs and served by the service worker like anything else.
+ */
+export function attachCarriedHeaders(
+	headers: ScramjetHeaders,
+	rawHeaders: RawHeaders
+) {
+	for (const [key, value] of rawHeaders) {
+		if (key.toLowerCase().startsWith("set-cookie")) {
+			// this is purely for browser consumption via Headers.get, and set-cookie is always hidden from js
+			continue;
+		}
+		// appended, not set: a header the origin sent more than once has to read
+		// back through the carrier exactly as the browser would have combined it
+		headers.append(carriedHeaderName(key), value);
+	}
+}
+
 export async function rewriteResponseHeaders(
 	handler: ScramjetFetchHandler,
 	request: ScramjetFetchRequest,
@@ -66,13 +91,7 @@ export async function rewriteResponseHeaders(
 	rawHeaders: RawHeaders
 ): Promise<ScramjetHeaders> {
 	const headers = ScramjetHeaders.fromRawHeaders(rawHeaders);
-	for (const [key, value] of rawHeaders) {
-		if (key.toLowerCase().startsWith("set-cookie")) {
-			// this is purely for browser consumption via Headers.get, and set-cookie is always hidden from js
-			continue;
-		}
-		headers.append(carriedHeaderName(key), value);
-	}
+	attachCarriedHeaders(headers, rawHeaders);
 
 	for (const cspHeader of SEC_HEADERS) {
 		headers.delete(cspHeader);

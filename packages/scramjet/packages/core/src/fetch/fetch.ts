@@ -19,6 +19,7 @@ import { Tap } from "@/Tap";
 import {
 	computeFetchSite,
 	rewriteRequestHeaders,
+	attachCarriedHeaders,
 	rewriteResponseHeaders,
 	worstFetchSite,
 } from "./headers";
@@ -266,6 +267,9 @@ async function handleBlobOrDataUrlFetch(
 		);
 	}
 	const headers = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
+	// carried before the normalisation and the isolation headers below, so the
+	// page reads back what the blob or data URL actually declared
+	attachCarriedHeaders(headers, response.rawHeaders);
 
 	// blob urls actually *can* set charsets, so we need to normalize them if it goes down the html path
 	normalizeContentType(parsed, headers);

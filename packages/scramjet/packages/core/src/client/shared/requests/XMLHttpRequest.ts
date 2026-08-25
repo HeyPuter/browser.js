@@ -1,6 +1,9 @@
 import {
+	Array_join,
+	Array_sort,
 	String_indexOf,
 	String_split,
+	String_startsWith,
 	String_substring,
 	String_toLowerCase,
 } from "@/shared/snapshot";
@@ -8,17 +11,49 @@ import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
 import { ScramjetClient } from "@client/client";
 import { Arguments, Returns, Type } from "@client/webidl";
 
-export default function (client: ScramjetClient, self: Self) {
+export const enabled = (client: ScramjetClient, self: Self) =>
+	"XMLHttpRequest" in self;
+
+export default function (client: ScramjetClient) {
 	client.Intercept(class extends XMLHttpRequest {
-		@Arguments("ByteString", "USVString")
-		open(method: string, url: string) {
+		@Arguments(
+			"ByteString",
+			"USVString",
+			"optional boolean",
+			"optional USVString?",
+			"optional USVString?"
+		)
+		@Returns("undefined")
+		open(
+			method: string,
+			url: string,
+			isAsync?: boolean,
+			username?: string | null,
+			password?: string | null
+		): void {
 			const rewritten = client.rewriteUrl(url);
-			return super.open(method, rewritten, true);
+
+			if (arguments.length < 3) return super.open(method, rewritten);
+
+			if (isAsync === false) {
+				// TODO: bring back sync xhr
+				throw client.errors.domException("InvalidAccessError", {
+					execute: "open",
+					on: "XMLHttpRequest",
+					detail: "Synchronous requests are not supported.",
+				});
+			}
+
+			return super.open(method, rewritten, isAsync, username, password);
 		}
 
 		@Type("USVString")
 		get responseURL() {
-			return client.unrewriteUrl(super.responseURL);
+			const url = super.responseURL;
+
+			return String_startsWith(url, client.context.prefix.href)
+				? client.unrewriteUrl(url)
+				: url;
 		}
 
 		@Returns("ByteString?")
@@ -50,9 +85,9 @@ export default function (client: ScramjetClient, self: Self) {
 
 			// a carrier sorts under `x-`, and the name it stands for almost never
 			// does, so the list has to be re-sorted rather than filtered in place
-			restored.sort();
+			Array_sort(restored);
 
-			return restored.length ? restored.join("\r\n") + "\r\n" : "";
+			return restored.length ? Array_join(restored, "\r\n") + "\r\n" : "";
 		}
 	});
 }

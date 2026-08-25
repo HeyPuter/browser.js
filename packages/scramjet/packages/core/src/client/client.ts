@@ -35,7 +35,6 @@ import {
 	_URL,
 	Error,
 	String,
-	String_endsWith,
 	Reflect_get,
 	Reflect_ownKeys,
 	Array_isArray,
@@ -186,6 +185,20 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 
 	return null;
 }
+
+/**
+ * Stands in for the global scope's own interface in an interceptor's heritage.
+ *
+ * A global member like `fetch` belongs to `Window` in a document and to
+ * `WorkerGlobalScope` in a worker, and neither name exists in the other realm —
+ * so naming either one directly is a ReferenceError half the time, and picking
+ * between them means feature-detecting at class-evaluation time. Extend this
+ * instead: it exists everywhere, and `Intercept` resolves it to the global
+ * object itself, which is where both engines actually keep those members.
+ *
+ * Typed as `typeof Window` so members still check against lib.dom.
+ */
+export const GlobalScope = class {} as unknown as typeof Window;
 
 export class ScramjetClient {
 	locationProxy: any;
@@ -862,16 +875,12 @@ return { apply, construct };
 	Intercept(handler: any): void {
 		const foreignbaseclass = Object_getPrototypeOf(handler);
 		const globalname = foreignbaseclass.name;
-		let classname = globalname;
-		// the global scope's interface is `Window` in a document and one of the
-		// `*GlobalScope`s in a worker. all of them name the same thing as far as
-		// interception goes - the global object itself, whose members Blink
-		// installs as own properties on the instance rather than on a prototype
-		if (classname === "Window" || String_endsWith(classname, "GlobalScope")) {
-			classname = "window";
-		}
-		const baseclass =
-			classname === "window" ? this.global : this.global[classname];
+		// matched by identity, not by name: `GlobalScope` is the one heritage
+		// that resolves to the global object itself rather than to an interface
+		// on it
+		const isglobal = foreignbaseclass === GlobalScope;
+		const classname = isglobal ? "window" : globalname;
+		const baseclass = isglobal ? this.global : this.global[classname];
 		if (!baseclass) return;
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions

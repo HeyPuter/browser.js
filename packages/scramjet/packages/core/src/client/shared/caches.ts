@@ -43,13 +43,15 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	const tag = <T>(response: T): T => {
+		if (!response) return response;
+
 		// are we getting a cache entry that came off a fetch(), or was it created by the user?
 		// Response.url can't be faked, so this proves it
 		const networkProvenance = String_startsWith(
 			new client.native.Response(response).url,
 			client.context.prefix.href
 		);
-		if (response && networkProvenance) {
+		if (networkProvenance) {
 			client.box.taggedResponses.add(response as Response);
 		}
 
