@@ -4,9 +4,12 @@ import {
 	Promise_all,
 	String_startsWith,
 	String_substring,
+	_Set,
+	_URL,
 } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
+	const nGlobal = new client.native.window(self);
 	const scopedName = (name: string) => `${client.url.origin}@${name}`;
 	const rewriteRequest = (request: RequestInfo): RequestInfo =>
 		typeof request === "string"
@@ -15,8 +18,107 @@ export default function (client: ScramjetClient, self: Self) {
 
 	const realUrl = (request: RequestInfo): string =>
 		typeof request === "string"
-			? request
+			? new _URL(request, client.url).href
 			: client.unrewriteUrl(new client.native.Request(request).url);
+
+	/**
+	 * The key as something the native cache will accept.
+	 *
+	 * A Request has to stay a Request. The method is what `ignoreMethod`
+	 * compares and what `put` rejects a non-GET on, and the headers are what
+	 * `Vary` matches against — flattening it to a URL string throws both away.
+	 * Mode, credentials and destination are dropped on purpose: none of them are
+	 * part of a cache key, and all of them differ between two ways of asking for
+	 * the same resource.
+	 */
+	const cacheKey = (request: RequestInfo): RequestInfo => {
+		if (typeof request === "string") return realUrl(request);
+
+		const nRequest = new client.native.Request(request);
+
+		return new nGlobal.Request(realUrl(request), {
+			method: nRequest.method,
+			headers: nRequest.headers,
+		});
+	};
+
+	const tag = <T>(response: T): T => {
+		// are we getting a cache entry that came off a fetch(), or was it created by the user?
+		// Response.url can't be faked, so this proves it
+		const networkProvenance = String_startsWith(
+			new client.native.Response(response).url,
+			client.context.prefix.href
+		);
+		if (response && networkProvenance) {
+			client.box.taggedResponses.add(response as Response);
+		}
+
+		return response;
+	};
+
+	/**
+	 * https://w3c.github.io/ServiceWorker/#cache-addall, which `add` is defined
+	 * as the one-element case of.
+	 *
+	 * Not delegable to the native: it would fetch whichever URL it was keyed
+	 * with, and the key is the *site's*, which does not go through the proxy. So
+	 * the fetch and every check that gates it happen here, in the spec's order —
+	 * scheme, then every response, then the batch itself.
+	 *
+	 * `put` is passed in because `super` only resolves inside a class method.
+	 */
+	const runAddAll = async (
+		requests: RequestInfo[],
+		method: "add" | "addAll",
+		put: (key: RequestInfo, response: Response) => Promise<void>
+	): Promise<void> => {
+		for (let i = 0; i < requests.length; i++) {
+			const url = realUrl(requests[i]);
+			if (
+				!String_startsWith(url, "http:") &&
+				!String_startsWith(url, "https:")
+			) {
+				throw client.errors.typeError({
+					execute: method,
+					on: "Cache",
+					detail: "Request scheme must be http or https",
+				});
+			}
+		}
+
+		// every fetch has to land before anything is written, so a failure part
+		// way through cannot leave half a batch behind
+		const responses = await Promise_all(
+			requests.map((request) => nGlobal.fetch(rewriteRequest(request)))
+		);
+
+		for (let i = 0; i < responses.length; i++) {
+			if (!responses[i].ok) {
+				throw client.errors.typeError({
+					execute: method,
+					on: "Cache",
+					detail: "Request failed",
+				});
+			}
+		}
+
+		const seen = new _Set<string>();
+		for (let i = 0; i < requests.length; i++) {
+			const url = realUrl(requests[i]);
+			if (seen.has(url)) {
+				throw client.errors.domException("InvalidStateError", {
+					execute: method,
+					on: "Cache",
+					detail: `duplicate requests (${url}).`,
+				});
+			}
+			seen.add(url);
+		}
+
+		await Promise_all(
+			requests.map((request, i) => put(cacheKey(request), responses[i]))
+		);
+	};
 
 	client.Intercept(class extends Cache {
 		@Returns("Promise<(Response or undefined)>")
@@ -25,10 +127,7 @@ export default function (client: ScramjetClient, self: Self) {
 			request: RequestInfo,
 			options: CacheQueryOptions = {}
 		): Promise<Response | undefined> {
-			const matched = await super.match(rewriteRequest(request), options);
-			client.box.taggedResponses.add(matched);
-
-			return matched;
+			return tag(await super.match(cacheKey(request), options));
 		}
 
 		@Returns("Promise<sequence<Response>>")
@@ -37,11 +136,11 @@ export default function (client: ScramjetClient, self: Self) {
 			request?: RequestInfo,
 			options: CacheQueryOptions = {}
 		): Promise<readonly Response[]> {
-			request = request === undefined ? undefined : rewriteRequest(request);
-			const matches = await super.matchAll(request, options);
-			for (const match of matches) {
-				client.box.taggedResponses.add(match);
-			}
+			const matches = await super.matchAll(
+				request === undefined ? undefined : cacheKey(request),
+				options
+			);
+			for (const match of matches) tag(match);
 
 			return matches;
 		}
@@ -49,33 +148,23 @@ export default function (client: ScramjetClient, self: Self) {
 		@Returns("Promise<undefined>")
 		@Arguments("(Request or USVString)")
 		async add(request: RequestInfo): Promise<void> {
-			const response = await client.native
-				.window(self)
-				.fetch(rewriteRequest(request));
-			await super.put(realUrl(request), response);
+			return runAddAll([request], "add", (key, response) =>
+				super.put(key, response)
+			);
 		}
 
 		@Returns("Promise<undefined>")
 		@Arguments("sequence<(Request or USVString)>")
 		async addAll(requests: RequestInfo[]): Promise<void> {
-			const promises: Promise<void>[] = [];
-			for (const request of requests) {
-				promises.push(
-					(async () => {
-						const response = await client.native
-							.window(self)
-							.fetch(rewriteRequest(request));
-						await super.put(realUrl(request), response);
-					})()
-				);
-			}
-			await Promise_all(promises);
+			return runAddAll(requests, "addAll", (key, response) =>
+				super.put(key, response)
+			);
 		}
 
 		@Returns("Promise<undefined>")
 		@Arguments("(Request or USVString)", "Response")
 		put(request: RequestInfo, response: Response): Promise<void> {
-			return super.put(realUrl(request), response);
+			return super.put(cacheKey(request), response);
 		}
 
 		@Returns("Promise<boolean>")
@@ -84,7 +173,7 @@ export default function (client: ScramjetClient, self: Self) {
 			request: RequestInfo,
 			options: CacheQueryOptions = {}
 		): Promise<boolean> {
-			return super.delete(realUrl(request), options);
+			return super.delete(cacheKey(request), options);
 		}
 
 		@Returns("Promise<sequence<Request>>")
@@ -94,7 +183,7 @@ export default function (client: ScramjetClient, self: Self) {
 			options: CacheQueryOptions = {}
 		): Promise<readonly Request[]> {
 			if (request === undefined) return super.keys(undefined, options);
-			return super.keys(realUrl(request), options);
+			return super.keys(cacheKey(request), options);
 		}
 	});
 
@@ -117,7 +206,7 @@ export default function (client: ScramjetClient, self: Self) {
 			request: RequestInfo,
 			options: MultiCacheQueryOptions = {}
 		): Promise<Response | undefined> {
-			request = realUrl(request);
+			const key = cacheKey(request);
 
 			if (options !== null && typeof options === "object") {
 				const ignoreMethod = options.ignoreMethod;
@@ -138,10 +227,7 @@ export default function (client: ScramjetClient, self: Self) {
 			}
 
 			// TODO: this leaks across origins but i don't care
-			const match = await super.match(request, options);
-			client.box.taggedResponses.add(match);
-
-			return match;
+			return tag(await super.match(key, options));
 		}
 
 		@Returns("Promise<boolean>")

@@ -35,8 +35,9 @@ import {
 	_URL,
 	Error,
 	String,
-	Object_entries,
+	String_endsWith,
 	Reflect_get,
+	Reflect_ownKeys,
 	Array_isArray,
 	Reflect_has,
 	Reflect_apply,
@@ -247,9 +248,12 @@ export class ScramjetClient {
 										);
 									}
 									if (typeof desc.value === "function") {
-										return (...args: any[]) => {
-											return desc.value.apply(object, args);
-										};
+										const fn = desc.value;
+
+										return new Proxy(fn, {
+											apply: (_t, _thisArg, args) =>
+												Reflect_apply(fn, object, args),
+										});
 									} else if (desc.get) {
 										return desc.get.call(object);
 									}
@@ -278,20 +282,24 @@ export class ScramjetClient {
 			if (typeof value === "function" && "prototype" in value) {
 				const natives = {};
 				const walk = (proto: any) => {
-					Object_assign(natives, Object_getOwnPropertyDescriptors(proto));
 					const prototype = Object_getPrototypeOf(proto);
-					if (!prototype) return;
-					walk(prototype);
+					if (prototype) walk(prototype);
+					Object_assign(natives, Object_getOwnPropertyDescriptors(proto));
 				};
 				walk(value.prototype);
 				this.nativeStore.set(key, natives);
 			}
 		}
-		// special case, globalThis does have a prototype but the methods are bound to the object itself
-		this.nativeStore.set(
-			"window",
-			Object_getOwnPropertyDescriptors(this.global)
-		);
+
+		// handle both globals bound to the scope's prototype, and globals bound to the scope itself (e.g. window)
+		const globals = {};
+		const walkGlobal = (object: any) => {
+			const prototype = Object_getPrototypeOf(object);
+			if (prototype) walkGlobal(prototype);
+			Object_assign(globals, Object_getOwnPropertyDescriptors(object));
+		};
+		walkGlobal(this.global);
+		this.nativeStore.set("window", globals);
 	}
 
 	constructor(
@@ -528,9 +536,17 @@ export class ScramjetClient {
 		});
 
 		for (const module of modules) {
-			if (!module.enabled || module.enabled(this, this.global))
-				module.default(this, this.global);
-			else if (module.disabled) module.disabled(this, this.global);
+			// one module throwing used to abort the loop, so a single interface
+			// missing from this realm silently left every module after it
+			// uninstalled. a hooked-but-incomplete realm is bad; an unhooked one
+			// is a hole, so keep going and be loud about it
+			try {
+				if (!module.enabled || module.enabled(this, this.global))
+					module.default(this, this.global);
+				else if (module.disabled) module.disabled(this, this.global);
+			} catch (err) {
+				dbg.error("failed to install scramjet module", err);
+			}
 		}
 	}
 
@@ -845,11 +861,17 @@ return { apply, construct };
 
 	Intercept(handler: any): void {
 		const foreignbaseclass = Object_getPrototypeOf(handler);
-		let classname = foreignbaseclass.name;
-		if (classname === "Window") {
+		const globalname = foreignbaseclass.name;
+		let classname = globalname;
+		// the global scope's interface is `Window` in a document and one of the
+		// `*GlobalScope`s in a worker. all of them name the same thing as far as
+		// interception goes - the global object itself, whose members Blink
+		// installs as own properties on the instance rather than on a prototype
+		if (classname === "Window" || String_endsWith(classname, "GlobalScope")) {
 			classname = "window";
 		}
-		const baseclass = this.global[classname];
+		const baseclass =
+			classname === "window" ? this.global : this.global[classname];
 		if (!baseclass) return;
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
@@ -861,7 +883,7 @@ return { apply, construct };
 			handler: (...args: any[]) => any,
 			that: any,
 			args: any[],
-			old: (...args: any[]) => any,
+			fallback: (args: any[]) => any,
 			validate: IDLValidator | undefined,
 			isAsync: boolean
 		) => {
@@ -870,7 +892,7 @@ return { apply, construct };
 			// runs exactly once. a rejection means the call is invalid, so skip
 			// our body entirely and let the native throw the real TypeError
 			if (validate && !validate(args)) {
-				return Function_apply(old, that, args);
+				return fallback(args);
 			}
 
 			if (isAsync) {
@@ -882,22 +904,28 @@ return { apply, construct };
 			return Function_apply(handler, that, args);
 		};
 
+		// a getter-only native attribute the interceptor writes to, or the
+		// reverse. never reached by anything we ship, but `new Proxy(undefined)`
+		// throws, so the half has to exist
+		const missingHalf = () => undefined;
+
 		const createProxy = (
 			handler: (...args: any[]) => any,
-			old: (...args: any[]) => any,
+			old: ((...args: any[]) => any) | undefined,
 			validate: IDLValidator | undefined
 		) => {
 			// settled once, at install time, rather than on every call
 			const isAsync =
 				Object_getPrototypeOf(handler) === AsyncFunction_prototype;
+			const target = old || missingHalf;
 
-			return new Proxy(old, {
+			return new Proxy(target, {
 				apply(_, thisArg, args) {
 					return attemptToCallHandler(
 						handler,
 						thisArg,
 						args,
-						old,
+						(a) => Function_apply(target, thisArg, a),
 						validate,
 						isAsync
 					);
@@ -906,79 +934,125 @@ return { apply, construct };
 		};
 
 		const writePrototypeField = (
-			key: string,
+			key: string | symbol,
 			prototype: any,
 			handlerDescriptor: PropertyDescriptor
 		) => {
-			const oldDescriptor = Object_getOwnPropertyDescriptor(prototype, key);
+			// walked rather than read straight off `prototype`, because where an
+			// engine puts an interface's members is not fixed. Blink installs the
+			// global scope's own onto the window instance but a worker's onto
+			// `WorkerGlobalScope.prototype`, and an own-property-only lookup finds
+			// nothing there and silently installs nothing at all
+			let owner = prototype;
+			let oldDescriptor: PropertyDescriptor | undefined;
+			while (owner) {
+				oldDescriptor = Object_getOwnPropertyDescriptor(owner, key);
+				if (oldDescriptor) break;
+				owner = Object_getPrototypeOf(owner);
+			}
+
+			// a member this engine doesn't have. there is nothing to wrap, and
+			// adding it would advertise the proxy rather than hide it
 			if (!oldDescriptor) return;
-
-			const newDescriptor: PropertyDescriptor = {};
-
-			// a getter takes no arguments, so there is nothing to validate on one
-			if (handlerDescriptor.get)
-				newDescriptor.get = createProxy(
-					handlerDescriptor.get,
-					oldDescriptor.get,
-					undefined
-				);
-			if (handlerDescriptor.set)
-				newDescriptor.set = createProxy(
-					handlerDescriptor.set,
-					oldDescriptor.set,
-					memberValidator(this.box, handlerDescriptor.set, true)
-				);
-			if (handlerDescriptor.value)
-				newDescriptor.value = createProxy(
-					handlerDescriptor.value,
-					oldDescriptor.value,
-					memberValidator(this.box, handlerDescriptor.value)
+			if (!oldDescriptor.configurable) {
+				dbg.error(
+					`cannot intercept non-configurable ${classname}.${String(key)}`
 				);
 
-			if (oldDescriptor.writable)
+				return;
+			}
+
+			// carried over wholesale rather than rebuilt, so that the half of an
+			// accessor the interceptor did *not* declare keeps working. dropping a
+			// native setter because only a getter was overridden turns every write
+			// into a silent no-op
+			const newDescriptor: PropertyDescriptor = {
+				enumerable: oldDescriptor.enumerable,
+				configurable: oldDescriptor.configurable,
+			};
+
+			if (oldDescriptor.get || oldDescriptor.set) {
+				// a getter takes no arguments, so there is nothing to validate on one
+				newDescriptor.get = handlerDescriptor.get
+					? createProxy(handlerDescriptor.get, oldDescriptor.get, undefined)
+					: oldDescriptor.get;
+				newDescriptor.set = handlerDescriptor.set
+					? createProxy(
+							handlerDescriptor.set,
+							oldDescriptor.set,
+							memberValidator(this.box, handlerDescriptor.set, true)
+						)
+					: oldDescriptor.set;
+			} else {
 				newDescriptor.writable = oldDescriptor.writable;
-			if (oldDescriptor.enumerable)
-				newDescriptor.enumerable = oldDescriptor.enumerable;
-			if (oldDescriptor.configurable)
-				newDescriptor.configurable = oldDescriptor.configurable;
+				newDescriptor.value =
+					"value" in handlerDescriptor
+						? createProxy(
+								handlerDescriptor.value,
+								oldDescriptor.value,
+								memberValidator(this.box, handlerDescriptor.value)
+							)
+						: oldDescriptor.value;
+			}
 
-			delete prototype[key];
-			Object_defineProperty(prototype, key, newDescriptor);
+			// defined over the top rather than deleted first: `delete` would move
+			// the member to the end of the prototype's key order, which is a free
+			// tell that it was touched. and onto whichever object actually holds
+			// it, so the patch does not become a shadowing own property
+			Object_defineProperty(owner, key, newDescriptor);
 		};
 
-		const prototypeDescs = Object_getOwnPropertyDescriptors(handler.prototype);
-		for (const [prop, classDesc] of Object_entries(prototypeDescs)) {
-			if (
-				prop === "constructor" ||
-				prop === "prototype" ||
-				prop === "length" ||
-				prop === "name"
-			)
-				continue;
-			if (isConstructorMember(classDesc)) continue;
+		/**
+		 * Whether `key` is a property the class syntax generated rather than a
+		 * member the interceptor declared.
+		 *
+		 * `length` and `name` are also real IDL member names - `IDBDatabase.name`,
+		 * `NodeList.length` - so they can only be skipped when they still carry
+		 * the shape the class evaluation gave them. A declared static of either
+		 * name is writable or an accessor; the generated one is a non-writable
+		 * data property.
+		 */
+		const isClassMetadata = (
+			key: string | symbol,
+			desc: PropertyDescriptor,
+			isStatic: boolean
+		): boolean => {
+			if (key === "prototype") return true;
+			// the only own property class evaluation puts on `.prototype`
+			if (!isStatic) return key === "constructor";
+			if (key !== "length" && key !== "name") return false;
+
+			return "value" in desc && desc.writable === false;
+		};
+
+		const prototypeDescs: Record<string | symbol, PropertyDescriptor> =
+			Object_getOwnPropertyDescriptors(handler.prototype);
+		for (const prop of Reflect_ownKeys(prototypeDescs)) {
+			const classDesc = prototypeDescs[prop];
+			if (isClassMetadata(prop, classDesc, false)) continue;
+			if (isConstructorMember(classDesc.value)) continue;
 			writePrototypeField(prop, baseclass.prototype, classDesc);
 		}
-		const staticDescs = Object_getOwnPropertyDescriptors(handler);
-		for (const [prop, handlerDesc] of Object_entries(staticDescs)) {
-			if (
-				prop === "constructor" ||
-				prop === "prototype" ||
-				prop === "length" ||
-				prop === "name"
-			)
-				continue;
+		const staticDescs: Record<string | symbol, PropertyDescriptor> =
+			Object_getOwnPropertyDescriptors(handler);
+		for (const prop of Reflect_ownKeys(staticDescs)) {
+			const handlerDesc = staticDescs[prop];
+			if (isClassMetadata(prop, handlerDesc, true)) continue;
 			const value = handlerDesc.value;
 			if (value && isConstructorMember(value)) {
-				const nativeCtor = this.nativeStore.get("window")[baseclass.name].value;
+				const nativeCtor = this.nativeStore.get("window")[globalname].value;
 				const validate = memberValidator(this.box, value);
 				// constructor isn't a field, replace the entire class on the global with a proxy
-				this.global[baseclass.name] = new Proxy(baseclass, {
-					construct: (_, args) =>
+				this.global[globalname] = new Proxy(baseclass, {
+					construct: (_, args, newTarget) =>
 						attemptToCallHandler(
 							value,
 							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
 							args,
-							baseclass,
+							// a rejected argument list has to reach the native as a
+							// *construction*, or the page sees "cannot be invoked
+							// without 'new'" where it should see the arity TypeError
+							(a) => Reflect_construct(nativeCtor, a, newTarget),
 							validate,
 							false
 						),
