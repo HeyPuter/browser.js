@@ -19,22 +19,20 @@ function foreignContextForRange(
 }
 
 export default function (client: ScramjetClient, _self: Self) {
-	client.Intercept(
-		class extends Range {
-			@Returns("DocumentFragment")
-			@Arguments("(TrustedHTML or DOMString)")
-			createContextualFragment(string: string | TrustedHTML): DocumentFragment {
-				const html = String(string);
-				const rewritten = rewriteHtml(html, client.context, client.meta, {
-					loadScripts: false,
-					inline: true,
-					source: client.url.href,
-					apisource: "Range.prototype.createContextualFragment",
-					foreignContext: foreignContextForRange(client, this),
-				});
+	client.Intercept(class extends Range {
+		@Returns("DocumentFragment")
+		@Arguments("(TrustedHTML or DOMString)")
+		createContextualFragment(string: string | TrustedHTML): DocumentFragment {
+			const html = String(string);
+			const rewritten = rewriteHtml(html, client.context, client.meta, {
+				loadScripts: false,
+				inline: true,
+				source: client.url.href,
+				apisource: "Range.prototype.createContextualFragment",
+				foreignContext: foreignContextForRange(client, this),
+			});
 
-				return super.createContextualFragment(rewritten);
-			}
+			return super.createContextualFragment(rewritten);
 		}
-	);
+	});
 }

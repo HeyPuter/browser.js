@@ -342,114 +342,112 @@ export default function (client: ScramjetClient, self: typeof window) {
 			: name;
 	};
 
-	client.Intercept(
-		class extends Element {
-			@Arguments("DOMString")
-			@Returns("undefined")
-			removeAttribute(qualifiedName: string): void {
-				if (isInternal(qualifiedName)) return;
-				if (!super.hasAttribute(qualifiedName)) return;
-				super.removeAttribute(`scramjet-attr-${qualifiedName}`);
-				super.removeAttribute(qualifiedName);
-			}
-
-			// `force` is `optional boolean`, not a nullable required one. declaring
-			// it required made every one-argument call fail validation and fall
-			// through to the native, which toggled the real attribute and left the
-			// `scramjet-attr-` mirror behind to answer getAttribute() forever
-			@Arguments("DOMString", "optional boolean")
-			@Returns("boolean")
-			toggleAttribute(qualifiedName: string, force?: boolean): boolean {
-				if (isInternal(qualifiedName)) return false;
-				// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
-				// no op here?
-				// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
-				qualifiedName = qualifiedAttributeName(this, qualifiedName);
-				// 3. Let attribute be the first attribute in this’s attribute list whose qualified name is qualifiedName, and null otherwise.
-				const hasAttribute = super.hasAttribute(qualifiedName);
-				// 4. If attribute is null:
-				if (hasAttribute === false) {
-					if (force === false) return false;
-					// If force is not given or true
-					super.toggleAttribute(`scramjet-attr-${qualifiedName}`, true);
-					super.toggleAttribute(qualifiedName, true);
-					return true;
-				}
-				if (force === true) return true;
-				// If force is not given or false
-				super.toggleAttribute(`scramjet-attr-${qualifiedName}`, false);
-				super.toggleAttribute(qualifiedName, false);
-				return false;
-			}
-
-			@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
-			set innerHTML(value: string) {
-				// the IDL union hands a TrustedHTML through as the object it is -
-				// that is what the brand check is for - and on an engine with no
-				// TrustedHTML at all the whole union degrades to a passthrough. the
-				// rewriters take a string either way
-				value = String(value);
-				let newval;
-				const scriptBlockType = client.box.instanceof(this, "HTMLScriptElement")
-					? scriptBlockTypeForElement(client, this)
-					: null;
-				if (
-					client.box.instanceof(this, "HTMLScriptElement") &&
-					isScriptType(scriptBlockType)
-				) {
-					newval = rewriteJs(
-						value,
-						"(anonymous script element)",
-						client.context,
-						client.meta,
-						isModuleScriptType(scriptBlockType)
-					);
-					new client.native.Element(this).setAttribute(
-						"scramjet-attr-script-source-src",
-						bytesToBase64(TextEncoder_encode(newval))
-					);
-				} else if (client.box.instanceof(this, "HTMLStyleElement")) {
-					newval = rewriteCss(value, client.context, client.meta);
-				} else {
-					try {
-						newval = rewriteHtml(value, client.context, client.meta, {
-							loadScripts: false,
-							inline: true,
-							source: client.url.href,
-							apisource: "set Element.prototype.innerHTML",
-							foreignContext: foreignContextForElement(client, this),
-						});
-					} catch {
-						newval = value;
-					}
-				}
-
-				super.innerHTML = newval;
-			}
-
-			get innerHTML(): string {
-				if (client.box.instanceof(this, "HTMLScriptElement")) {
-					const scriptSource = super.getAttribute(
-						"scramjet-attr-script-source-src"
-					);
-
-					if (scriptSource) {
-						return atob(scriptSource);
-					}
-
-					return super.innerHTML;
-				}
-				if (client.box.instanceof(this, "HTMLStyleElement")) {
-					return super.innerHTML;
-				}
-
-				return unrewriteHtml(
-					super.innerHTML,
-					foreignContextForElement(client, this)
-				);
-			}
+	client.Intercept(class extends Element {
+		@Arguments("DOMString")
+		@Returns("undefined")
+		removeAttribute(qualifiedName: string): void {
+			if (isInternal(qualifiedName)) return;
+			if (!super.hasAttribute(qualifiedName)) return;
+			super.removeAttribute(`scramjet-attr-${qualifiedName}`);
+			super.removeAttribute(qualifiedName);
 		}
-	);
+
+		// `force` is `optional boolean`, not a nullable required one. declaring
+		// it required made every one-argument call fail validation and fall
+		// through to the native, which toggled the real attribute and left the
+		// `scramjet-attr-` mirror behind to answer getAttribute() forever
+		@Arguments("DOMString", "optional boolean")
+		@Returns("boolean")
+		toggleAttribute(qualifiedName: string, force?: boolean): boolean {
+			if (isInternal(qualifiedName)) return false;
+			// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
+			// no op here?
+			// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
+			qualifiedName = qualifiedAttributeName(this, qualifiedName);
+			// 3. Let attribute be the first attribute in this’s attribute list whose qualified name is qualifiedName, and null otherwise.
+			const hasAttribute = super.hasAttribute(qualifiedName);
+			// 4. If attribute is null:
+			if (hasAttribute === false) {
+				if (force === false) return false;
+				// If force is not given or true
+				super.toggleAttribute(`scramjet-attr-${qualifiedName}`, true);
+				super.toggleAttribute(qualifiedName, true);
+				return true;
+			}
+			if (force === true) return true;
+			// If force is not given or false
+			super.toggleAttribute(`scramjet-attr-${qualifiedName}`, false);
+			super.toggleAttribute(qualifiedName, false);
+			return false;
+		}
+
+		@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
+		set innerHTML(value: string) {
+			// the IDL union hands a TrustedHTML through as the object it is -
+			// that is what the brand check is for - and on an engine with no
+			// TrustedHTML at all the whole union degrades to a passthrough. the
+			// rewriters take a string either way
+			value = String(value);
+			let newval;
+			const scriptBlockType = client.box.instanceof(this, "HTMLScriptElement")
+				? scriptBlockTypeForElement(client, this)
+				: null;
+			if (
+				client.box.instanceof(this, "HTMLScriptElement") &&
+				isScriptType(scriptBlockType)
+			) {
+				newval = rewriteJs(
+					value,
+					"(anonymous script element)",
+					client.context,
+					client.meta,
+					isModuleScriptType(scriptBlockType)
+				);
+				new client.native.Element(this).setAttribute(
+					"scramjet-attr-script-source-src",
+					bytesToBase64(TextEncoder_encode(newval))
+				);
+			} else if (client.box.instanceof(this, "HTMLStyleElement")) {
+				newval = rewriteCss(value, client.context, client.meta);
+			} else {
+				try {
+					newval = rewriteHtml(value, client.context, client.meta, {
+						loadScripts: false,
+						inline: true,
+						source: client.url.href,
+						apisource: "set Element.prototype.innerHTML",
+						foreignContext: foreignContextForElement(client, this),
+					});
+				} catch {
+					newval = value;
+				}
+			}
+
+			super.innerHTML = newval;
+		}
+
+		get innerHTML(): string {
+			if (client.box.instanceof(this, "HTMLScriptElement")) {
+				const scriptSource = super.getAttribute(
+					"scramjet-attr-script-source-src"
+				);
+
+				if (scriptSource) {
+					return atob(scriptSource);
+				}
+
+				return super.innerHTML;
+			}
+			if (client.box.instanceof(this, "HTMLStyleElement")) {
+				return super.innerHTML;
+			}
+
+			return unrewriteHtml(
+				super.innerHTML,
+				foreignContextForElement(client, this)
+			);
+		}
+	});
 	const rewriteTextForElement = (element: Element, value: string) => {
 		const scriptBlockType = client.box.instanceof(element, "HTMLScriptElement")
 			? scriptBlockTypeForElement(client, element)
@@ -609,34 +607,30 @@ export default function (client: ScramjetClient, self: typeof window) {
 		},
 	});
 
-	client.Intercept(
-		class extends Text {
-			get wholeText(): string {
-				return getTextForElement(super.parentElement, super.wholeText);
-			}
+	client.Intercept(class extends Text {
+		get wholeText(): string {
+			return getTextForElement(super.parentElement, super.wholeText);
 		}
-	);
-	client.Intercept(
-		class extends CharacterData {
-			appendData(data: string): void {
-				super.appendData(rewriteTextForElement(super.parentElement, data));
-			}
-			// TODO: this is completely broken if done partially
-			insertData(offset: number, data: string): void {
-				super.insertData(
-					offset,
-					rewriteTextForElement(super.parentElement, data)
-				);
-			}
-			replaceData(offset: number, count: number, data: string): void {
-				super.replaceData(
-					offset,
-					count,
-					rewriteTextForElement(super.parentElement, data)
-				);
-			}
+	});
+	client.Intercept(class extends CharacterData {
+		appendData(data: string): void {
+			super.appendData(rewriteTextForElement(super.parentElement, data));
 		}
-	);
+		// TODO: this is completely broken if done partially
+		insertData(offset: number, data: string): void {
+			super.insertData(
+				offset,
+				rewriteTextForElement(super.parentElement, data)
+			);
+		}
+		replaceData(offset: number, count: number, data: string): void {
+			super.replaceData(
+				offset,
+				count,
+				rewriteTextForElement(super.parentElement, data)
+			);
+		}
+	});
 
 	client.Proxy("HTMLAnchorElement.prototype.toString", {
 		apply(ctx) {

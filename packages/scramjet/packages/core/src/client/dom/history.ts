@@ -79,25 +79,23 @@ export default function (client: ScramjetClient, _self: Self) {
 		);
 	};
 
-	client.Intercept(
-		class extends History {
-			@Arguments("any", "DOMString", "optional USVString? url = null")
-			@Returns("undefined")
-			pushState(data: any, unused: string, url: string | null = null): void {
-				super.pushState(data, unused, resolveStateUrl(this, url, "pushState"));
-				dispatchNavigate(this);
-			}
-
-			@Arguments("any", "DOMString", "optional USVString? url = null")
-			@Returns("undefined")
-			replaceState(data: any, unused: string, url: string | null = null): void {
-				super.replaceState(
-					data,
-					unused,
-					resolveStateUrl(this, url, "replaceState")
-				);
-				dispatchNavigate(this);
-			}
+	client.Intercept(class extends History {
+		@Arguments("any", "DOMString", "optional USVString? url = null")
+		@Returns("undefined")
+		pushState(data: any, unused: string, url: string | null = null): void {
+			super.pushState(data, unused, resolveStateUrl(this, url, "pushState"));
+			dispatchNavigate(this);
 		}
-	);
+
+		@Arguments("any", "DOMString", "optional USVString? url = null")
+		@Returns("undefined")
+		replaceState(data: any, unused: string, url: string | null = null): void {
+			super.replaceState(
+				data,
+				unused,
+				resolveStateUrl(this, url, "replaceState")
+			);
+			dispatchNavigate(this);
+		}
+	});
 }

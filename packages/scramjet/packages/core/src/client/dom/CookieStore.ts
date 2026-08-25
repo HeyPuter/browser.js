@@ -229,164 +229,129 @@ export default function (client: ScramjetClient, self: Self) {
 		partitioned: init.partitioned,
 	});
 
-	client.Intercept(
-		class extends CookieStore {
-			// `get`/`getAll`/`delete` are each two overloads taking one argument,
-			// which the decorator layer spells as the union it resolves to: an
-			// object picks the dictionary, anything else the name.
-			@Returns("Promise<CookieListItem?>")
-			@Arguments("optional (USVString or CookieStoreGetOptions)")
-			async get(
-				nameOrOptions?: string | CookieStoreGetOptions
-			): Promise<CookieListItem | null> {
-				const items = isDictionaryArgument(nameOrOptions)
-					? query(...readGetOptions(nameOrOptions))
-					: query(idlUSVString(nameOrOptions));
+	client.Intercept(class extends CookieStore {
+		// `get`/`getAll`/`delete` are each two overloads taking one argument,
+		// which the decorator layer spells as the union it resolves to: an
+		// object picks the dictionary, anything else the name.
+		@Returns("Promise<CookieListItem?>")
+		@Arguments("optional (USVString or CookieStoreGetOptions)")
+		async get(
+			nameOrOptions?: string | CookieStoreGetOptions
+		): Promise<CookieListItem | null> {
+			const items = isDictionaryArgument(nameOrOptions)
+				? query(...readGetOptions(nameOrOptions))
+				: query(idlUSVString(nameOrOptions));
 
-				return items.length ? items[0] : null;
-			}
+			return items.length ? items[0] : null;
+		}
 
-			@Returns("Promise<CookieList>")
-			@Arguments("optional (USVString or CookieStoreGetOptions)")
-			async getAll(
-				nameOrOptions?: string | CookieStoreGetOptions
-			): Promise<CookieList> {
-				return isDictionaryArgument(nameOrOptions)
-					? query(...readGetOptions(nameOrOptions))
-					: query(idlUSVString(nameOrOptions));
-			}
+		@Returns("Promise<CookieList>")
+		@Arguments("optional (USVString or CookieStoreGetOptions)")
+		async getAll(
+			nameOrOptions?: string | CookieStoreGetOptions
+		): Promise<CookieList> {
+			return isDictionaryArgument(nameOrOptions)
+				? query(...readGetOptions(nameOrOptions))
+				: query(idlUSVString(nameOrOptions));
+		}
 
-			// `set` is the one member whose overloads differ in arity rather than
-			// in type, so the argument *count* picks it — `set("a", undefined)` is
-			// the two-argument form with the value "undefined", while `set("a")` is
-			// the dictionary form and fails to convert.
-			@Returns("Promise<undefined>")
-			@Arguments("(USVString or CookieInit)", "optional USVString")
-			async set(
-				nameOrOptions: string | CookieInit,
-				value?: string
-			): Promise<void> {
-				if (arguments.length > 1) {
-					const init: WriteInit = {
-						name: idlUSVString(nameOrOptions),
-						value: idlUSVString(value),
-						domain: null,
-						path: "/",
-						expires: null,
-						sameSite: "strict",
-						partitioned: false,
-					};
-					const cookie = serialize(init);
-
-					return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
-				}
-
-				// members are read *and* converted one at a time in WebIDL's order —
-				// lexicographic by name — because every one of them is a
-				// page-controlled getter, and a missing required member has to
-				// throw before the getters that sort after it ever run
-				const dict = idlDictionary(nameOrOptions, "CookieInit");
-
-				const rawDomain = dict.domain;
-				const domain =
-					rawDomain === undefined || rawDomain === null
-						? null
-						: idlUSVString(rawDomain);
-				const rawExpires = dict.expires;
-				const expires =
-					rawExpires === undefined || rawExpires === null
-						? null
-						: idlDouble(rawExpires);
-				const rawName = dict.name;
-				if (rawName === undefined) {
-					throw new TypeError("CookieInit requires the member 'name'.");
-				}
-				const name = idlUSVString(rawName);
-				const rawPartitioned = dict.partitioned;
-				const partitioned =
-					rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
-				const rawPath = dict.path;
-				const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
-				const rawSameSite = dict.sameSite;
-				const sameSite =
-					rawSameSite === undefined
-						? "strict"
-						: idlEnum(rawSameSite, SAME_SITE, "CookieSameSite");
-				const rawValue = dict.value;
-				if (rawValue === undefined) {
-					throw new TypeError("CookieInit requires the member 'value'.");
-				}
-				const cookieValue = idlUSVString(rawValue);
-
+		// `set` is the one member whose overloads differ in arity rather than
+		// in type, so the argument *count* picks it — `set("a", undefined)` is
+		// the two-argument form with the value "undefined", while `set("a")` is
+		// the dictionary form and fails to convert.
+		@Returns("Promise<undefined>")
+		@Arguments("(USVString or CookieInit)", "optional USVString")
+		async set(
+			nameOrOptions: string | CookieInit,
+			value?: string
+		): Promise<void> {
+			if (arguments.length > 1) {
 				const init: WriteInit = {
-					name,
-					value: cookieValue,
-					domain,
-					path,
-					expires,
-					sameSite,
-					partitioned,
+					name: idlUSVString(nameOrOptions),
+					value: idlUSVString(value),
+					domain: null,
+					path: "/",
+					expires: null,
+					sameSite: "strict",
+					partitioned: false,
 				};
 				const cookie = serialize(init);
 
 				return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
 			}
 
-			/** A delete is a write of an empty value that already expired. */
-			@Returns("Promise<undefined>")
-			@Arguments("(USVString or CookieStoreDeleteOptions)")
-			async delete(
-				nameOrOptions: string | CookieStoreDeleteOptions
-			): Promise<void> {
-				const expired = {
-					value: "",
-					// the epoch is unconditionally in the past, which is the jar's
-					// signal to drop the record rather than store a dead one
-					expires: 0,
-					sameSite: "strict" as const,
-				};
+			// members are read *and* converted one at a time in WebIDL's order —
+			// lexicographic by name — because every one of them is a
+			// page-controlled getter, and a missing required member has to
+			// throw before the getters that sort after it ever run
+			const dict = idlDictionary(nameOrOptions, "CookieInit");
 
-				if (!isDictionaryArgument(nameOrOptions)) {
-					const init: WriteInit = {
-						...expired,
-						name: idlUSVString(nameOrOptions),
-						domain: null,
-						path: "/",
-						partitioned: false,
-					};
-					const cookie = serialize(init);
+			const rawDomain = dict.domain;
+			const domain =
+				rawDomain === undefined || rawDomain === null
+					? null
+					: idlUSVString(rawDomain);
+			const rawExpires = dict.expires;
+			const expires =
+				rawExpires === undefined || rawExpires === null
+					? null
+					: idlDouble(rawExpires);
+			const rawName = dict.name;
+			if (rawName === undefined) {
+				throw new TypeError("CookieInit requires the member 'name'.");
+			}
+			const name = idlUSVString(rawName);
+			const rawPartitioned = dict.partitioned;
+			const partitioned =
+				rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
+			const rawPath = dict.path;
+			const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
+			const rawSameSite = dict.sameSite;
+			const sameSite =
+				rawSameSite === undefined
+					? "strict"
+					: idlEnum(rawSameSite, SAME_SITE, "CookieSameSite");
+			const rawValue = dict.value;
+			if (rawValue === undefined) {
+				throw new TypeError("CookieInit requires the member 'value'.");
+			}
+			const cookieValue = idlUSVString(rawValue);
 
-					return cookie === null
-						? super.delete(nativeInit(init))
-						: commit(cookie);
-				}
+			const init: WriteInit = {
+				name,
+				value: cookieValue,
+				domain,
+				path,
+				expires,
+				sameSite,
+				partitioned,
+			};
+			const cookie = serialize(init);
 
-				const dict = idlDictionary(nameOrOptions, "CookieStoreDeleteOptions");
+			return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
+		}
 
-				const rawDomain = dict.domain;
-				const domain =
-					rawDomain === undefined || rawDomain === null
-						? null
-						: idlUSVString(rawDomain);
-				const rawName = dict.name;
-				if (rawName === undefined) {
-					throw new TypeError(
-						"CookieStoreDeleteOptions requires the member 'name'."
-					);
-				}
-				const name = idlUSVString(rawName);
-				const rawPartitioned = dict.partitioned;
-				const partitioned =
-					rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
-				const rawPath = dict.path;
-				const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
+		/** A delete is a write of an empty value that already expired. */
+		@Returns("Promise<undefined>")
+		@Arguments("(USVString or CookieStoreDeleteOptions)")
+		async delete(
+			nameOrOptions: string | CookieStoreDeleteOptions
+		): Promise<void> {
+			const expired = {
+				value: "",
+				// the epoch is unconditionally in the past, which is the jar's
+				// signal to drop the record rather than store a dead one
+				expires: 0,
+				sameSite: "strict" as const,
+			};
 
+			if (!isDictionaryArgument(nameOrOptions)) {
 				const init: WriteInit = {
 					...expired,
-					name,
-					domain,
-					path,
-					partitioned,
+					name: idlUSVString(nameOrOptions),
+					domain: null,
+					path: "/",
+					partitioned: false,
 				};
 				const cookie = serialize(init);
 
@@ -394,8 +359,39 @@ export default function (client: ScramjetClient, self: Self) {
 					? super.delete(nativeInit(init))
 					: commit(cookie);
 			}
+
+			const dict = idlDictionary(nameOrOptions, "CookieStoreDeleteOptions");
+
+			const rawDomain = dict.domain;
+			const domain =
+				rawDomain === undefined || rawDomain === null
+					? null
+					: idlUSVString(rawDomain);
+			const rawName = dict.name;
+			if (rawName === undefined) {
+				throw new TypeError(
+					"CookieStoreDeleteOptions requires the member 'name'."
+				);
+			}
+			const name = idlUSVString(rawName);
+			const rawPartitioned = dict.partitioned;
+			const partitioned =
+				rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
+			const rawPath = dict.path;
+			const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
+
+			const init: WriteInit = {
+				...expired,
+				name,
+				domain,
+				path,
+				partitioned,
+			};
+			const cookie = serialize(init);
+
+			return cookie === null ? super.delete(nativeInit(init)) : commit(cookie);
 		}
-	);
+	});
 }
 
 /**
