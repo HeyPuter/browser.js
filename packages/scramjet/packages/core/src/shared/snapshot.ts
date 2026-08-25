@@ -55,6 +55,7 @@ export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
 export const Number_isSafeInteger = globalThis.Number.isSafeInteger;
 export const Number_isFinite = globalThis.Number.isFinite;
+export const Number_isInteger = globalThis.Number.isInteger;
 
 export const BigInt = globalThis.BigInt;
 export const BigInt_asIntN = globalThis.BigInt.asIntN;
@@ -86,6 +87,7 @@ export const Reflect_has = globalThis.Reflect.has;
 export const Reflect_ownKeys = globalThis.Reflect.ownKeys;
 export const Reflect_construct = globalThis.Reflect.construct;
 export const Reflect_apply = globalThis.Reflect.apply;
+export const Reflect_defineProperty = globalThis.Reflect.defineProperty;
 
 // %AsyncFunction.prototype%, the only runtime signal distinguishing a member
 // declared `async` from one that merely happens to return a promise. Requires

@@ -888,6 +888,13 @@ return { apply, construct };
 		Object_defineProperties(fakePrototype, this.nativeStore.get(classname));
 		Object_setPrototypeOf(handler.prototype, fakePrototype);
 
+		const fakeStatics = {};
+		Object_defineProperties(
+			fakeStatics,
+			Object_getOwnPropertyDescriptors(baseclass)
+		);
+		Object_setPrototypeOf(handler, fakeStatics);
+
 		const attemptToCallHandler = (
 			handler: (...args: any[]) => any,
 			that: any,
