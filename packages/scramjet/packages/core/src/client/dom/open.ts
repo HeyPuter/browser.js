@@ -1,46 +1,30 @@
-import { ScramjetClient } from "@client/index";
+import { GlobalScope, ScramjetClient } from "@client/index";
 import { SCRAMJETCLIENT } from "@/symbols";
-import { String } from "@/shared/snapshot";
+import { openWindowSteps } from "@client/helpers";
+import { Arguments, Returns } from "@client/webidl";
 
-export default function (client: ScramjetClient) {
-	client.Proxy("window.open", {
-		apply(ctx) {
-			// undefined opens an about:blank window, pass through
-			if (typeof ctx.args[0] !== "undefined") {
-				const url = String(ctx.args[0]);
-				// blank also opens an about:blank window
-				if (url !== "") {
-					// note that null or anything else will *not* open an about:blank window
-					ctx.args[0] = client.rewriteUrl(url);
-				}
-			}
+export default function (client: ScramjetClient, self: Self) {
+	const nativeGlobal = new client.native.window(self);
 
-			if (typeof ctx.args[1] !== "undefined" && ctx.args[1] !== null) {
-				let target = String(ctx.args[1]);
-
-				if (target === "_top" || target === "_unfencedTop") {
-					target = client.meta.topFrameName;
-				}
-				if (target === "_parent") {
-					target = client.meta.parentFrameName;
-				}
-
-				ctx.args[1] = target;
-			}
-
-			const realwin = ctx.call();
-
-			if (!realwin) return ctx.return(realwin);
-
-			if (!(SCRAMJETCLIENT in realwin)) {
-				// i don't believe it's possible for a just-opened window to already have scramjet loaded but just in case
-				client.init.hookSubcontext(realwin);
-			}
-
-			return realwin;
-		},
+	client.Intercept(class extends GlobalScope {
+		// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-open
+		// the steps themselves are shared with the three-argument
+		// `document.open`, which is the same operation under another name
+		@Arguments("optional USVString", "optional DOMString", "optional DOMString")
+		@Returns("WindowProxy?")
+		static open(
+			url?: string,
+			target?: string,
+			features?: string
+		): Window | null {
+			return openWindowSteps(client, nativeGlobal.open, url, target, features);
+		}
 	});
 
+	// left as a Trap: `frameElement` is a global attribute, and `ctx.get()` reads
+	// it off the receiver the page actually used. A static accessor on
+	// `GlobalScope` would have to go through `nativeGlobal`, which pins the read
+	// to *this* realm's window and loses the receiver
 	client.Trap("window.frameElement", {
 		get(ctx) {
 			const f = ctx.get() as HTMLIFrameElement | null;

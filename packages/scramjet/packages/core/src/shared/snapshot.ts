@@ -50,6 +50,10 @@ export const String_indexOf = Function_prototype_call.bind(
 export const String_substring = Function_prototype_call.bind(
 	String_prototype_substring
 );
+export const String_prototype_replace = globalThis.String.prototype.replace;
+export const String_replace = Function_prototype_call.bind(
+	String_prototype_replace
+);
 
 export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
@@ -174,20 +178,29 @@ type WrappedInstance<T> = T extends object ? Wrapped<T> : T;
 
 type ConstructorPrototype<T> = T extends { prototype: infer P } ? P : never;
 
+/**
+ * Order matters in both pairs, because the weak collections are structural
+ * subsets of the strong ones: `WeakSet` asks only for `add`/`has`/`delete`, all
+ * of which `Set` has, so `Set<any> extends WeakSet<any>` is *true*. Testing the
+ * weak one first therefore matches everything and types every `Set` as a
+ * `WeakSet` — which is what constrained `_Set`'s member to `object`. The
+ * reverse is not true (a `WeakSet` has no `size`/`forEach`/iterator), so
+ * strong-first is unambiguous.
+ */
 type InstantiatePrototype<P, Params extends unknown[]> = Params extends [
 	infer A,
 	infer B,
 ]
-	? P extends WeakMap<any, any>
-		? WeakMap<A & WeakKey, B>
-		: P extends Map<any, any>
-			? Map<A, B>
+	? P extends Map<any, any>
+		? Map<A, B>
+		: P extends WeakMap<any, any>
+			? WeakMap<A & WeakKey, B>
 			: P
 	: Params extends [infer A]
-		? P extends WeakSet<any>
-			? WeakSet<A & object>
-			: P extends Set<any>
-				? Set<A>
+		? P extends Set<any>
+			? Set<A>
+			: P extends WeakSet<any>
+				? WeakSet<A & WeakKey>
 				: P
 		: P;
 
@@ -203,68 +216,67 @@ type WrappedCtor<
 		readonly [WrappedBrand]: T;
 	};
 
+/**
+ * The four collection constructors get hand-written signatures rather than
+ * `infer Args` off the source. Inferring from an overloaded constructor picks
+ * one overload arbitrarily, which is how `new _Map()` ended up demanding an
+ * argument; writing them out keeps the initialiser optional and gives the type
+ * parameter a default, so `new _Set()`, `new _Set<string>()` and
+ * `new _Set(["a"])` all behave like the real thing.
+ *
+ * Strong collections are tested before weak ones - see InstantiatePrototype.
+ */
 type WrappedConstructor<T> =
 	ConstructorPrototype<T> extends Map<any, any>
-		? T extends { new <K, V>(...args: infer Args): any }
+		? WrappedCtor<
+				T,
+				[unknown, unknown],
+				{
+					new <K = any, V = any>(
+						entries?:
+							| readonly (readonly [K, V])[]
+							| Iterable<readonly [K, V]>
+							| null
+					): Wrapped<Map<K, V>>;
+				}
+			>
+		: ConstructorPrototype<T> extends Set<any>
 			? WrappedCtor<
 					T,
-					[unknown, unknown],
-					new <K, V>(...args: Args) => Wrapped<Map<K, V>>
+					[unknown],
+					{
+						new <U = any>(
+							values?: readonly U[] | Iterable<U> | null
+						): Wrapped<Set<U>>;
+					}
 				>
-			: never
-		: ConstructorPrototype<T> extends WeakMap<any, any>
-			? T extends {
-					new <K extends WeakKey, V>(...args: infer Args): any;
-				}
+			: ConstructorPrototype<T> extends WeakMap<any, any>
 				? WrappedCtor<
 						T,
 						[WeakKey, unknown],
-						new <K extends WeakKey, V>(...args: Args) => Wrapped<WeakMap<K, V>>
+						{
+							new <K extends WeakKey = WeakKey, V = any>(
+								entries?: readonly (readonly [K, V])[] | null
+							): Wrapped<WeakMap<K, V>>;
+						}
 					>
-				: never
-			: ConstructorPrototype<T> extends WeakSet<any>
-				? T extends { new <U extends object>(...args: infer Args): any }
+				: ConstructorPrototype<T> extends WeakSet<any>
 					? WrappedCtor<
 							T,
-							[object],
-							new <U extends object>(...args: Args) => Wrapped<WeakSet<U>>
+							[WeakKey],
+							{
+								new <U extends WeakKey = WeakKey>(
+									values?: readonly U[] | null
+								): Wrapped<WeakSet<U>>;
+							}
 						>
-					: never
-				: ConstructorPrototype<T> extends Set<any>
-					? T extends { new <U>(...args: infer Args): any }
-						? WrappedCtor<
-								T,
-								[unknown],
-								new <U>(...args: Args) => Wrapped<Set<U>>
-							>
-						: never
-					: T extends { new <K, V>(...args: infer Args): any }
-						? WrappedCtor<
-								T,
-								[unknown, unknown],
-								new <K, V>(
-									...args: Args
-								) => Wrapped<
-									InstantiatePrototype<ConstructorPrototype<T>, [K, V]>
-								>
-							>
-						: T extends { new <U>(...args: infer Args): any }
-							? WrappedCtor<
-									T,
-									[unknown],
-									new <U>(
-										...args: Args
-									) => Wrapped<
-										InstantiatePrototype<ConstructorPrototype<T>, [U]>
-									>
-								>
-							: T extends abstract new (...args: infer Args) => infer Instance
-								? Omit<T, "prototype"> & {
-										new (...args: Args): WrappedInstance<Instance>;
-										prototype: WrappedInstance<Instance>;
-										readonly [WrappedBrand]: T;
-									}
-								: never;
+					: T extends abstract new (...args: infer Args) => infer Instance
+						? Omit<T, "prototype"> & {
+								new (...args: Args): WrappedInstance<Instance>;
+								prototype: WrappedInstance<Instance>;
+								readonly [WrappedBrand]: T;
+							}
+						: never;
 
 export type Wrapped<T> = T extends abstract new (...args: any) => any
 	? WrappedConstructor<T>
@@ -287,11 +299,10 @@ export type _Set<T> = Wrapped<Set<T>>;
 export const _Map = makeWrap(globalThis.Map);
 export type _Map<K, V> = Wrapped<Map<K, V>>;
 export const _WeakSet = makeWrap(globalThis.WeakSet);
-export type _WeakSet<T extends object> = Wrapped<WeakSet<T>>;
+export type _WeakSet<T extends WeakKey> = Wrapped<WeakSet<T>>;
 export const _WeakMap = makeWrap(globalThis.WeakMap);
-export type _WeakMap<K extends object, V extends object> = Wrapped<
-	WeakMap<K, V>
->;
+// only the *key* is weakly held, so the value takes no constraint
+export type _WeakMap<K extends WeakKey, V> = Wrapped<WeakMap<K, V>>;
 export const _Uint8Array = makeWrap(globalThis.Uint8Array);
 export type _Uint8Array = Wrapped<Uint8Array>;
 export const _TextDecoder = makeWrap(globalThis.TextDecoder);

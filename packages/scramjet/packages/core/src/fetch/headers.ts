@@ -38,16 +38,12 @@ const SEC_HEADERS = new _Set([
 	// This needs to be emulated, but for right now it isn't that important of a feature to be worried about
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Clear-Site-Data
 	"clear-site-data",
-]) as _Set<string>;
+]);
 
 /**
  * Headers that are actually URLs that need to be rewritten
  */
-const URL_HEADERS = new _Set([
-	"location",
-	"content-location",
-	"referer",
-]) as _Set<string>;
+const URL_HEADERS = new _Set(["location", "content-location", "referer"]);
 
 function rewriteLinkHeader(
 	link: string,
@@ -59,16 +55,6 @@ function rewriteLinkHeader(
 	});
 }
 
-/**
- * Copy every original header under the carrier prefix.
- *
- * The client-side `Headers`, `XMLHttpRequest` and cache views read *only* the
- * carriers, so a response that reaches the page without them reads back as
- * having no headers at all rather than as having its own. Every path in
- * `doHandleFetch` that returns a response the page can observe has to call
- * this, not just the network one - `blob:` and `data:` URLs are rewritten to
- * proxy URLs and served by the service worker like anything else.
- */
 export function attachCarriedHeaders(
 	headers: ScramjetHeaders,
 	rawHeaders: RawHeaders
@@ -78,8 +64,6 @@ export function attachCarriedHeaders(
 			// this is purely for browser consumption via Headers.get, and set-cookie is always hidden from js
 			continue;
 		}
-		// appended, not set: a header the origin sent more than once has to read
-		// back through the carrier exactly as the browser would have combined it
 		headers.append(carriedHeaderName(key), value);
 	}
 }

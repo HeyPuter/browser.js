@@ -186,6 +186,7 @@ export interface IDLNamedTypes {
 	MultiCacheQueryOptions: MultiCacheQueryOptions;
 	BlobPropertyBag: BlobPropertyBag;
 	WorkerOptions: WorkerOptions;
+	WorkletOptions: WorkletOptions;
 	RegistrationOptions: RegistrationOptions;
 	EventInit: EventInit;
 	CustomEventInit: CustomEventInit;
