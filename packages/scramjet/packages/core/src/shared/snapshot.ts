@@ -65,6 +65,8 @@ export const BigInt = globalThis.BigInt;
 export const BigInt_asIntN = globalThis.BigInt.asIntN;
 export const BigInt_asUintN = globalThis.BigInt.asUintN;
 
+export const encodeURIComponent = globalThis.encodeURIComponent;
+
 export const Symbol_iterator = globalThis.Symbol.iterator;
 
 export const Object_keys = globalThis.Object.keys;
