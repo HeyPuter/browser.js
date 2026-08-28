@@ -3,17 +3,11 @@ import { String, String_endsWith, String_startsWith } from "@/shared/snapshot";
 import { Arguments, Returns, Type } from "@client/webidl";
 
 export default function (client: ScramjetClient) {
-	/**
-	 * An entry's `name` is a URL for the resource-ish entry types and an author
-	 * string for a mark or a measure, so it is only un-rewritten when it really
-	 * is one of ours.
-	 */
 	const visibleName = (name: string): string =>
 		String_startsWith(name, client.context.prefix.href)
 			? client.unrewriteUrl(name)
 			: name;
 
-	/** Read past the patched getter, so this is usable from inside it. */
 	const nativeName = (entry: PerformanceEntry): string =>
 		String(new client.native.PerformanceEntry(entry).name);
 

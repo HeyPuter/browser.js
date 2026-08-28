@@ -68,7 +68,6 @@ export default function (client: ScramjetClient, self: Self) {
 			return super.insertRule(rewrite(rule), index);
 		}
 
-		// `async` so `Intercept` mints the promise in the caller's realm
 		@Arguments("USVString")
 		@Returns("Promise<CSSStyleSheet>")
 		async replace(text: string): Promise<CSSStyleSheet> {
@@ -89,12 +88,22 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 	});
 
-	client.Proxy("CSSStyleValue.parse", {
-		apply(ctx) {
-			if (!ctx.args[1]) return;
-			ctx.args[1] = rewrite(ctx.args[1]);
-		},
-	});
+	// https://drafts.css-houdini.org/css-typed-om-1/#cssstylevalue
+	if ("CSSStyleValue" in self) {
+		client.Intercept(class extends CSSStyleValue {
+			@Arguments("USVString", "USVString")
+			@Returns("CSSStyleValue")
+			static parse(property: string, cssText: string): CSSStyleValue {
+				return super.parse(property, cssText ? rewrite(cssText) : cssText);
+			}
+
+			@Arguments("USVString", "USVString")
+			@Returns("sequence<CSSStyleValue>")
+			static parseAll(property: string, cssText: string): CSSStyleValue[] {
+				return super.parseAll(property, cssText ? rewrite(cssText) : cssText);
+			}
+		});
+	}
 
 	/**
 	 * Blink installs the ~740 CSS property attributes as own properties of every
@@ -188,29 +197,100 @@ export default function (client: ScramjetClient, self: Self) {
 	 *   });
 	 */
 
-	// `style` comes from the ElementCSSInlineStyle mixin and from four rule
-	// interfaces, each with its own accessor - wrapping only HTMLElement left
-	// `rule.style.backgroundImage` and the SVG/MathML inline styles uncovered.
-	// `Trap` rather than `Intercept` because several of these are not universal,
-	// and it skips a missing target instead of throwing on the heritage.
-	for (const iface of [
-		"HTMLElement",
-		"SVGElement",
-		"MathMLElement",
-		"CSSStyleRule",
-		"CSSPageRule",
-		"CSSKeyframeRule",
-		"CSSFontFaceRule",
-		"CSSPositionTryRule",
-	]) {
-		client.Trap(`${iface}.prototype.style`, {
-			get(ctx) {
-				return wrapStyleDeclaration(ctx.get() as CSSStyleDeclaration);
-			},
-			set(ctx, value: string) {
-				// this will actually run the trap for cssText. don't rewrite it here
-				ctx.set(value);
-			},
+	/**
+	 * Every `style` attribute is `[SameObject, PutForwards=cssText]`, so deduplicate it here
+	 *
+	 * `PutForwards=cssText` is why none of the interceptors below declare a
+	 * setter: writing `el.style = "..."` is defined as writing
+	 * `el.style.cssText`, the native setter already does exactly that, and
+	 * `Intercept` leaves the half an interceptor doesn't declare alone. The
+	 * write then lands on the `cssText` interceptor above, which rewrites it.
+	 */
+	const inlineStyle = (declaration: CSSStyleDeclaration) => {
+		let wrapper = client.box.styleDeclarations.get(declaration);
+		if (!wrapper) {
+			wrapper = wrapStyleDeclaration(declaration);
+			client.box.styleDeclarations.set(declaration, wrapper);
+		}
+
+		return wrapper;
+	};
+
+	client.Intercept(class extends HTMLElement {
+		@Type("CSSStyleProperties")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	client.Intercept(class extends SVGElement {
+		@Type("CSSStyleProperties")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	if ("MathMLElement" in self) {
+		client.Intercept(class extends MathMLElement {
+			@Type("CSSStyleProperties")
+			get style(): CSSStyleDeclaration {
+				return inlineStyle(super.style);
+			}
+		});
+	}
+
+	client.Intercept(class extends CSSStyleRule {
+		@Type("CSSStyleProperties")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	client.Intercept(class extends CSSPageRule {
+		@Type("CSSStyleProperties")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	if ("CSSMarginRule" in self) {
+		client.Intercept(class extends CSSMarginRule {
+			@Type("CSSMarginDescriptors")
+			get style(): CSSStyleDeclaration {
+				return inlineStyle(super.style);
+			}
+		});
+	}
+
+	if ("CSSNestedDeclarations" in self) {
+		client.Intercept(class extends CSSNestedDeclarations {
+			@Type("CSSStyleProperties")
+			get style(): CSSStyleDeclaration {
+				return inlineStyle(super.style);
+			}
+		});
+	}
+
+	client.Intercept(class extends CSSKeyframeRule {
+		@Type("CSSStyleProperties")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	client.Intercept(class extends CSSFontFaceRule {
+		@Type("CSSFontFaceDescriptors")
+		get style(): CSSStyleDeclaration {
+			return inlineStyle(super.style);
+		}
+	});
+
+	if ("CSSPositionTryRule" in self) {
+		client.Intercept(class extends CSSPositionTryRule {
+			@Type("CSSPositionTryDescriptors")
+			get style(): CSSStyleDeclaration {
+				return inlineStyle(super.style);
+			}
 		});
 	}
 }

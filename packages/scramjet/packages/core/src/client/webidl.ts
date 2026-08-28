@@ -162,6 +162,15 @@ export interface IDLNamedTypes {
 	WebSocketOpenInfo: WebSocketOpenInfo;
 	WebSocketStreamOptions: WebSocketStreamOptions;
 
+	// --- cssom's CSSStyleDeclaration subclasses ---------------------------
+	// the type of every `style` attribute. lib.dom knows none of them and
+	// models them all as CSSStyleDeclaration, which they inherit from, so the
+	// global-scope fallback has nothing to find
+	CSSStyleProperties: CSSStyleDeclaration;
+	CSSFontFaceDescriptors: CSSStyleDeclaration;
+	CSSMarginDescriptors: CSSStyleDeclaration;
+	CSSPositionTryDescriptors: CSSStyleDeclaration;
+
 	// --- enums (lib.dom models these as string literal unions) -----------
 	RequestMode: RequestMode;
 	RequestCredentials: RequestCredentials;
