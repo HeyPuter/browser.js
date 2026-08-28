@@ -7,7 +7,7 @@ export default function (client: ScramjetClient) {
 		@Returns("IDBOpenDBRequest")
 		@Arguments("DOMString", "optional [EnforceRange] unsigned long long")
 		open(name: string, version?: number): IDBOpenDBRequest {
-			name = `${client.url.origin}@${name}`;
+			name = `${client.scopeOrigin}@${name}`;
 
 			return super.open(name, version);
 		}

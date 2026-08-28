@@ -150,7 +150,6 @@
 		"unsafeprops-super",
 		"urlfidelity-empty-query",
 		"workers-module-with-static-import",
-		"workers-self-origin",
 		"wpt-fetch-metadata-generated-audioworklet-https-sub-html",
 		"wpt-fetch-metadata-generated-element-a-https-sub-html",
 		"wpt-fetch-metadata-generated-element-a-sub-html",
@@ -220,7 +219,6 @@
 		"rewriter-css-unrewrite-import-url",
 		"rewriter-css-unrewrite-regression-import-layer-supports-media",
 		"rewriter-css-unrewrite-uppercase-url-function",
-		"rewriter-css-unrewrite-url",
-		"broadcastchannel-cross-origin-isolated"
+		"rewriter-css-unrewrite-url"
 	]
 }

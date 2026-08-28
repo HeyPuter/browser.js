@@ -6,7 +6,7 @@ export const enabled = (client: ScramjetClient, self: Self) =>
 	"StorageManager" in self && "FileSystemHandle" in self;
 
 export default function (client: ScramjetClient) {
-	const scopeName = () => encodeURIComponent(client.url.origin);
+	const scopeName = () => encodeURIComponent(client.scopeOrigin);
 
 	client.Intercept(class extends StorageManager {
 		@Arguments()

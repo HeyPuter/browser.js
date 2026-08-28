@@ -39,14 +39,17 @@ import {
 	Math_trunc,
 	Number,
 	Number_isFinite,
+	Number_isNaN,
 	Object_keys,
 	Reflect_apply,
 	String,
 	String_charCodeAt,
+	String_trim,
 	SharedArrayBuffer_prototype_byteLength,
 	String_fromCharCode,
 	Symbol_iterator,
 	TypeError,
+	Error,
 } from "@/shared/snapshot";
 import type { AnyFunction } from "@/types";
 
@@ -114,6 +117,22 @@ export interface IDLPrimitives {
 }
 
 /**
+ * The values of every enum a {@link dictionaryReader} member is declared with.
+ *
+ * An enum has no interface object and no conversion `compileIDLType` can do on
+ * its own - it needs the value list - so a reader that reimplements a
+ * dictionary rather than handing it to the native has to be given them.
+ *
+ * Add an entry when a reader names an enum that isn't here; the reader throws
+ * at install time rather than passing the value through unchecked.
+ */
+export const IDL_ENUM_VALUES: Record<string, readonly string[]> = {
+	RequestCredentials: ["omit", "same-origin", "include"],
+	WorkerType: ["classic", "module"],
+	CookieSameSite: ["strict", "lax", "none"],
+};
+
+/**
  * Dictionaries, enums, typedefs and callback interfaces. None of these have an
  * interface object, so the global-scope fallback can't find them and they have
  * to be listed by hand.
@@ -151,6 +170,8 @@ export interface IDLNamedTypes {
 	BlobPart: BufferSource | Blob | string;
 	Transferable: ArrayBuffer | MessagePort | ImageBitmap | OffscreenCanvas;
 	TimerHandler: string | AnyFunction;
+	/** hr-time's typedef for double */
+	DOMHighResTimeStamp: number;
 	MessageEventSource: WindowProxy | MessagePort | ServiceWorker;
 	WindowProxy: Window;
 	CookieList: CookieList;
@@ -1520,6 +1541,210 @@ export function idlDictionary(
 	}
 
 	return value as Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// dictionary readers
+// ---------------------------------------------------------------------------
+
+/** One member's declaration: the same grammar `@Arguments` takes, plus `required`. */
+type StripRequired<S extends string> = S extends `required ${infer T}`
+	? Trim<T>
+	: S;
+
+/** A member is present in the result if it is required or has a default. */
+type IsRequiredMember<S extends string> =
+	Trim<S> extends `required ${string}`
+		? true
+		: Trim<S> extends `${string} = ${string}`
+			? true
+			: false;
+
+type MemberType<S extends string> = FromIDL<
+	StripDefault<StripRequired<StripExtendedAttributes<Trim<S>>>>
+>;
+
+/** `{ [K]: T }` for the members that always come back, `{ [K]?: T }` for the rest. */
+export type IDLDictionaryOf<M extends Record<string, string>> = {
+	[K in keyof M as IsRequiredMember<M[K]> extends true ? K : never]: MemberType<
+		M[K]
+	>;
+} & {
+	[K in keyof M as IsRequiredMember<M[K]> extends true
+		? never
+		: K]?: MemberType<M[K]>;
+};
+
+type CompiledMember = {
+	key: string;
+	/** null when the member has no default and is not required */
+	fallback: (() => unknown) | null;
+	required: boolean;
+	coerce: (value: unknown) => unknown;
+};
+
+/**
+ * `"strict"` -> `() => "strict"`. A thunk rather than a value so `[]` and `{}`
+ * hand out a fresh one per read instead of one shared mutable default.
+ */
+function compileIDLDefault(
+	name: string,
+	key: string,
+	raw: string
+): () => unknown {
+	const s = String_trim(raw);
+
+	if (s === "null") return () => null;
+	if (s === "true") return () => true;
+	if (s === "false") return () => false;
+	if (s === "[]") return () => [];
+	if (s === "{}") return () => ({});
+	const quote = String_fromCharCode(0x22);
+	if (s.length >= 2 && s[0] === quote && s[s.length - 1] === quote) {
+		const value = s.slice(1, -1);
+
+		return () => value;
+	}
+
+	const number = Number(s);
+	if (s !== "" && !Number_isNaN(number)) return () => number;
+
+	throw new Error(`${name}.${key}: cannot read the IDL default \`${raw}\``);
+}
+
+/**
+ * Build a reader for one dictionary from its members, written in the same IDL
+ * the decorators take.
+ *
+ * ```ts
+ * const readWorkerOptions = dictionaryReader("WorkerOptions", {
+ *   credentials: `RequestCredentials = "same-origin"`,
+ *   name: `DOMString = ""`,
+ *   type: `WorkerType = "classic"`,
+ * });
+ * ```
+ *
+ * Why a reader rather than passing the object to the native: every member is a
+ * page-controlled getter, so a body that peeks at one and then hands the *same
+ * object* onward runs that getter twice, and the second run can answer
+ * something other than what the body decided on. See the note above
+ * {@link idlDictionary}.
+ *
+ * What the generator buys over writing that out by hand is the *order*. WebIDL
+ * converts members lexicographically by name, and a hand-written reader has to
+ * be kept in that order by whoever edits it - get it wrong and page getters run
+ * in a sequence a browser would never produce, which is the exact thing reading
+ * once was for. The keys are sorted here, at install time, so it stops being
+ * something a reviewer has to check.
+ *
+ * TODO: no inherited dictionaries. WebIDL converts a parent's members before
+ * the child's, and expressing that needs the parent named here; nothing scramjet
+ * reads inherits today, so this throws rather than guessing if one ever does.
+ */
+export function dictionaryReader<const M extends Record<string, string>>(
+	name: string,
+	members: M
+): (value: unknown) => IDLDictionaryOf<M> {
+	const keys = Object_keys(members);
+
+	// insertion sort rather than `Array.prototype.sort`: this runs at module
+	// scope, so the intrinsic is still pristine, but not depending on that is
+	// free here
+	for (let i = 1; i < keys.length; i++) {
+		const key = keys[i];
+		let j = i - 1;
+		while (j >= 0 && keys[j] > key) {
+			keys[j + 1] = keys[j];
+			j--;
+		}
+		keys[j + 1] = key;
+	}
+
+	const compiled: CompiledMember[] = [];
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i];
+		const raw = String_trim(members[key]);
+
+		let declaration = raw;
+		let required = false;
+		if (declaration.startsWith("required ")) {
+			required = true;
+			declaration = String_trim(declaration.slice(9));
+		}
+
+		let fallback: (() => unknown) | null = null;
+		const defaulted = declaration.indexOf(" = ");
+		if (defaulted !== -1) {
+			if (required) {
+				throw new Error(
+					`${name}.${key}: a required member cannot have a default`
+				);
+			}
+			fallback = compileIDLDefault(name, key, declaration.slice(defaulted + 3));
+			declaration = String_trim(declaration.slice(0, defaulted));
+		}
+
+		const type = stripIDLExtendedAttributes(declaration);
+		const nullable = type.endsWith("?");
+		const bare = nullable ? String_trim(type.slice(0, -1)) : type;
+		const values = IDL_ENUM_VALUES[bare];
+
+		let coerce: (value: unknown) => unknown;
+		if (values) {
+			// an enum's conversion is a membership test, which `compileIDLType`
+			// cannot do without the values
+			coerce = nullable
+				? (value) => (value === null ? null : idlEnum(value, values, bare))
+				: (value) => idlEnum(value, values, bare);
+		} else {
+			const compile = compileIDLType(
+				{ ctors: {}, instanceof: () => false },
+				type
+			);
+			// the shared coercers signal a rejection by throwing a sentinel,
+			// which is right for an argument list that can fall through to the
+			// native and wrong here, where there is nothing to fall through to
+			coerce = (value) => {
+				try {
+					return compile(value);
+				} catch (err) {
+					if (err === IDL_REJECTED) {
+						throw new TypeError(
+							`Failed to read the '${key}' property from '${name}': the provided value is not of type '${type}'.`
+						);
+					}
+
+					throw err;
+				}
+			};
+		}
+
+		compiled[compiled.length] = { key, fallback, required, coerce };
+	}
+
+	return (value: unknown) => {
+		const dict = idlDictionary(value, name);
+		const out: Record<string, unknown> = {};
+
+		for (let i = 0; i < compiled.length; i++) {
+			const member = compiled[i];
+			// read once, into a local, in sorted order - the whole point
+			const raw = dict[member.key];
+
+			if (raw === undefined) {
+				if (member.required) {
+					throw new TypeError(`${name} requires the member '${member.key}'.`);
+				}
+				if (member.fallback) out[member.key] = member.fallback();
+
+				continue;
+			}
+
+			out[member.key] = member.coerce(raw);
+		}
+
+		return out as IDLDictionaryOf<M>;
+	};
 }
 
 /**

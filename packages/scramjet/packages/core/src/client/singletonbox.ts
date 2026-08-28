@@ -29,6 +29,63 @@ export class SingletonBox {
 	);
 	taggedHeaders: _WeakSet<Headers> = new _WeakSet([]);
 	taggedResponses: _WeakSet<Response> = new _WeakSet([]);
+	/**
+	 * The directory handles handed back in place of an origin's real OPFS root.
+	 *
+	 * Tracked rather than patched per object: the root's `name` is `""`, and
+	 * `FileSystemHandle.prototype.name` is a prototype getter, so defining an own
+	 * `name` on the directory shadows the getter with a data property that the
+	 * real thing does not have. A page reading
+	 * `Object.getOwnPropertyDescriptor(root, "name")` gets a descriptor where a
+	 * browser gives it null, and because `defineProperty` defaults to
+	 * `configurable: false` the tell cannot even be removed afterwards.
+	 *
+	 * Shared rather than per-client because a handle is structured-cloneable and
+	 * postMessage-able, so the realm that reads `name` off one need not be the
+	 * realm that called `getDirectory()`. Kept on a client, a root that crossed a
+	 * frame boundary would report its scoped name instead of `""`.
+	 */
+	scopedOpfsRoots: _WeakSet<FileSystemHandle> = new _WeakSet();
+	/**
+	 * The wrapper handed back in place of each style declaration.
+	 *
+	 * `style` is `[SameObject]` on every interface that has one, so
+	 * `el.style === el.style` has to hold and a fresh Proxy per read is a
+	 * one-expression tell. Keyed on the declaration, which the browser already
+	 * guarantees is the same object for the same element or rule.
+	 *
+	 * Shared rather than per-client because [SameObject] is a property of the
+	 * declaration and not of the realm reading it: a declaration reached from a
+	 * second frame has to come back as the same wrapper it did in the first.
+	 * The wrapper closes over the rewriters of whichever client created it,
+	 * which is the declaration's own realm for every read that goes through the
+	 * prototype chain - only a deliberately borrowed accessor can pin it to
+	 * another realm's base URL.
+	 */
+	styleDeclarations: _WeakMap<CSSStyleDeclaration, CSSStyleDeclaration> =
+		new _WeakMap();
+	/**
+	 * The wrapper installed for each (target, type, callback, capture) listener.
+	 *
+	 * Shared rather than per-client because it is keyed on the EventTarget, and
+	 * one target is reachable from every realm that can see it. Kept on a client
+	 * it would mint a second wrapper for the same listener registered through a
+	 * different realm, and the DOM's dedup - which is what this table exists to
+	 * preserve - would silently stop working across frames.
+	 */
+	eventcallbacks: _Map<
+		EventTarget,
+		{
+			event: string;
+			// callable rather than `Function`, which has no call signature and so
+			// cannot be handed to anything typed as a listener
+			originalCallback: (...args: any) => any;
+			proxiedCallback: (...args: any) => any;
+			/** part of the listener's identity, per the DOM's dedup rule */
+			capture: boolean;
+		}[]
+	> = new _Map([]);
+
 	unproxy: _Map<any, any> = new _Map([]);
 
 	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap([]);

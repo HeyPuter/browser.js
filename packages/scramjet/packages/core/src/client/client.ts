@@ -35,22 +35,25 @@ import {
 	_URL,
 	Error,
 	String,
+	String_charCodeAt,
+	String_fromCharCode,
 	Reflect_get,
 	Reflect_ownKeys,
 	Array_isArray,
-	Reflect_has,
 	Reflect_apply,
 	Reflect_construct,
 	Object_getOwnPropertyDescriptor,
 	Object_defineProperty,
 	Object_defineProperties,
+	Math_random,
 	_Map,
+	_Set,
+	_WeakMap,
 	Object_getOwnPropertyDescriptors,
 	Object_getOwnPropertyNames,
 	Object_getPrototypeOf,
 	Object_setPrototypeOf,
 	Function_call,
-	Function_apply,
 	Object_assign,
 } from "@/shared/snapshot";
 import {
@@ -134,12 +137,30 @@ export type TrapCtx<T extends string> = {
 	set: (v: GlobalTraverse<T>) => void;
 };
 export type Trap<T extends string> = {
-	writable?: boolean;
-	value?: any;
-	enumerable?: boolean;
-	configurable?: boolean;
 	get?: (ctx: TrapCtx<T>) => GlobalTraverse<T>;
 	set?: (ctx: TrapCtx<T>, v: GlobalTraverse<T>) => void;
+};
+
+/**
+ * The pair of call helpers every crossing into or out of an interceptor goes
+ * through. See {@link ScramjetClient.trampoline}.
+ */
+export type Trampoline = {
+	apply: typeof Reflect_apply;
+	construct: typeof Reflect_construct;
+};
+
+/** What a trampoline is with `debugTrampolines` off: no frame of its own. */
+const UNLABELLED: Trampoline = {
+	apply: Reflect_apply,
+	construct: Reflect_construct,
+};
+
+/** A native member, and the object it is actually installed on. */
+type NativeMember = {
+	owner: any;
+	key: string | symbol;
+	descriptor: PropertyDescriptor;
 };
 
 export type ScramjetModule = {
@@ -197,29 +218,40 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
  * object itself, which is where both engines actually keep those members.
  *
  * Typed as `typeof Window` so members still check against lib.dom.
+ *
+ * `super.x` does not work in one of these, in two independent ways, so reach
+ * the native through `new client.native.window(this)` instead:
+ *
+ *   - Its members have to be `static` (see `Intercept`: a global has no
+ *     `.prototype` for the instance half to be written to), and `super` in a
+ *     static resolves against the base's *static* side. That is
+ *     `typeof Window`, which carries `prototype` and a construct signature and
+ *     none of Window's IDL members - so `super.origin` is a type error.
+ *     `Document.parseHTMLUnsafe` reads fine as `super.parseHTMLUnsafe` because
+ *     it genuinely is a static in lib.dom; nothing on the global is.
+ *   - `Intercept` builds the fake `super` object from the global's *own*
+ *     descriptors only. WebIDL puts a [Global] interface's members on the
+ *     global object itself, and Blink does that for a window - but a worker's
+ *     go on `WorkerGlobalScope.prototype`, which is not walked. So in a worker
+ *     `super.x` is `undefined` and silently does nothing, which is the worse
+ *     of the two failures.
+ *
+ * `client.native.window` has neither problem: `saveNatives` builds it by
+ * walking the whole prototype chain, and passing `this` keeps the receiver the
+ * page used, so the native's own brand check still runs.
  */
 export const GlobalScope = class {} as unknown as typeof Window;
 
 export class ScramjetClient {
 	locationProxy: any;
 	indirectEval: any;
+	private readonly creatorOrigin: string | null;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
 	/** builds errors a page cannot tell from the browser's own */
 	errors: NativeErrors;
 
 	wrapfn: (i: any, ...args: any) => any;
-
-	eventcallbacks: Map<
-		any,
-		[
-			{
-				event: string;
-				originalCallback: AnyFunction;
-				proxiedCallback: AnyFunction;
-			},
-		]
-	> = new _Map();
 
 	meta: URLMeta;
 
@@ -232,6 +264,19 @@ export class ScramjetClient {
 	history: TrackedHistoryState[];
 
 	private flagCache = new _Map<keyof ScramjetConfig["flags"], boolean>();
+
+	/**
+	 * The members already patched in this realm, keyed on the object that owns
+	 * them.
+	 *
+	 * Two call sites can name one member without meaning to: `Trap(["Node
+	 * .prototype.textContent", "HTMLScriptElement.prototype.textContent"])`
+	 * reads as two members and is one, because `textContent` is only ever own
+	 * on `Node.prototype`. Patching in place - rather than leaving a shadow on
+	 * whichever object was named - is what makes them collide, and a second
+	 * patch would wrap the first, running the interceptor body twice per call.
+	 */
+	private patched = new _WeakMap<object, _Set<string | symbol>>();
 
 	hooks = {
 		rewriter: {
@@ -349,6 +394,10 @@ export class ScramjetClient {
 		this.context.hooks = {
 			rewriter: this.hooks.rewriter,
 		};
+
+		// after `registerClient` and `context`, both of which it reads through,
+		// and before anything that could hand this window back to a page
+		this.creatorOrigin = this.captureCreatorOrigin();
 
 		this.bare = new BareCompatibleClient(init.transport);
 
@@ -530,14 +579,13 @@ export class ScramjetClient {
 		const modules: ScramjetModule[] = [];
 
 		for (const key of context.keys()) {
-			const module = context(key) as ScramjetModule;
 			if (!key.endsWith(".ts")) continue;
 			if (
 				(key.startsWith("./dom/") && "window" in this.global) ||
 				(key.startsWith("./worker/") && "WorkerGlobalScope" in this.global) ||
 				key.startsWith("./shared/")
 			) {
-				modules.push(module);
+				modules.push(context(key) as ScramjetModule);
 			}
 		}
 
@@ -585,6 +633,113 @@ export class ScramjetClient {
 		});
 	}
 
+	/**
+	 * The security origin of this client
+	 *
+	 * Since client.url.origin is null for about:blank/srcdoc, this value MUST be used when using it as a security or scope check
+	 *
+	 * Null when there was no creator to inherit from - in practice a creator
+	 * outside the sandbox: the embedder's own page, or another proxy's frame.
+	 *
+	 * That null is a definite answer, not a missing one. The document has an
+	 * origin; it is just not one of the origins scramjet models, so it is not
+	 * equal to any site's. A security comparison must therefore *reject* on it
+	 * rather than fall through - see `dom/history.ts` and `dom/open.ts` - and
+	 * anything keying state on it needs a bucket of its own, which is what
+	 * {@link scopeOrigin} hands out.
+	 */
+	get siteOrigin(): string | null {
+		const href = this.url.href;
+		if (href !== "about:blank" && href !== "about:srcdoc") {
+			return this.url.origin;
+		}
+
+		return this.creatorOrigin;
+	}
+
+	/**
+	 * The origin to key per-site state on: storage areas, database and cache
+	 * names, channel names.
+	 *
+	 * A null {@link siteOrigin} is not an unknown origin, it is a definite one
+	 * that is not any proxied site's - so the answer here is a string unique to
+	 * this document, not a shared stand-in. Keying those documents on one
+	 * literal "null" would join namespaces that have nothing to do with each
+	 * other, which is the whole bug this exists to avoid, one level down.
+	 *
+	 * Unique per client, so it does not survive a reload. That is the right
+	 * shape for the case it covers: a browser gives an opaque origin no
+	 * persistent storage at all and throws on `localStorage`, so an ephemeral
+	 * bucket is closer than either a shared one or an exception.
+	 *
+	 * Never use this for a security comparison - it is deliberately unequal to
+	 * everything, including itself across a reload. Use {@link siteOrigin} and
+	 * reject on null, the way `dom/history.ts` and `dom/open.ts` do.
+	 */
+	get scopeOrigin(): string {
+		const origin = this.siteOrigin;
+
+		// "null" is how an origin that is already opaque serializes - a `data:`
+		// document's, say - and it needs a bucket of its own for the same
+		// reason a null does, so it takes the same stand-in
+		return origin === null || origin === "null" ? this.opaqueScope : origin;
+	}
+
+	/**
+	 * The stand-in {@link scopeOrigin} uses for a document with no site origin.
+	 */
+	private readonly opaqueScope = `about-opaque://${Math_random()}`;
+
+	get scopeUrl(): _URL {
+		return new _URL(this.scopeOrigin);
+	}
+
+	/**
+	 * The origin of the document that created this one, or null if there is
+	 * none to ask.
+	 *
+	 * Read once, in the constructor, and never again. A document's origin is
+	 * fixed when the document is created; the references that lead back to its
+	 * creator are not. `opener` is a settable attribute, so a page that can
+	 * reach a window could otherwise hand it another site's origin, and either
+	 * relationship can be navigated out from under us afterwards. Deriving the
+	 * answer at read time would therefore be both forgeable and
+	 * time-dependent.
+	 *
+	 * Here it is neither: every path that installs a client - `hookSubcontext`
+	 * from the window-open steps, or from the `contentWindow` trap - runs
+	 * before the new window's reference has been handed back to the page and
+	 * before a single script in the new document has run.
+	 *
+	 * https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-browsing-context
+	 */
+	private captureCreatorOrigin(): string | null {
+		// a worker has neither relationship, and its URL is never about:blank
+		if (!iswindow) return null;
+
+		try {
+			const global = this.global as unknown as Window;
+			// a child frame's creator is its parent's document, a popup's is
+			// its opener's - and a top-level document being its own parent is
+			// exactly what tells the two apart
+			const creator =
+				global.parent !== global ? global.parent : (global.opener as Window);
+			if (!creator || creator === global) return null;
+
+			const creatorClient = this.box.globals.get(creator as Self);
+			if (!creatorClient || creatorClient === this) return null;
+
+			// the creator's own creator origin was captured when *it* was
+			// constructed, so a chain of about:blank documents resolves in one
+			// step rather than a walk
+			return creatorClient.siteOrigin;
+		} catch {
+			// reading `parent` or `opener` threw, so the creator is cross-origin
+			// to the *proxy* itself and is outside the sandbox
+			return null;
+		}
+	}
+
 	// below are the utilities for proxying and trapping dom APIs
 	// you don't have to understand this it just makes the rest easier
 	// i'll document it eventually
@@ -610,67 +765,185 @@ export class ScramjetClient {
 
 		this.RawProxy(target, prop, handler, name);
 	}
-	RawProxy(target: any, prop: string, handler: Proxy<any>, debugname?: string) {
-		if (!target) return;
-		if (!prop) return;
-		if (!Reflect_has(target, prop)) return;
+	/**
+	 * A named `apply`/`construct` pair for one intercepted member.
+	 *
+	 * With `debugTrampolines` off these are `Reflect.apply` and
+	 * `Reflect.construct`, which add no frame and cost nothing. With it on they
+	 * are built by `Function` in the page's own realm behind a
+	 * `//# sourceURL`, so a stack trace names the member it passed through
+	 * instead of showing an anonymous frame inside the client bundle.
+	 *
+	 * Every crossing goes through the pair - into the interceptor body and back
+	 * out to the native - so a member reads the same in a trace whether `Proxy`,
+	 * `Trap` or `Intercept` installed it, and an interceptor that returns early
+	 * is as visible as one that calls through.
+	 *
+	 * One `Function` evaluation per member, which with the flag on is every
+	 * member `Intercept` installs. That is the price of the flag.
+	 */
+	private trampoline(member: string): Trampoline {
+		if (!this.flagEnabled("debugTrampolines")) return UNLABELLED;
 
-		const value = Reflect_get(target, prop);
-		const originalDescriptor = Object_getOwnPropertyDescriptor(target, prop);
-		delete target[prop];
-
-		const h: ProxyHandler<any> = {};
-
-		let applyFn: typeof Reflect_apply;
-		let constructFn: typeof Reflect_construct;
-		if (this.flagEnabled("debugTrampolines")) {
-			let fnName: string;
-			if (debugname) {
-				fnName = debugname;
-			} else if (typeof value === "function" && value.name) {
-				fnName = `Function ${value.name} -> ${prop}`;
-			} else if (typeof value === "object" && value.constructor) {
-				fnName = `Object ${value.constructor.name} -> ${prop}`;
-			} else {
-				fnName = `${typeof value} -> ${prop}`;
+		/**
+		 * These are interpolated into `//` comments and a `//# sourceURL`, and
+		 * a line comment ends at any LineTerminator - LF and CR, but also
+		 * U+2028 and U+2029, which the previous newline strip missed and which
+		 * a page can put in `window.name`. Left in, they close the comment and
+		 * the rest of the value is evaluated as source in the page's realm.
+		 */
+		const line = (value: string) => {
+			const raw = String(value);
+			let out = "";
+			for (let i = 0; i < raw.length; i++) {
+				const c = String_charCodeAt(raw, i);
+				out +=
+					c === 0x0a || c === 0x0d || c === 0x2028 || c === 0x2029
+						? " "
+						: String_fromCharCode(c);
 			}
-			let windowName = new this.native.window(this.global).name;
-			if (!windowName) windowName = "<unnamed window>";
-			let location = this.url.href;
 
-			// sanitize newlines just in case somehow
-			location = location.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-			windowName = windowName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-			fnName = fnName.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-			const sourceURL = debugname ? `${debugname}.sj` : "rawproxy.sj";
+			return out;
+		};
 
-			const { construct, apply } = new this.native.window(this.global).Function(
+		const nGlobal = new this.native.window(this.global);
+
+		let frame: string;
+		try {
+			// a service worker global has no `name` at all
+			frame = line(nGlobal.name) || "<unnamed>";
+		} catch {
+			frame = "<no frame>";
+		}
+
+		try {
+			// the snapshots are passed in rather than named in the source: this
+			// is the page's realm, so a bare `Reflect.apply` would be looked up
+			// on the page's `Reflect` at call time, and replacing it would hand
+			// the page a hook into every intercepted call
+			return nGlobal.Function(
+				"reflectApply",
+				"reflectConstruct",
 				`"use strict";
 
-// SCRAMJET FUNCTION INTERCEPT
-// target: ${fnName}
-// frame: ${windowName}
-// location: ${location}
+// SCRAMJET INTERCEPT
+// member: ${line(member)}
+// frame: ${frame}
+// location: ${line(this.url.href)}
 
 function apply(fn, that, args) {
-	return Reflect.apply(fn, that, args);
+	return reflectApply(fn, that, args);
 }
 
 function construct(fn, args, newTarget) {
-	return Reflect.construct(fn, args, newTarget);
+	return reflectConstruct(fn, args, newTarget);
 }
 
 return { apply, construct };
 
-//# sourceURL=${sourceURL}`
-			)();
+//# sourceURL=${line(member)}.sj`
+			)(Reflect_apply, Reflect_construct);
+		} catch (err) {
+			// a CSP that forbids `Function` is not a reason to lose the member
+			dbg.error(`could not build a debug trampoline for ${member}`, err);
 
-			applyFn = apply;
-			constructFn = construct;
-		} else {
-			applyFn = Reflect_apply;
-			constructFn = Reflect_construct;
+			return UNLABELLED;
 		}
+	}
+
+	/**
+	 * Where `key` actually lives, and the descriptor it lives as.
+	 *
+	 * Null - loudly for a member that cannot be replaced, silently for one this
+	 * engine does not have - when there is nothing to patch. Adding a member
+	 * that isn't there advertises the patch rather than hiding it.
+	 */
+	private resolveNative(
+		target: any,
+		key: string | symbol,
+		debugname: string
+	): NativeMember | null {
+		// walked rather than read straight off `target`, because where an engine
+		// puts an interface's members is not fixed. Blink installs the global
+		// scope's own onto the window instance but a worker's onto
+		// `WorkerGlobalScope.prototype`, and an own-property-only lookup finds
+		// nothing there - so the patch lands on `target` as a *shadowing own
+		// property*, which the native does not have and a page can see
+		let owner = target;
+		while (owner) {
+			const descriptor = Object_getOwnPropertyDescriptor(owner, key);
+			if (descriptor) {
+				if (!descriptor.configurable) {
+					dbg.error(`cannot intercept non-configurable ${debugname}`);
+
+					return null;
+				}
+
+				if (this.patched.get(owner)?.has(key)) {
+					dbg.error(
+						`${debugname} was already intercepted - the second patch would wrap the first, so it is being skipped`
+					);
+
+					return null;
+				}
+
+				return { owner, key, descriptor };
+			}
+			owner = Object_getPrototypeOf(owner);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Put a patched member back where the native one was.
+	 *
+	 * The single place `Proxy`, `Trap` and `Intercept` all install through, so
+	 * that a page cannot tell from the *shape* of a member which of the three
+	 * touched it - or that any of them did:
+	 *
+	 *   - onto whichever object owns the member, never as a shadow on the
+	 *     object the call site happened to name
+	 *   - defined over the top, never `delete`d first, because `delete` moves
+	 *     the key to the end of the owner's key order and that ordering is
+	 *     observable through `Object.getOwnPropertyNames`
+	 *   - carrying the native's own enumerable / configurable / writable rather
+	 *     than a guess at them
+	 */
+	private installNative(native: NativeMember, next: PropertyDescriptor): void {
+		next.enumerable = native.descriptor.enumerable;
+		next.configurable = native.descriptor.configurable;
+		if (!("get" in next) && !("set" in next)) {
+			next.writable = native.descriptor.writable;
+		}
+
+		Object_defineProperty(native.owner, native.key, next);
+
+		let keys = this.patched.get(native.owner);
+		if (!keys) {
+			keys = new _Set<string | symbol>();
+			this.patched.set(native.owner, keys);
+		}
+		keys.add(native.key);
+	}
+
+	RawProxy(target: any, prop: string, handler: Proxy<any>, debugname?: string) {
+		if (!target) return;
+		if (!prop) return;
+
+		const native = this.resolveNative(target, prop, debugname ?? prop);
+		if (!native) return;
+
+		// read through the chain rather than off the descriptor: this is also
+		// the path an accessor-backed member takes, and its value is whatever
+		// the getter answers
+		const value = Reflect_get(target, prop);
+
+		const h: ProxyHandler<any> = {};
+
+		const { apply: applyFn, construct: constructFn } = this.trampoline(
+			debugname ?? prop
+		);
 
 		if (handler.construct) {
 			h.construct = function (
@@ -698,7 +971,7 @@ return { apply, construct };
 					},
 				};
 
-				handler.construct(ctx);
+				applyFn(handler.construct, handler, [ctx]);
 
 				if (earlyreturn) {
 					return returnValue;
@@ -729,56 +1002,27 @@ return { apply, construct };
 						return returnValue;
 					},
 				};
-				if (
-					!this.flagEnabled("debugTrampolines") &&
-					this.flagEnabled("allowFailedIntercepts")
-				) {
-					// fast path, no error detection
-					handler.apply(ctx);
-
-					if (earlyreturn) {
-						return returnValue;
-					}
-					return applyFn(ctx.fn, ctx.this, ctx.args);
-				}
-
-				const pst = Error.prepareStackTrace;
-
-				// eslint-disable-next-line @typescript-eslint/no-this-alias
-				const client = this;
-				Error.prepareStackTrace = function (err, s) {
-					if (
-						s[0].getFileName() &&
-						!s[0].getFileName().startsWith(client.context.prefix.href)
-					) {
-						return { stack: err.stack };
-					}
-				};
-
-				try {
-					handler.apply(ctx);
-				} catch (err) {
-					if (this.box.instanceof(err, "Error")) {
-						if (this.box.instanceof(err.stack, "Object")) {
-							//i'm not going to explain this
-							err.stack = err.stack.stack;
-							// eslint-disable-next-line scramjet-core/no-globals
-							console.error("ERROR FROM SCRAMJET INTERNALS", err);
-							if (!this.flagEnabled("allowFailedIntercepts")) {
-								Error.prepareStackTrace = pst;
-								throw err;
-							}
-						} else {
-							Error.prepareStackTrace = pst;
-							throw err;
-						}
-					} else {
-						Error.prepareStackTrace = pst;
-						throw err;
-					}
-				}
-
-				Error.prepareStackTrace = pst;
+				// Called bare, the way `construct` above and `Intercept` both do.
+				//
+				// This used to run under a swapped-out `Error.prepareStackTrace`
+				// that tagged any error whose top frame was outside the proxy
+				// prefix as "from scramjet internals", logged it, and - with
+				// `allowFailedIntercepts`, which the controller turns on - threw
+				// it away and fell through to the native. That was written when
+				// an interceptor throwing meant an interceptor was broken. It
+				// no longer does: `client.errors` exists so members can throw
+				// the DOMException the spec asks for, and every one of those is
+				// built in scramjet code, so it looked exactly like a bug and
+				// got swallowed.
+				//
+				// Catching cost more than the diagnostic was worth even when it
+				// rethrew. `err.stack` was replaced with an object and then put
+				// back, which is observable; `Error.prepareStackTrace` is global
+				// and `shared/error.ts` wants it for `cleanErrors`; and a
+				// rethrow moves the throw site into this file, which re-points
+				// the `filename` a page sees on the resulting error at
+				// scramjet.js.
+				applyFn(handler.apply, handler, [ctx]);
 
 				if (earlyreturn) {
 					return returnValue;
@@ -791,13 +1035,7 @@ return { apply, construct };
 		const proxy = new Proxy(value, h);
 		this.box.unproxy.set(proxy, value);
 		h.getOwnPropertyDescriptor = getOwnPropertyDescriptorHandler;
-		// Preserve original property descriptor (enumerable, configurable, etc.)
-		Object_defineProperty(target, prop, {
-			value: proxy,
-			writable: originalDescriptor?.writable ?? true,
-			enumerable: originalDescriptor?.enumerable ?? false,
-			configurable: originalDescriptor?.configurable ?? true,
-		});
+		this.installNative(native, { value: proxy });
 	}
 	Trap<T extends string>(name: T, handler: Trap<T>): void;
 	Trap<const T extends readonly string[]>(
@@ -819,57 +1057,76 @@ return { apply, construct };
 		if (!target) return;
 		if (!prop) return;
 
-		this.RawTrap(target, prop, descriptor);
+		this.RawTrap(target, prop, descriptor, name);
 	}
-	RawTrap(target: any, prop: string, descriptor: Trap<any>) {
+	RawTrap(
+		target: any,
+		prop: string,
+		descriptor: Trap<any>,
+		debugname?: string
+	) {
 		if (!target) return;
 		if (!prop) return;
-		if (!Reflect_has(target, prop)) return;
-		const oldDescriptor = Object_getOwnPropertyDescriptor(target, prop);
+
+		const member = debugname ?? prop;
+		const native = this.resolveNative(target, prop, member);
+		if (!native) return;
+
+		const old = native.descriptor;
+		const { apply } = this.trampoline(member);
 
 		const ctx: TrapCtx<any> = {
 			this: null,
 			get: function () {
-				return oldDescriptor && oldDescriptor.get.call(this.this);
+				// `old` is the descriptor from the *owner*, so this answers with
+				// the real value for an inherited member. Read off the object the
+				// call site named it would have been undefined, and a trap that
+				// falls through to `ctx.get()` would have silently erased the
+				// member it was wrapping
+				return old.get ? apply(old.get, this.this, []) : old.value;
 			},
 			set: function (v: any) {
-				// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-				oldDescriptor && oldDescriptor.set.call(this.this, v);
+				if (old.set) apply(old.set, this.this, [v]);
 			},
 		};
 
-		delete target[prop];
+		const next: PropertyDescriptor = {};
+		const isAccessor = !!(old.get || old.set);
+		let replaced = false;
 
-		const desc: PropertyDescriptor = {};
-
-		if (descriptor.get) {
-			desc.get = function () {
+		// an accessor's halves are replaced, never invented: a trap that
+		// declares a setter for a readonly attribute used to get one installed,
+		// which is a shape no browser has. A data property has no halves to
+		// match, so a trap over one may declare whichever it needs
+		if (descriptor.get && (old.get || !isAccessor)) {
+			replaced = true;
+			next.get = function () {
 				ctx.this = this;
 
-				return descriptor.get(ctx);
+				return apply(descriptor.get, descriptor, [ctx]);
 			};
-		} else if (oldDescriptor?.get) {
-			desc.get = oldDescriptor.get;
+		} else if (old.get) {
+			next.get = old.get;
 		}
 
-		if (descriptor.set) {
-			desc.set = function (v: any) {
+		if (descriptor.set && (old.set || !isAccessor)) {
+			replaced = true;
+			next.set = function (v: any) {
 				ctx.this = this;
 
-				descriptor.set(ctx, v);
+				apply(descriptor.set, descriptor, [ctx, v]);
 			};
-		} else if (oldDescriptor?.set) {
-			desc.set = oldDescriptor.set;
+		} else if (old.set) {
+			next.set = old.set;
 		}
 
-		if (descriptor.enumerable) desc.enumerable = descriptor.enumerable;
-		else if (oldDescriptor?.enumerable)
-			desc.enumerable = oldDescriptor.enumerable;
-		if (descriptor.configurable) desc.configurable = descriptor.configurable;
-		else if (oldDescriptor?.configurable)
-			desc.configurable = oldDescriptor.configurable;
+		// a trap whose every declared half was refused - a setter-only trap
+		// over a readonly attribute. Leave the native untouched rather than
+		// rewrite its descriptor with itself, which would also claim the member
+		// against a later patch that does have something to say about it
+		if (!replaced) return;
 
-		Object_defineProperty(target, prop, desc);
+		this.installNative(native, next);
 	}
 
 	Intercept(handler: any): void {
@@ -901,7 +1158,8 @@ return { apply, construct };
 			args: any[],
 			fallback: (args: any[]) => any,
 			validate: IDLValidator | undefined,
-			isAsync: boolean
+			isAsync: boolean,
+			tramp: Trampoline
 		) => {
 			// coerce the arguments per the member's declared IDL before the
 			// interceptor body can look at them, so a hostile toString/valueOf
@@ -913,11 +1171,11 @@ return { apply, construct };
 
 			if (isAsync) {
 				return this.relevantPromise(that, () =>
-					Function_apply(handler, that, args)
+					tramp.apply(handler, that, args)
 				);
 			}
 
-			return Function_apply(handler, that, args);
+			return tramp.apply(handler, that, args);
 		};
 
 		// a getter-only native attribute the interceptor writes to, or the
@@ -928,25 +1186,38 @@ return { apply, construct };
 		const createProxy = (
 			handler: (...args: any[]) => any,
 			old: ((...args: any[]) => any) | undefined,
-			validate: IDLValidator | undefined
+			validate: IDLValidator | undefined,
+			member: string
 		) => {
 			// settled once, at install time, rather than on every call
 			const isAsync =
 				Object_getPrototypeOf(handler) === AsyncFunction_prototype;
 			const target = old || missingHalf;
+			const tramp = this.trampoline(member);
 
-			return new Proxy(target, {
+			const proxy = new Proxy(target, {
 				apply(_, thisArg, args) {
 					return attemptToCallHandler(
 						handler,
 						thisArg,
 						args,
-						(a) => Function_apply(target, thisArg, a),
+						(a) => tramp.apply(target, thisArg, a),
 						validate,
-						isAsync
+						isAsync,
+						tramp
 					);
 				},
 			});
+
+			// registered the same way `RawProxy` registers its own, so that
+			// `shared/sourcemaps.ts` can unwrap it. `Function.prototype
+			// .toString` on a proxy renders `function () { [native code] }` -
+			// no name - where the native it stands in for renders
+			// `function fetch() { [native code] }`, and the table is what lets
+			// the real source text answer instead
+			this.box.unproxy.set(proxy, target);
+
+			return proxy;
 		};
 
 		const writePrototypeField = (
@@ -954,79 +1225,53 @@ return { apply, construct };
 			prototype: any,
 			handlerDescriptor: PropertyDescriptor
 		) => {
-			// walked rather than read straight off `prototype`, because where an
-			// engine puts an interface's members is not fixed. Blink installs the
-			// global scope's own onto the window instance but a worker's onto
-			// `WorkerGlobalScope.prototype`, and an own-property-only lookup finds
-			// nothing there and silently installs nothing at all
-			let owner = prototype;
-			let oldDescriptor: PropertyDescriptor | undefined;
-			while (owner) {
-				oldDescriptor = Object_getOwnPropertyDescriptor(owner, key);
-				if (oldDescriptor) break;
-				owner = Object_getPrototypeOf(owner);
-			}
+			const native = this.resolveNative(
+				prototype,
+				key,
+				`${classname}.${String(key)}`
+			);
+			if (!native) return;
 
-			// a member this engine doesn't have. there is nothing to wrap, and
-			// adding it would advertise the proxy rather than hide it
-			if (!oldDescriptor) return;
-			if (!oldDescriptor.configurable) {
-				dbg.error(
-					`cannot intercept non-configurable ${classname}.${String(key)}`
-				);
-
-				return;
-			}
-
-			// carried over wholesale rather than rebuilt, so that the half of an
-			// accessor the interceptor did *not* declare keeps working. dropping a
-			// native setter because only a getter was overridden turns every write
-			// into a silent no-op
-			const newDescriptor: PropertyDescriptor = {
-				enumerable: oldDescriptor.enumerable,
-				configurable: oldDescriptor.configurable,
-			};
+			const oldDescriptor = native.descriptor;
+			const newDescriptor: PropertyDescriptor = {};
+			const member = `${classname}.${String(key)}`;
 
 			if (oldDescriptor.get || oldDescriptor.set) {
 				// a getter takes no arguments, so there is nothing to validate on one
 				newDescriptor.get = handlerDescriptor.get
-					? createProxy(handlerDescriptor.get, oldDescriptor.get, undefined)
+					? createProxy(
+							handlerDescriptor.get,
+							oldDescriptor.get,
+							undefined,
+							`get ${member}`
+						)
 					: oldDescriptor.get;
 				newDescriptor.set = handlerDescriptor.set
 					? createProxy(
 							handlerDescriptor.set,
 							oldDescriptor.set,
-							memberValidator(this.box, handlerDescriptor.set, true)
+							memberValidator(this.box, handlerDescriptor.set, true),
+							`set ${member}`
 						)
 					: oldDescriptor.set;
 			} else {
-				newDescriptor.writable = oldDescriptor.writable;
 				newDescriptor.value =
 					"value" in handlerDescriptor
 						? createProxy(
 								handlerDescriptor.value,
 								oldDescriptor.value,
-								memberValidator(this.box, handlerDescriptor.value)
+								memberValidator(this.box, handlerDescriptor.value),
+								member
 							)
 						: oldDescriptor.value;
 			}
 
-			// defined over the top rather than deleted first: `delete` would move
-			// the member to the end of the prototype's key order, which is a free
-			// tell that it was touched. and onto whichever object actually holds
-			// it, so the patch does not become a shadowing own property
-			Object_defineProperty(owner, key, newDescriptor);
+			this.installNative(native, newDescriptor);
 		};
 
 		/**
 		 * Whether `key` is a property the class syntax generated rather than a
 		 * member the interceptor declared.
-		 *
-		 * `length` and `name` are also real IDL member names - `IDBDatabase.name`,
-		 * `NodeList.length` - so they can only be skipped when they still carry
-		 * the shape the class evaluation gave them. A declared static of either
-		 * name is writable or an accessor; the generated one is a non-writable
-		 * data property.
 		 */
 		const isClassMetadata = (
 			key: string | symbol,
@@ -1058,6 +1303,7 @@ return { apply, construct };
 			if (value && isConstructorMember(value)) {
 				const nativeCtor = this.nativeStore.get("window")[globalname].value;
 				const validate = memberValidator(this.box, value);
+				const tramp = this.trampoline(`new ${globalname}`);
 				// constructor isn't a field, replace the entire class on the global with a proxy
 				this.global[globalname] = new Proxy(baseclass, {
 					construct: (_, args, newTarget) =>
@@ -1068,9 +1314,10 @@ return { apply, construct };
 							// a rejected argument list has to reach the native as a
 							// *construction*, or the page sees "cannot be invoked
 							// without 'new'" where it should see the arity TypeError
-							(a) => Reflect_construct(nativeCtor, a, newTarget),
+							(a) => tramp.construct(nativeCtor, a, newTarget),
 							validate,
-							false
+							false,
+							tramp
 						),
 				});
 			} else {

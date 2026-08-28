@@ -63,7 +63,14 @@ export default function (client: ScramjetClient, _self: Self) {
 			throw stateUrlRejected(method, url, relevantclient.url);
 		}
 
-		if (parsed.origin !== relevantclient.url.origin) {
+		// `siteOrigin`, and a security check rather than a scope key - so a null
+		// is "no answer" and has to reject. An about:blank document's origin is
+		// its creator's, so comparing against `url.origin` refused every URL a
+		// browser accepts; a document that really has no origin to inherit has
+		// an opaque one, which nothing is same-origin with, so refusing is also
+		// what a browser does there
+		const origin = relevantclient.siteOrigin;
+		if (origin === null || parsed.origin !== origin) {
 			throw stateUrlRejected(method, parsed.href, relevantclient.url);
 		}
 

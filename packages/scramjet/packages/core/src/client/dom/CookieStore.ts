@@ -1,15 +1,7 @@
 import { Cookie } from "@/shared";
 const SAME_SITE = ["strict", "lax", "none"] as const;
 
-import {
-	Arguments,
-	Returns,
-	idlBoolean,
-	idlDictionary,
-	idlDouble,
-	idlEnum,
-	idlUSVString,
-} from "@client/webidl";
+import { Arguments, Returns, idlUSVString } from "@client/webidl";
 import { parse as parseSetCookie } from "@/shared/set-cookie-parser";
 
 import {
@@ -23,6 +15,11 @@ import {
 	TypeError,
 } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/client";
+import {
+	readCookieInit,
+	readCookieStoreDeleteOptions,
+	readCookieStoreGetOptions,
+} from "@client/helpers";
 
 export const enabled = (client: ScramjetClient, self: Self) =>
 	"CookieStore" in self;
@@ -101,12 +98,7 @@ export default function (client: ScramjetClient, self: Self) {
 		typeof value === "function";
 
 	const readGetOptions = (value: unknown): [string?, string?] => {
-		const dict = idlDictionary(value, "CookieStoreGetOptions");
-
-		const rawName = dict.name;
-		const name = rawName === undefined ? undefined : idlUSVString(rawName);
-		const rawUrl = dict.url;
-		const url = rawUrl === undefined ? undefined : idlUSVString(rawUrl);
+		const { name, url } = readCookieStoreGetOptions(value);
 
 		return [name, url];
 	};
@@ -161,7 +153,7 @@ export default function (client: ScramjetClient, self: Self) {
 			// against the proxy's rather than the site's. handing it over could
 			// mean a domain that happens to match the proxy, which the native
 			// would accept and write for real
-			const host = String_toLowerCase(client.url.hostname);
+			const host = String_toLowerCase(client.scopeUrl.hostname);
 			const suffix = String_substring(host, host.length - domain.length - 1);
 			if (domain !== host && suffix !== `.${domain}`) {
 				throw new TypeError(
@@ -280,42 +272,15 @@ export default function (client: ScramjetClient, self: Self) {
 				return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
 			}
 
-			// members are read *and* converted one at a time in WebIDL's order —
-			// lexicographic by name — because every one of them is a
-			// page-controlled getter, and a missing required member has to
-			// throw before the getters that sort after it ever run
-			const dict = idlDictionary(nameOrOptions, "CookieInit");
-
-			const rawDomain = dict.domain;
-			const domain =
-				rawDomain === undefined || rawDomain === null
-					? null
-					: idlUSVString(rawDomain);
-			const rawExpires = dict.expires;
-			const expires =
-				rawExpires === undefined || rawExpires === null
-					? null
-					: idlDouble(rawExpires);
-			const rawName = dict.name;
-			if (rawName === undefined) {
-				throw new TypeError("CookieInit requires the member 'name'.");
-			}
-			const name = idlUSVString(rawName);
-			const rawPartitioned = dict.partitioned;
-			const partitioned =
-				rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
-			const rawPath = dict.path;
-			const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
-			const rawSameSite = dict.sameSite;
-			const sameSite =
-				rawSameSite === undefined
-					? "strict"
-					: idlEnum(rawSameSite, SAME_SITE, "CookieSameSite");
-			const rawValue = dict.value;
-			if (rawValue === undefined) {
-				throw new TypeError("CookieInit requires the member 'value'.");
-			}
-			const cookieValue = idlUSVString(rawValue);
+			const {
+				domain,
+				expires,
+				name,
+				partitioned,
+				path,
+				sameSite,
+				value: cookieValue,
+			} = readCookieInit(nameOrOptions);
 
 			const init: WriteInit = {
 				name,
@@ -360,25 +325,8 @@ export default function (client: ScramjetClient, self: Self) {
 					: commit(cookie);
 			}
 
-			const dict = idlDictionary(nameOrOptions, "CookieStoreDeleteOptions");
-
-			const rawDomain = dict.domain;
-			const domain =
-				rawDomain === undefined || rawDomain === null
-					? null
-					: idlUSVString(rawDomain);
-			const rawName = dict.name;
-			if (rawName === undefined) {
-				throw new TypeError(
-					"CookieStoreDeleteOptions requires the member 'name'."
-				);
-			}
-			const name = idlUSVString(rawName);
-			const rawPartitioned = dict.partitioned;
-			const partitioned =
-				rawPartitioned === undefined ? false : idlBoolean(rawPartitioned);
-			const rawPath = dict.path;
-			const path = rawPath === undefined ? "/" : idlUSVString(rawPath);
+			const { domain, name, partitioned, path } =
+				readCookieStoreDeleteOptions(nameOrOptions);
 
 			const init: WriteInit = {
 				...expired,

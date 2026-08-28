@@ -10,7 +10,7 @@ import {
 
 export default function (client: ScramjetClient, self: Self) {
 	const nGlobal = new client.native.window(self);
-	const scopedName = (name: string) => `${client.url.origin}@${name}`;
+	const scopedName = (name: string) => `${client.scopeOrigin}@${name}`;
 	const rewriteRequest = (request: RequestInfo): RequestInfo =>
 		typeof request === "string"
 			? client.rewriteUrl(request, { mode: "cors" })
@@ -242,7 +242,7 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments()
 		async keys(): Promise<string[]> {
 			const names = await super.keys();
-			const prefix = `${client.url.origin}@`;
+			const prefix = `${client.scopeOrigin}@`;
 			const visible: string[] = [];
 
 			for (let i = 0; i < names.length; i++) {

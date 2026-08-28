@@ -114,7 +114,7 @@ export default function (client: ScramjetClient, self: Self) {
 		get domain(): string {
 			void super.domain;
 
-			return client.url.hostname;
+			return client.scopeUrl.hostname;
 		}
 
 		@Type("USVString")
@@ -123,13 +123,13 @@ export default function (client: ScramjetClient, self: Self) {
 
 			// https://html.spec.whatwg.org/multipage/browsers.html#relaxing-the-same-origin-restriction
 			// step 6, checked against the site's host rather than the proxy's
-			const host = String_toLowerCase(client.url.hostname);
+			const host = String_toLowerCase(client.scopeUrl.hostname);
 			const domain = String_toLowerCase(value);
 			if (domain !== host && !String_endsWith(host, `.${domain}`)) {
 				throw client.errors.domException("SecurityError", {
 					set: "domain",
 					on: "Document",
-					detail: `'${value}' is not a suffix of '${client.url.hostname}'.`,
+					detail: `'${value}' is not a suffix of '${client.scopeUrl.hostname}'.`,
 				});
 			}
 

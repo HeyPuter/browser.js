@@ -55,10 +55,23 @@ export const String_replace = Function_prototype_call.bind(
 	String_prototype_replace
 );
 
+/**
+ * `String.prototype.replace` with a regex is not enough to be safe from the
+ * page: it dispatches to `RegExp.prototype[Symbol.replace]`, looked up at call
+ * time on a prototype the page shares with us and can overwrite. `exec` is the
+ * primitive underneath, and snapshotting it means a page cannot see - or
+ * rewrite - what any of our own regexes are matching against.
+ */
+export const RegExp_prototype_exec = globalThis.RegExp.prototype.exec;
+export const RegExp_exec = Function_prototype_call.bind(
+	RegExp_prototype_exec
+) as (regex: RegExp, s: string) => RegExpExecArray | null;
+
 export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
 export const Number_isSafeInteger = globalThis.Number.isSafeInteger;
 export const Number_isFinite = globalThis.Number.isFinite;
+export const Number_isNaN = globalThis.Number.isNaN;
 export const Number_isInteger = globalThis.Number.isInteger;
 
 export const BigInt = globalThis.BigInt;

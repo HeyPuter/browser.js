@@ -29,7 +29,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 			const barews = client.bare.createWebSocket(url, options?.protocols, [
 				["User-Agent", self.navigator.userAgent],
-				["Origin", client.url.origin],
+				["Origin", client.scopeOrigin],
 			]);
 			options?.signal?.addEventListener("abort", () => {
 				barews.close(1000, "");

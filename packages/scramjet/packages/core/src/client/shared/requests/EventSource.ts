@@ -1,5 +1,6 @@
 import { ScramjetClient } from "@client/index";
-import { Constructor, Type, idlBoolean, idlDictionary } from "@client/webidl";
+import { Constructor, Type } from "@client/webidl";
+import { readEventSourceInit } from "@client/helpers";
 
 export const enabled = (client: ScramjetClient, self: Self) =>
 	"EventSource" in self;
@@ -9,9 +10,7 @@ export default function (client: ScramjetClient) {
 		// https://html.spec.whatwg.org/multipage/server-sent-events.html#the-eventsource-interface
 		@Constructor("USVString", "optional EventSourceInit")
 		static konstructor(url: string, eventSourceInitDict?: EventSourceInit) {
-			const dict = idlDictionary(eventSourceInitDict, "EventSourceInit");
-			const raw = dict.withCredentials;
-			const withCredentials = raw === undefined ? false : idlBoolean(raw);
+			const { withCredentials } = readEventSourceInit(eventSourceInitDict);
 
 			return new this(
 				client.rewriteUrl(url, {
