@@ -86,6 +86,10 @@ export class SingletonBox {
 		}[]
 	> = new _Map([]);
 
+	wrappedEvents: _WeakMap<Event, Event> = new _WeakMap();
+	eventhandlers: _WeakMap<object, _Map<string, (...args: any) => any>> =
+		new _WeakMap();
+
 	unproxy: _Map<any, any> = new _Map([]);
 
 	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap([]);
