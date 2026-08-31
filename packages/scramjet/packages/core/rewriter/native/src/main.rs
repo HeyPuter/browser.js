@@ -36,8 +36,6 @@ pub struct RewriterOptions {
 	rewritefn: String,
 	#[clap(long, default_value = "$meta")]
 	metafn: String,
-	#[clap(long, default_value = "$wrapPostMessage")]
-	wrappostmessage: String,
 	#[clap(long, default_value = "$pushsourcemap")]
 	pushsourcemapfn: String,
 

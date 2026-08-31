@@ -168,9 +168,9 @@ where
 						}
 
 						// this is really annoying, we have to list out all the things that *aren't* expressions, you can't just check if it is one
-						// otherwise { 0:location } rewrites to { scramjet$prop(0):location } which is obviously invalid syntax 
+						// otherwise { 0:location } rewrites to { scramjet$prop(0):location } which is obviously invalid syntax
 						PropertyKey::NumericLiteral(_) | PropertyKey::RegExpLiteral(_) | PropertyKey::BigIntLiteral(_) | PropertyKey::PrivateIdentifier(_) => {}
-						
+
 						_ => {
 							// { ["location"]: x } = self;
 							self.jschanges.add(rewrite!(p.name.span(), WrapProperty));
@@ -519,17 +519,6 @@ where
 	fn visit_member_expression(&mut self, it: &MemberExpression<'data>) {
 		match &it {
 			MemberExpression::StaticMemberExpression(s) => {
-				// TODO
-				// you could break this with ["postMessage"] etc
-				// however this code only exists because of recaptcha whatever
-				// and it would slow down js execution a lot
-				if s.property.name == "postMessage" && !matches!(&s.object, Expression::Super(_)) {
-					self.jschanges.add(rewrite!(s.object.span(), WrapPostMessage));
-
-					walk::walk_expression(self, &s.object);
-					return; // unwise to walk the rest of the tree
-				}
-
 				if UNSAFE_GLOBALS.contains(&s.property.name.as_str()) {
 					self.jschanges.add(rewrite!(
 						s.property.span(),
