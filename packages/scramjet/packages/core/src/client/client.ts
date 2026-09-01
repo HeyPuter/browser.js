@@ -1305,7 +1305,7 @@ return { apply, construct };
 				const validate = memberValidator(this.box, value);
 				const tramp = this.trampoline(`new ${globalname}`);
 				// constructor isn't a field, replace the entire class on the global with a proxy
-				this.global[globalname] = new Proxy(baseclass, {
+				const proxy = new Proxy(baseclass, {
 					construct: (_, args, newTarget) =>
 						attemptToCallHandler(
 							value,
@@ -1320,6 +1320,21 @@ return { apply, construct };
 							tramp
 						),
 				});
+
+				// registered the way `RawProxy` and `createProxy` register
+				// theirs, so `shared/sourcemaps.ts` can unwrap it.
+				// `Function.prototype.toString` on a proxy renders
+				// `function () { [native code] }` - nameless - where the
+				// interface object it stands in for renders
+				// `function Request() { [native code] }`, and the table is what
+				// lets the real one answer instead.
+				//
+				// Mapped to the native rather than to `baseclass`: one hop then
+				// always lands on a real function with the right name, even if
+				// something else had already wrapped the global before we did.
+				this.box.unproxy.set(proxy, nativeCtor);
+
+				this.global[globalname] = proxy;
 			} else {
 				// normal static method
 				writePrototypeField(prop, baseclass, handlerDesc);

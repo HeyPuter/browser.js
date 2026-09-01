@@ -77,6 +77,11 @@ export const readWorkerOptions = dictionaryReader("WorkerOptions", {
 	type: `WorkerType = "classic"`,
 });
 
+/** https://drafts.css-houdini.org/worklets/#dictdef-workletoptions */
+export const readWorkletOptions = dictionaryReader("WorkletOptions", {
+	credentials: `RequestCredentials = "same-origin"`,
+});
+
 /** https://html.spec.whatwg.org/multipage/server-sent-events.html#dictdef-eventsourceinit */
 export const readEventSourceInit = dictionaryReader("EventSourceInit", {
 	withCredentials: `boolean = false`,

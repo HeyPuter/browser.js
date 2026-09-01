@@ -1,12 +1,22 @@
 import { ScramjetClient } from "@client/index";
 import { Arguments, Constructor, Returns, Type } from "@client/webidl";
-import { readWorkerOptions } from "@client/helpers";
+import { readWorkerOptions, readWorkletOptions } from "@client/helpers";
 import { String_indexOf, String_substring } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
 	// `scopeOrigin`, not `url.origin`: an about:blank frame's shared workers
 	// are its creator's, and its own URL has no origin to key on
 	const scoped = (name: string) => `${client.scopeOrigin}@${name}`;
+
+	/**
+	 * The `credentials` signal `rewriteUrl` stamps onto the proxy URL, which the
+	 * service worker reads back for `Sec-Fetch-Storage-Access`. Only "include"
+	 * is carried: `fetch/headers.ts` treats an absent value as the default the
+	 * destination implies, and for these three that default is what the other
+	 * two enum members mean.
+	 */
+	const credentialsOption = (credentials: RequestCredentials) =>
+		credentials === "include" ? "include" : undefined;
 
 	// The other half of that scoping, and it has to be installed before the
 	// interceptors below - `SharedWorker` and `Worklet` are `[Exposed=Window]`
@@ -38,6 +48,7 @@ export default function (client: ScramjetClient, self: Self) {
 				client.rewriteUrl(scriptURL, {
 					destination: "worker",
 					isModule: init.type === "module",
+					credentials: credentialsOption(init.credentials),
 				}),
 				init
 			);
@@ -62,6 +73,7 @@ export default function (client: ScramjetClient, self: Self) {
 					client.rewriteUrl(scriptURL, {
 						destination: "sharedworker",
 						isModule: init.type === "module",
+						credentials: credentialsOption(init.credentials),
 					}),
 					{ ...init, name: scoped(init.name!) }
 				);
@@ -76,7 +88,28 @@ export default function (client: ScramjetClient, self: Self) {
 				moduleURL: string,
 				options?: WorkletOptions
 			): Promise<void> {
-				return super.addModule(client.rewriteUrl(moduleURL), options);
+				const init = readWorkletOptions(options);
+
+				// a worklet's script is always a module script - there is no
+				// classic form to opt into - so the URL has to say so, or the
+				// service worker treats it as a classic script and neither the
+				// request's mode and credentials nor the rewrite it eventually
+				// gets are the ones a module is owed.
+				//
+				// `destination` is deliberately left to the browser, which
+				// reports `audioworklet` / `paintworklet`. Naming `script` here
+				// would route the body through the module rewriter, and the
+				// result references the `$scramjet$*` helpers - which a
+				// `WorkletGlobalScope` does not have and cannot be given, so it
+				// would turn a worklet that merely leaks URLs into one that
+				// throws on load.
+				return super.addModule(
+					client.rewriteUrl(moduleURL, {
+						isModule: true,
+						credentials: credentialsOption(init.credentials),
+					}),
+					init
+				);
 			}
 		});
 }
