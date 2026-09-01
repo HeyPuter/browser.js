@@ -17,6 +17,7 @@ import {
 } from "@rewriters/url";
 import {
 	flagEnabled,
+	BooleanFlag,
 	HtmlRewriterHooks,
 	ScramjetContext,
 	ScramjetHeaders,
@@ -1581,7 +1582,7 @@ return { apply, construct };
 		return this.cachedTopUrl;
 	}
 
-	flagEnabled(flag: keyof ScramjetConfig["flags"]): boolean {
+	flagEnabled(flag: BooleanFlag): boolean {
 		const cached = this.flagCache.get(flag);
 		if (cached !== undefined) return cached;
 
