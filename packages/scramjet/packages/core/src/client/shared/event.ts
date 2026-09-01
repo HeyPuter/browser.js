@@ -6,7 +6,6 @@ import {
 	readEventListenerOptions,
 } from "@client/helpers";
 import {
-	Object_defineProperty,
 	Object_getOwnPropertyDescriptor,
 	Object_getOwnPropertyNames,
 	Object_hasOwn,
@@ -193,22 +192,35 @@ export default function (client: ScramjetClient, self: Self) {
 					}
 				}
 
-				// a worker global has no `event` at all
-				if (iswindow && !self.event) {
-					Object_defineProperty(self, "event", {
-						get() {
-							return args[0];
-						},
-						configurable: true,
-					});
-				}
-
 				const rv = Reflect_apply(target, that, args);
 
 				return rv;
 			},
 		});
 	}
+
+	/** The (type, capture) half of the DOM's listener identity, as one key. */
+	const listenerKey = (event: string, capture: boolean) =>
+		(capture ? "1" : "0") + event;
+
+	/** The wrappers registered on `target` for one (type, capture), if any. */
+	const wrappersFor = (target: EventTarget, key: string, create: boolean) => {
+		let byType = client.box.eventcallbacks.get(target);
+		if (!byType) {
+			if (!create) return undefined;
+			byType = new _Map();
+			client.box.eventcallbacks.set(target, byType);
+		}
+
+		let wrappers = byType.get(key);
+		if (!wrappers) {
+			if (!create) return undefined;
+			wrappers = new _WeakMap();
+			byType.set(key, wrappers);
+		}
+
+		return wrappers;
+	};
 
 	/**
 	 * The wrapper already registered for this exact listener, or a new one.
@@ -225,33 +237,36 @@ export default function (client: ScramjetClient, self: Self) {
 		callback: (...args: any) => any,
 		capture: boolean
 	) => {
-		let arr = client.box.eventcallbacks.get(target);
-		if (!arr) {
-			arr = [];
-			client.box.eventcallbacks.set(target, arr);
-		}
+		const wrappers = wrappersFor(target, listenerKey(event, capture), true)!;
 
-		for (let i = 0; i < arr.length; i++) {
-			const e = arr[i];
-			if (
-				e.event === event &&
-				e.originalCallback === callback &&
-				e.capture === capture
-			) {
-				return e.proxiedCallback;
-			}
-		}
+		const existing = wrappers.get(callback);
+		if (existing) return existing;
 
 		const proxiedCallback = wraplistener(callback);
-		arr[arr.length] = {
-			event,
-			originalCallback: callback,
-			proxiedCallback,
-			capture,
-		};
+		wrappers.set(callback, proxiedCallback);
 
 		return proxiedCallback;
 	};
+
+	/**
+	 * Whether `options` takes the dictionary branch of
+	 * `(AddEventListenerOptions or boolean)` / `(EventListenerOptions or
+	 * boolean)`.
+	 *
+	 * https://webidl.spec.whatwg.org/#es-union - null and undefined take the
+	 * dictionary (step 12), and so does any object or function (step 13).
+	 * Everything else falls past the string and numeric steps to step 19, which
+	 * is `ToBoolean`, because `boolean` is the only other member.
+	 *
+	 * Testing `typeof options === "boolean"` instead sends a number or a string
+	 * down the dictionary branch, where the conversion throws a TypeError the
+	 * spec never asks for: `addEventListener("x", fn, 1)` means `capture: true`.
+	 */
+	const takesDictionary = (options: unknown): boolean =>
+		options === null ||
+		options === undefined ||
+		typeof options === "object" ||
+		typeof options === "function";
 
 	client.Intercept(class extends EventTarget {
 		@Arguments(
@@ -278,10 +293,9 @@ export default function (client: ScramjetClient, self: Self) {
 			// `capture`. The dictionary form is read once, by the shared reader
 			// in helpers.ts, because `capture` decides the listener's identity
 			// here and the same object then goes to the native
-			const init =
-				typeof options === "boolean"
-					? { capture: options }
-					: readAddEventListenerOptions(options);
+			const init = takesDictionary(options)
+				? readAddEventListenerOptions(options)
+				: { capture: !!options };
 
 			return super.addEventListener(
 				type,
@@ -306,32 +320,55 @@ export default function (client: ScramjetClient, self: Self) {
 			}
 			const fn = callback as (...args: any) => any;
 
-			const capture =
-				typeof options === "boolean"
-					? options
-					: readEventListenerOptions(options).capture;
-			const arr = client.box.eventcallbacks.get(this);
+			const capture = takesDictionary(options)
+				? readEventListenerOptions(options).capture
+				: !!options;
+			const wrappers = wrappersFor(this, listenerKey(type, capture), false);
+			const proxiedCallback = wrappers && wrappers.get(fn);
 
-			if (arr) {
-				for (let i = 0; i < arr.length; i++) {
-					const e = arr[i];
-					if (
-						e.event === type &&
-						e.originalCallback === fn &&
-						e.capture === capture
-					) {
-						arr.splice(i, 1);
+			if (proxiedCallback) {
+				// dropped rather than kept, so that a later re-add mints a fresh
+				// wrapper - the same thing the native does with the registration
+				wrappers.delete(fn);
 
-						return super.removeEventListener(type, e.proxiedCallback, {
-							capture,
-						});
-					}
-				}
+				return super.removeEventListener(type, proxiedCallback, { capture });
 			}
 
 			return super.removeEventListener(type, callback, { capture });
 		}
 	});
+
+	/**
+	 * https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-event
+	 *
+	 * `window.event` is the event currently being dispatched, and for a type we
+	 * wrap the page has to be handed the same stand-in its listeners were given
+	 * - otherwise it reads `$scramjet$data` off the raw event and the proxy's
+	 * origin off `origin`.
+	 *
+	 * Answered from the native rather than remembered: the browser already
+	 * tracks which event is in flight, including the ones we never wrap and the
+	 * `undefined` outside a dispatch, and `box.wrappedEvents` is keyed on the
+	 * real event, so the wrapper is one lookup away.
+	 *
+	 * This used to define `window.event` itself, once, the first time a wrapped
+	 * listener ran - and then never again, because the guard it was behind
+	 * (`!self.event`) was true only until it had installed something. Every
+	 * later read answered with the first event the page ever saw. It also
+	 * invented the member on an engine that has none, which is the thing
+	 * `resolveNative` refuses to do; `Trap` skips a member this engine does not
+	 * have, so that stops happening too.
+	 */
+	if (iswindow) {
+		client.Trap("event", {
+			get(ctx) {
+				const current = ctx.get() as Event | undefined;
+				if (!current) return current;
+
+				return client.box.wrappedEvents.get(current) ?? current;
+			},
+		});
+	}
 
 	// every object carrying an `on<type>` for a type we rewrite.
 	const ontargets = (): object[] => {

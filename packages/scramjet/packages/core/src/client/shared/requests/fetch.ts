@@ -190,6 +190,20 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 	});
 
+	/**
+	 * Make the native reject a name the carrier prefix would otherwise rescue.
+	 *
+	 * `carriedHeaderName("")` is `x-scramjet-`, which is a perfectly good header
+	 * name, so prefixing first turns the TypeError Fetch owes the page for an
+	 * invalid name into a silent `null`. Asking the native about the page's own
+	 * string is the only way to get its verdict without restating the token
+	 * grammar here; `has` performs the same validation as `get` and does
+	 * nothing else.
+	 */
+	const validateHeaderName = (headers: Headers, name: string) => {
+		new client.native.Headers(headers).has(name);
+	};
+
 	client.Intercept(class extends Headers {
 		@Constructor("optional HeadersInit")
 		static konstructor(init?: HeadersInit) {
@@ -199,19 +213,20 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments("ByteString")
 		@Returns("ByteString?")
 		get(name: string): string | null {
-			if (client.box.taggedHeaders.has(this)) {
-				return super.get(carriedHeaderName(name));
-			}
+			if (!client.box.taggedHeaders.has(this)) return super.get(name);
 
-			return super.get(name);
+			validateHeaderName(this, name);
+
+			return super.get(carriedHeaderName(name));
 		}
 		@Arguments("ByteString")
 		@Returns("boolean")
 		has(name: string): boolean {
-			if (client.box.taggedHeaders.has(this)) {
-				return super.has(carriedHeaderName(name));
-			}
-			return super.has(name);
+			if (!client.box.taggedHeaders.has(this)) return super.has(name);
+
+			validateHeaderName(this, name);
+
+			return super.has(carriedHeaderName(name));
 		}
 		keys(): HeadersIterator<string> {
 			if (client.box.taggedHeaders.has(this)) {

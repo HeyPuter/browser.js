@@ -65,26 +65,33 @@ export class SingletonBox {
 	styleDeclarations: _WeakMap<CSSStyleDeclaration, CSSStyleDeclaration> =
 		new _WeakMap();
 	/**
-	 * The wrapper installed for each (target, type, callback, capture) listener.
+	 * The wrapper installed for each (target, type, capture, callback) listener,
+	 * which is the DOM's own listener identity.
 	 *
 	 * Shared rather than per-client because it is keyed on the EventTarget, and
 	 * one target is reachable from every realm that can see it. Kept on a client
 	 * it would mint a second wrapper for the same listener registered through a
 	 * different realm, and the DOM's dedup - which is what this table exists to
 	 * preserve - would silently stop working across frames.
+	 *
+	 * Weak at both ends that hold page objects. This was a `Map` of arrays
+	 * scanned linearly, which retained every target that had ever had a listener
+	 * added - and its callbacks - for the lifetime of the box, and cost O(n) per
+	 * add on a target with n listeners. Nesting the (type, capture) key in the
+	 * middle keeps the callbacks collectable and the lookup O(1); the middle
+	 * `Map` holds only event-type strings and dies with its target.
+	 *
+	 * The middle key is `capture` as "0"/"1" followed by the type, so that the
+	 * two halves cannot be confused for one another whatever the page names its
+	 * events. It has to be a `Map` rather than an object: a type is a
+	 * page-controlled string, and `"__proto__"` is a legal event name.
 	 */
-	eventcallbacks: _Map<
+	eventcallbacks: _WeakMap<
 		EventTarget,
-		{
-			event: string;
-			// callable rather than `Function`, which has no call signature and so
-			// cannot be handed to anything typed as a listener
-			originalCallback: (...args: any) => any;
-			proxiedCallback: (...args: any) => any;
-			/** part of the listener's identity, per the DOM's dedup rule */
-			capture: boolean;
-		}[]
-	> = new _Map([]);
+		// callable rather than `Function`, which has no call signature and so
+		// cannot be handed to anything typed as a listener
+		_Map<string, _WeakMap<(...args: any) => any, (...args: any) => any>>
+	> = new _WeakMap();
 
 	wrappedEvents: _WeakMap<Event, Event> = new _WeakMap();
 	eventhandlers: _WeakMap<object, _Map<string, (...args: any) => any>> =

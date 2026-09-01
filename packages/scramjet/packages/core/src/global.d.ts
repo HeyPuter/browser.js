@@ -47,6 +47,28 @@ declare var WebSocketStream: {
 	new (url: string, options?: WebSocketStreamOptions): WebSocketStream;
 };
 
+/**
+ * The shared worker's own global scope, which only `lib.webworker.d.ts`
+ * declares - and loading that alongside `lib.dom` conflicts on most of the
+ * platform. `client/shared/` runs in both realms, so the one interface a
+ * window-typed file has to name is declared here instead; `client/entry.ts`
+ * already tests for it at run time.
+ *
+ * https://html.spec.whatwg.org/multipage/workers.html#sharedworkerglobalscope
+ */
+interface SharedWorkerGlobalScope extends EventTarget {
+	readonly name: string;
+	onconnect:
+		| ((this: SharedWorkerGlobalScope, event: MessageEvent) => any)
+		| null;
+	close(): void;
+}
+// eslint-disable-next-line no-var
+declare var SharedWorkerGlobalScope: {
+	prototype: SharedWorkerGlobalScope;
+	new (): SharedWorkerGlobalScope;
+};
+
 interface CSSMarginRule extends CSSRule {
 	readonly name: string;
 	readonly style: CSSStyleDeclaration;

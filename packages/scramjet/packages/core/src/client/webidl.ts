@@ -86,6 +86,13 @@ export interface IDLPrimitives {
 	"unrestricted float": number;
 	double: number;
 	"unrestricted double": number;
+	/**
+	 * hr-time's typedef for `double`. It lives here rather than in
+	 * {@link IDLNamedTypes} because {@link IDL_PRIMITIVE_COERCERS} is keyed on
+	 * this interface - a name known only to the type layer resolves for the
+	 * decorator and then silently converts nothing at run time.
+	 */
+	DOMHighResTimeStamp: number;
 
 	// https://webidl.spec.whatwg.org/#idl-bigint
 	bigint: bigint;
@@ -170,8 +177,6 @@ export interface IDLNamedTypes {
 	BlobPart: BufferSource | Blob | string;
 	Transferable: ArrayBuffer | MessagePort | ImageBitmap | OffscreenCanvas;
 	TimerHandler: string | AnyFunction;
-	/** hr-time's typedef for double */
-	DOMHighResTimeStamp: number;
 	MessageEventSource: WindowProxy | MessagePort | ServiceWorker;
 	WindowProxy: Window;
 	CookieList: CookieList;
@@ -1378,8 +1383,24 @@ function coerceIDLRecord(
 	return out;
 }
 
-/** https://webidl.spec.whatwg.org/#js-type-mapping */
-const IDL_PRIMITIVE_COERCERS: Record<string, IDLCoerce> = {
+const idlRestrictedDouble: IDLCoerce = (value) => {
+	const x = Number(value);
+	if (!Number_isFinite(x)) idlReject();
+
+	return x;
+};
+
+/**
+ * https://webidl.spec.whatwg.org/#js-type-mapping
+ *
+ * Typed on `keyof IDLPrimitives` so that a name the decorators accept cannot
+ * be missing a conversion. `DOMHighResTimeStamp` was: it resolved at the type
+ * level, so `expires: "DOMHighResTimeStamp? = null"` type-checked, and then
+ * fell through to `idlPassthrough` at run time and wrote `Max-Age=NaN` where
+ * the `double` conversion owes the page a TypeError.
+ */
+const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
+	Record<string, IDLCoerce> = {
 	any: idlPassthrough,
 	undefined: () => undefined,
 	// legacy spelling, still in a few unmigrated specs
@@ -1410,13 +1431,10 @@ const IDL_PRIMITIVE_COERCERS: Record<string, IDLCoerce> = {
 		return rounded;
 	},
 	"unrestricted float": (value) => Math_fround(Number(value)),
-	double: (value) => {
-		const x = Number(value);
-		if (!Number_isFinite(x)) idlReject();
-
-		return x;
-	},
+	double: idlRestrictedDouble,
 	"unrestricted double": (value) => Number(value),
+	// hr-time's typedef for `double`, and restricted like it
+	DOMHighResTimeStamp: idlRestrictedDouble,
 
 	bigint: (value) => {
 		// ToBigInt rejects Numbers, unlike the BigInt constructor
@@ -1448,6 +1466,15 @@ const IDL_PRIMITIVE_COERCERS: Record<string, IDLCoerce> = {
 		return value;
 	},
 	symbol: (value) => (typeof value === "symbol" ? value : idlReject()),
+
+	// The buffer typedefs discriminate on internal slots, which is a brand
+	// check and not a conversion, and the native binding performs it either
+	// way. Listed so the table stays exhaustive over `IDLPrimitives` rather
+	// than reaching passthrough by falling off the end of it.
+	BufferSource: idlPassthrough,
+	BinaryData: idlPassthrough,
+	AllowSharedBufferSource: idlPassthrough,
+	ArrayBufferView: idlPassthrough,
 };
 
 // ---------------------------------------------------------------------------
