@@ -21,6 +21,7 @@ export const QP = {
 	fetchSite: "$fs",
 	crossSiteRedirect: "$csr",
 	fakeDataURL: "$fakedataurl",
+	nonce: "$nonce",
 } as const;
 
 export type QueryParamKey = keyof typeof QP;
