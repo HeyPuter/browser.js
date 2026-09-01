@@ -12,20 +12,42 @@ export * from "./htmlRules";
 export * from "./mime";
 export * from "./rewriters";
 
-export function flagEnabled(
-	flag: keyof ScramjetFlags,
+/** the flags whose value is a boolean, which is all but `incumbency` */
+export type BooleanFlag = {
+	[K in keyof ScramjetFlags]: ScramjetFlags[K] extends boolean ? K : never;
+}[keyof ScramjetFlags];
+
+/**
+ * A flag's value for one URL: the configured default, unless a `siteFlags`
+ * pattern matches and overrides it.
+ */
+export function flagValue<K extends keyof ScramjetFlags>(
+	flag: K,
 	context: ScramjetContext,
 	url: URL
-): boolean {
+): ScramjetFlags[K] {
 	const value = context.config.flags[flag];
 	for (const regex in context.config.siteFlags) {
 		const partialflags = context.config.siteFlags[regex];
 		if (new _RegExp(regex).test(url.href) && flag in partialflags) {
-			return partialflags[flag];
+			return partialflags[flag] as ScramjetFlags[K];
 		}
 	}
 
 	return value;
+}
+
+/**
+ * `flagValue` for the boolean flags. Kept separate so that a flag which is not
+ * a boolean - `incumbency` - cannot be read as if it were one, where every
+ * mode including `"none"` would come back truthy.
+ */
+export function flagEnabled(
+	flag: BooleanFlag,
+	context: ScramjetContext,
+	url: URL
+): boolean {
+	return flagValue(flag, context, url);
 }
 export type ScramjetInterface = {
 	codecEncode: (input: string) => string;

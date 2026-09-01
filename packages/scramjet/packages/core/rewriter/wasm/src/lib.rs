@@ -52,7 +52,6 @@ fn get_js_config(config: &Object) -> Result<Config> {
 		cleanrestfn: get_str(config, "cleanrestfn")?,
 		importfn: get_str(config, "importfn")?,
 		rewritefn: get_str(config, "rewritefn")?,
-		wrappostmessagefn: get_str(config, "wrappostmessagefn")?,
 		metafn: get_str(config, "metafn")?,
 		pushsourcemapfn: get_str(config, "pushsourcemapfn")?,
 

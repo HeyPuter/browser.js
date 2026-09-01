@@ -32,6 +32,8 @@ export type JsRewriterOutput = {
 	js: Uint8Array,
 	map: Uint8Array,
 	scramtag: string,
+	/** the `//# sourceURL` the source already carried, if any */
+	sourceurl: string | null,
 	errors: string[],
 };
 "#;
@@ -102,6 +104,14 @@ pub fn create_js_output(out: RewriteResult, url: String, src: String) -> Result<
 		&Uint8Array::from(out.sourcemap.as_slice()).into(),
 	)?;
 	set_obj(&obj, "scramtag", &out.flags.sourcetag.into())?;
+	set_obj(
+		&obj,
+		"sourceurl",
+		&match &out.page_source_url {
+			Some(url) => JsValue::from_str(url),
+			None => JsValue::NULL,
+		},
+	)?;
 
 	#[cfg(feature = "debug")]
 	{

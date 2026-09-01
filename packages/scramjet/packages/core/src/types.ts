@@ -14,6 +14,27 @@ export interface ScramjetVersionInfo {
 /**
  * Scramjet Feature Flags, configured at build time
  */
+/**
+ * How a stack frame is traced back to the script that owns it, which is what
+ * lets an incumbent settings object be identified.
+ *
+ * - `pst`   `Error.prepareStackTrace` plus `CallSite.getScriptHash`, both V8
+ *           only. Costs nothing observable: the hash is already on every
+ *           frame, eval'd ones included, and is not part of what a page reads.
+ * - `nonce` A `//# sourceURL` carrying a per-rewrite nonce. Works wherever a
+ *           stack can be read, but the sourceURL *is* what the page reads - in
+ *           stack traces, in `onerror`, and in `ErrorEvent.filename` - so
+ *           every one of those has to be emulated back.
+ * - `stamp` Not implemented yet.
+ * - `lazystamp`
+ *           Not implemented yet.
+ * - `none`  No attribution.
+ *
+ * The two stamp modes are recognised and carried through everywhere a mode is
+ * read, but have no behaviour yet: they currently act as `none`.
+ */
+export type IncumbencyMode = "pst" | "nonce" | "stamp" | "lazystamp" | "none";
+
 export type ScramjetFlags = {
 	syncxhr: boolean;
 	disableComputedWrap: boolean;
@@ -26,6 +47,7 @@ export type ScramjetFlags = {
 	allowInvalidJs: boolean;
 	debugTrampolines: boolean;
 	debugSourceURL: boolean;
+	incumbency: IncumbencyMode;
 	encapsulateWorkers: boolean;
 };
 
@@ -38,8 +60,8 @@ export interface ScramjetConfig {
 		importfn: string;
 		rewritefn: string;
 		metafn: string;
-		wrappostmessagefn: string;
 		pushsourcemapfn: string;
+		registerrealmfn: string;
 		trysetfn: string;
 		templocid: string;
 		tempunusedid: string;

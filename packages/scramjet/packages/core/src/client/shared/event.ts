@@ -34,6 +34,18 @@ export default function (client: ScramjetClient, self: Self) {
 				source(this: MessageEvent) {
 					if (this.source === null) return null;
 
+					const data = this.data;
+					if (
+						typeof data === "object" &&
+						data !== null &&
+						Object_hasOwn(data, "$scramjet$messagetype")
+					) {
+						console.log(data.$scramjet$nonce, data);
+						const realm = client.box.scriptrealms[data.$scramjet$nonce];
+						console.log("nonce recovered", realm);
+						return realm.client.global;
+					}
+
 					// const scram: ScramjetClient = this.source[SCRAMJETCLIENT];
 
 					// if (scram) return scram.globalProxy;

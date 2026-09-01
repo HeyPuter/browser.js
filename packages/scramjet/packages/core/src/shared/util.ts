@@ -1,35 +1,58 @@
 import {
-	Array_from,
+	atob,
 	btoa,
+	Function_apply,
 	TextEncoder_encode,
+	String_charCodeAt,
 	String_fromCharCode,
-	String_fromCodePoint,
+	_Uint8Array,
 } from "@/shared/snapshot";
 
+// `String.fromCharCode.apply` is the fastest way to turn bytes into a latin1
+// string, but the argument list is spread onto the stack, so it has to be fed
+// in chunks or a large buffer overflows it
+const APPLY_CHUNK = 0x8000;
+
 function bytesToBase64Fallback(bytes: Uint8Array): string {
-	const binString = Array_from(bytes, (byte) =>
-		String_fromCodePoint(byte)
-	).join("");
+	let binString = "";
+	for (let i = 0; i < bytes.length; i += APPLY_CHUNK) {
+		binString += Function_apply(
+			String_fromCharCode,
+			null,
+			bytes.subarray(i, i + APPLY_CHUNK)
+		);
+	}
 
 	return btoa(binString);
 }
 
+function base64ToBytesFallback(base64: string): Uint8Array {
+	const binString = atob(base64);
+	const bytes = new _Uint8Array(binString.length);
+	for (let i = 0; i < bytes.length; i++) {
+		bytes[i] = String_charCodeAt(binString, i);
+	}
+
+	return bytes;
+}
+
 const bytesToBase64Native: ((this: Uint8Array) => string) | undefined = (
-	Uint8Array.prototype as any
+	_Uint8Array.prototype as any
 ).toBase64;
+const base64ToBytesNative: ((base64: string) => Uint8Array) | undefined = (
+	_Uint8Array as any
+).fromBase64;
 
 export const bytesToBase64: (bytes: Uint8Array) => string =
 	typeof bytesToBase64Native === "function"
 		? (bytes) => bytesToBase64Native.call(bytes)
 		: bytesToBase64Fallback;
 
+export const base64ToBytes: (base64: string) => Uint8Array =
+	typeof base64ToBytesNative === "function"
+		? base64ToBytesNative
+		: base64ToBytesFallback;
+
 export function base64Encode(text: string) {
-	return btoa(
-		TextEncoder_encode(text)
-			.reduce(
-				(data, byte) => (data.push(String_fromCharCode(byte)), data),
-				[] as any
-			)
-			.join("")
-	);
+	return bytesToBase64(TextEncoder_encode(text));
 }

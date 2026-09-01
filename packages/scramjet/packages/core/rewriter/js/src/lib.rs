@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use oxc::{
 	allocator::{Allocator, Vec},
+	ast::Comment,
 	ast_visit::Visit,
 	diagnostics::OxcDiagnostic,
 	parser::{ParseOptions, Parser},
@@ -42,8 +43,59 @@ pub struct RewriteResult<'alloc> {
 	pub js: Vec<'alloc, u8>,
 	pub sourcemap: Vec<'alloc, u8>,
 
+	/// The `//# sourceURL` this source already carried, if any. Rewriting
+	/// appends one of scramjet's own, which wins - a page that reads a stack
+	/// trace has to be handed this back in its place.
+	pub page_source_url: Option<std::string::String>,
+
 	pub errors: std::vec::Vec<OxcDiagnostic>,
 	pub flags: Flags,
+}
+
+/// The sourceURL V8 would take from this source, matched the way V8 matches
+/// it. Measured against d8 rather than inferred, because a mismatch here is a
+/// stack frame that names the wrong file and gives the proxy away:
+///
+///   - line comments only; the same text inside a block comment is not one
+///   - `#` or `@`, then exactly one space: `//#sourceURL=` and `//#  sourceURL=`
+///     are both ignored
+///   - `sourceURL` is case-sensitive and `=` follows it immediately
+///   - the value is the run of non-whitespace after any spacing, and anything
+///     but whitespace following it voids the directive
+///   - the last such comment wins, and a voided one clears an earlier valid
+///     one rather than losing to it
+///
+/// Comments that merely start `//#` - `sourceMappingURL` above all - do not
+/// participate at all.
+fn page_source_url(js: &str, comments: &[Comment]) -> Option<std::string::String> {
+	let mut found = None;
+
+	for comment in comments {
+		if !comment.is_line() {
+			continue;
+		}
+
+		let span = comment.content_span();
+		let content = &js[span.start as usize..span.end as usize];
+
+		let Some(rest) = content
+			.strip_prefix("# ")
+			.or_else(|| content.strip_prefix("@ "))
+		else {
+			continue;
+		};
+		let Some(value) = rest.strip_prefix("sourceURL=") else {
+			continue;
+		};
+
+		let mut words = value.split_whitespace();
+		found = match (words.next(), words.next()) {
+			(Some(url), None) => Some(url.to_string()),
+			_ => None,
+		};
+	}
+
+	found
 }
 
 pub struct Rewriter {
@@ -137,6 +189,10 @@ impl Rewriter {
 			return Err(RewriterError::OxcPanicked(errors));
 		}
 
+		// read off the original source, before `js` is shadowed by the rewritten
+		// bytes and before scramjet appends a sourceURL of its own
+		let page_source_url = page_source_url(js, &parsed.program.comments);
+
 		let jschanges = self.take_changes(alloc)?;
 
 		let mut visitor = Visitor {
@@ -164,6 +220,7 @@ impl Rewriter {
 		Ok(RewriteResult {
 			js,
 			sourcemap,
+			page_source_url,
 			errors: parsed.errors,
 			flags: visitor.flags,
 		})

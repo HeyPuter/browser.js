@@ -1,6 +1,7 @@
 import { IncrementalHtmlRewriter } from "@/shared";
 import { ScramjetClient } from "./client";
 import { SourceMaps } from "./shared/sourcemaps";
+import { ScriptRealm } from "./shared/incumbency";
 import {
 	Object_getOwnPropertyNames,
 	Object_getOwnPropertyDescriptor,
@@ -99,6 +100,12 @@ export class SingletonBox {
 	ctors: Record<string, Function[]> = {};
 
 	sourcemaps: SourceMaps = {};
+
+	/** keyed by the nonce a rewritten script registers itself under */
+	scriptrealms: Record<string, ScriptRealm> = {};
+
+	/** `pst` mode's index into {@link scriptrealms}: script source hash -> nonce */
+	scripthashes: Record<string, string> = {};
 
 	constructor(public ownerclient: ScramjetClient) {}
 

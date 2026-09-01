@@ -5,6 +5,7 @@ import {
 	ScramjetFetchParsed,
 	ScramjetFetchRequest,
 } from ".";
+import { incumbencyMode } from "@/shared/incumbency";
 import {
 	flagEnabled,
 	isHtmlMimeType,
@@ -63,8 +64,12 @@ export async function rewriteBody(
 					parsed.isModule
 				);
 
+				// last `//# sourceURL` in a file wins, so appending here would
+				// overwrite - and drop the nonce from - the one the rewriter
+				// attaches in `nonce` mode. no other mode touches the sourceURL
 				if (
-					flagEnabled("debugSourceURL", handler.context, parsed.meta.origin)
+					flagEnabled("debugSourceURL", handler.context, parsed.meta.origin) &&
+					incumbencyMode(handler.context, parsed.meta.origin) !== "nonce"
 				) {
 					if (rewritten instanceof Uint8Array) {
 						rewritten = new TextDecoder().decode(rewritten);
