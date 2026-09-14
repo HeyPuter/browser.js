@@ -9,16 +9,16 @@ bindCDP("CSS.enable", async function () {
 		}
 	}
 	window.addEventListener("resize", () => {
-		if (this.cssEnabled) {
+		if (this.isDomainEnabled("CSS")) {
 			this.emit("CSS.mediaQueryResultChanged", undefined);
 		}
 	});
 
-	this.cssEnabled = true;
+	this.enableDomain("CSS");
 });
 
 bindCDP("CSS.disable", async function () {
-	this.cssEnabled = false;
+	this.disableDomain("CSS");
 });
 
 bindCDP("CSS.getComputedStyleForNode", async function (params) {

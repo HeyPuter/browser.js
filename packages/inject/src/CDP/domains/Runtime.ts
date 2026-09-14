@@ -23,11 +23,15 @@ function createExceptionDetails(
 
 bindCDP("Runtime.enable", function () {
 	console.log("runtime enabled!");
-	this.runtimeEnabled = true;
+	this.isDomainEnabled("Runtime");
+});
+
+bindCDP("Runtime.disable", function () {
+	this.disableDomain("Runtime");
 });
 
 bindCDP("Runtime.evaluate", async function (params) {
-	if (!this.runtimeEnabled) {
+	if (!this.isDomainEnabled("Runtime")) {
 		throw new Error("Runtime not enabled");
 	}
 	const {

@@ -6,7 +6,7 @@ let observer: MutationObserver | undefined = undefined;
 
 // MARK: enable/disable
 bindCDP("DOM.disable", async function () {
-	this.domEnabled = false;
+	this.disableDomain("DOM");
 	observer?.disconnect();
 });
 
@@ -70,7 +70,7 @@ bindCDP("DOM.enable", async function () {
 		subtree: true,
 	});
 
-	this.domEnabled = true;
+	this.enableDomain("DOM");
 });
 
 // MARK: get stuff

@@ -15,10 +15,10 @@ export function setupCDPServer({ self, rpc, client }: ExecutionContextWrapper) {
 	box = client.box;
 }
 
+type CDPDomain = "Runtime" | "DOM" | "CSS" | "Page";
+
 export class CDPSession {
-	runtimeEnabled = false;
-	domEnabled = false;
-	cssEnabled = false;
+	private enabledDomains: Set<CDPDomain> = new Set();
 	objects = new ObjectManager(this);
 	nodes = new NodeManager();
 	styles = new StyleManager(this);
@@ -30,6 +30,18 @@ export class CDPSession {
 		} else {
 			console.warn(`ignoring ${method}`);
 		}
+	}
+
+	enableDomain(domain: CDPDomain) {
+		this.enabledDomains.add(domain);
+	}
+
+	disableDomain(domain: CDPDomain) {
+		this.enabledDomains.delete(domain);
+	}
+
+	isDomainEnabled(domain: CDPDomain): boolean {
+		return this.enabledDomains.has(domain);
 	}
 
 	emit<T extends CdpEvent>(method: T, params: CdpEventArgs<T>) {
