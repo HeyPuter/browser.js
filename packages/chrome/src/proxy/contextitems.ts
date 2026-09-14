@@ -166,13 +166,12 @@ export function pageContextItems(
 			},
 			icon: iconBookmark,
 		},
-		// {
-		// 	label: "Inspect",
-		// 	action: () => {
-		// 		tab.devtoolsOpen = true;
-		// 		// if (e.target) requestInspectElement([e.target as HTMLElement, tab]);
-		// 	},
-		// 	icon: iconCode,
-		// },
+		{
+			label: "Inspect",
+			action: () => {
+				tab.devtoolsOpen = !tab.devtoolsOpen;
+			},
+			icon: iconCode,
+		},
 	];
 }
