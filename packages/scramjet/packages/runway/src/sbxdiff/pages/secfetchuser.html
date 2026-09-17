@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>sec-fetch-user on an iframe navigation</title>
+<!--
+  Does Chromium attach `Sec-Fetch-User: ?1` to an IFRAME navigation, and does it
+  depend on user activation?
+
+  It matters because scramjet forwards that header only when the browser gave it
+  one (`fetch/headers.ts`), and the guest document is an iframe whose src the
+  harness sets from script. If the answer is "only under activation", then the
+  header the sandbox does not send is missing because of the HARNESS, and the
+  fix belongs there rather than in the proxy.
+
+  Three navigations, same URL, same frame:
+    load   src set at parse time, no activation anywhere
+    script src set from a timer, after a click happened but not during it
+    click  src set inside the click handler, transient activation live
+-->
+<button id="go" style="font: 16px monospace">go</button>
+<pre id="out" style="font: 12px monospace"></pre>
+<iframe id="f" style="width: 600px; height: 80px"></iframe>
+<script>
+	const out = document.getElementById("out");
+	const f = document.getElementById("f");
+	const say = (label, text) => {
+		out.textContent += `${label}: ${text}\n`;
+		console.info(`secfetchuser: ${label}: ${text}`);
+	};
+
+	// The frame is same-origin, so its own document can be read from here.
+	const navigate = (label) =>
+		new Promise((resolve) => {
+			f.onload = () => {
+				let body = "";
+				try {
+					body = f.contentDocument.body.textContent || "";
+				} catch (err) {
+					body = `unreadable: ${err}`;
+				}
+				const m = /"order":\[(.*?)\]/.exec(body);
+				const order = m ? m[1].replace(/"/g, "") : body.slice(0, 200);
+				say(
+					label,
+					/Sec-Fetch-User/i.test(order)
+						? `?1 SENT   ${order}`
+						: `ABSENT   ${order}`
+				);
+				resolve();
+			};
+			// A fresh query each time, or the second navigation is served from
+			// cache and reports the first one's headers.
+			f.src = `/__sbxdiff/headers?when=${label}`;
+		});
+
+	navigate("load");
+
+	document.getElementById("go").addEventListener("click", async () => {
+		await navigate("click");
+		// setTimeout ends the transient activation window, so this is the same
+		// page after the same user gesture with the activation expired.
+		setTimeout(() => navigate("script"), 6000);
+	});
+</script>

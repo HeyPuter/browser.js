@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>clock frame</title>
+	</head>
+	<body>
+		<script>
+			// Reports this frame's clock to its embedder, from the frame AND from
+			// a blob worker it starts itself -- the exact shape Cloudflare's
+			// Turnstile uses, where the widget is a cross-origin iframe and the
+			// payload is built in a worker that iframe creates.
+			const send = (where, d) =>
+				parent.postMessage({ sbxClock: { where, d } }, "*");
+			send("frame", Date.now());
+			// Is it the SWITCH RELAY that failed for this process, or virtual time
+			// specifically? getRandomValues is pinned by --sbxdiff-run-key, which
+			// travels the same relay array as --sbxdiff-initial-time. If this
+			// reproduces while Date.now() does not, the relay is fine and virtual
+			// time is simply not on in an out-of-process frame.
+			const u = new Uint32Array(2);
+			crypto.getRandomValues(u);
+			send("frameRand", Array.from(u).join(","));
+			const src = "onmessage=()=>postMessage(Date.now())";
+			const w = new Worker(
+				URL.createObjectURL(new Blob([src], { type: "text/javascript" }))
+			);
+			w.onmessage = (e) => send("frameWorker", e.data);
+			w.postMessage(0);
+		</script>
+	</body>
+</html>

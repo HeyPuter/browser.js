@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff currentScript probe</title>
+	</head>
+	<body>
+		<script>
+			// `document.currentScript`, and whether a script can remove itself.
+			//
+			// Self-removal is a common idiom -- `document.currentScript.remove()`
+			// -- and a page that does it has FEWER script elements afterwards
+			// than its markup had. Measured on rateyourmusic: the recorded page
+			// has 23 script tags, the oracle's guest reads an HTMLCollection of
+			// 20, and the sandbox reads 23. Same sequence otherwise, so the
+			// sandbox is keeping three scripts the oracle drops.
+			//
+			// If `currentScript` is wrong under the proxy, the removal targets
+			// nothing and the elements stay -- which is exactly that shape.
+			window.__say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			__say(
+				"cs.inlineIsScript",
+				document.currentScript instanceof HTMLScriptElement
+			);
+			__say(
+				"cs.inlineTag",
+				document.currentScript ? document.currentScript.tagName : "null"
+			);
+			__say("cs.startCount", document.scripts.length);
+		</script>
+		<script src="/marker.js"></script>
+		<script>
+			// The idiom itself: take the element, remove it, count again.
+			const before = document.scripts.length;
+			const me = document.currentScript;
+			__say(
+				"cs.selfIsSelf",
+				me === document.scripts[document.scripts.length - 1]
+			);
+			if (me && me.remove) me.remove();
+			__say("cs.removedOne", before - document.scripts.length);
+			__say("cs.afterRemove", document.scripts.length);
+		</script>
+		<script>
+			// And from a nested function, where `currentScript` must still be the
+			// running script rather than null.
+			(function () {
+				__say(
+					"cs.nestedTag",
+					document.currentScript ? document.currentScript.tagName : "null"
+				);
+			})();
+			// After a microtask it must be null, which is how a page tells a
+			// synchronous execution from a deferred one.
+			Promise.resolve().then(() => {
+				__say("cs.afterMicrotask", String(document.currentScript));
+				__say("cs.finalCount", document.scripts.length);
+			});
+		</script>
+	</body>
+</html>

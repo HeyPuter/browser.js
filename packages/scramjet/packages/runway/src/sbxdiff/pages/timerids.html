@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff timer-id probe</title>
+	</head>
+	<body>
+		<script>
+			// The ids a document's own timers get.
+			//
+			// Chromium counts them from one, per document. A proxy sets timers on
+			// the same document -- for its bootstrap, and for every rewritten
+			// handler it schedules -- so without renumbering the page's first
+			// timer is not the document's first, and every id it holds is
+			// shifted. Measured in Cloudflare's Turnstile realm, which passes
+			// them back to `clearTimeout`: 10 on a direct load against 15 through
+			// the proxy, twenty times in one run.
+			//
+			// The ids themselves, not just their spacing: a page that starts at 4
+			// has learned something about its browser even if the gaps are right.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const ids = [];
+			for (let i = 0; i < 4; i++) ids.push(setTimeout(() => {}, 60000));
+			say("timer.ids", ids.join(","));
+
+			// Cleared by the id the page was given, which is the other half: a
+			// renumbered id is a handle, and it has to still name the timer.
+			let fired = false;
+			const doomed = setTimeout(() => {
+				fired = true;
+			}, 10);
+			say("timer.doomedId", doomed);
+			clearTimeout(doomed);
+
+			const interval = setInterval(() => {}, 60000);
+			say("timer.intervalId", interval);
+			clearInterval(interval);
+
+			// An id from nowhere must not throw or clear something else.
+			clearTimeout(999999);
+			say("timer.clearUnknownOk", true);
+
+			setTimeout(() => {
+				say("timer.clearedOne", fired === false);
+				say(
+					"timer.afterClears",
+					setTimeout(() => {}, 60000)
+				);
+			}, 50);
+		</script>
+	</body>
+</html>

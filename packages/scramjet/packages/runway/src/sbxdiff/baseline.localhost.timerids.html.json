@@ -1,0 +1,9 @@
+{
+	"buckets": [
+		"T2|missing-call|Window.clearInterval|count",
+		"T2|missing-call|Window.clearTimeout|count",
+		"T2|missing-call|Window.setInterval|count",
+		"T2|missing-call|Window.setTimeout|count"
+	],
+	"spreads": {}
+}

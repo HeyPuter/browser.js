@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Chromium's header order on a NAVIGATION</title>
+<!--
+  `shared/headers.ts` carries two measured orders, both taken from a fetch. Its
+  own comment says a request carrying `upgrade-insecure-requests`,
+  `sec-fetch-user` or `priority` -- all three ride on a navigation and on
+  nothing else -- may order differently again, and that the way to find out is
+  to measure it.
+
+  This measures it. Four navigations of one iframe, each under a live click so
+  `Sec-Fetch-User` is on all of them:
+
+    get       GET, with a cookie already set
+    post      form POST, so `content-type` and `origin` are present
+    postmulti form POST as multipart, same shape, different content-type
+    sub       a plain fetch from the same page, as the control -- it should
+              reproduce the order already in the table, and if it does not then
+              the table has drifted rather than the navigation differing
+-->
+<button id="go" style="font: 16px monospace">go</button>
+<pre id="out" style="font: 12px monospace"></pre>
+<iframe id="f" name="f" style="width: 700px; height: 60px"></iframe>
+<form id="fm" method="POST" action="/__sbxdiff/headers?when=post" target="f">
+	<input name="a" value="1" />
+</form>
+<form
+	id="fmm"
+	method="POST"
+	enctype="multipart/form-data"
+	action="/__sbxdiff/headers?when=postmulti"
+	target="f"
+>
+	<input name="a" value="1" />
+</form>
+<script>
+	document.cookie = "sbxdiffnav=1; path=/";
+	const out = document.getElementById("out");
+	const f = document.getElementById("f");
+	const say = (label, order) => {
+		out.textContent += `${label}: ${order}\n`;
+		console.info(`navorder ${label}: ${order}`);
+	};
+	const read = (label) => {
+		let body = "";
+		try {
+			body = f.contentDocument.body.textContent || "";
+		} catch (err) {
+			body = `unreadable: ${err}`;
+		}
+		const m = /"order":\[(.*?)\]/.exec(body);
+		say(label, m ? m[1].replace(/"/g, "") : body.slice(0, 200));
+	};
+	const settle = (label) =>
+		new Promise((resolve) => {
+			f.onload = () => {
+				read(label);
+				resolve();
+			};
+		});
+
+	document.getElementById("go").addEventListener("click", async () => {
+		// All inside the handler, so every navigation keeps the activation.
+		const g = settle("get");
+		f.src = "/__sbxdiff/headers?when=get";
+		await g;
+
+		const p = settle("post");
+		document.getElementById("fm").submit();
+		await p;
+
+		const pm = settle("postmulti");
+		document.getElementById("fmm").submit();
+		await pm;
+
+		const res = await fetch("/__sbxdiff/headers?when=sub", {
+			method: "POST",
+			body: "a=1",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+		});
+		say("sub", (await res.json()).order.join(","));
+	});
+</script>

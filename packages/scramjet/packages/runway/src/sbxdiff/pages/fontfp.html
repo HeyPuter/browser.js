@@ -1,0 +1,99 @@
+<!doctype html>
+<!--
+  Font measurement, which is the other half of the challenge's payload.
+
+  Captured live off the passing side, the second payload shape is a DOM
+  serialisation paired with injected style rules:
+
+    {"n":[{"t":"div","e":"dGSz90","c":["hRkTq50",...]}],
+     "i":[{"k":0,"v":".hRkTq57{font-family:'ultTK73'}"},
+          {"k":1,"s":".hRkTq55","v":"VMQLo20"},
+          {"k":2,"s":".hRkTq58"}]}
+
+  Random class names, random font names that do not exist, and then the element
+  is measured -- the classic way to ask which fonts a machine has without
+  asking. A proxy touches both halves of that: scramjet rewrites CSS text on its
+  way in and un-rewrites it on the way back out of `getComputedStyle`.
+
+  So this checks the three things that could go wrong: that a quoted family name
+  survives the rewriter, that the computed value reads back the way a browser
+  reports it, and that the metrics themselves agree.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>fontfp</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-font " + s);
+			};
+
+			// Names shaped like the challenge's: quoted, and not installed, so
+			// the element falls back and the fallback's metrics are the answer.
+			const families = [
+				"'ultTK73'",
+				"'ultTK72', serif",
+				"monospace",
+				"serif",
+				"sans-serif",
+				"'Helvetica Neue', Arial, sans-serif",
+				"'Times New Roman'",
+				"'Courier New', monospace",
+				"system-ui",
+				"'-apple-system'",
+			];
+			const style = document.createElement("style");
+			document.head.appendChild(style);
+			const sheet = style.sheet;
+			const host = document.createElement("div");
+			host.style.cssText =
+				"position:absolute;left:-9999px;top:0;white-space:nowrap";
+			document.body.appendChild(host);
+
+			families.forEach((fam, i) => {
+				const cls = "fp" + i;
+				// insertRule, which is the path the challenge uses and the path
+				// scramjet's css rewriter sits on.
+				sheet.insertRule(
+					"." + cls + "{font-family:" + fam + ";font-size:72px}",
+					sheet.cssRules.length
+				);
+				const el = document.createElement("span");
+				el.className = cls;
+				el.textContent = "mmmmmmmmmmlli";
+				host.appendChild(el);
+				const cs = getComputedStyle(el);
+				say(
+					i +
+						" want=" +
+						JSON.stringify(fam) +
+						" computed=" +
+						JSON.stringify(cs.fontFamily) +
+						" w=" +
+						el.offsetWidth +
+						" h=" +
+						el.offsetHeight +
+						" rect=" +
+						el.getBoundingClientRect().width.toFixed(3)
+				);
+			});
+			say("rules=" + sheet.cssRules.length);
+			say("cssText0=" + JSON.stringify(sheet.cssRules[0].cssText));
+			try {
+				say(
+					"fonts.check=" +
+						document.fonts.check("72px 'ultTK73'") +
+						"," +
+						document.fonts.check("72px serif")
+				);
+			} catch (e) {
+				say("fonts.check-failed " + e);
+			}
+		</script>
+	</body>
+</html>

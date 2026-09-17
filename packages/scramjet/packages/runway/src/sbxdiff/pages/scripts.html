@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff injected-script probe</title>
+		<script>
+			window.__a = 1;
+		</script>
+	</head>
+	<body>
+		<script src="/marker.js"></script>
+		<script>
+			// Can the page see the shim's own <script> elements?
+			//
+			// A proxy has to inject its bootstrap into the document, and those
+			// elements are in the DOM like any other. Every way a page can count
+			// or walk its scripts has to agree with what it actually wrote, or
+			// the count itself is the tell -- and an anti-bot payload records
+			// element counts. Measured on rateyourmusic, an HTMLCollection the
+			// page read was 23 long in the sandbox and 20 in the oracle.
+			//
+			// Counted by every route, because they are different code paths in a
+			// proxy: a live HTMLCollection, a static NodeList, the legacy
+			// `document.scripts`, and walking the children by hand.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			say("scr.documentScripts", document.scripts.length);
+			say(
+				"scr.getElementsByTagName",
+				document.getElementsByTagName("script").length
+			);
+			say("scr.querySelectorAll", document.querySelectorAll("script").length);
+			say("scr.headChildren", document.head.children.length);
+			say(
+				"scr.headScriptCount",
+				[...document.head.children].filter((e) => e.tagName === "SCRIPT").length
+			);
+			say("scr.allLength", document.all.length);
+			say(
+				"scr.walkScripts",
+				(() => {
+					let n = 0;
+					const walk = (node) => {
+						if (node.tagName === "SCRIPT") n++;
+						for (const c of node.children) walk(c);
+					};
+					walk(document.documentElement);
+					return n;
+				})()
+			);
+			// The srcs, not just the count: a name is as readable as a number.
+			say(
+				"scr.srcs",
+				[...document.scripts]
+					.map((s) => s.getAttribute("src") || "(inline)")
+					.join(",")
+			);
+			// And the attributes on them, since the shim marks its own.
+			say(
+				"scr.attrNames",
+				[...document.scripts]
+					.map((s) => s.getAttributeNames().sort().join("+"))
+					.join(",")
+			);
+		</script>
+	</body>
+</html>

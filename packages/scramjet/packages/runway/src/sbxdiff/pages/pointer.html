@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff pointer probe</title>
+		<style>
+			/* The body has to actually COVER the viewport. An empty body is zero
+			   pixels tall, a pointer in the corner lands on `<html>`, and a
+			   listener on `<body>` never fires -- which looks exactly like the
+			   pointer never arriving. Real pages fill their viewport; this one
+			   has to as well or it tests nothing. */
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+			}
+		</style>
+	</head>
+	<body>
+		<script>
+			// Does the page under test receive pointer input, and does it measure
+			// the same viewport, in both runs?
+			//
+			// Both were divergent and both were invisible. In the ORACLE the page
+			// is the top-level document; in the sandbox it is an iframe in the
+			// harness, so a pointer delivered at root coordinates landed on the
+			// harness's own chrome and the guest never saw one -- while the
+			// frame's `height: 80vh` made every viewport number differ as well.
+			// Neither showed up as a divergence: a call that happens in NEITHER
+			// run is not a divergence, and the calls that did differ had been
+			// sitting in the baseline as missing for as long as it existed.
+			//
+			// This is not a synthetic worry. rateyourmusic arms its anti-bot check
+			// with `$("body").on("mousemove touchend", ...)` and posts
+			// `window.innerHeight`/`outerHeight` inside the result; the oracle
+			// posted 2450 bytes to /httprequest/SecChk and the sandbox posted
+			// nothing at all.
+			//
+			// Every value goes through `document.title`, like the other probes, so
+			// the differ sees an ordered 1:1 sequence of argument values.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			// The viewport the guest believes it has. A sandbox whose frame is not
+			// exactly the viewport disagrees with the oracle on all of these.
+			say("innerWidth", innerWidth);
+			say("innerHeight", innerHeight);
+			say("outerWidth", outerWidth);
+			say("outerHeight", outerHeight);
+			say("screen.width", screen.width);
+			say("screen.height", screen.height);
+			say("screen.availHeight", screen.availHeight);
+			say("devicePixelRatio", devicePixelRatio);
+			say("documentElement.clientWidth", document.documentElement.clientWidth);
+			say(
+				"documentElement.clientHeight",
+				document.documentElement.clientHeight
+			);
+			say("visualViewport.width", visualViewport.width);
+			say("visualViewport.height", visualViewport.height);
+
+			// Pointer delivery. Reported on a settle timer rather than per event:
+			// the exact NUMBER of moves is a function of how long each run took and
+			// is noise, but "did any arrive, was it trusted, and did it reach the
+			// document's own body" is the guest-observable fact. The coordinate is
+			// reported as a bucket for the same reason -- the harness sweeps a
+			// corner, so what matters is that it is the corner, not which pixel.
+			let onBody = 0;
+			let onDoc = 0;
+			let trusted = null;
+			let corner = null;
+			let target = null;
+			document.body.addEventListener("mousemove", (e) => {
+				onBody++;
+				if (trusted === null) {
+					trusted = e.isTrusted;
+					corner = e.clientX < 20 && e.clientY < 20;
+					target = e.target === document.body ? "body" : e.target.tagName;
+				}
+			});
+			// Separately, so "no pointer at all" is distinguishable from "a pointer
+			// that never reached `<body>`". They are different bugs.
+			document.addEventListener("mousemove", () => onDoc++);
+
+			addEventListener("load", () => {
+				setTimeout(() => {
+					say("pointer.reachedDocument", onDoc > 0);
+					say("pointer.reachedBody", onBody > 0);
+					say("pointer.isTrusted", trusted);
+					say("pointer.inCorner", corner);
+					say("pointer.target", target);
+					// Read the viewport AGAIN, late. The sandbox cannot measure at
+					// the same instant the oracle does -- service worker
+					// registration and scramjet boot sit in front of the guest's
+					// first line -- so a viewport that moves during startup reads
+					// differently on the two sides for no reason the sandbox is
+					// responsible for. Chromium's `--no-sandbox` infobar did
+					// exactly that, shrinking the content area by 56px about a
+					// second in. If early and late disagree, the browser resized
+					// the page under it and the run is measuring the harness.
+					say("innerHeight.late", innerHeight);
+					say("innerWidth.late", innerWidth);
+				}, 2500);
+			});
+		</script>
+	</body>
+</html>

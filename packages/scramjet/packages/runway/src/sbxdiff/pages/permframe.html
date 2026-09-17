@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>perm frame</title>
+	</head>
+	<body>
+		<script>
+			// Reports what this cross-origin frame is told, to its embedder.
+			(async () => {
+				const out = { notification: Notification.permission };
+				try {
+					const s = await navigator.permissions.query({
+						name: "notifications",
+					});
+					out.queryState = s.state;
+					out.queryName = s.name;
+				} catch (e) {
+					out.queryState = "threw:" + e.name;
+				}
+				try {
+					const g = await navigator.permissions.query({ name: "geolocation" });
+					// Permissions Policy gives geolocation the default allowlist
+					// `self`, so a cross-origin frame without an explicit allow=
+					// is blocked and this reads "denied", not "prompt".
+					out.geolocation = g.state;
+				} catch (e) {
+					out.geolocation = "threw:" + e.name;
+				}
+				parent.postMessage({ sbxPerm: out }, "*");
+			})();
+		</script>
+	</body>
+</html>

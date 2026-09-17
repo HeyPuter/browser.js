@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff long animation frame probe</title>
+		<script src="/loaf.js"></script>
+	</head>
+	<body>
+		<script>
+			// A long animation frame names the scripts that made it long.
+			//
+			// `performance.ts` read `scripts[].sourceURL` to decide whether the
+			// frame was the proxy's own and to mask it if so -- and that was the
+			// ONLY thing that read it, so a frame that survived masking handed
+			// the page the rewritten URL. Measured in Cloudflare's widget realm
+			// on rateyourmusic, the guest read
+			// "http://localhost:4500/~/sj/<codec>/<encoded>?...&$io=https://rateyourmusic.com":
+			// the proxy's origin, prefix, codec and query parameters, in a
+			// string the challenge walks into its payload.
+			//
+			// Both getters and `toJSON`, because a page picks whichever it
+			// likes and the two are built by different code -- the same split
+			// that left `decodedBodySize` corrected in one and not the other.
+			//
+			// THIS PAGE DIVERGES, and deliberately is not baselined. The
+			// oracle produces a long animation frame here and the sandbox
+			// produces none at all -- not one that was masked, none: the
+			// sandbox's trace has no `PerformanceLongAnimationFrameTiming`
+			// read of any kind, so the shim never saw an entry to judge. The
+			// blocking function does run on both sides (`loaf.blocked`), so
+			// the work is not in a rendering frame under the proxy. That is an
+			// open finding about `requestAnimationFrame`, and suppressing it
+			// to make this page green would hide it. The correction itself was
+			// verified on rym, where the sandbox's widget realm does produce
+			// one; see RULES.md #153.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			// The proxy's origin must not appear in anything reported here. A
+			// plain substring test rather than a URL parse, so a leak anywhere
+			// in the string is caught, not just in the origin position.
+			const clean = (s) =>
+				typeof s === "string"
+					? s.replace(/^https?:\/\/[^/]+/, (m) =>
+							m === location.origin ? "<origin>" : "<FOREIGN:" + m + ">"
+						)
+					: String(s);
+
+			let seen = 0;
+			const observer = new PerformanceObserver((list) => {
+				for (const entry of list.getEntries()) {
+					if (entry.entryType !== "long-animation-frame") continue;
+					seen++;
+					if (seen > 1) continue;
+					const scripts = entry.scripts || [];
+					say("loaf.scripts", scripts.length);
+					for (let i = 0; i < scripts.length && i < 3; i++) {
+						say("loaf.src" + i, clean(scripts[i].sourceURL));
+						say("loaf.invoker" + i, clean(scripts[i].invoker));
+						say("loaf.invokerType" + i, scripts[i].invokerType);
+						say("loaf.fn" + i, scripts[i].sourceFunctionName);
+					}
+					// The serialised form, which is what a payload carries.
+					const json = entry.toJSON();
+					const js = json.scripts || [];
+					say("loaf.jsonScripts", js.length);
+					for (let i = 0; i < js.length && i < 3; i++) {
+						say("loaf.jsonSrc" + i, clean(js[i].sourceURL));
+						say("loaf.jsonInvoker" + i, clean(js[i].invoker));
+					}
+					say("loaf.name", clean(entry.name));
+				}
+			});
+			try {
+				observer.observe({ type: "long-animation-frame", buffered: true });
+				say("loaf.observing", true);
+			} catch (e) {
+				say("loaf.observeThrew", e && e.name);
+			}
+
+			// Inside a rendering frame, because that is what a long ANIMATION
+			// frame measures. Blocking in a plain task produces no entry at all
+			// -- the first version of this page blocked in an event listener
+			// dispatched synchronously during parsing and the observer never
+			// fired on either side, which is a test that passes by measuring
+			// nothing.
+			requestAnimationFrame(() => {
+				say("loaf.blocked", typeof window.sbxdiffBlock === "function");
+				window.sbxdiffBlock();
+				// Several more frames: the entry is queued to the observer
+				// after the long frame ends, not during it, so one more frame
+				// is not enough to have it in hand.
+				// How many the page can see at all, which separates "no long
+				// frame happened" from "one happened and the proxy hid it":
+				// `isProxyFrame` masks a frame whose every script is the
+				// proxy's own.
+				say(
+					"loaf.byType",
+					performance.getEntriesByType("long-animation-frame").length
+				);
+				let left = 8;
+				const settle = () => {
+					if (--left > 0) return requestAnimationFrame(settle);
+					say("loaf.seen", seen);
+					say(
+						"loaf.byTypeLate",
+						performance.getEntriesByType("long-animation-frame").length
+					);
+				};
+				requestAnimationFrame(settle);
+			});
+
+			// And the entry types the page can see at all, which is its own
+			// divergence if a proxy withholds one.
+			say(
+				"loaf.supported",
+				(PerformanceObserver.supportedEntryTypes || []).join(",")
+			);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<!--
+  Can every global property actually be READ?
+
+  Cloudflare's challenge enumerates the global namespace and buckets the names
+  it finds -- captured live off the passing side as
+  `{"payload":{"0":["length","innerWidth",...,"n.maxTouchPoints"],...}}`, with
+  `n.` for navigator and `d.` for document. The sandbox builds no such payload
+  at all, in a frame that exists on both sides, so the enumeration is getting
+  as far as a name and no further.
+
+  A property that THROWS on read would do that: one exception in an unguarded
+  loop and the whole payload is never built. The names are identical between
+  the two sides (`globals.html`); this asks the next question.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>readall</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-read " + s);
+			};
+			const sweep = (label, obj, names) => {
+				const threw = [];
+				const kinds = {};
+				for (const k of names) {
+					let v;
+					try {
+						v = obj[k];
+					} catch (e) {
+						threw.push(k + ":" + (e && e.name ? e.name : "?"));
+						continue;
+					}
+					const t = v === null ? "null" : typeof v;
+					kinds[t] = (kinds[t] || 0) + 1;
+				}
+				say(`${label}.count=${names.length} threw=${threw.length}`);
+				if (threw.length) say(`${label}.threw=${threw.slice(0, 30).join(",")}`);
+				say(
+					`${label}.kinds=${Object.keys(kinds)
+						.sort()
+						.map((k) => k + ":" + kinds[k])
+						.join(",")}`
+				);
+			};
+			sweep("win", window, Object.getOwnPropertyNames(window).sort());
+			sweep(
+				"nav",
+				navigator,
+				Object.getOwnPropertyNames(Object.getPrototypeOf(navigator)).sort()
+			);
+			sweep(
+				"doc",
+				document,
+				Object.getOwnPropertyNames(Object.getPrototypeOf(document)).sort()
+			);
+		</script>
+	</body>
+</html>

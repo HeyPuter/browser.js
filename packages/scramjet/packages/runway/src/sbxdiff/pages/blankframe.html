@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff blank-frame probe</title>
+	</head>
+	<body>
+		<script>
+			// A script injected into a freshly created about:blank iframe, and a
+			// subresource fetched from inside it.
+			//
+			// This is not a synthetic pattern. It is exactly how Cloudflare's JS
+			// detections load: the challenged page creates a 1x1 iframe, reads
+			// `contentDocument`, injects a <script> whose text appends another
+			// <script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js">, and
+			// that script posts the result to `jsd/oneshot`. Measured: the oracle
+			// posted 16270 bytes there and the sandbox posted nothing, because the
+			// inner fetch went to the network with the proxy's own origin and came
+			// back as the harness's 404 page -- "Refused to execute script ...
+			// because its MIME type ('text/html') is not executable".
+			//
+			// Each step is reported separately, because they fail differently: a
+			// null `contentDocument` is a trap that did not install a client, an
+			// inline script that does not run is a rewriting problem, and a marker
+			// that never loads is a fetch that escaped the sandbox.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const f = document.createElement("iframe");
+			f.width = 1;
+			f.height = 1;
+			f.style.position = "absolute";
+			document.body.appendChild(f);
+
+			// `contentDocument` first, then fall back the way the real injector
+			// does. Which of the two answers is a guest-observable difference on
+			// its own.
+			const cd = f.contentDocument;
+			say("blank.contentDocument", !!cd);
+			const cw = f.contentWindow;
+			say("blank.contentWindow", !!cw);
+			const b = cd || (cw && cw.document);
+			say("blank.document", !!b);
+			say("blank.usedFallback", !cd && !!b);
+
+			if (b) {
+				const head = b.getElementsByTagName("head")[0];
+				say("blank.head", !!head);
+				// The document's own URL, as its scripts will see it. about:blank
+				// inherits its creator's base URL, which is what makes a relative
+				// `src` below resolve to the creator's origin.
+				try {
+					say("blank.baseURI", b.baseURI);
+				} catch (e) {
+					say("blank.baseURI", "threw:" + e.name);
+				}
+				const s = b.createElement("script");
+				s.innerHTML =
+					"window.__inlineRan = 1;" +
+					"var m = document.createElement('script');" +
+					"m.src = '/marker.js';" +
+					"document.getElementsByTagName('head')[0].appendChild(m);" +
+					// And the same thing through a 302, which is the shape
+					// Cloudflare's actually has: `scripts/jsd/main.js` redirects
+					// to `h/g/scripts/jsd/<hash>/main.js`. A delegated load has
+					// to follow it the way the browser's own would.
+					"var r = document.createElement('script');" +
+					"r.src = '/redir-marker.js';" +
+					"document.getElementsByTagName('head')[0].appendChild(r);";
+				head.appendChild(s);
+				// Synchronously after append: a classic inline script runs on
+				// insertion, so anything else means it was not treated as one.
+				say("blank.inlineRan", !!(cw && cw.__inlineRan));
+			}
+
+			addEventListener("load", () => {
+				setTimeout(() => {
+					let w = null;
+					try {
+						w = f.contentWindow;
+					} catch (e) {
+						// a frame that became cross-origin is itself the answer
+					}
+					say("blank.markerLoaded", !!(w && w.__markerRan));
+					say("blank.markerCount", w ? String(w.__markerRan) : "no-window");
+					// What a delegated script can see about itself. Each of these
+					// is something a bootstrapping script reads before it does
+					// anything else.
+					const env = (w && w.__markerEnv) || {};
+					for (const k of Object.keys(env).sort())
+						say("blank.env." + k, env[k]);
+					say("blank.redirLoaded", !!(w && w.__markerRedirRan));
+					// How many <script> elements the blank document ended up with. A
+					// delegated load fetches the source and runs it from a FRESH element,
+					// because the original has already been inserted and "already
+					// started" by the time the fetch resolves -- so the fresh one has to
+					// come back out again, or the document carries a script the page
+					// never put there and every count of them is one too many.
+					try {
+						const doc = w && w.document;
+						say(
+							"blank.scriptCount",
+							doc ? doc.getElementsByTagName("script").length : "no-doc"
+						);
+						say("blank.docScripts", doc ? doc.scripts.length : "no-doc");
+					} catch (e) {
+						say("blank.scriptCount", "threw:" + e.name);
+					}
+					say("blank.redirCount", w ? String(w.__markerRedirRan) : "no-window");
+				}, 2000);
+			});
+		</script>
+	</body>
+</html>

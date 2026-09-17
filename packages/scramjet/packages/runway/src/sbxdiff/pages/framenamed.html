@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff window.name probe</title>
+	</head>
+	<body>
+		<script>
+			// `window.name` belongs to the page.
+			//
+			// A proxy needs a per-frame id, and `window.name` is tempting because
+			// it is the one string that survives a navigation and is reachable
+			// from the parent. It is also a property any page can read, and the
+			// controller was writing the id straight into it: measured against
+			// unmodified Chromium, a fresh document reported `window.name === "f1"`
+			// where the browser reports `""`. A site checks one property and knows.
+			//
+			// Nesting is tested too, and not only for the leak. The id is
+			// hierarchical -- a child's is built from its parent's -- so a fix
+			// that hides it from the page has to leave the controller able to
+			// read it, or every nested frame gets the same id.
+			//
+			// Hiding it behind a separator was not enough. `window.name`
+			// survives a navigation, so each injection prefixed a string that
+			// already carried an id and the thing grew without bound: a page
+			// two frames down read back "f1.2|f1.2.3|f1.2|f1|". Nothing but
+			// the id chain itself ever consumed it, so the id is off
+			// `window.name` entirely now -- which is also what lets a page set
+			// a name CONTAINING the separator and read it back whole.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			say("wname.initial", JSON.stringify(window.name));
+			say("wname.self", JSON.stringify(self.name));
+			say(
+				"wname.viaTop",
+				JSON.stringify(top === window ? window.name : "framed")
+			);
+
+			// The page's own value round-trips, and keeps whatever it set.
+			window.name = "chosen";
+			say("wname.afterSet", JSON.stringify(window.name));
+			window.name = "";
+			say("wname.afterClear", JSON.stringify(window.name));
+
+			// Including a name that looks like the id encoding it used to
+			// carry. A split on "|" served the page the half after the first
+			// one, so this came back as "b".
+			window.name = "a|b|c";
+			say("wname.afterSep", JSON.stringify(window.name));
+			window.name = "";
+
+			// A nested frame is a fresh document: its name is "" too, and it is
+			// NOT the parent's name with a suffix.
+			const f = document.createElement("iframe");
+			f.src = "/inner.html";
+			document.body.appendChild(f);
+			f.addEventListener("load", () => {
+				let inner = "unreadable";
+				try {
+					inner = JSON.stringify(f.contentWindow.name);
+				} catch (e) {
+					inner = "threw:" + e.name;
+				}
+				say("wname.childInitial", inner);
+				// The ELEMENT's name, one level up from the window's. The
+				// controller needs a per-frame id and used to keep it here too,
+				// where `getAttribute("name")` and the IDL reflection both hand
+				// it to the page: a guest that made an iframe and read
+				// `myFrame.name` got "f1.1" where a browser reports "".
+				say("wname.childElementName", JSON.stringify(f.name));
+				say("wname.childElementAttr", JSON.stringify(f.getAttribute("name")));
+				say(
+					"wname.childAttrNames",
+					JSON.stringify(f.getAttributeNames().sort().join(","))
+				);
+				// And the two frames are still distinct documents, which is what
+				// the id exists to keep track of.
+				let same = "unknown";
+				try {
+					same = String(f.contentWindow === window);
+				} catch (e) {
+					same = "threw:" + e.name;
+				}
+				say("wname.childIsSelf", same);
+
+				// The parent's name after a child was injected. Writing the
+				// child's id into `window.name` hit the wrong realm -- the
+				// controller builds a subcontext from the PARENT's module
+				// scope, so the bare `window` there was the parent's -- and
+				// this is where the accumulation showed up first.
+				say("wname.parentAfterChild", JSON.stringify(window.name));
+
+				// And the way a site actually catches this without asking for
+				// it. A child browsing context's name becomes a NAMED PROPERTY
+				// on the parent's window, and the name the browser uses there
+				// is the raw one -- no accessor to go through, nothing to shim.
+				// Cloudflare found it by enumerating: the id turned up as a
+				// collected string in the challenge's own constant pool.
+				// Two levels down, which is the depth the growth needed: the
+				// grandchild's injection prefixes its parent, whose name
+				// already carries a prefix.
+				const g = document.createElement("iframe");
+				g.src = "/framenamedeep.html";
+				document.body.appendChild(g);
+				g.addEventListener("load", () => {
+					say("wname.afterGrandchild", JSON.stringify(window.name));
+					let deep = "unreadable";
+					try {
+						deep = JSON.stringify(g.contentWindow.document.title);
+					} catch (e) {
+						deep = "threw:" + e.name;
+					}
+					say("wname.deep", deep);
+				});
+			});
+		</script>
+	</body>
+</html>

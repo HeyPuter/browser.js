@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff ICE candidate probe</title>
+	</head>
+	<body>
+		<script>
+			// An ICE candidate is a string the page can read, and an anti-bot
+			// payload records it. Everything in one is pinned by the determinism
+			// patches -- the mDNS hostname has its own keystream
+			// (`sbxdiff_rand_stream.h`) -- except the UDP port, which the OS
+			// hands out. Measured in Cloudflare's Turnstile realm before this was
+			// pinned, two runs minutes apart:
+			//
+			//   candidate:1791751595 1 udp 1677729535 <ip> 47004 typ srflx ...
+			//   candidate:1791751595 1 udp 1677729535 <ip> 47003 typ srflx ...
+			//
+			// Identical but for the port, and the same LENGTH -- so it never
+			// showed up as a size divergence and sat inside the request bodies
+			// as bytes that would not settle. `run.ts` pins
+			// `webrtc.udp_port_range` to one port in the profile.
+			//
+			// No STUN server: host candidates are enough to carry a port, and a
+			// probe that needs the internet is not a probe.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const ports = (c) => {
+				// The port is the fifth field of an ICE candidate line.
+				const parts = String(c).split(" ");
+
+				return parts.length > 5 ? parts[5] : "?";
+			};
+
+			try {
+				const pc = new RTCPeerConnection();
+				pc.createDataChannel("sbxdiff");
+				const seen = [];
+				pc.addEventListener("icecandidate", (ev) => {
+					if (ev.candidate && ev.candidate.candidate)
+						seen.push(ev.candidate.candidate);
+				});
+				pc.addEventListener("icegatheringstatechange", () => {
+					if (pc.iceGatheringState !== "complete") return;
+					say("ice.count", seen.length);
+					// The ports, not the whole line: an address is an address and
+					// the two sides share one machine, so the port is the part
+					// that was ever in doubt.
+					say("ice.ports", seen.map(ports).sort().join(","));
+					// And that the shape is otherwise what a browser emits.
+					say(
+						"ice.hasHost",
+						seen.some((c) => c.includes(" typ host"))
+					);
+					say(
+						"ice.mdnsShaped",
+						seen.every(
+							(c) => !/\d+\.\d+\.\d+\.\d+/.test(c) || c.includes("srflx")
+						)
+					);
+				});
+				pc.createOffer()
+					.then((o) => pc.setLocalDescription(o))
+					.catch((e) => say("ice.offerThrew", e && e.name));
+			} catch (e) {
+				say("ice.threw", e && e.name + ": " + e.message);
+			}
+		</script>
+	</body>
+</html>

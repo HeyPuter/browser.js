@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff Error.stackTraceLimit probe</title>
+	</head>
+	<body>
+		<script>
+			// `Error.stackTraceLimit` belongs to the page.
+			//
+			// The rewriter raised it to 50 at module scope, which runs once in
+			// every realm the client loads into and never comes back. V8's
+			// default is 10. Two things leaked from that: the property itself,
+			// which any page can read, and the DEPTH of every stack the page
+			// captured afterwards.
+			//
+			// Found inside Cloudflare's payload rather than by inspection. The
+			// challenge collects stack traces; the same error serialised ten
+			// frames in a browser and twenty-one under the proxy -- 1479 bytes
+			// more of plaintext in a body that has to match byte for byte.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			say("stack.limit", Error.stackTraceLimit);
+			say("stack.limitType", typeof Error.stackTraceLimit);
+			say(
+				"stack.limitOwn",
+				Object.prototype.hasOwnProperty.call(Error, "stackTraceLimit")
+			);
+
+			// The depth actually captured. Recursion deeper than any plausible
+			// limit, so the count is the limit rather than the recursion.
+			function deep(n) {
+				if (n > 0) return deep(n - 1);
+
+				return new Error("sbxdiff").stack;
+			}
+			const frames = (s) =>
+				String(s)
+					.split("\n")
+					.filter((l) => l.indexOf("    at ") === 0).length;
+			say("stack.frames", frames(deep(80)));
+
+			// And after the page sets its own, which the proxy must not
+			// overwrite on the next rewrite it happens to do.
+			Error.stackTraceLimit = 3;
+			say("stack.afterSet", Error.stackTraceLimit);
+			say("stack.framesAfterSet", frames(deep(80)));
+
+			// A rewrite is provoked here: injecting a script is what makes the
+			// proxy run its rewriter, and the old code raised the limit as a
+			// side effect of that module loading at all.
+			const s = document.createElement("script");
+			s.textContent = "window.__sbxdiffRewritten = 1;";
+			document.head.appendChild(s);
+			say("stack.rewroteSomething", window.__sbxdiffRewritten === 1);
+			say("stack.limitAfterRewrite", Error.stackTraceLimit);
+			say("stack.framesAfterRewrite", frames(deep(80)));
+
+			Error.stackTraceLimit = 10;
+			say("stack.restored", Error.stackTraceLimit);
+		</script>
+	</body>
+</html>

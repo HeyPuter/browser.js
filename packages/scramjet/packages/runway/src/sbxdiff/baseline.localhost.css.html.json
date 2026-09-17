@@ -1,0 +1,8 @@
+{
+	"buckets": [
+		"T2|value-divergence|CSSRule.cssText.get|proxy-url-leak",
+		"T2|value-divergence|CSSStyleDeclaration.cssText.get|proxy-url-leak",
+		"T2|value-divergence|CSSStyleDeclaration.cssText.set#arg0|proxy-url-leak",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	]
+}

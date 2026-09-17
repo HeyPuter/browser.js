@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff timer-clock probe</title>
+	</head>
+	<body>
+		<script>
+			// Does `Date.now()` move when a timer fires?
+			//
+			// It has to, and under the logical clock (SBXDIFF_LOGICAL_CLOCK=1) it
+			// only moves for that reason: the clock advances when a GUEST timer
+			// fires, by that timer's delay. Which makes "whose timer is this"
+			// load-bearing, and getting it wrong does not produce a wrong time --
+			// it produces NO time. Attributing timers by the top stack frame
+			// classified every one of them as the shim's, because under a proxy
+			// the guest never calls setTimeout itself: scramjet traps the global
+			// and the top frame is always the shim's. The sandbox's clock then sat
+			// at its origin for a whole run. Measured on rateyourmusic:
+			// `Event.timeStamp` read 0 for all 22 reads in the sandbox against 0,
+			// 3300 and 5000 in the oracle (RULES.md #101).
+			//
+			// Every value here is reported as a BOOLEAN or a count, never as a
+			// timestamp or a delta. Under a real clock a 250 ms timer fires after
+			// 251 ms one run and 263 ms the next, so a probe that reported the
+			// number would diverge on both sides forever and say nothing about
+			// either. "Did it move at all", "did it reach the deadline it was
+			// promised", "did it ever go backwards" are true of a real clock AND
+			// of a logical one -- and all three are false the moment the clock
+			// stops.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const STEP = 250;
+			const STEPS = 5;
+			const t0 = Date.now();
+			const p0 = performance.now();
+			const seen = [];
+
+			function step(i) {
+				seen.push(Date.now() - t0);
+				if (i + 1 < STEPS) {
+					setTimeout(() => step(i + 1), STEP);
+					return;
+				}
+				const elapsed = Date.now() - t0;
+				say("lc.steps", seen.length);
+				say("lc.moved", elapsed > 0);
+				// Each step is promised STEP ms, so after n of them the clock owes
+				// the page n*STEP. A real clock overshoots; a logical one lands on
+				// it; a frozen one is the only thing that undershoots.
+				say("lc.reachedDeadline", elapsed >= STEP * STEPS);
+				say(
+					"lc.monotonic",
+					seen.every((v, n) => n === 0 || v >= seen[n - 1])
+				);
+				// Every step should be a distinct instant. A clock that only moves
+				// on the FIRST timer would pass "moved" and fail this.
+				say("lc.distinctInstants", new Set(seen).size === seen.length);
+				// `performance.now()` is a different clock with a different patch
+				// (a per-realm read counter, not timers), so it is a second opinion
+				// rather than a restatement.
+				say("lc.perfMoved", performance.now() > p0);
+			}
+
+			// Nothing but a TIMER may move the clock.
+			//
+			// The clock is one counter for the whole run, shared by every
+			// process in it, and that is what makes the two sides agree -- but
+			// it also means anything in the browser that schedules a timer can
+			// move the page's clock. chrome://webui-toolbar.top-chrome/app.js
+			// schedules two of 50 ms, and for a while those were advancing it:
+			// a constant 50 ms of skew between the two sides, arriving before
+			// the page under test had run a line, and worth 50 ms in every
+			// timestamp the page ever sent a server (RULES.md #108).
+			//
+			// A page-side invariant that needs no reference to compare against:
+			// run a chain of microtasks and a forced layout, which schedule no
+			// timers, and the clock must not have moved. It holds under a real
+			// clock too as long as the work is short enough -- which it is not,
+			// reliably -- so this is reported as the DIFFERENCE, and the two
+			// sides' agreeing on it is the test.
+			async function idle() {
+				const before = Date.now();
+				for (let i = 0; i < 5; i++) await Promise.resolve();
+				// A forced layout: real work, no timer.
+				void document.body.getBoundingClientRect().height;
+				for (let i = 0; i < 5; i++) await Promise.resolve();
+				say("lc.idleDrift", Date.now() - before);
+			}
+			idle();
+
+			setTimeout(() => step(0), STEP);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff cross-origin permission probe</title>
+	</head>
+	<body>
+		<script>
+			// What a CROSS-ORIGIN iframe is told about permissions.
+			//
+			// A proxy collapses every origin onto its own, so a frame the real web
+			// treats as third-party looks first-party from inside -- and the
+			// permission state that follows is read directly by the code deciding
+			// whether this is a real browser. Measured on rateyourmusic, in the
+			// Turnstile widget's own realm: Notification.permission was "denied"
+			// in the oracle and "default" in the sandbox, and PermissionStatus
+			// .state was "denied" against "prompt".
+			//
+			// 127.0.0.1 is a different SITE from localhost, so this frame is
+			// genuinely cross-origin in the oracle -- the one thing a same-origin
+			// probe cannot reach.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			addEventListener("message", (e) => {
+				if (!e.data || !e.data.sbxPerm) return;
+				for (const [k, v] of Object.entries(e.data.sbxPerm))
+					say("perm." + k, v);
+			});
+			const f = document.createElement("iframe");
+			f.src = "http://127.0.0.1:4510/permframe.html";
+			document.body.appendChild(f);
+			// The top-level answer too, which must NOT be forced to denied.
+			say("perm.topNotification", Notification.permission);
+		</script>
+	</body>
+</html>

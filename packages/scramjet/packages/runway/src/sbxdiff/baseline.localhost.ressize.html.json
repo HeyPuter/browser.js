@@ -1,0 +1,19 @@
+{
+	"buckets": [
+		"T2|missing-call|HTMLDocument.location.get|count",
+		"T2|missing-call|Location.href.get|count",
+		"T2|missing-call|Location.origin.get|count",
+		"T2|missing-call|Location.protocol.get|count",
+		"T2|missing-call|Performance.getEntriesByName|count",
+		"T2|missing-call|Performance.getEntriesByType|count",
+		"T2|missing-call|PerformanceNavigationTiming.toJSON|count",
+		"T2|missing-call|PerformanceResourceTiming.decodedBodySize.get|count",
+		"T2|missing-call|PerformanceResourceTiming.encodedBodySize.get|count",
+		"T2|missing-call|PerformanceResourceTiming.toJSON|count",
+		"T2|missing-call|PerformanceResourceTiming.transferSize.get|count",
+		"T2|missing-call|Window.XMLHttpRequest|count",
+		"T2|missing-call|Window.location.get|count",
+		"T2|missing-call|Window.top.get|count"
+	],
+	"spreads": {}
+}

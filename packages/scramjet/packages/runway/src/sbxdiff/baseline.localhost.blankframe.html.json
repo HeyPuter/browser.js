@@ -1,0 +1,7 @@
+{
+	"buckets": [
+		"T2|missing-call|HTMLIFrameElement.contentDocument.get|count",
+		"T2|value-divergence|EventTarget.addEventListener#arg0|other",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	]
+}

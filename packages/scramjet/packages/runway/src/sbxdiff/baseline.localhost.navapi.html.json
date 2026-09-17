@@ -1,0 +1,17 @@
+{
+	"buckets": [
+		"T2|missing-call|EventTarget.addEventListener|count",
+		"T2|missing-call|HTMLIFrameElement.contentWindow.get|count",
+		"T2|missing-call|HTMLIFrameElement.src.set|count",
+		"T2|missing-call|Location.href.get|count",
+		"T2|missing-call|NavigateEvent.constructor|count",
+		"T2|missing-call|Navigation.navigate|count",
+		"T2|missing-call|NavigationDestination.url.get|count",
+		"T2|missing-call|NavigationHistoryEntry.url.get|count",
+		"T2|missing-call|Window.navigation.get|count",
+		"T2|missing-call|Window.postMessage|count",
+		"T2|value-divergence|Document.title.set#arg0|other"
+	],
+	"spreads": {},
+	"bodySpreads": {}
+}

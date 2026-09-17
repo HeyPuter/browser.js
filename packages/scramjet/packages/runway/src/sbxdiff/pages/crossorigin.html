@@ -1,0 +1,74 @@
+<!doctype html>
+<!--
+  Does the same-origin boundary between two guest origins still hold?
+
+  Turnstile runs cross-origin to the page that embeds it, by design: the widget
+  is on challenges.cloudflare.com and the interstitial is on the site. In a
+  direct load the widget cannot read its parent's document and the parent cannot
+  read the widget's.
+
+  Under the proxy every guest frame is served from the SAME real origin -- the
+  harness's localhost -- so the browser's own boundary is gone and only whatever
+  scramjet emulates is left. A widget that can suddenly read the document that
+  embedded it is in a place no browser would have put it.
+
+  LIVE ONLY: it frames a real cross-origin site (example.com sends no
+  X-Frame-Options).
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>crossorigin</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-xo " + s);
+			};
+			const probe = (label, get) => {
+				try {
+					const v = get();
+					say(label + "=ALLOWED " + JSON.stringify(String(v)).slice(0, 60));
+				} catch (e) {
+					say(label + "=THREW " + (e && e.name ? e.name : "?"));
+				}
+			};
+
+			const f = document.createElement("iframe");
+			f.src = "https://example.com/";
+			f.style.cssText = "width:10px;height:10px;position:absolute;left:-9999px";
+			f.onload = () => {
+				say("loaded");
+				probe(
+					"contentDocument",
+					() => f.contentDocument && f.contentDocument.title
+				);
+				probe(
+					"contentWindow.location.href",
+					() => f.contentWindow.location.href
+				);
+				probe(
+					"contentWindow.document",
+					() => f.contentWindow.document.body.tagName
+				);
+				probe("contentWindow.origin", () => f.contentWindow.origin);
+				probe("contentWindow.length", () => f.contentWindow.length);
+				probe("contentWindow.name", () => f.contentWindow.name);
+				// The one the challenge actually reads, BOTH ways. Its code is
+				// minified and reaches the property through a variable, which
+				// is the form scramjet's rewriter redirects; a static `.eval`
+				// is a different path and they do not have to agree.
+				probe("contentWindow.eval", () => typeof f.contentWindow.eval);
+				const k = "eval";
+				probe("contentWindow[k]", () => typeof f.contentWindow[k]);
+				probe("own.origin", () => window.origin);
+			};
+			f.onerror = () => say("iframe-error");
+			document.body.appendChild(f);
+			setTimeout(() => say("done"), 9000);
+		</script>
+	</body>
+</html>

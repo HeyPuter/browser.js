@@ -1,0 +1,67 @@
+<!doctype html>
+<!--
+  Is a window the SAME OBJECT everywhere it surfaces?
+
+  A browser hands out one WindowProxy per browsing context, so inside a direct
+  child frame `parent === top` is true, and the parent's `frames[0]` is the same
+  object as `iframe.contentWindow`. Under the proxy each of those is minted by
+  scramjet, and two mints of the same window are two objects.
+
+  Measured on rateyourmusic (FINDINGS #243): in the Turnstile widget's realm the
+  oracle reads `parent` and `top` as one object and the sandbox reads two. The
+  widget does that every 550 ms round. The differ cannot see it -- the oracle's
+  read is a binding record and the sandbox's is a guest op, and their object ids
+  live in separate bijections (GUEST-OPS.md) -- so it needs a page that asks the
+  question in one expression and reports the ANSWER.
+
+  Hermetic: one same-origin child frame, no network. `crossorigin.html` is the
+  live-only one that frames a real third-party site.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>windowidentity</title>
+	</head>
+	<body>
+		<script>
+			// The child reports through `document.createComment`, which lands in the
+			// trace as a string and which nothing else in the page can read.
+			const child = `
+        <script>
+        var say = function (s) { document.createComment("sbxwin: " + s); };
+        try {
+          say("parent===top " + (window.parent === window.top));
+          say("parent===parent " + (window.parent === window.parent));
+          say("top===top " + (window.top === window.top));
+          say("self===window " + (window.self === window));
+          say("parent.frames[0]===self " + (window.parent.frames[0] === window.self));
+          say("depth parent!==self " + (window.parent !== window.self));
+        } catch (e) {
+          say("THREW " + (e && e.name));
+        }
+        <\/script>`;
+			const f = document.createElement("iframe");
+			f.srcdoc = child;
+			document.body.appendChild(f);
+
+			// And from the parent's side: the same window reached two ways.
+			f.addEventListener("load", () => {
+				const say = (s) => document.createComment("sbxwin: " + s);
+				try {
+					say(
+						"frames[0]===contentWindow " +
+							(window.frames[0] === f.contentWindow)
+					);
+					say(
+						"contentWindow===contentWindow " +
+							(f.contentWindow === f.contentWindow)
+					);
+					say("top===self " + (window.top === window.self));
+				} catch (e) {
+					say("parent-side THREW " + (e && e.name));
+				}
+				document.title = "windowidentity done";
+			});
+		</script>
+	</body>
+</html>

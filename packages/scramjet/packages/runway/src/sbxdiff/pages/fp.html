@@ -1,0 +1,153 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>fingerprint surface probe</title>
+	</head>
+	<body>
+		<script>
+			// The surface an anti-bot fingerprinter actually collects. The twelve
+			// members in shim.html are the ones the oracle reaches NATIVELY and
+			// the sandbox does not; this page covers the ones both sides reach,
+			// where the divergence is in the value rather than the absence.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			const tryIt = (k, fn) => {
+				try {
+					say(k, fn());
+				} catch (e) {
+					say(k, "threw:" + e.name);
+				}
+			};
+
+			// Global enumeration. getOwnPropertyNames sees non-enumerable
+			// properties too, so anything a shim defines on window is visible to
+			// a fingerprinter walking the global.
+			tryIt(
+				"win.ownNames.count",
+				() => Object.getOwnPropertyNames(window).length
+			);
+			tryIt("win.ownNames.foreign", () =>
+				Object.getOwnPropertyNames(window)
+					.filter((n) => /scramjet|\$sj|__scram/i.test(n))
+					.join(",")
+			);
+			tryIt("win.keys.count", () => Object.keys(window).length);
+			tryIt("win.forin.count", () => {
+				let n = 0;
+				for (const _ in window) n++;
+				return n;
+			});
+			tryIt("doc.ownNames.foreign", () =>
+				Object.getOwnPropertyNames(document)
+					.filter((n) => /scramjet|\$sj|__scram/i.test(n))
+					.join(",")
+			);
+			tryIt("objproto.foreign", () =>
+				Object.getOwnPropertyNames(Object.prototype)
+					.filter((n) => /scramjet|\$sj/i.test(n))
+					.join(",")
+			);
+
+			// Function.prototype.toString, on a native and on page code. A
+			// rewriter that does not un-rewrite is visible here.
+			tryIt("fn.native.toString", () =>
+				Function.prototype.toString.call(fetch)
+			);
+			tryIt("fn.page.toString", () => {
+				function marker(a, b) {
+					return a + b;
+				}
+				return marker.toString();
+			});
+			tryIt("fn.arrow.toString", () => ((x) => x * 2).toString());
+			tryIt("fn.ctor.toString", () =>
+				Function.prototype.toString.call(window.Function)
+			);
+
+			// Error stacks. The known proxy-URL leak lives here.
+			tryIt("err.prepareStackTrace", () => typeof Error.prepareStackTrace);
+			tryIt("err.protoStackDesc", () => {
+				const d = Object.getOwnPropertyDescriptor(Error.prototype, "stack");
+				return d ? (d.get ? "accessor" : "data") : "absent";
+			});
+			tryIt("err.ownStackDesc", () => {
+				const d = Object.getOwnPropertyDescriptor(new Error("x"), "stack");
+				return d ? (d.get ? "accessor" : "data") : "absent";
+			});
+			tryIt("err.stack.lines", () => {
+				try {
+					null.x;
+				} catch (e) {
+					return (e.stack || "").split("\n").length;
+				}
+			});
+			tryIt("err.stack.frame1", () => {
+				try {
+					null.x;
+				} catch (e) {
+					return (e.stack || "").split("\n")[1] || "";
+				}
+			});
+
+			// Prototype-chain and descriptor shape of members a shim replaces.
+			tryIt("desc.location.get", () =>
+				String(
+					Object.getOwnPropertyDescriptor(window, "location")?.get?.toString()
+				).slice(0, 60)
+			);
+			tryIt(
+				"proto.doc",
+				() => Object.getPrototypeOf(document).constructor.name
+			);
+			tryIt("proto.win", () => Object.getPrototypeOf(window).constructor.name);
+			tryIt("toString.win", () => Object.prototype.toString.call(window));
+			tryIt("toString.doc", () => Object.prototype.toString.call(document));
+
+			// Navigator and screen, the bulk of any fingerprint.
+			tryIt(
+				"nav.ownNames.count",
+				() =>
+					Object.getOwnPropertyNames(Object.getPrototypeOf(navigator)).length
+			);
+			tryIt("nav.ua", () => navigator.userAgent);
+			tryIt("nav.plugins.len", () => navigator.plugins.length);
+			tryIt(
+				"screen.dims",
+				() => `${screen.width}x${screen.height}x${screen.colorDepth}`
+			);
+
+			// The counts above say the sandbox's global is missing ~28 names and
+			// navigator's prototype ~5, but a count does not say WHICH. Reported
+			// in chunks so the differ names the chunk that disagrees and the
+			// trace carries the members.
+			// Bucketed by FIRST LETTER, not by index: a missing name shifts every
+			// later index-chunk, so index buckets report the whole list as
+			// diverging and name nothing.
+			const chunk = (prefix, names) => {
+				const buckets = {};
+				for (const n of names) {
+					const k = /^[a-zA-Z]/.test(n) ? n[0].toLowerCase() : "_";
+					(buckets[k] ||= []).push(n);
+				}
+				for (const k of Object.keys(buckets).sort()) {
+					say(`${prefix}.${k}`, buckets[k].sort().join(","));
+				}
+			};
+			tryIt("chunked.win", () => {
+				chunk("win.names", Object.getOwnPropertyNames(window));
+				return "ok";
+			});
+			tryIt("chunked.nav", () => {
+				chunk(
+					"nav.names",
+					Object.getOwnPropertyNames(Object.getPrototypeOf(navigator))
+				);
+				return "ok";
+			});
+
+			document.title = "sbxdiff:done";
+		</script>
+	</body>
+</html>

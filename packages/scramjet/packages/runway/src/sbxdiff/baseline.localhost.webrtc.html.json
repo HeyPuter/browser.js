@@ -1,0 +1,8 @@
+{
+	"buckets": [
+		"T2|missing-call|EventTarget.addEventListener|count",
+		"T2|missing-call|Window.RTCPeerConnection|count"
+	],
+	"spreads": {},
+	"bodySpreads": {}
+}

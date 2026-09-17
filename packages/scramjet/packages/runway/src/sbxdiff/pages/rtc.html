@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  Does WebRTC work in the guest, and does it say the same things?
+
+  Turnstile probes it: a live capture of the passing side shows the widget
+  reading a 6373-byte SDP (`v=0 o=- ... IN IP4 127.0.0.1`) a character at a
+  time on its way into the payload. A proxy that cannot produce one, or
+  produces a different one, is handing the challenge a different answer to a
+  question it definitely asks.
+
+  LIVE ONLY: it needs real ICE gathering.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>rtc</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-rtc " + s);
+			};
+			(async () => {
+				say("ctor=" + typeof window.RTCPeerConnection);
+				if (typeof window.RTCPeerConnection !== "function") return;
+				let pc;
+				try {
+					pc = new RTCPeerConnection({
+						iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+					});
+				} catch (e) {
+					say("construct-failed " + e);
+					return;
+				}
+				const cands = [];
+				pc.onicecandidate = (e) => {
+					if (e.candidate) cands.push(e.candidate.candidate);
+				};
+				try {
+					pc.createDataChannel("x");
+					const offer = await pc.createOffer();
+					await pc.setLocalDescription(offer);
+					const sdp = offer.sdp || "";
+					// Shape, not contents: the session id and the fingerprint are
+					// fresh every time, so only what is STRUCTURALLY there can be
+					// compared between two runs.
+					say("sdp.len=" + sdp.length);
+					say("sdp.lines=" + sdp.split("\n").length);
+					say("sdp.head=" + JSON.stringify(sdp.slice(0, 40)));
+					say(
+						"sdp.keys=" +
+							[
+								...new Set(
+									sdp.split("\n").map((l) => l.split(":")[0].split(" ")[0])
+								),
+							]
+								.filter(Boolean)
+								.join(",")
+					);
+				} catch (e) {
+					say("offer-failed " + e);
+					return;
+				}
+				await new Promise((r) => setTimeout(r, 6000));
+				say("candidates=" + cands.length);
+				say(
+					"cand.types=" +
+						[...new Set(cands.map((c) => c.split(" ")[7] || "?"))].join(",")
+				);
+			})();
+		</script>
+	</body>
+</html>

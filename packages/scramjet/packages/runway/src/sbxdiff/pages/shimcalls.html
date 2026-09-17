@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff shim-visible DOM calls probe</title>
+	</head>
+	<body>
+		<script>
+			// A proxy must not make DOM calls through the PAGE's functions.
+			//
+			// `Node.baseURI` looked up `base[href]` with `doc.querySelector` and
+			// read the result with `base.getAttribute` -- both replaceable, both
+			// the page's to watch. Cloudflare watches: measured inside its
+			// payload on rateyourmusic, the sandbox's collected-value pool held
+			// the string "base[href]" and the oracle's did not.
+			//
+			// This page replaces them before anything else runs and records
+			// every call, so a query the page did not make is visible as a call
+			// the page did not make.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const seen = [];
+			const record = (what) => (arg) => seen.push(what + ":" + String(arg));
+
+			for (const [proto, name] of [
+				[Document.prototype, "querySelector"],
+				[Document.prototype, "querySelectorAll"],
+				[Element.prototype, "querySelector"],
+				[Element.prototype, "getAttribute"],
+				[Element.prototype, "getAttributeNames"],
+				[Element.prototype, "hasAttribute"],
+			]) {
+				const orig = proto[name];
+				const note = record(name);
+				Object.defineProperty(proto, name, {
+					configurable: true,
+					writable: true,
+					value: function (...args) {
+						note(args[0]);
+
+						return orig.apply(this, args);
+					},
+				});
+			}
+
+			const before = seen.length;
+
+			// The read under test. Nothing here should reach a patched
+			// function except the page's own calls.
+			const uri = document.baseURI;
+			say("shim.baseURIIsString", typeof uri === "string");
+			say("shim.baseURIHasProxyOrigin", uri.indexOf(location.origin) === 0);
+
+			const during = seen.slice(before);
+			say("shim.callsDuringBaseURI", during.length);
+			say("shim.callsDuringBaseURIList", during.join("|"));
+			say(
+				"shim.sawBaseSelector",
+				during.some((c) => c.indexOf("base") !== -1)
+			);
+
+			// A few more reads that have historically gone through page-visible
+			// functions, counted the same way.
+			const mark = seen.length;
+			void document.documentElement.baseURI;
+			void document.head.baseURI;
+			const el = document.createElement("img");
+			el.src = "/marker.js";
+			document.body.appendChild(el);
+			void el.src;
+			say("shim.callsAfterMore", seen.length - mark);
+			say("shim.callsAfterMoreList", seen.slice(mark).join("|").slice(0, 200));
+
+			// And the total, which is the number a site would actually compare.
+			say("shim.totalCalls", seen.length);
+		</script>
+	</body>
+</html>

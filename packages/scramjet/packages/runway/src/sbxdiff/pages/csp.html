@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<!--
+			A nonce'd inline script under a strict meta CSP, plus Trusted Types.
+			This is the shape of Cloudflare's Turnstile widget document, and the
+			reason it exists as a probe: under scramjet the widget's realm is
+			created, scramjet bootstraps in it, and the page's own inline script
+			never compiles. Ten lines here beat a 255 KB obfuscated one.
+		-->
+		<meta
+			http-equiv="content-security-policy"
+			content="default-src 'none'; script-src 'nonce-ABCdef123' 'unsafe-eval'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; worker-src blob:; frame-src 'self' blob:; trusted-types ttprobe default; require-trusted-types-for 'script'"
+		/>
+		<title>csp probe</title>
+	</head>
+	<body>
+		<script nonce="ABCdef123">
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			say("csp.inline_ran", true);
+			say("csp.trustedtypes", typeof window.trustedTypes);
+			try {
+				const p = window.trustedTypes.createPolicy("ttprobe", {
+					createHTML: (s) => s,
+					createScript: (s) => s,
+					createScriptURL: (s) => s,
+				});
+				say("csp.policy", p.name);
+			} catch (e) {
+				say("csp.policy", "threw:" + e.name);
+			}
+			try {
+				const el = document.createElement("div");
+				el.innerHTML = "<b>x</b>";
+				say("csp.innerHTML", el.textContent);
+			} catch (e) {
+				say("csp.innerHTML", "threw:" + e.name);
+			}
+			document.title = "sbxdiff:done";
+		</script>
+	</body>
+</html>

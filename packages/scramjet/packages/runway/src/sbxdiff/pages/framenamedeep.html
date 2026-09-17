@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>deep</title>
+	</head>
+	<body>
+		<script>
+			// One more level, so `framenamed.html` gets a grandchild. A frame
+			// this deep is where the controller's id used to accumulate in
+			// `window.name`: its own injection prefixed a name that its
+			// parent's injection had already prefixed.
+			const f = document.createElement("iframe");
+			f.src = "/inner.html";
+			document.body.appendChild(f);
+			f.addEventListener("load", () => {
+				document.title = "deep.name=" + JSON.stringify(window.name);
+				let inner = "unreadable";
+				try {
+					inner = JSON.stringify(f.contentWindow.name);
+				} catch (e) {
+					inner = "threw:" + e.name;
+				}
+				document.title = "deep.child=" + inner;
+			});
+		</script>
+	</body>
+</html>

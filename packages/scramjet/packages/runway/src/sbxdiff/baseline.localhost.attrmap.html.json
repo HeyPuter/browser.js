@@ -1,0 +1,26 @@
+{
+	"buckets": [
+		"T2|missing-call|Attr.name.get|count",
+		"T2|missing-call|Document.URL.get|count",
+		"T2|missing-call|Document.querySelectorAll|count",
+		"T2|missing-call|Document.querySelector|count",
+		"T2|missing-call|Element.attributes.get|count",
+		"T2|missing-call|Element.getAttributeNames|count",
+		"T2|missing-call|Element.getAttribute|count",
+		"T2|missing-call|Element.hasAttribute|count",
+		"T2|missing-call|Element.outerHTML.get|count",
+		"T2|missing-call|HTMLDocument.location.get|count",
+		"T2|missing-call|HTMLElement.nonce.get|count",
+		"T2|missing-call|HTMLScriptElement.constructor|count",
+		"T2|missing-call|HTMLScriptElement.src.get|count",
+		"T2|missing-call|Location.origin.get|count",
+		"T2|missing-call|NamedNodeMap.item|count",
+		"T2|missing-call|NamedNodeMap.length.get|count",
+		"T2|missing-call|Node.baseURI.get|count",
+		"T2|value-divergence|Document.title.set#arg0|other"
+	],
+	"spreads": {
+		"T1|value-divergence|guest:attr.outerHTML|numeric-delta": 3
+	},
+	"bodySpreads": {}
+}

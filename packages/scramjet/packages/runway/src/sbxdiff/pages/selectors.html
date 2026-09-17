@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff attribute-selector probe</title>
+	</head>
+	<body>
+		<img id="a" src="/asset.png" />
+		<img id="b" src="https://example.invalid/x.png" />
+		<a id="c" href="/page2.html">l</a>
+		<script id="d" src="/marker.js?sel=1"></script>
+		<script>
+			// Does a CSS attribute selector see what the page WROTE?
+			//
+			// A proxy rewrites `src` and `href` in the markup and serves the
+			// original back through `getAttribute`. A selector does not go
+			// through `getAttribute`: it matches the real attribute. So
+			// `[src="/asset.png"]` finds nothing while the page can plainly read
+			// `/asset.png` off the element -- the two disagree about the same
+			// attribute, which is both a tell and a functional break.
+			//
+			// It is a functional break that matters. Cloudflare's challenge
+			// platform cleans up its own injected scripts, and code that finds
+			// elements by their URL is exactly how that is done. Measured on
+			// rateyourmusic: the recorded markup carries 23 <script> tags, the
+			// oracle's document ends up with 20, and the sandbox's keeps all 23.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			const n = (sel) => {
+				try {
+					return document.querySelectorAll(sel).length;
+				} catch (e) {
+					return "threw:" + e.name;
+				}
+			};
+
+			say("sel.exact", n('[src="/asset.png"]'));
+			say("sel.prefix", n('[src^="/asset"]'));
+			say("sel.suffix", n('[src$=".png"]'));
+			say("sel.contains", n('[src*="asset"]'));
+			say("sel.absolute", n('[src="https://example.invalid/x.png"]'));
+			say("sel.href", n('[href="/page2.html"]'));
+			say("sel.scriptSrc", n('script[src^="/marker.js"]'));
+			say("sel.anySrc", n("[src]"));
+			// `matches` and `closest` take the same selector and must agree.
+			say(
+				"sel.matches",
+				document.getElementById("a").matches('[src="/asset.png"]')
+			);
+			say(
+				"sel.closest",
+				!!document.getElementById("a").closest('[src="/asset.png"]')
+			);
+			// And the value the page reads back, for contrast.
+			say("sel.getAttribute", document.getElementById("a").getAttribute("src"));
+		</script>
+	</body>
+</html>

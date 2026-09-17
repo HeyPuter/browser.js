@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff which-clock probe</title>
+	</head>
+	<body>
+		<script>
+			// WHICH contexts get the pinned clock?
+			//
+			// Virtual time is enabled in Page's constructor, and page.cc restricts
+			// it to main-thread page schedulers: a worker must not become a second
+			// virtual-time client, because TryAdvancingTime takes the min across
+			// clients and a worker could pin the clock forever (RULES.md #12). But
+			// `base::Time::Now()` is overridden PROCESS-wide by the coordinator, so
+			// whether a worker reads the pinned clock or the real one is a
+			// different question from whether it drives it -- and nothing here had
+			// ever measured it.
+			//
+			// It matters because Cloudflare builds its payload in a blob worker.
+			// Two oracle runs of rateyourmusic posted a script into that worker
+			// carrying `|1789282059420|` and `|1789282110001|` -- 50.6 s apart,
+			// which is the real gap between the runs, and ~7.7 hours past the
+			// pinned origin. Something is on the real clock.
+			//
+			//   pnpm sbxdiff --page clocks.html --self-check --grace 8000
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			// The reference: the main thread, which definitely is a virtual-time
+			// client. --sbxdiff-initial-time pins this exactly.
+			say("clk.main", Date.now());
+			say("clk.mainPerf", performance.now());
+
+			// A dedicated worker from a blob, which is the shape Cloudflare uses.
+			const src =
+				"onmessage=()=>postMessage({d:Date.now(),p:performance.now(),o:performance.timeOrigin})";
+			const w = new Worker(
+				URL.createObjectURL(new Blob([src], { type: "text/javascript" }))
+			);
+			w.onmessage = (e) => {
+				say("clk.blobWorkerDate", e.data.d);
+				say("clk.blobWorkerPerf", e.data.p);
+				say("clk.blobWorkerOrigin", e.data.o);
+				// The gap between the two clocks is the whole signal: 0 means the
+				// worker shares the page's pinned clock, anything large means it is
+				// reading the real one.
+				say("clk.blobWorkerSkewMs", e.data.d - Date.now());
+			};
+			w.postMessage(0);
+
+			// Same question for a cross-origin iframe, which is where the script
+			// carrying that timestamp is actually built. It answers by posting
+			// back, so a different renderer process is still measured.
+			addEventListener("message", (e) => {
+				if (e.data && e.data.sbxClock) {
+					const { where, d } = e.data.sbxClock;
+					say("clk." + where + "Date", d);
+					say("clk." + where + "SkewMs", d - Date.now());
+				}
+			});
+			// 127.0.0.1 is a different SITE from localhost, so this frame gets
+			// its own renderer process under site isolation -- which is the one
+			// structural difference between this probe and the Cloudflare widget,
+			// and therefore the candidate explanation for a real-clock reading.
+			const f = document.createElement("iframe");
+			f.src = "http://127.0.0.1:4510/clockframe.html";
+			document.body.appendChild(f);
+		</script>
+	</body>
+</html>

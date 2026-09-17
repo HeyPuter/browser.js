@@ -1,0 +1,141 @@
+<!doctype html>
+<html
+	lang="en"
+	id="page_home"
+	class="rym page_home scope_music nonsubscriber logged-out"
+>
+	<head>
+		<link rel="preconnect" href="//cdn.sonemic.net" />
+		<meta charset="utf-8" />
+		<title>sbxdiff doctype probe</title>
+	</head>
+	<body>
+		<div id="filler" style="height: 400px">x</div>
+		<script type="application/ld+json">
+			{ "@context": "https://schema.org", "url": "/x" }
+		</script>
+		<script type="text/template">
+			<div>t</div>
+		</script>
+		<script type="module">
+			window.__mod = 1;
+		</script>
+		<noscript><script src="/marker.js?ns=1"></script></noscript>
+		<script type="text/javascript" nomodule>
+			window.__nomod = 1;
+		</script>
+
+		<script>
+			window.__n1 = 1;
+		</script>
+		<script>
+			window.__n2 = 2;
+		</script>
+		<script src="/marker.js?n=3"></script>
+		<script>
+			window.__n4 = 4;
+		</script>
+		<script>
+			window.__n5 = 5;
+		</script>
+		<script src="/marker.js?n=6"></script>
+		<script>
+			window.__n7 = 7;
+		</script>
+		<script>
+			window.__n8 = 8;
+		</script>
+		<script src="/marker.js?n=9"></script>
+		<script>
+			window.__n10 = 10;
+		</script>
+		<script>
+			window.__n11 = 11;
+		</script>
+		<script src="/marker.js?n=12"></script>
+		<script>
+			window.__n13 = 13;
+		</script>
+		<script>
+			window.__n14 = 14;
+		</script>
+		<script src="/marker.js?n=15"></script>
+		<script>
+			window.__n16 = 16;
+		</script>
+		<script>
+			window.__n17 = 17;
+		</script>
+		<script src="/marker.js?n=18"></script>
+
+		<script>
+			// Standards mode or quirks mode.
+			//
+			// `document.compatMode` is one string, and everything about layout hangs
+			// off it. Measured on rateyourmusic: the oracle reported "CSS1Compat" and
+			// the sandbox "BackCompat", which took `documentElement.clientHeight` from
+			// 813 to 15364 and moved `scrollHeight`, `HTMLCollection.length` and
+			// `IntersectionObserverEntry.isIntersecting` with it -- all of which an
+			// anti-bot payload records.
+			//
+			// The shape here copies rateyourmusic's own opening on purpose: the DOCTYPE,
+			// then a newline, then `<html>` with attributes, then a head whose first
+			// content is whitespace and a <link>. Anything a rewriter inserts BEFORE the
+			// DOCTYPE puts the parser in quirks mode, and where it chooses to inject
+			// depends on what the head starts with.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			// Navigate once, then report. The page under test on rateyourmusic is
+			// not the one the run starts on: Cloudflare's challenge commits first
+			// and the real page arrives by NAVIGATION, with `$rfp`/`$io` on its
+			// proxy URL. That document came out in quirks mode where the oracle's
+			// was in standards, so whether a navigated-to document keeps its
+			// DOCTYPE is the thing to check, and a fresh top-level load is not it.
+			if (!location.search) {
+				location.href = location.pathname + "?navigated=1";
+			} else {
+				say("doc.viaNavigation", true);
+			}
+			say("doc.compatMode", document.compatMode);
+			say("doc.doctype", document.doctype ? document.doctype.name : "none");
+			say(
+				"doc.firstChildType",
+				document.firstChild ? document.firstChild.nodeType : "none"
+			);
+			say(
+				"doc.firstChildName",
+				document.firstChild ? document.firstChild.nodeName : "none"
+			);
+			say("doc.documentElementTag", document.documentElement.tagName);
+			say("doc.htmlLang", document.documentElement.lang);
+			say("doc.htmlClass", document.documentElement.className);
+			say("doc.clientHeight", document.documentElement.clientHeight);
+			say("doc.scrollHeight", document.documentElement.scrollHeight);
+			say(
+				"doc.headFirstChild",
+				document.head.firstChild ? document.head.firstChild.nodeName : "none"
+			);
+			say("doc.bodyChildCount", document.body.children.length);
+			// Script visibility on THIS path specifically. The quirky path injects
+			// at the document root rather than into <head>, and a filter that hides
+			// the shim's scripts has to cover both -- measured on rateyourmusic,
+			// which takes the quirky path, `getElementsByTagName("script")` was 23
+			// long in the sandbox and 20 in the oracle.
+			say("doc.scriptsByTag", document.getElementsByTagName("script").length);
+			say("doc.documentScripts", document.scripts.length);
+			say("doc.scriptsQSA", document.querySelectorAll("script").length);
+			say(
+				"doc.rootChildren",
+				document.documentElement.parentNode.childNodes.length
+			);
+		</script>
+	</body>
+</html>
+<!-- Trailing content AFTER </html>, which is what real pages have and what
+     pushes the rewriter down its "quirky document structure" path. That path
+     used to inject its scripts at position 0 of the document -- in front of
+     the DOCTYPE -- which is precisely what makes a browser ignore it. The
+     probe asserts the DOCTYPE survives injection. -->
+<div id="trailing">after</div>

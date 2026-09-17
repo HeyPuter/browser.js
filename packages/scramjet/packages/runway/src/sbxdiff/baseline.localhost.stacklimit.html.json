@@ -1,0 +1,9 @@
+{
+	"buckets": [
+		"T2|missing-call|HTMLScriptElement.constructor|count",
+		"T2|missing-call|HTMLScriptElement.textContent.set|count",
+		"T2|missing-call|Window.Node|count"
+	],
+	"spreads": {},
+	"bodySpreads": {}
+}

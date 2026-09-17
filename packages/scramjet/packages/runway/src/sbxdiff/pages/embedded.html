@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>embedded</title>
+	</head>
+	<body>
+		<script>
+			// Reports through the parent, because a subframe's own title sets
+			// belong to a realm the differ does not compare.
+			parent.postMessage({ probe: "embedded", value: location.pathname }, "*");
+			document.title = "embedded:done";
+		</script>
+	</body>
+</html>

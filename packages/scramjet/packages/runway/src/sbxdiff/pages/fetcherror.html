@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+  How does a request that CANNOT BE MADE fail, as the page sees it?
+
+  Cloudflare asks this on purpose. Its challenge fetches
+
+      https://brunhild.challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/i/<ray>/<token>
+
+  from inside a blob worker, wrapped in
+
+      try { fetch(...) } catch (e) { postMessage({ AXuey2: 1, gQTuX1: String(e) }) }
+
+  `brunhild` and `hagen` are named in the interstitial's own CSP `connect-src`
+  and resolve nowhere for anybody -- the request exists in order to fail, and
+  what is graded is the SHAPE of the failure. `String(e)` goes straight back to
+  Cloudflare. A proxy whose transport has its own error vocabulary answers that
+  question differently from every real browser, in one string, on the first try.
+
+  This is exactly the class the exception differ CANNOT see, which is why the
+  page exists. A fetch rejection is not an `ExceptionState` throw, so the C++
+  tracer records no `kException`; and scramjet's `fetch` interceptor rethrows
+  whatever the native rejected with rather than building an error through
+  `NativeErrors.stamp`, so there is no guest-op `throw` record either. It is in
+  neither stream. Reading the code says it should be right -- `sw.ts` returns
+  `Response.error()` rather than a status (commit 4ad6a342), so the browser
+  itself makes the rejection -- but nothing had measured it.
+
+  LIVE ONLY, and necessarily so: a replayed store answers from disk, so a miss
+  is a synthesised response and not a transport that could not connect. That is
+  RULES #85 in its other form -- replay cannot reproduce a network failure any
+  more than it can grade a body. Run each side and compare:
+
+      pnpm serve --page fetcherror.html --wisp --open sandbox --grace 30000
+      pnpm serve --page fetcherror.html --wisp --open oracle  --grace 30000
+
+  Every line is reported twice: `createComment`, which the tracer records as a
+  binding argument, and `console.info`, because a live run has no tracer and
+  the harness log is the only channel out.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>fetcherror</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				document.createComment("sbxfetch: " + s);
+				console.info("sbxfetch: " + s);
+			};
+
+			// What a detector can read off a rejected fetch. `String(e)` is the
+			// one Cloudflare actually sends, but the others are one property
+			// access away and cost nothing to check.
+			const describe = (label, e) => {
+				say(label + " String " + String(e));
+				say(label + " name " + (e && e.name));
+				say(label + " message " + (e && e.message));
+				say(label + " isTypeError " + (e instanceof TypeError));
+				// A cross-realm TypeError fails `instanceof` while still being
+				// one, so the brand is worth reading separately.
+				say(label + " brand " + Object.prototype.toString.call(e));
+			};
+
+			const cases = [
+				// The one Cloudflare uses: a name with no A record anywhere.
+				["nodns", "https://brunhild.challenges.cloudflare.com/x"],
+				// A name that resolves but has nothing listening, so it fails
+				// later in the connection rather than at resolution. Chrome
+				// reports both identically; a transport that distinguishes them
+				// is a transport a page can distinguish.
+				["refused", "http://127.0.0.1:1/x"],
+			];
+
+			(async () => {
+				for (const [label, url] of cases) {
+					try {
+						const r = await fetch(url);
+						// Reaching here at all is the finding: a request that
+						// cannot be made must not come back as a response.
+						say(label + " RESOLVED status " + r.status);
+						say(label + " RESOLVED type " + r.type);
+					} catch (e) {
+						describe(label, e);
+					}
+				}
+				document.title = "fetcherror done";
+				say("done");
+			})();
+		</script>
+	</body>
+</html>

@@ -1,0 +1,17 @@
+{
+	"buckets": [
+		"T2|extra-call|NodeList.length.get|count",
+		"T2|extra-call|Window.location.get|count",
+		"T2|missing-call|HTMLDocument.location.get|count",
+		"T2|missing-call|Location.origin.get|count",
+		"T2|missing-call|Location.pathname.get|count",
+		"T2|missing-call|Location.search.get|count",
+		"T2|missing-call|Node.baseURI.get|count",
+		"T2|value-divergence|Document.URL.get|proxy-url-leak",
+		"T2|value-divergence|Document.querySelectorAll#arg0|other",
+		"T2|value-divergence|HTMLScriptElement.src.get|proxy-url-leak",
+		"T2|value-divergence|Location.href.set#arg0|proxy-url-leak",
+		"T2|value-divergence|NodeList.length.get|numeric-delta",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	]
+}

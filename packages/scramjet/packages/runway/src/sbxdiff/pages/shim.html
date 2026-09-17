@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>shim probe</title>
+	</head>
+	<body>
+		<script>
+			// Regression cover for the members a sandbox ANSWERS rather than
+			// delegating. The tracer sits below the shim layer, so a member
+			// scramjet handles itself produces no record at all -- it is visible
+			// as an absence and never as a value. Pushing each through
+			// `document.title` from the parent makes them ordinary guest
+			// observations that the differ compares like any other.
+			//
+			// The twelve here are exactly the ones Cloudflare's Turnstile widget
+			// reads natively in the oracle and never reaches in the sandbox.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			addEventListener("message", (e) => {
+				if (!e.data) return;
+				if (e.data.probe === "shim-ready") {
+					say("shim.frameOrigin", e.origin);
+					e.source.postMessage({ probe: "shim-ping" }, "*");
+
+					return;
+				}
+				if (e.data.probe !== "shim") return;
+				for (const line of e.data.values) {
+					const i = line.indexOf("=");
+					say("shim." + line.slice(0, i), line.slice(i + 1));
+				}
+				document.title = "sbxdiff:done";
+			});
+			const f = document.createElement("iframe");
+			f.src = "/shimframe.html";
+			document.body.appendChild(f);
+		</script>
+	</body>
+</html>

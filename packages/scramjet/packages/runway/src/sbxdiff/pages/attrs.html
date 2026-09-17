@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff attribute probe</title>
+	</head>
+	<body>
+		<img id="i" src="/asset.png" />
+		<a id="a" href="/page2.html?q=1#f">x</a>
+		<script>
+			// A URL attribute has two readings and they are not the same string:
+			// `getAttribute` gives the literal text the markup carried,
+			// `element.src` gives it resolved against the document. A proxy has
+			// to rewrite the attribute and then serve both readings back, and
+			// the same mistake CSS had -- answering the resolved form where the
+			// specified one was asked for -- inflates every attribute a page
+			// reads. The rateyourmusic baseline carries four
+			// `absolute-vs-relative` buckets, which is what prompted this.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			const i = document.getElementById("i");
+			const a = document.getElementById("a");
+
+			say("attr.img.getAttribute", i.getAttribute("src"));
+			say("attr.img.src", i.src);
+			say("attr.a.getAttribute", a.getAttribute("href"));
+			say("attr.a.href", a.href);
+
+			// Set relative, read back both ways.
+			i.setAttribute("src", "/other.png");
+			say("attr.set.getAttribute", i.getAttribute("src"));
+			say("attr.set.src", i.src);
+			i.src = "relative.png";
+			say("attr.prop.getAttribute", i.getAttribute("src"));
+			say("attr.prop.src", i.src);
+
+			// The serialized markup, which carries the attribute text verbatim.
+			say("attr.outerHTML", i.outerHTML);
+			const d = document.createElement("div");
+			d.innerHTML = '<img src="/inner.png"><a href="rel/x?y=1">t</a>';
+			say("attr.innerHTML.readback", d.innerHTML);
+			say("attr.innerHTML.imgAttr", d.firstChild.getAttribute("src"));
+			say("attr.innerHTML.aAttr", d.lastChild.getAttribute("href"));
+			say("attr.totalChars", d.innerHTML.length + i.outerHTML.length);
+		</script>
+	</body>
+</html>

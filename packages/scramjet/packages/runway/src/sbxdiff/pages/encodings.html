@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>does the transport decode what scramjet advertises?</title>
+<!--
+  scramjet sends `accept-encoding: gzip, deflate, br, zstd` because that is what
+  Chromium sends. Whether the bytes come back readable is decided in the
+  transport, in Rust, compiled to wasm -- a long way from the line that makes
+  the claim. This fetches one response in each advertised encoding and says
+  whether it arrived as text.
+
+  A transport that cannot decode an encoding it asked for does not error: it
+  hands the page the compressed bytes, and a page that was expecting HTML gets
+  noise. So the check is on the CONTENT, not on the status.
+-->
+<pre id="out" style="font: 13px monospace"></pre>
+<script>
+	const out = document.getElementById("out");
+	(async () => {
+		for (const enc of ["identity", "gzip", "deflate", "br", "zstd"]) {
+			let verdict;
+			try {
+				const res = await fetch(`/__sbxdiff/encoding?enc=${enc}`);
+				const text = await res.text();
+				verdict = text.includes(`DECODED ${enc}`)
+					? `OK    ${text.length} chars of text`
+					: `GARBLED  status=${res.status} len=${text.length} head=${JSON.stringify(text.slice(0, 24))}`;
+			} catch (err) {
+				verdict = `THREW  ${err}`;
+			}
+			out.textContent += `${enc.padEnd(9)} ${verdict}\n`;
+			console.info(`encodings ${enc.padEnd(9)} ${verdict}`);
+		}
+		console.info("encodings done");
+	})();
+</script>

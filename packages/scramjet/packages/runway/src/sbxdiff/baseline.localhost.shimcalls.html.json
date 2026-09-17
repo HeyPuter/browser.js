@@ -1,0 +1,13 @@
+{
+	"buckets": [
+		"T2|missing-call|HTMLImageElement.src.get|count",
+		"T2|missing-call|HTMLImageElement.src.set|count",
+		"T2|missing-call|Location.origin.get|count",
+		"T2|missing-call|Node.baseURI.get|count",
+		"T2|missing-call|Window.Document|count",
+		"T2|missing-call|Window.Element|count",
+		"T2|missing-call|Window.Node|count"
+	],
+	"spreads": {},
+	"bodySpreads": {}
+}

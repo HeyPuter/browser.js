@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff service-worker blank-frame probe</title>
+	</head>
+	<body>
+		<script>
+			// Does a service worker see a subresource fetched from an about:blank
+			// iframe? Asked WITHOUT scramjet in the picture, because the answer is
+			// a property of the browser and it decides whose bug the divergence is.
+			//
+			// It matters because that is how Cloudflare's JS detections load: the
+			// challenged page creates a 1x1 blank iframe and injects a script that
+			// appends `<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js">`.
+			// A proxy that works by service worker cannot see that request, so the
+			// script is fetched from the PROXY's own origin and the detection never
+			// runs -- measured on rateyourmusic, the oracle posted 16270 bytes to
+			// `jsd/oneshot` and the sandbox posted nothing.
+			//
+			// The control matters as much as the test: this page registers a worker
+			// that answers /swmarker.js with a body saying "sw", while the real file
+			// on disk says "network". If the top-level request does not say "sw",
+			// the worker is not installed and the blank-frame answer means nothing.
+			//
+			// The marker reports by writing THIS page's title rather than a global
+			// the parent polls: an about:blank document can be replaced out from
+			// under a `contentWindow` reference (the "about:blank replacement"
+			// steps), and a poll that reads through one measures the wrong thing.
+			//
+			//   pnpm sbxdiff --page swblank.html --no-virtual-time --grace 15000
+			//
+			// Read the ORACLE's values. The sandbox side has no meaning here --
+			// scramjet shims `navigator.serviceWorker`, so it cannot answer a
+			// question about the real one.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			(async () => {
+				try {
+					await navigator.serviceWorker.register("/swblank-sw.js", {
+						scope: "/",
+					});
+					await navigator.serviceWorker.ready;
+					for (let i = 0; i < 50 && !navigator.serviceWorker.controller; i++) {
+						await new Promise((r) => setTimeout(r, 100));
+					}
+					say("sw.controlled", !!navigator.serviceWorker.controller);
+
+					// Control: this document IS controlled, so this must say "sw".
+					const top = document.createElement("script");
+					top.src = "/swmarker.js?top";
+					document.head.appendChild(top);
+					await new Promise((r) => setTimeout(r, 800));
+
+					// The question.
+					const f = document.createElement("iframe");
+					f.width = 1;
+					f.height = 1;
+					document.body.appendChild(f);
+					const b = f.contentDocument;
+					say("sw.blank.contentDocument", !!b);
+					const s = b.createElement("script");
+					s.innerHTML =
+						"var m = document.createElement('script');" +
+						"m.src = '/swmarker.js?blank';" +
+						"document.getElementsByTagName('head')[0].appendChild(m);";
+					b.getElementsByTagName("head")[0].appendChild(s);
+
+					// And the same thing in a SRCDOC frame, which Chromium does
+					// support: `kServiceWorkerSrcdocSupport` is
+					// FEATURE_ENABLED_BY_DEFAULT, and `InheritControllerFrom`
+					// accepts an about:srcdoc client. If this says "sw" while the
+					// blank one says "network", the difference between the two is
+					// the whole of the problem.
+					const g = document.createElement("iframe");
+					g.width = 1;
+					g.height = 1;
+					g.srcdoc = "<!doctype html><html><head></head><body></body></html>";
+					document.body.appendChild(g);
+					await new Promise((r) => {
+						g.addEventListener("load", r, { once: true });
+						setTimeout(r, 3000);
+					});
+					const gb = g.contentDocument;
+					say("sw.srcdoc.contentDocument", !!gb);
+					if (gb) {
+						const gs = gb.createElement("script");
+						gs.innerHTML =
+							"var m = document.createElement('script');" +
+							"m.src = '/swmarker.js?srcdoc';" +
+							"document.getElementsByTagName('head')[0].appendChild(m);";
+						gb.getElementsByTagName("head")[0].appendChild(gs);
+					}
+					// The one that decides whether a proxy can DO anything about
+					// it: set `srcdoc` and inject SYNCHRONOUSLY, with no wait.
+					// That is the shape a rewrite would have to survive -- a page
+					// creates a blank iframe, appends it, and reads
+					// `contentDocument` on the very next line, so whatever the
+					// proxy substitutes has to be in place by then. A srcdoc
+					// navigation is queued, not synchronous, so the document this
+					// injects into may be the doomed initial about:blank.
+					const h = document.createElement("iframe");
+					h.width = 1;
+					h.height = 1;
+					h.srcdoc = "<!doctype html><html><head></head><body></body></html>";
+					document.body.appendChild(h);
+					const hb = h.contentDocument;
+					say("sw.srcdocsync.contentDocument", !!hb);
+					if (hb) {
+						say("sw.srcdocsync.url", hb.URL);
+						const hs = hb.createElement("script");
+						hs.innerHTML =
+							"var m = document.createElement('script');" +
+							"m.src = '/swmarker.js?srcdocsync';" +
+							"document.getElementsByTagName('head')[0].appendChild(m);";
+						hb.getElementsByTagName("head")[0].appendChild(hs);
+					}
+					// Silence is a result here, so write it down. A marker that
+					// never reports means its script was destroyed before it
+					// could load -- which is what happens to anything injected
+					// into the initial about:blank of a frame that is on its way
+					// to being a srcdoc.
+					await new Promise((r) => setTimeout(r, 2500));
+					say("sw.settled", document.title);
+				} catch (e) {
+					say("sw.error", e.name + ":" + e.message);
+				}
+			})();
+		</script>
+	</body>
+</html>

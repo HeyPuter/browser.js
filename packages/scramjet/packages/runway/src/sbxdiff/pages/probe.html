@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff probe</title>
+	</head>
+	<body>
+		<img id="img" src="/asset.png" />
+		<a id="link" href="/page2.html?q=1#frag">link</a>
+		<iframe id="frame" src="/inner.html"></iframe>
+		<script>
+			// Every value below is a guest-observable fact the sandbox is supposed
+			// to reproduce exactly. Each is pushed through `document.title`, which
+			// makes it a `Document.title.set` binding call carrying the value as an
+			// argument -- so the differ sees an ordered, 1:1 comparable sequence
+			// whatever the getter itself happens to trace as.
+			//
+			// The page is also deliberately boring: no randomness, no timers with
+			// real deadlines, no network beyond its own assets. A divergence here
+			// is the sandbox, not the page.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			const tryIt = (k, fn) => {
+				try {
+					say(k, fn());
+				} catch (e) {
+					say(k, "threw:" + e.name);
+				}
+			};
+
+			tryIt("location.href", () => location.href);
+			tryIt("location.origin", () => location.origin);
+			tryIt("location.protocol", () => location.protocol);
+			tryIt("location.host", () => location.host);
+			tryIt("location.hostname", () => location.hostname);
+			tryIt("location.port", () => location.port);
+			tryIt("location.pathname", () => location.pathname);
+			tryIt("location.search", () => location.search);
+			tryIt("location.hash", () => location.hash);
+
+			tryIt("document.URL", () => document.URL);
+			tryIt("document.baseURI", () => document.baseURI);
+			tryIt("document.domain", () => document.domain);
+			tryIt("document.referrer", () => document.referrer);
+			tryIt("self.origin", () => self.origin);
+
+			tryIt("img.src", () => document.getElementById("img").src);
+			tryIt("img.getAttribute", () =>
+				document.getElementById("img").getAttribute("src")
+			);
+			tryIt("link.href", () => document.getElementById("link").href);
+			tryIt("link.host", () => document.getElementById("link").host);
+			tryIt("link.pathname", () => document.getElementById("link").pathname);
+			tryIt("link.getAttribute", () =>
+				document.getElementById("link").getAttribute("href")
+			);
+
+			tryIt("url.abs", () => new URL("x.js", location.href).href);
+			tryIt("url.rel", () => new URL("./y/../z.js", document.baseURI).href);
+
+			tryIt("top_is_self", () => top === self);
+			tryIt("parent_is_self", () => parent === self);
+			tryIt("frames.length", () => frames.length);
+
+			tryIt("stack", () => {
+				try {
+					null.x;
+				} catch (e) {
+					return (e.stack || "").split("\n")[1] || "";
+				}
+			});
+
+			tryIt("history.length.type", () => typeof history.length);
+			tryIt("cookie", () => document.cookie);
+
+			// Identity: the same DOM node read twice must be the same object, and
+			// a Proxy minted per access is exactly the novelty divergence the
+			// differ's `novel` bit exists to catch.
+			const a1 = document.getElementById("img");
+			const a2 = document.getElementById("img");
+			say("node.identity", a1 === a2);
+			say("style.identity", a1.style === a1.style);
+
+			// Cross-frame postMessage. A sandbox that shows the guest a proxied
+			// origin here, or that loses the target window on the way to the
+			// native, breaks every widget that talks to its own iframe -- which
+			// is how Cloudflare's Turnstile talks to its, and is exactly the
+			// bug this case was added for.
+			addEventListener("message", (e) => {
+				if (!e.data || e.data.probe !== "inner") return;
+				say("msg.origin", e.origin);
+				say(
+					"msg.source_is_frame",
+					e.source === document.getElementById("frame").contentWindow
+				);
+				say("msg.data", e.data.value);
+			});
+
+			document.title = "sbxdiff:done";
+		</script>
+	</body>
+</html>

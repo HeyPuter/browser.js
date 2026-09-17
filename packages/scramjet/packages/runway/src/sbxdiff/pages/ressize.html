@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff resource-size probe</title>
+	</head>
+	<body>
+		<script src="/ressize.js"></script>
+		<script>
+			// The size of what the SITE served, which is not the size of what a
+			// proxied browser received.
+			//
+			// A rewritten script and a rewritten document are both bigger than
+			// the originals, and `PerformanceResourceTiming` reports what
+			// arrived -- so a page that measures its own bundle sees the proxy.
+			// Cloudflare's challenge does exactly this: measured on
+			// rateyourmusic, 113793 against the 86603 the site sent for one
+			// script (RULES.md #130), and 968058 against 256046 for the
+			// Turnstile widget's own document (#132).
+			//
+			// Nothing here computes an expected value: both sides read the same
+			// two files, so the ORACLE's numbers are the truth and the differ
+			// does the comparing. That also keeps the probe free of `await` --
+			// a `fetch` here did resolve, but the continuation after the second
+			// one never ran before the oracle's run ended, so the oracle
+			// observed nothing at all and there was nothing to compare.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			try {
+				const script = performance.getEntriesByName(
+					location.origin + "/ressize.js"
+				)[0];
+				const nav = performance.getEntriesByType("navigation")[0];
+
+				// Both routes to the number. `toJSON` is the one an anti-bot
+				// payload takes, and a getter-only correction reads right in the
+				// page and wrong in the bytes that get posted.
+				say("ressize.script.decoded", script ? script.decodedBodySize : -1);
+				say("ressize.script.encoded", script ? script.encodedBodySize : -1);
+				say("ressize.script.transfer", script ? script.transferSize : -1);
+				say("ressize.doc.decoded", nav ? nav.decodedBodySize : -1);
+				say("ressize.doc.encoded", nav ? nav.encodedBodySize : -1);
+				say("ressize.doc.transfer", nav ? nav.transferSize : -1);
+
+				const sjson = script ? JSON.parse(JSON.stringify(script)) : null;
+				say("ressize.script.json.decoded", sjson ? sjson.decodedBodySize : -1);
+				say("ressize.script.json.transfer", sjson ? sjson.transferSize : -1);
+				const njson = nav ? JSON.parse(JSON.stringify(nav)) : null;
+				say("ressize.doc.json.decoded", njson ? njson.decodedBodySize : -1);
+				say("ressize.doc.json.transfer", njson ? njson.transferSize : -1);
+			} catch (e) {
+				say("ressize.threw", e && e.name);
+			}
+		</script>
+	</body>
+</html>

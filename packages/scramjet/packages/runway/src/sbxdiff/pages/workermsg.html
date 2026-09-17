@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff worker-message probe</title>
+	</head>
+	<body>
+		<script>
+			// What a worker sees on the message its page posts it.
+			//
+			// This is not a synthetic shape. It is Cloudflare's, verbatim: the
+			// challenge runs its probes by posting SOURCE to a worker whose
+			// handler is
+			//
+			//   onmessage = function(e) {
+			//     e.isTrusted && '' === e.origin && null === e.source &&
+			//       eval(_p ? _p.createScript(e.data) : e.data)
+			//   }
+			//
+			// Three guards, and all three have to hold or nothing runs.
+			// `MessageEvent.origin` is the EMPTY STRING for anything posted
+			// through a worker or a MessagePort, because there is no document
+			// behind it to attribute; only `window.postMessage` carries one.
+			// Reporting the site's origin there is a divergence a page reads
+			// directly -- and it cost the sandbox every one of Cloudflare's
+			// worker probes: measured, the oracle's worker read `platform`,
+			// `languages`, `hardwareConcurrency`, `deviceMemory`, `userAgent`
+			// and `storage`, and the sandbox's read none of them.
+			//
+			// The type of `data` matters as much: the page posts a STRING and the
+			// worker evals it, so a message that arrives as an object is a
+			// message that does nothing.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const src = `
+				onmessage = function (e) {
+					postMessage({
+						origin: e.origin,
+						originIsEmpty: e.origin === "",
+						sourceIsNull: e.source === null,
+						isTrusted: e.isTrusted,
+						dataType: typeof e.data,
+						dataIsString: typeof e.data === "string",
+						// The whole point: would Cloudflare's guard let it run?
+						wouldEval:
+							e.isTrusted && "" === e.origin && null === e.source,
+						evalWorks: (function () {
+							try {
+								if (typeof e.data !== "string") return "not-a-string";
+								return String(eval(e.data));
+							} catch (err) {
+								return "threw:" + err.name;
+							}
+						})(),
+					});
+				};
+			`;
+			const w = new Worker(
+				URL.createObjectURL(new Blob([src], { type: "text/javascript" }))
+			);
+			w.onmessage = (e) => {
+				const d = e.data;
+				for (const k of Object.keys(d).sort()) say("worker." + k, d[k]);
+			};
+			// A string, like Cloudflare's, that evaluates to something checkable.
+			w.postMessage("self.navigator.hardwareConcurrency");
+
+			// And a MessagePort, which has the same empty origin for the same
+			// reason -- if only the worker path is fixed the two disagree.
+			const ch = new MessageChannel();
+			let portSeen = false;
+			ch.port2.onmessage = (e) => {
+				portSeen = true;
+				say("port.origin", e.origin);
+				say("port.originIsEmpty", e.origin === "");
+				say("port.dataIsString", typeof e.data === "string");
+			};
+			ch.port1.postMessage("hello");
+			// A backstop. The port result is reported by its own handler above;
+			// if the run ends before that handler is reached the value is simply
+			// absent on one side, which reads as a divergence in a probe rather
+			// than as the timing it is.
+			setTimeout(() => {
+				if (!portSeen) say("port.origin", "not-delivered");
+			}, 1500);
+		</script>
+	</body>
+</html>

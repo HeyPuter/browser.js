@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff shadow-root probe</title>
+	</head>
+	<body>
+		<div id="host"></div>
+		<script>
+			// Is a shadow root still a ShadowRoot under the proxy?
+			//
+			// Cloudflare's Turnstile keeps its widget in a shadow root and checks
+			// it on a timer (`api.js`, the function it calls "watchcat"):
+			//
+			//     var E = s.shadow;
+			//     if (!jo(E) || !s.wrapper.isConnected) { ...missing... }
+			//     var S = E.querySelector("#" + m);
+			//     if (S === null) { ...missing... }
+			//
+			// with `jo(e) { return w(e, ShadowRoot) }` and `w` the swc
+			// instanceof helper -- so a plain brand check. If any of those three
+			// answers differently under a proxy, Turnstile logs "Cannot find
+			// Widget <id>" and DELETES it from its map, which is what the
+			// sandbox does live and the oracle never does.
+			//
+			// Each condition separately, because "the widget went missing" is
+			// three different bugs wearing one message.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const check = (mode) => {
+				const host = document.createElement("div");
+				host.id = "host-" + mode;
+				document.body.appendChild(host);
+				const sr = host.attachShadow({ mode });
+				const inner = document.createElement("div");
+				inner.id = "cf-chl-widget-probe";
+				sr.appendChild(inner);
+
+				say(`shadow.${mode}.instanceof`, sr instanceof ShadowRoot);
+				say(`shadow.${mode}.hasInstance`, !!ShadowRoot[Symbol.hasInstance](sr));
+				say(
+					`shadow.${mode}.protoIs`,
+					Object.getPrototypeOf(sr) === ShadowRoot.prototype
+				);
+				say(`shadow.${mode}.ctorName`, sr.constructor && sr.constructor.name);
+				say(`shadow.${mode}.toString`, Object.prototype.toString.call(sr));
+				say(`shadow.${mode}.hostConnected`, host.isConnected);
+				say(
+					`shadow.${mode}.querySelector`,
+					sr.querySelector("#cf-chl-widget-probe") !== null
+				);
+				say(`shadow.${mode}.innerParentIsRoot`, inner.parentNode === sr);
+				say(
+					`shadow.${mode}.parentIsShadowRoot`,
+					inner.parentNode instanceof ShadowRoot
+				);
+				say(`shadow.${mode}.getRootNode`, inner.getRootNode() === sr);
+				// The document must NOT see inside it, on either side.
+				say(
+					`shadow.${mode}.hiddenFromDocument`,
+					document.getElementById("cf-chl-widget-probe") === null
+				);
+				say(
+					`shadow.${mode}.hostShadowRoot`,
+					mode === "open" ? host.shadowRoot === sr : host.shadowRoot === null
+				);
+			};
+
+			// And the shape Turnstile actually has: an IFRAME, carrying the id
+			// the watchcat looks up, inside the shadow root.
+			//
+			// `E.querySelector("#cf-chl-widget-<id>")` is looking for the widget
+			// iframe, and an iframe is the element a proxy rewrites hardest --
+			// its src, its attributes, and in scramjet's case a whole
+			// subcontext hooked onto it. If the lookup misses, or the element
+			// the proxy leaves behind is a different one, Turnstile decides its
+			// widget is gone.
+			const checkFrame = (mode) => {
+				const host = document.createElement("div");
+				document.body.appendChild(host);
+				const sr = host.attachShadow({ mode });
+				const wrapper = document.createElement("div");
+				sr.appendChild(wrapper);
+				const frame = document.createElement("iframe");
+				frame.id = "cf-chl-widget-probe-" + mode;
+				frame.setAttribute("title", "widget");
+				wrapper.appendChild(frame);
+
+				const found = sr.querySelector("#cf-chl-widget-probe-" + mode);
+				say(`frame.${mode}.found`, found !== null);
+				say(`frame.${mode}.isSame`, found === frame);
+				say(`frame.${mode}.id`, frame.id);
+				say(`frame.${mode}.getAttrId`, frame.getAttribute("id"));
+				say(`frame.${mode}.wrapperConnected`, wrapper.isConnected);
+				say(`frame.${mode}.frameConnected`, frame.isConnected);
+				say(`frame.${mode}.parentIsWrapper`, frame.parentNode === wrapper);
+				say(`frame.${mode}.rootIsShadow`, frame.getRootNode() === sr);
+				say(`frame.${mode}.byTag`, sr.querySelectorAll("iframe").length);
+			};
+
+			try {
+				say("shadow.ShadowRootType", typeof ShadowRoot);
+				check("open");
+				check("closed");
+				checkFrame("open");
+				checkFrame("closed");
+			} catch (e) {
+				say("shadow.threw", e && e.name + ": " + e.message);
+			}
+		</script>
+	</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>navgo</title>
+	</head>
+	<body>
+		<script>
+			// A CROSS-DOCUMENT navigation driven through the Navigation API.
+			//
+			// This is the half that made `navigation` worth deleting rather
+			// than shimming: a guest calling `navigate()` with a site URL would
+			// take the frame straight off the proxy, and nothing downstream
+			// would be rewritten again. So the frame navigates itself and the
+			// page it lands on reports where it is.
+			//
+			// Both sides must report the SITE's URL. They agree for two
+			// different reasons -- the oracle is really there, the sandbox is
+			// on a rewritten URL and unrewrites it -- and a shim that failed to
+			// rewrite would put the sandbox's frame on the real origin, out of
+			// the proxy, where its realm no longer matches the oracle's.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			say("navgo.before", location.href);
+			try {
+				navigation.navigate("/inner.html");
+			} catch (e) {
+				say("navgo.threw", (e && e.name) + ":" + (e && e.message));
+			}
+		</script>
+	</body>
+</html>

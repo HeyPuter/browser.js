@@ -1,0 +1,19 @@
+{
+	"buckets": [
+		"T2|extra-call|Window.top.get|count",
+		"T2|missing-call|Element.getAttributeNames|count",
+		"T2|missing-call|Element.getAttribute|count",
+		"T2|missing-call|EventTarget.addEventListener|count",
+		"T2|missing-call|HTMLIFrameElement.contentWindow.get|count",
+		"T2|missing-call|HTMLIFrameElement.src.set|count",
+		"T2|missing-call|Window.postMessage|count",
+		"T2|value-divergence|EventTarget.addEventListener#arg0|other",
+		"T2|value-divergence|Window.name.get|empty-vs-value",
+		"T2|value-divergence|Window.name.get|other",
+		"T2|value-divergence|Window.name.set#arg0|empty-vs-value",
+		"T2|value-divergence|Window.name.set#arg0|other",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	],
+	"spreads": {},
+	"bodySpreads": {}
+}

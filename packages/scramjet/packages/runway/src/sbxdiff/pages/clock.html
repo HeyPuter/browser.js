@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff clock probe</title>
+	</head>
+	<body>
+		<script>
+			// Proves virtual time is actually on. With --sbxdiff-initial-time
+			// these are exact and identical across runs; without it they are
+			// wall-clock and differ every time. A test that only checks "the
+			// run produced a trace" cannot tell those apart.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			say("date.now", Date.now());
+			say("date.iso", new Date().toISOString().slice(0, 19));
+			const t0 = Date.now();
+			setTimeout(() => {
+				say("timer.delta", Date.now() - t0);
+				say("date.after", Date.now());
+				document.title = "clock:done";
+			}, 250);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>embed probe</title>
+	</head>
+	<body>
+		<script>
+			// An iframe created and appended BY SCRIPT, which is how Cloudflare's
+			// Turnstile embeds its widget -- as opposed to `inner.html`, which
+			// probe.html embeds with static markup and which works. Under
+			// scramjet the widget's realm is created and scramjet bootstraps in
+			// it, but the document's own script never compiles.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+			addEventListener("message", (e) => {
+				if (!e.data || e.data.probe !== "embedded") return;
+				say("embed.heard", e.data.value);
+				say("embed.origin", e.origin);
+			});
+			const f = document.createElement("iframe");
+			// CROSS-ORIGIN on purpose: 127.0.0.1 is a different origin from
+			// localhost even on the same port, and Turnstile's widget is on a
+			// different origin from the page that embeds it. Under scramjet both
+			// end up on the proxy origin, so this is where its emulation has to
+			// do the work.
+			f.src = "http://127.0.0.1:4510/embedded.html";
+			document.body.appendChild(f);
+			say("embed.created", f.src);
+			document.title = "sbxdiff:done";
+		</script>
+	</body>
+</html>

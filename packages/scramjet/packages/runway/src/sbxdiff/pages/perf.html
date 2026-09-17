@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  How fast does the guest run, in the units an anti-bot service measures?
+
+  Cloudflare's challenge benchmarks the machine -- `while (performance.now() -
+  start < 100) { digest(...) }`, and it reports the iteration count. That is a
+  hardware fingerprint, and under the proxy every property access goes through a
+  Proxy, so the count is not the machine's, it is the machine's divided by
+  whatever the shims cost.
+
+  LIVE ONLY and never a differ input: the differ pins the clock precisely so
+  this measurement cannot be made under it (`SBXDIFF_OBSERVABLE_STEP_US` makes
+  the loop a pure function of the clock sequence, which is right for
+  reproducibility and erases exactly what is being asked here).
+
+    serve.ts --page perf.html --open oracle    the machine
+    serve.ts --page perf.html --open sandbox   the machine through scramjet
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>perf</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-perf " + s);
+			};
+			// Each loop runs for a fixed WALL time and reports how much it got
+			// done, which is the shape the challenge uses.
+			const spin = (label, body) => {
+				const t = performance.now();
+				let n = 0;
+				while (performance.now() - t < 100) {
+					body(n);
+					n++;
+				}
+				say(`${label}=${n}`);
+			};
+
+			const el = document.createElement("div");
+			el.id = "bench";
+			document.body.appendChild(el);
+			let sink = 0;
+
+			// Arithmetic only: the JIT's speed, which the proxy does not touch.
+			spin("arith", (n) => {
+				sink = (sink + n * 2654435761) | 0;
+			});
+			// A DOM property read: this is what a membrane costs.
+			spin("domprop", () => {
+				sink += el.tagName.length;
+			});
+			// An attribute round trip, which goes through more shims again.
+			spin("attr", (n) => {
+				el.setAttribute("data-x", n & 7);
+				sink += el.getAttribute("data-x").length;
+			});
+			// The clock itself, because the loop's bound is a clock read and a
+			// shimmed one changes the count on its own.
+			spin("now", () => {
+				sink += performance.now() > 0 ? 1 : 0;
+			});
+			say(`sink=${sink & 0xff}`);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,23 @@
+{
+	"buckets": [
+		"T1|value-divergence|PerformanceEntry.entryType.get|other",
+		"T1|value-divergence|guest:perf.hosting.favicon|other",
+		"T1|value-divergence|guest:perf.hosting.loaf|other",
+		"T2|extra-call|PerformanceEntry.entryType.get|count",
+		"T2|extra-call|Window.location.get|count",
+		"T2|extra-call|Window.performance.get|count",
+		"T2|missing-call|HTMLDocument.location.get|count",
+		"T2|missing-call|Location.origin.get|count",
+		"T2|missing-call|Node.baseURI.get|count",
+		"T2|missing-call|Performance.getEntriesByName|count",
+		"T2|value-divergence|Document.URL.get|proxy-url-leak",
+		"T2|value-divergence|Document.title.set#arg0|other",
+		"T2|value-divergence|EventTarget.addEventListener#arg0|other",
+		"T2|value-divergence|HTMLScriptElement.src.get|proxy-url-leak",
+		"T2|value-divergence|PerformanceEntry.name.get|absolute-vs-relative",
+		"T2|value-divergence|PerformanceEntry.name.get|chrome-origin-leak",
+		"T2|value-divergence|PerformanceEntry.name.get|other",
+		"T2|value-divergence|PerformanceEntry.name.get|proxy-url-leak",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	]
+}

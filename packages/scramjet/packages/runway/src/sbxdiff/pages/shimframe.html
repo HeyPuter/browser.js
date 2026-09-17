@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>shimframe</title>
+		<script nonce="NONCEabc123">
+			window.__noncedScript = document.currentScript;
+		</script>
+	</head>
+	<body>
+		<a id="a" href="/page2.html">a</a>
+		<img id="img" src="/asset.png" />
+		<link id="link" rel="stylesheet" href="/nope.css" />
+		<iframe id="inner"></iframe>
+		<script>
+			// The twelve members Cloudflare's Turnstile widget reads natively in
+			// the oracle and never reaches in the sandbox, because scramjet
+			// answers them instead. Read here from a CHILD frame, which is the
+			// context the widget runs in, and reported through the parent.
+			const out = [];
+			const put = (k, fn) => {
+				try {
+					out.push(k + "=" + String(fn()));
+				} catch (e) {
+					out.push(k + "=threw:" + e.name);
+				}
+			};
+
+			put("referrer", () => document.referrer);
+			put("baseURI", () => document.baseURI);
+			put("loc.search", () => location.search);
+			put("doc.location.href", () => document.location.href);
+			put("nonce", () => window.__noncedScript.nonce);
+			put("nonce.attr", () => window.__noncedScript.getAttribute("nonce"));
+
+			put("a.href.set", () => {
+				const a = document.getElementById("a");
+				a.href = "/page2.html?q=2";
+				return a.href;
+			});
+			put("img.src.set", () => {
+				const i = document.getElementById("img");
+				i.src = "/asset.png?v=2";
+				return i.src;
+			});
+			put("link.href.set", () => {
+				const l = document.getElementById("link");
+				l.href = "/nope2.css";
+				return l.href;
+			});
+			put("iframe.srcdoc.set", () => {
+				const f = document.getElementById("inner");
+				f.srcdoc = "<b>hi</b>";
+				return f.srcdoc;
+			});
+			put("iframe.contentDocument", () => {
+				const f = document.getElementById("inner");
+				return f.contentDocument ? f.contentDocument.readyState : "null";
+			});
+			put("replaceState.before", () => location.href);
+			put("replaceState.after", () => {
+				history.replaceState(null, "", "/shimframe.html?rs=1");
+				return location.href;
+			});
+
+			addEventListener("message", (e) => {
+				if (!e.data || e.data.probe !== "shim-ping") return;
+				out.push("msg.origin=" + String(e.origin));
+				parent.postMessage({ probe: "shim", values: out }, "*");
+			});
+			parent.postMessage({ probe: "shim-ready" }, "*");
+		</script>
+	</body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>evalcache</title>
+<!--
+  Does scramjet rewrite the SAME large eval source more than once?
+
+  Cloudflare's Turnstile widget evals its 1.3 MB challenge script once per
+  550 ms poll round, 208 times over a run (FINDINGS #235, #240). Each of those
+  cost a full parse and rewrite until `client/shared/eval.ts` started
+  memoizing. This is the page that says whether the memo works, in thirty
+  seconds instead of the nine minutes a rym run costs.
+
+  Read it out of the TRACE, not the page: the count that matters is how many
+  times the rewriter ran, which is `TextDecoder.decode` returning a string the
+  size of the source. The page cannot see that and should not be able to.
+-->
+<body>
+	<script>
+		// Over `MIN_CACHED` (32 KB) so the memo is in play at all, and padded with
+		// a comment rather than repeated statements so the rewriter has one small
+		// thing to do and one big thing to read.
+		const pad = "/*" + "x".repeat(64 * 1024) + "*/";
+		const src =
+			pad + "\nvar evalcacheProbe = (globalThis.evalcacheProbe|0) + 1;";
+
+		// Indirect eval: `(0, eval)(s)` takes `createIndirectEval`'s path.
+		// Direct eval takes the `rewritefn` path. Both are memoized, and a run
+		// that only exercised one would not say so.
+		const indirect = (0, eval);
+		for (let i = 0; i < 5; i++) indirect(src);
+		for (let i = 0; i < 5; i++) eval(src);
+
+		// A DIFFERENT source, to prove the memo is keyed rather than a single slot:
+		// this must rewrite once more, not be answered with the first one's output.
+		const other = src + "\nvar evalcacheOther = 1;";
+		indirect(other);
+		indirect(other);
+
+		// `new Function(src)` is the path rateyourmusic actually takes, and the
+		// one that cost a nine-minute run to find: `Function.constructor` and
+		// `Function.prototype.toString` are ECMAScript members with no Web IDL
+		// behind them, so the binding tracer records neither and the whole path is
+		// invisible to it. Five constructions of one source must rewrite once.
+		const fnSrc = pad + "\nreturn (globalThis.evalcacheFn|0) + 1;";
+		for (let i = 0; i < 5; i++) globalThis.evalcacheFn = new Function(fnSrc)();
+
+		document.title =
+			"evalcache " +
+			globalThis.evalcacheProbe +
+			" fn " +
+			globalThis.evalcacheFn;
+	</script>
+</body>

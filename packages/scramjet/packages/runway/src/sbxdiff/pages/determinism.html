@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff determinism probe</title>
+	</head>
+	<body>
+		<script>
+			// Is the ORACLE reproducible? Run with --self-check, which compares an
+			// oracle run against a second oracle run.
+			//
+			// This is the floor everything else is measured against. Cloudflare's
+			// request bodies differ between two identical runs of unmodified
+			// Chromium -- three of five at the same LENGTH but different content,
+			// two differing by exactly 64 bytes -- so something in here is not
+			// pinned, and until it is, no sandbox delta can be called real.
+			//
+			//   pnpm sbxdiff --page determinism.html --self-check --grace 8000
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			// Pinned by --js-flags=--random-seed=1337, per native context.
+			say("det.math1", Math.random());
+			say("det.math2", Math.random());
+
+			// Pinned by the deterministic keystream (base/sbxdiff_rand_stream.h).
+			const u = new Uint32Array(4);
+			crypto.getRandomValues(u);
+			say("det.crypto", Array.from(u).join(","));
+			say("det.uuid", crypto.randomUUID());
+
+			// The clock. `Date.now()` is virtual under --sbxdiff-initial-time;
+			// `performance.now()` is TimeTicks, which is a different clock and may
+			// not be pinned at all.
+			say("det.dateNow", Date.now());
+			say("det.timeOrigin", performance.timeOrigin);
+			say("det.perfNow1", performance.now());
+
+			// Work per unit time: the shape of Cloudflare's proof of work. If this
+			// varies, anything time-boxed varies with it.
+			// BOUNDED. Under virtual time the clock does not advance while script
+			// is running, so `performance.now() - t0 < 5` never becomes false and
+			// an unbounded version hangs the browser -- measured, SIGABRT. That
+			// is itself the answer to how a time-boxed loop behaves here, and it
+			// is why anything Cloudflare bounds by the clock cannot be compared
+			// between a virtual-time run and a real-time one.
+			let spins = 0;
+			const t0 = performance.now();
+			while (performance.now() - t0 < 5 && spins < 2000000) spins++;
+			say("det.spinHitCap", spins >= 2000000);
+			say("det.spinsIn5ms", spins);
+			say("det.perfNow2", performance.now());
+			say("det.dateNow2", Date.now());
+
+			// And the same question through the API an event carries.
+			addEventListener("load", () => {
+				say("det.loadTimeStamp", Math.round(event ? 0 : 0));
+			});
+			document.addEventListener("click", (e) => say("det.evtTs", e.timeStamp));
+
+			setTimeout(() => {
+				say("det.afterTimeout.dateNow", Date.now());
+				say("det.afterTimeout.perfNow", performance.now());
+				const e = new Event("x");
+				say("det.syntheticTimeStamp", e.timeStamp);
+
+				// The crypto work runs LAST. Generating an RSA-2048 key takes real
+				// time and yields to the event loop, which changes how many tasks
+				// intervene before the next timer -- doing it first made the probe
+				// perturb the very clock it is measuring.
+				// WebCrypto's own randomness, which is NOT `crypto.getRandomValues`.
+				//
+				// RSA-OAEP padding, AES-GCM IVs and key generation draw from BoringSSL's
+				// internal RNG. `getRandomValues` is pinned by the deterministic keystream
+				// and verified identical above; if these are not, then a payload that
+				// "prepends the RSA-encrypted random key bytes" -- which is exactly what
+				// Cloudflare's does -- cannot be byte-identical between two runs of
+				// unmodified Chromium, however well everything else is pinned.
+				const hex = (b) =>
+					Array.from(new Uint8Array(b))
+						.map((x) => x.toString(16).padStart(2, "0"))
+						.join("")
+						.slice(0, 48);
+				(async () => {
+					try {
+						// A digest has no randomness in it: the control.
+						const d = await crypto.subtle.digest(
+							"SHA-256",
+							new Uint8Array([1, 2, 3])
+						);
+						say("det.subtleDigest", hex(d));
+
+						// Key generation.
+						const pair = await crypto.subtle.generateKey(
+							{
+								name: "RSA-OAEP",
+								modulusLength: 2048,
+								publicExponent: new Uint8Array([1, 0, 1]),
+								hash: "SHA-256",
+							},
+							true,
+							["encrypt", "decrypt"]
+						);
+						const spki = await crypto.subtle.exportKey("spki", pair.publicKey);
+						say("det.rsaKey", hex(spki));
+
+						// And the padding, with a key that is fixed across runs.
+						const ct = await crypto.subtle.encrypt(
+							{ name: "RSA-OAEP" },
+							pair.publicKey,
+							new Uint8Array([4, 5, 6])
+						);
+						say("det.rsaCiphertext", hex(ct));
+
+						const aes = await crypto.subtle.generateKey(
+							{ name: "AES-GCM", length: 256 },
+							true,
+							["encrypt"]
+						);
+						say("det.aesKey", hex(await crypto.subtle.exportKey("raw", aes)));
+					} catch (e) {
+						say("det.subtleThrew", e.name + ":" + e.message);
+					}
+				})();
+			}, 50);
+		</script>
+	</body>
+</html>

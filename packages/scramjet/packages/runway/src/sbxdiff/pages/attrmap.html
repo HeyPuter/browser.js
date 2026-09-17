@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+	<head>
+		<meta charset="utf-8" />
+		<meta http-equiv="x-ua-compatible" content="ie=edge" />
+		<meta name="viewport" content="width=device-width" />
+		<title>sbxdiff attribute map probe</title>
+	</head>
+	<body>
+		<div class="root" id="root">
+			<script nonce="sbxdiffnonce" src="/marker.js"></script>
+			<script>
+				window.__sbxdiffInline = 1;
+			</script>
+			<img id="pic" src="/marker.js" alt="x" decoding="async" crossorigin />
+		</div>
+		<script>
+			// `element.attributes` belongs to the page.
+			//
+			// The proxy stores the site's own value for a rewritten attribute
+			// in `scramjet-attr-<name>` beside it, and marks the elements it
+			// injects with `scramjet-injected`. `getAttributeNames` filters
+			// those out. The NamedNodeMap is the other way in, and Cloudflare
+			// walks it: measured on rateyourmusic, the challenge serialises the
+			// element tree as tag plus the first letters of each attribute, and
+			// the two sides disagreed --
+			//
+			//   oracle   ...met_ht_co    >...>scr_sr      >...>scr_no
+			//   sandbox  ...met_ht_co_sc >...>scr_sc_sc_sr>...>scr_sc_sc
+			//
+			// -- 140 characters against 158, inside a request body that has to
+			// match byte for byte. Note the last pair: a script with a `nonce`
+			// reported no nonce and two `sc` attributes instead.
+			//
+			// THE ORDER IS STILL WRONG and this page reports it: the alias does
+			// not sit where the attribute it stands for sat, so a script the
+			// page wrote as `nonce src` enumerates as `src,nonce`. Everything
+			// else agrees -- the count, the indices, `item()`, `hasAttribute`,
+			// and that nothing answers to a `scramjet-` name. Putting the alias
+			// back in position is the rewriter's job, not the shim's, which is
+			// why the four `guest:attr.script.*` buckets are deliberately NOT
+			// baselined. See RULES.md #155.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const el = document.querySelector("script[nonce]") || document.head;
+			const img = document.getElementById("pic");
+
+			const walk = (e) => {
+				const out = [];
+				for (let i = 0; i < e.attributes.length; i++) {
+					const a = e.attributes[i];
+					out.push(a ? a.name : "(hole)");
+				}
+
+				return out;
+			};
+
+			for (const [label, e] of [
+				["script", el],
+				["img", img],
+				["html", document.documentElement],
+			]) {
+				// The count first: it is computed rather than passed through,
+				// and a NamedNodeMap's own keys are its INDICES as well as its
+				// attribute names, so counting keys counts everything twice.
+				say("attr." + label + ".length", e.attributes.length);
+				say("attr." + label + ".walk", walk(e).join(","));
+				say("attr." + label + ".names", e.getAttributeNames().join(","));
+				say(
+					"attr." + label + ".agree",
+					walk(e).join(",") === e.getAttributeNames().join(",")
+				);
+				// item() and named access, the other two ways in.
+				const items = [];
+				for (let i = 0; i < e.attributes.length; i++) {
+					const a = e.attributes.item(i);
+					items.push(a ? a.name : "(null)");
+				}
+				say("attr." + label + ".items", items.join(","));
+				say("attr." + label + ".ownKeys", Object.keys(e.attributes).join(","));
+			}
+
+			// A script the PROXY injected, which a page finds by looking. Its
+			// marker does not start with the alias prefix, so every filter
+			// keyed on that prefix missed it and Cloudflare's enumeration read
+			// ["src","scramjet-injected"] straight off it.
+			const allNames = [];
+			for (const e of document.querySelectorAll("*")) {
+				for (const n of e.getAttributeNames()) allNames.push(n);
+			}
+			say(
+				"attr.proxyNames",
+				allNames.filter((n) => /scramjet|script-source-src/i.test(n)).join(",")
+			);
+			say("attr.scriptCount", document.querySelectorAll("script").length);
+
+			// The value the page put there must come back, and the proxy's
+			// alias must not answer to anything.
+			say("attr.nonce", el.getAttribute("nonce"));
+			say("attr.nonceProp", el.nonce);
+			say("attr.hasNonce", el.hasAttribute("nonce"));
+			for (const probe of [
+				"scramjet-attr-nonce",
+				"scramjet-attr-src",
+				"scramjet-injected",
+				"scramjet-attr-script-source-src",
+				"script-source-src",
+			]) {
+				say(
+					"attr.has:" + probe,
+					el.hasAttribute(probe) || img.hasAttribute(probe)
+				);
+				say("attr.get:" + probe, String(el.getAttribute(probe)));
+			}
+
+			// The SERIALISED form is a separate surface from the enumeration
+			// one. Hiding an attribute from `getAttributeNames` does not remove
+			// it from the tree, and `outerHTML` asks the tree. `unrewriteHtml`
+			// restored every alias and deleted it -- except
+			// `scramjet-attr-script-source-src`, which it read and then
+			// `continue`d straight past the delete, and `scramjet-injected`,
+			// which it never saw because that name does not carry the alias
+			// prefix.
+			// `#root` only, and nothing inside it may NAME what is searched
+			// for. Serialising the whole document includes this script, whose
+			// source contains those names; an explanatory HTML comment inside
+			// `#root` did the same thing, because `outerHTML` serialises
+			// comments too. Both versions reported a leak on both sides, which
+			// is the tell: the oracle runs no proxy and cannot leak one.
+			//
+			// The inline script in `#root` is there on purpose: the rewriter
+			// stores the original body in `scramjet-attr-script-source-src`,
+			// and a script with only `src` never gets that attribute -- so a
+			// page without an inline one cannot catch the leak at all.
+			const html = document.getElementById("root").outerHTML;
+			say("attr.htmlHasProxyName", /scramjet/i.test(html));
+			say(
+				"attr.htmlProxyNames",
+				(html.match(/\bscramjet[-a-z]*/gi) || []).slice(0, 6).join(",")
+			);
+			say("attr.htmlHasSourceSrc", /script-source-src/i.test(html));
+
+			// And the serialised form, which is what a payload carries.
+			say("attr.outerHTML", document.getElementById("root").outerHTML.length);
+			say(
+				"attr.proxyNamed",
+				/scramjet/i.test(document.documentElement.outerHTML)
+			);
+		</script>
+	</body>
+</html>

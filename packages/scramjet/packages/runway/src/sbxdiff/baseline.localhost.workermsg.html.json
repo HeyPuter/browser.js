@@ -1,0 +1,15 @@
+{
+	"buckets": [
+		"T2|extra-call|MessageChannel.constructor|count",
+		"T2|extra-call|MessageChannel.port1.get|count",
+		"T2|extra-call|MessageChannel.port2.get|count",
+		"T2|missing-call|MessageEvent.origin.get|count",
+		"T2|type-change|MessageEvent.data.get|type-change",
+		"T2|type-change|MessagePort.postMessage#arg0|type-change",
+		"T2|type-change|Worker.onmessage.set#arg0|type-change",
+		"T2|type-change|Worker.postMessage#arg0|type-change",
+		"T2|value-divergence|URL.createObjectURL|chrome-origin-leak",
+		"T2|value-divergence|Worker.constructor#arg0|proxy-url-leak",
+		"T4|extra-call|Window.<interface> (platform snapshot)|count"
+	]
+}

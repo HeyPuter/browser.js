@@ -1,0 +1,103 @@
+<!doctype html>
+<!--
+  The challenge's value fingerprint, computed the way it computes it.
+
+  Captured live off the passing side with CDP, Cloudflare's payload is a map
+  from a property's stringified VALUE to the names that hold it, over window,
+  navigator (`n.`) and document (`d.`):
+
+    {"0":["length","innerWidth","scrollX","TEMPORARY","n.maxTouchPoints"],
+     "1":["devicePixelRatio","PERSISTENT","d.ELEMENT_NODE",...],
+     "Google Inc.":["n.vendor"], "MacIntel":["n.platform"],
+     "en-US":["n.language","n.languages"],
+     "about:blank":["d.URL","d.documentURI","d.referrer"],
+     "rateyourmusic.com":["d.domain"],
+     "https://rateyourmusic.com/":["d.baseURI"], ...}
+
+  `TEMPORARY` is 0, `ELEMENT_NODE` is 1, `TEXT_NODE` is 3 -- the key IS the
+  value. The capture also contained the probe's own `__sbxpay`, which had been
+  set to 1, sitting in bucket "1"; that is what pinned the format down.
+
+  Built inside a hidden `about:blank` iframe because that is where the challenge
+  builds it (`"lhr":"about:blank"` in the payload), and because half of these
+  are the viewport's numbers, which are 0 there and are not the same in a
+  top-level page. Measured anywhere else this compares the harness rather than
+  the guest.
+
+  Functions and objects collapse to one key each, as they do in the real
+  payload: what is being compared is which names hold which values, and two
+  runs cannot agree on the identity of a function anyway.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>valuefp</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-vfp " + s);
+			};
+			const frame = document.createElement("iframe");
+			frame.style.cssText =
+				"width:0;height:0;border:0;position:absolute;left:-9999px";
+			document.body.appendChild(frame);
+			const w = frame.contentWindow;
+			const d = w.document;
+			const n = w.navigator;
+
+			const buckets = Object.create(null);
+			const put = (key, name) => {
+				(buckets[key] = buckets[key] || []).push(name);
+			};
+			const sweep = (prefix, obj, names) => {
+				for (const k of names) {
+					let v;
+					try {
+						v = obj[k];
+					} catch (e) {
+						put("THREW", prefix + k);
+						continue;
+					}
+					const t = typeof v;
+					if (t === "function") put("F", prefix + k);
+					else if (v === null) put("null", prefix + k);
+					else if (t === "object") put("O", prefix + k);
+					else {
+						let s;
+						try {
+							s = String(v);
+						} catch (e) {
+							s = "UNSTRINGABLE";
+						}
+						put(s.length > 120 ? s.slice(0, 120) + "~" : s, prefix + k);
+					}
+				}
+			};
+			sweep("", w, Object.getOwnPropertyNames(w).sort());
+			sweep(
+				"n.",
+				n,
+				Object.getOwnPropertyNames(Object.getPrototypeOf(n)).sort()
+			);
+			sweep(
+				"d.",
+				d,
+				Object.getOwnPropertyNames(Object.getPrototypeOf(d)).sort()
+			);
+
+			// Separators that cannot occur in a property name or in a
+			// stringified value, so the reader splits without escaping.
+			const keys = Object.keys(buckets).sort();
+			const text = keys
+				.map((k) => k + "\u0001" + buckets[k].sort().join(" "))
+				.join("\u0002");
+			say("keys=" + keys.length + " len=" + text.length);
+			for (let i = 0, k = 0; i < text.length; i += 380, k++)
+				say(k + "=" + text.slice(i, i + 380));
+		</script>
+	</body>
+</html>

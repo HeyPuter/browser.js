@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  Does a form POST navigation survive the proxy?
+
+  Cloudflare redeems a passed challenge by navigating a POST to the page it is
+  standing in for -- measured against a direct load of rateyourmusic, a
+  2606-byte `application/x-www-form-urlencoded` body with `sec-fetch-dest:
+  document` and `mode: navigate`. The proxied run never issues it; the two
+  sides are identical up to that point and then the sandbox re-GETs the
+  challenge instead, forever.
+
+  So: the smallest thing that shape reduces to. A form built in JS, given a
+  method and an action, appended and submitted -- which is what the challenge
+  does -- and an echo endpoint that says what actually arrived.
+
+  Reached through `serve.ts --page formpost.html`. The echo route is mounted by
+  serve.ts on the site server, so this works on either side and needs no store.
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>form post</title>
+	</head>
+	<body>
+		<pre id="out">submitting...</pre>
+		<script>
+			// The result is read out of Chromium's stderr, so it has to be a
+			// console line and not just the rendered page.
+			const report = (msg) => {
+				console.info(`sbxdiff-formpost: ${msg}`);
+				document.getElementById("out").textContent += `\n${msg}`;
+			};
+
+			// Landing back here after the POST: the echo route replies with a
+			// page that puts what it received in the title, so the navigation
+			// having happened at all is observable from the document itself.
+			if (location.search.includes("echoed")) {
+				report(`landed after POST: ${document.title}`);
+			} else {
+				addEventListener("load", () => {
+					// ?rs=1 first rewrites the document's URL the way Cloudflare
+					// does. Its interstitial `replaceState`s to
+					// `/?__cf_chl_tk=...` -- no request is made for that URL on
+					// either side, the direct load never fetches it either -- and
+					// only then builds the form. A relative action is resolved
+					// against whatever the document's URL is at that moment, so
+					// the replaceState is part of the shape and not a detail.
+					if (new URLSearchParams(location.search).has("rs")) {
+						history.replaceState(null, "", "/formpost.html?__cf_chl_tk=abc123");
+						report(`replaceState -> ${location.href.slice(0, 96)}`);
+					}
+					const form = document.createElement("form");
+					form.method = "POST";
+					// ?abs=1 gives the action as an absolute URL rather than a
+					// path. Cloudflare's redemption form does that -- paused in
+					// its own code, its `action` reads
+					// `https://rateyourmusic.com/...` -- and an absolute URL is
+					// the one shape a proxy has to rewrite rather than inherit,
+					// so it is worth its own case.
+					form.action = new URLSearchParams(location.search).has("abs")
+						? `${location.origin}/__sbxdiff/echo`
+						: "/__sbxdiff/echo";
+					const field = document.createElement("input");
+					field.type = "hidden";
+					field.name = "md";
+					field.value = "x".repeat(64);
+					form.appendChild(field);
+					document.body.appendChild(form);
+					report(
+						`submitting method=${form.method} action=${form.getAttribute("action")}`
+					);
+					form.submit();
+				});
+			}
+		</script>
+	</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+  What is in the guest's global namespace?
+
+  Cloudflare's challenge enumerates it. A live capture of the passing side shows
+  the payload carrying a bucketed list of property NAMES -- `{"payload":{"0":
+  ["length","innerWidth",...,"n.maxTouchPoints"],"1":[...]}}` -- with `n.` for
+  navigator and `d.` for document. Anything the proxy leaves lying on `window`
+  goes to Cloudflare by name.
+
+  (The capture also contained `__sbxpay`, which was the probe that took it. An
+  instrument that adds a global is an instrument the challenge reports on.)
+-->
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>globals</title>
+	</head>
+	<body>
+		<pre id="out">running...</pre>
+		<script>
+			const out = document.getElementById("out");
+			const say = (s) => {
+				out.textContent += s + "\n";
+				console.info("sbxdiff-glob " + s);
+			};
+			const dump = (label, names) => {
+				say(`${label}.count=${names.length}`);
+				const joined = names.join(",");
+				for (let i = 0, k = 0; i < joined.length; i += 380, k++)
+					say(`${label}.${k}=${joined.slice(i, i + 380)}`);
+			};
+			dump("win", Object.getOwnPropertyNames(window).sort());
+			dump(
+				"nav",
+				Object.getOwnPropertyNames(Object.getPrototypeOf(navigator)).sort()
+			);
+			dump("doc", Object.getOwnPropertyNames(document).sort());
+		</script>
+	</body>
+</html>

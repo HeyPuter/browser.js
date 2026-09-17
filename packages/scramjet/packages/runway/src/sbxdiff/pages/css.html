@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>sbxdiff css probe</title>
+		<style id="s">
+			.a {
+				color: rgb(1, 2, 3);
+				background-image: url("/asset.png");
+			}
+			.b::after {
+				content: "x";
+				transform: translate(1px, 2px);
+			}
+			@media (min-width: 1px) {
+				.c {
+					margin: 0 1px 2px 3px;
+				}
+			}
+			@font-face {
+				font-family: probe;
+				src: url(/asset.png);
+			}
+			@keyframes spin {
+				100% {
+					transform: rotate(360deg);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="a b c" id="d">x</div>
+		<script>
+			// What a page reads back out of its own stylesheets.
+			//
+			// A proxy has to rewrite `url()` inside CSS and then hide that it
+			// did, which makes `cssText` a round-trip through two rewriters --
+			// and any difference in what comes back is both a fingerprint and a
+			// payload-size divergence. Cloudflare's Turnstile reads `cssText`
+			// 204 times in the oracle; scramjet intercepts every one of them.
+			//
+			// Serialization is the point, not the values: a browser normalizes
+			// `rgb(1,2,3)`, shorthand margins, `url(...)` quoting and keyframe
+			// percentages in exact ways, so reporting the STRING catches a
+			// rewriter that re-serializes differently.
+			const say = (k, v) => {
+				document.title = k + "=" + String(v);
+			};
+
+			const sheet = document.getElementById("s").sheet;
+			say("css.ruleCount", sheet.cssRules.length);
+			let total = 0;
+			for (let i = 0; i < sheet.cssRules.length; i++) {
+				const r = sheet.cssRules[i];
+				const t = r.cssText;
+				total += t.length;
+				say("css.rule" + i, t);
+				say("css.rule" + i + ".type", r.constructor.name);
+			}
+			say("css.totalChars", total);
+
+			// The inline-declaration path, which is a different object.
+			const d = document.getElementById("d");
+			d.style.cssText = "color: rgb(4, 5, 6); background: url('/asset.png')";
+			say("css.inline.cssText", d.style.cssText);
+			say("css.inline.length", d.style.length);
+			say("css.inline.bgImage", d.style.backgroundImage);
+			say("css.inline.item0", d.style.item(0));
+
+			// And computed style, which a fingerprint reads far more often than
+			// it reads rules.
+			const cs = getComputedStyle(d);
+			say("css.computed.color", cs.color);
+			say("css.computed.bgImage", cs.backgroundImage);
+			say("css.computed.length", cs.length);
+			say(
+				"css.computed.first20",
+				Array.prototype.slice.call(cs, 0, 20).join(",")
+			);
+			say("css.diag.ctor", cs.constructor.name);
+			say(
+				"css.diag.protoChain",
+				(() => {
+					const out = [];
+					let o = cs;
+					while ((o = Object.getPrototypeOf(o))) out.push(o.constructor.name);
+					return out.join(">");
+				})()
+			);
+			say(
+				"css.diag.where",
+				(() => {
+					let o = cs;
+					while ((o = Object.getPrototypeOf(o))) {
+						if (Object.getOwnPropertyDescriptor(o, "backgroundImage"))
+							return o.constructor.name;
+					}
+					return "nowhere";
+				})()
+			);
+			say(
+				"css.computed.descriptor",
+				JSON.stringify(
+					Object.getOwnPropertyDescriptor(cs, "0") === undefined
+						? "none"
+						: "own"
+				)
+			);
+		</script>
+	</body>
+</html>
