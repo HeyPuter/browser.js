@@ -1,0 +1,203 @@
+diff --git a/build/config/apple/sdk_info.py b/build/config/apple/sdk_info.py
+index 646cc5ed407f0..c60ec09672021 100755
+--- a/build/config/apple/sdk_info.py
++++ b/build/config/apple/sdk_info.py
+@@ -62,11 +62,35 @@ def FillXcodeVersion(settings, developer_dir):
+         settings['xcode_build'] = version_plist['ProductBuildVersion']
+         return
+ 
+-    lines = (
+-        subprocess.check_output(['xcodebuild', '-version'])
+-        .decode('UTF-8')
+-        .splitlines()
+-    )
++    try:
++        lines = (
++            subprocess.check_output(
++                ['xcodebuild', '-version'], stderr=subprocess.DEVNULL
++            )
++            .decode('UTF-8')
++            .splitlines()
++        )
++    except (subprocess.CalledProcessError, OSError):
++        # sbxdiff: a CommandLineTools-only install has no `xcodebuild`. Derive
++        # the version from the active SDK instead. `xcode_version_int` is only
++        # consulted by build/config/c++/modules.gni (>= 2600) and by iOS-only
++        # configs, so an SDK-derived value is sufficient for a mac build.
++        sdk_version = (
++            subprocess.check_output(['xcrun', '--show-sdk-version'])
++            .decode('UTF-8')
++            .strip()
++        )
++        sdk_build = (
++            subprocess.check_output(['xcrun', '--show-sdk-build-version'])
++            .decode('UTF-8')
++            .strip()
++        )
++        settings['xcode_version'] = FormatVersion(sdk_version)
++        settings['xcode_version_int'] = int(settings['xcode_version'], 10)
++        settings['xcode_version_verbatim'] = sdk_version
++        settings['xcode_build'] = sdk_build
++        return
++
+     version_verbatim = lines[0].split()[-1]
+     settings['xcode_version'] = FormatVersion(version_verbatim)
+     settings['xcode_version_int'] = int(settings['xcode_version'], 10)
+@@ -84,8 +108,79 @@ def FillMachineOSBuild(settings):
+     settings['machine_os_build'] = machine_os_build
+ 
+ 
++def _FillSDKPathAndVersionCommandLineTools(settings):
++    """sbxdiff: CommandLineTools fallback for FillSDKPathAndVersion.
++
++    A CommandLineTools-only install does not support `xcrun -sdk <platform>`
++    ("unable to lookup item 'PlatformPath'"), so query the active SDK directly.
++    Of these fields the mac build only consumes `sdk_path`; `sdk_platform_path`
++    and `toolchains_path` are read solely by build/config/ios, so best-effort
++    values are sufficient here.
++    """
++    def xcrun(*args):
++        return (
++            subprocess.check_output(['xcrun'] + list(args))
++            .decode('UTF-8')
++            .strip()
++        )
++
++    dev_dir = (
++        subprocess.check_output(['xcode-select', '-print-path'])
++        .decode('UTF-8')
++        .strip()
++    )
++
++    # Prefer the SDK version Chromium officially builds against, read from
++    # mac_sdk.gni so this tracks Chromium rolls instead of being hardcoded.
++    # This matters: CLT's MacOSX.sdk symlink points at the newest installed SDK,
++    # and SDK 27.0's libSystem.tbd declares `arm64e.x1-macos` targets that the
++    # bundled lld cannot parse ("could not load TAPI file ... unknown target").
++    sdk_path = ''
++    gni = os.path.join(
++        os.path.dirname(os.path.abspath(__file__)), '..', 'mac', 'mac_sdk.gni'
++    )
++    try:
++        with open(gni, encoding='utf-8') as f:
++            for line in f:
++                if line.strip().startswith('mac_sdk_official_version'):
++                    want = line.split('=', 1)[1].strip().strip('"')
++                    candidate = os.path.join(
++                        dev_dir, 'SDKs', 'MacOSX%s.sdk' % want
++                    )
++                    if os.path.isdir(candidate):
++                        sdk_path = candidate
++                    break
++    except OSError:
++        pass
++
++    if sdk_path:
++        settings['sdk_path'] = sdk_path
++        settings['sdk_version'] = xcrun('-sdk', sdk_path, '--show-sdk-version')
++        settings['sdk_build'] = xcrun(
++            '-sdk', sdk_path, '--show-sdk-build-version'
++        )
++    else:
++        settings['sdk_path'] = xcrun('--show-sdk-path')
++        settings['sdk_version'] = xcrun('--show-sdk-version')
++        settings['sdk_build'] = xcrun('--show-sdk-build-version')
++
++    settings['sdk_platform_path'] = ''
++    settings['toolchains_path'] = os.path.join(dev_dir, 'usr')
++
++
+ def FillSDKPathAndVersion(settings, platform, xcode_version):
+     """Fills the SDK path and version for |platform| into |settings|."""
++    try:
++        # Probe with --show-sdk-platform-path: it is the one query a
++        # CommandLineTools-only install cannot answer.
++        subprocess.check_output(
++            ['xcrun', '-sdk', platform, '--show-sdk-platform-path'],
++            stderr=subprocess.DEVNULL,
++        )
++    except (subprocess.CalledProcessError, OSError):
++        _FillSDKPathAndVersionCommandLineTools(settings)
++        return
++
+     settings['sdk_path'] = (
+         subprocess.check_output(['xcrun', '-sdk', platform, '--show-sdk-path'])
+         .decode('UTF-8')
+@@ -196,7 +291,10 @@ def main():
+ 
+     for key in sorted(settings):
+         value = settings[key]
+-        if args.create_symlink_at and '_path' in key:
++        # sbxdiff: skip empty paths. A CommandLineTools-only install has no
++        # SDK platform directory, so sdk_platform_path is "" and symlinking it
++        # would fail. Nothing in the mac build reads it (iOS-only).
++        if args.create_symlink_at and '_path' in key and value:
+             value = CreateXcodeSymlinkAt(
+                 value, args.create_symlink_at, args.root_build_dir
+             )
+diff --git a/build/mac/find_sdk.py b/build/mac/find_sdk.py
+index 4cb718416294c..f0b0280cd5a98 100755
+--- a/build/mac/find_sdk.py
++++ b/build/mac/find_sdk.py
+@@ -84,6 +84,13 @@ def main():
+     dev_dir = out.decode('UTF-8').rstrip()
+     sdk_dir = os.path.join(dev_dir, 'Platforms/MacOSX.platform/Developer/SDKs')
+ 
++    # sbxdiff: support a CommandLineTools-only install, which stores SDKs at
++    # <dev_dir>/SDKs rather than Xcode's <dev_dir>/Platforms/.../Developer/SDKs.
++    if not os.path.isdir(sdk_dir):
++        clt_sdk_dir = os.path.join(dev_dir, 'SDKs')
++        if os.path.isdir(clt_sdk_dir):
++            sdk_dir = clt_sdk_dir
++
+     if not os.path.isdir(sdk_dir):
+         raise SdkError(
+             'Install Xcode, launch it, accept the license '
+@@ -111,6 +118,11 @@ def main():
+ 
+     if options.print_bin_path:
+         bin_path = 'Toolchains/XcodeDefault.xctoolchain/usr/bin/'
++        # sbxdiff: CommandLineTools puts the binutils in <dev_dir>/usr/bin.
++        if not os.path.isdir(os.path.join(dev_dir, bin_path)):
++            clt_bin_path = 'usr/bin/'
++            if os.path.isdir(os.path.join(dev_dir, clt_bin_path)):
++                bin_path = clt_bin_path
+         print(os.path.join(dev_dir, bin_path))
+ 
+     if options.print_sdk_build:
+diff --git a/components/remote_cocoa/browser/scoped_cg_window_id.cc b/components/remote_cocoa/browser/scoped_cg_window_id.cc
+index 44ad1c5c24928..838fd41b637a9 100644
+--- a/components/remote_cocoa/browser/scoped_cg_window_id.cc
++++ b/components/remote_cocoa/browser/scoped_cg_window_id.cc
+@@ -26,6 +26,19 @@ ScopedCGWindowID::ScopedCGWindowID(uint32_t cg_window_id,
+     : cg_window_id_(cg_window_id),
+       frame_sink_id_(frame_sink_id),
+       weak_factory_(this) {
++  // sbxdiff: 0 is not a valid CGWindowID. Headless windows have no backing
++  // NSWindow, so NSWindow.windowNumber is 0 for all of them and a second
++  // window collides in this map -- fatal under dcheck_always_on:
++  //   DCHECK failed: GetMap().count(cg_window_id) == 0u (1 vs. 0)
++  // There is nothing to capture for such a window, so skip registration rather
++  // than weaken the invariant for real window ids.
++  // See docs/sbxdiff/CHROMIUM-PATCHES.md #0004.
++  // Unconditional, NOT gated on the sbxdiff switch: this is a plain bug fix,
++  // not an sbxdiff behaviour change. Gating it made the binary crash on every
++  // headless run that did not pass --sbxdiff-trace-out.
++  if (cg_window_id == 0) {
++    return;
++  }
+   DCHECK_EQ(GetMap().count(cg_window_id), 0u);
+   GetMap()[cg_window_id] = this;
+ }
+@@ -34,6 +47,11 @@ ScopedCGWindowID::~ScopedCGWindowID() {
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   weak_factory_.InvalidateWeakPtrs();
+ 
++  // sbxdiff: never registered; see the constructor.
++  if (cg_window_id_ == 0) {
++    return;
++  }
++
+   auto found = GetMap().find(cg_window_id_);
+   DCHECK_EQ(found->second, this);
+   GetMap().erase(found);

@@ -1,0 +1,2864 @@
+diff --git a/base/rand_util_posix.cc b/base/rand_util_posix.cc
+index 6560a29287de4..74ef09f2bf404 100644
+--- a/base/rand_util_posix.cc
++++ b/base/rand_util_posix.cc
+@@ -2,18 +2,29 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include <array>
++#include <algorithm>
++#include <optional>
++#include <string>
++
+ #include "base/rand_util.h"
++#include "base/sbxdiff_rand_stream.h"
+ 
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include "base/base_switches.h"
+ #include "base/check.h"
++#include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
+ #include "base/feature_list.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#include "third_party/boringssl/src/include/openssl/chacha.h"
+ #include "third_party/boringssl/src/include/openssl/rand.h"
++#include "third_party/boringssl/src/include/openssl/sha.h"
+ 
+ #if BUILDFLAG(IS_MAC)
+ #include <sys/random.h>
+@@ -120,7 +131,177 @@ bool UseBoringSSLForRandBytes() {
+ 
+ namespace {
+ 
++// sbxdiff: deterministic replacement for the OS entropy source.
++//
++// This is the single chokepoint for all of //base's randomness, and therefore
++// covers RandUint64, RandDouble, RandFloat, RandBool, RandGenerator,
++// RandBytesAsVector/String, RandomBitGenerator, RandomShuffle,
++// InsecureRandomGenerator's seed, UnguessableToken, Token, crypto::RandBytes,
++// crypto.getRandomValues and crypto.randomUUID -- plus PartitionAlloc's and the
++// network stack's draws. Math.random is NOT here; it lives in V8 and is pinned
++// with --random-seed instead.
++//
++// Stateless and counter-based, so a differing *number* of draws in one stream
++// cannot desynchronize another: the keystream is a pure function of
++// (run_key, stream_id, draw_index). The 96-bit ChaCha20 nonce holds
++// stream_id (32 bits) || draw_index (64 bits) exactly, so every draw gets a
++// fresh keystream and the block counter always starts at 0.
++//
++// stream_id is per-thread. A single global counter would make output depend on
++// inter-thread interleaving, which is precisely the nondeterminism we are
++// removing. Attribution-based streams (guest vs. shim, plan P6) are a later
++// refinement; a per-thread stream is what the direct-vs-direct self-diff gate
++// needs.
++//
++// See docs/sbxdiff/DETERMINISM.md.
++// Is this explicit stream one whose bytes must be the SAME in every process?
++//
++// Anything a page can READ or SEND has to be, because the oracle and the
++// sandbox do not create the same processes in the same order -- the sandbox
++// runs a proxy harness and a service worker first -- so the same logical realm
++// gets a different `renderer-client-id` on the two sides. Mixing that into the
++// key made every pinned draw differ between them. Measured on rateyourmusic:
++// every Cloudflare payload agreed on ZERO bytes, because even the RSA-wrapped
++// key block was drawn from a different keystream, and `/httprequest/SecChk`
++// agreed on 24 of 2450 -- the literal `----WebKitFormBoundary`, then sixteen
++// different random characters.
++//
++// Blob UUIDs are the exception and must stay process-DISTINCT: they are
++// registered in the browser process and shared across renderers, so two
++// renderers generating the same one is a duplicate registration and the second
++// renderer is killed ("Invalid UUID passed to BlobRegistry::Register"),
++// which on rateyourmusic killed the Cloudflare iframe outright.
++bool SbxdiffStreamIsCrossProcess(uint32_t stream_id) {
++  switch (stream_id) {
++    case kSbxdiffStreamWebCrypto:
++    case kSbxdiffStreamFormBoundary:
++    case kSbxdiffStreamTimeClamper:
++    case kSbxdiffStreamMdnsName:
++      return true;
++    default:
++      // Including kSbxdiffStreamBlobUuid and every automatic per-thread stream.
++      return false;
++  }
++}
++
++bool SbxdiffRunKey(bool with_process_identity,
++                   std::array<uint8_t, 32>* out) {
++  const auto derive = [](bool mix_process)
++      -> std::optional<std::array<uint8_t, 32>> {
++    const CommandLine* cmd = CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(switches::kSbxdiffRunKey)) {
++      return std::nullopt;
++    }
++    // Any string is accepted, because the key is SHA-256 of the switch value.
++    // An earlier version parsed a decimal integer, which meant a non-numeric
++    // key was silently ignored and the run fell back to real OS entropy --
++    // indistinguishable from a genuine divergence. Presence of the switch,
++    // not the shape of its value, is what enables determinism (RULES.md #13).
++    std::string material = cmd->GetSwitchValueASCII(switches::kSbxdiffRunKey);
++
++    // The process identity MUST be mixed in. stream_id is a per-process
++    // counter, so without this every renderer's main thread got stream 16 at
++    // draw 0 and therefore generated the *same* byte sequence -- including the
++    // same base::Uuid::GenerateRandomV4() values. Blob UUIDs are registered in
++    // the browser process, shared across renderers, so the second renderer to
++    // register hit a duplicate and was killed:
++    //
++    //   Terminating render process for bad Mojo message:
++    //     Invalid UUID passed to BlobRegistry::Register
++    //
++    // Measured on rateyourmusic.com: 1 such kill with --sbxdiff-run-key, 0
++    // without. It killed the Cloudflare challenge iframe, so the page could
++    // never pass. Any multi-process site would hit this.
++    //
++    // These two switch names mirror content::switches::kProcessType and
++    // kRendererClientId. //base cannot include //content, so they are spelled
++    // out here on purpose. Both are stable, and the client id is assigned in
++    // process-creation order, so it is reproducible across runs of the same
++    // page -- which is what keeps the PRNG deterministic while making each
++    // process's streams distinct.
++    static constexpr char kProcessTypeSwitch[] = "type";
++    static constexpr char kRendererClientIdSwitch[] = "renderer-client-id";
++    if (mix_process) {
++      material.push_back('\0');
++      material.append(cmd->GetSwitchValueASCII(kProcessTypeSwitch));
++      material.push_back('\0');
++      material.append(cmd->GetSwitchValueASCII(kRendererClientIdSwitch));
++    }
++
++    const span<const uint8_t> bytes = as_byte_span(material);
++    std::array<uint8_t, 32> derived = {};
++    SHA256(bytes.data(), bytes.size(), derived.data());
++    return derived;
++  };
++  static const std::optional<std::array<uint8_t, 32>> per_process = derive(true);
++  static const std::optional<std::array<uint8_t, 32>> shared = derive(false);
++  const auto& key = with_process_identity ? per_process : shared;
++  if (!key.has_value()) {
++    return false;
++  }
++  *out = key.value();
++  return true;
++}
++
++// Explicit stream selected by SbxdiffScopedRandStream, 0 when none is active.
++thread_local uint32_t g_sbx_stream = 0;
++// One counter per explicit stream id (index 0 unused).
++thread_local std::array<uint64_t, kSbxdiffFirstAutoStream> g_sbx_stream_draw =
++    {};
++// An EXTERNAL counter supplied by the caller, or null for the per-thread one
++// above. Set for draws that belong to a realm rather than to a thread: the two
++// sides do not put the same realms on the same threads, so a per-thread index
++// is shifted by whatever ran first and the guest's Nth draw is not the Nth on
++// both sides. See base/sbxdiff_rand_stream.h.
++thread_local uint64_t* g_sbx_stream_counter = nullptr;
++
++bool SbxdiffRandBytes(span<uint8_t> output) {
++  // Automatic per-thread streams start above the reserved explicit range.
++  static std::atomic<uint32_t> next_stream_id{kSbxdiffFirstAutoStream};
++  thread_local const uint32_t auto_stream_id =
++      next_stream_id.fetch_add(1, std::memory_order_relaxed);
++  thread_local uint64_t auto_draw_index = 0;
++
++  std::array<uint8_t, 32> key = {};
++  if (!SbxdiffRunKey(!SbxdiffStreamIsCrossProcess(g_sbx_stream), &key)) {
++    return false;
++  }
++
++  uint32_t stream_id = auto_stream_id;
++  uint64_t draw = 0;
++  if (g_sbx_stream != 0 && g_sbx_stream < g_sbx_stream_draw.size()) {
++    // An explicit stream has its own counter, so unrelated draws on this
++    // thread cannot shift it -- and an external one narrows that further to a
++    // single realm, so draws in OTHER realms on the same thread cannot either.
++    stream_id = g_sbx_stream;
++    draw = g_sbx_stream_counter ? (*g_sbx_stream_counter)++
++                                : g_sbx_stream_draw[g_sbx_stream]++;
++  } else {
++    draw = auto_draw_index++;
++  }
++
++  std::array<uint8_t, 12> nonce = {};
++  for (size_t i = 0; i < sizeof(stream_id); ++i) {
++    nonce[i] = static_cast<uint8_t>(stream_id >> (8 * i));
++  }
++  for (size_t i = 0; i < sizeof(draw); ++i) {
++    nonce[4 + i] = static_cast<uint8_t>(draw >> (8 * i));
++  }
++
++  // CRYPTO_chacha_20 XORs the keystream into `in`; aliasing in==out is allowed
++  // when the pointers are equal, so zeroing the output first yields the raw
++  // keystream without a second buffer.
++  std::ranges::fill(output, 0u);
++  CRYPTO_chacha_20(output.data(), output.data(), output.size(), key.data(),
++                   nonce.data(), /*counter=*/0);
++  return true;
++}
++
+ void RandBytesInternal(span<uint8_t> output, bool avoid_allocation) {
++  // sbxdiff: must come first -- every other path below reads real OS entropy.
++  if (SbxdiffRandBytes(output)) {
++    return;
++  }
+   // The BoringSSL experiment takes priority over everything else.
+   if (!avoid_allocation && internal::UseBoringSSLForRandBytes()) {
+     // BoringSSL's RAND_bytes always returns 1. Any error aborts the program.
+@@ -170,6 +351,23 @@ void RandBytes(span<uint8_t> output) {
+   RandBytesInternal(output, /*avoid_allocation=*/false);
+ }
+ 
++SbxdiffScopedRandStream::SbxdiffScopedRandStream(uint32_t stream_id)
++    : SbxdiffScopedRandStream(stream_id, nullptr) {}
++
++SbxdiffScopedRandStream::SbxdiffScopedRandStream(uint32_t stream_id,
++                                                 uint64_t* counter)
++    : previous_(g_sbx_stream), previous_counter_(g_sbx_stream_counter) {
++  CHECK_GT(stream_id, 0u);
++  CHECK_LT(stream_id, kSbxdiffFirstAutoStream);
++  g_sbx_stream = stream_id;
++  g_sbx_stream_counter = counter;
++}
++
++SbxdiffScopedRandStream::~SbxdiffScopedRandStream() {
++  g_sbx_stream = previous_;
++  g_sbx_stream_counter = previous_counter_;
++}
++
+ #if !BUILDFLAG(IS_APPLE)
+ int GetUrandomFD() {
+   static NoDestructor<URandomFd> urandom_fd;
+diff --git a/base/sbxdiff_observable_clock.cc b/base/sbxdiff_observable_clock.cc
+new file mode 100644
+index 0000000000000..7d3731fb77f99
+--- /dev/null
++++ b/base/sbxdiff_observable_clock.cc
+@@ -0,0 +1,245 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/sbxdiff_observable_clock.h"
++
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++#include <atomic>
++#include <cstdlib>
++#include <map>
++#include <string_view>
++
++namespace base::sbxdiff {
++
++namespace {
++
++// Microseconds since the Time epoch of the observable origin, or 0 for off.
++//
++// Written once on the renderer's main thread, read from any thread that runs
++// script -- a worker reads `Date.now()` through the same V8 platform hook -- so
++// atomic. Relaxed is enough: it guards no other memory, and a read that races
++// the single write either caps or does not, and the write happens before any
++// page script runs.
++std::atomic<int64_t> g_origin_us{0};
++
++int64_t ObservableStepUs() {
++  static const int64_t us = [] {
++    const char* v = ::getenv("SBXDIFF_OBSERVABLE_STEP_US");
++    if (!v || !*v) {
++      return int64_t{100};
++    }
++    int64_t parsed = 0;
++    for (std::string_view digits(v); char c : digits) {
++      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
++        return int64_t{100};
++      }
++      parsed = parsed * 10 + (c - '0');
++    }
++    return parsed == 0 ? int64_t{100} : parsed;
++  }();
++  return us;
++}
++
++// Reads so far, shared by every thread in the process that runs script.
++std::atomic<int64_t> g_reads{0};
++
++}  // namespace
++
++void SetObservableTimeOrigin(Time origin) {
++  g_origin_us.store(
++      origin.is_null() ? 0 : (origin - Time::UnixEpoch()).InMicroseconds(),
++      std::memory_order_relaxed);
++}
++
++Time CapObservableTime(Time t) {
++  const int64_t origin_us = g_origin_us.load(std::memory_order_relaxed);
++  if (origin_us == 0 || t.is_null()) {
++    return t;
++  }
++  // Advance by a fixed step PER READ, not by however far the live clock got.
++  //
++  // An earlier version froze the clock at a ceiling. That is deterministic and
++  // it hangs: `while (Date.now() - start < n) {}` never terminates once the
++  // answer stops moving, and the oracle stopped exiting at all. A counter
++  // always advances, so every such loop still ends -- after n/step reads
++  // instead of n milliseconds.
++  //
++  // And it reproduces where a clock reading cannot, because the number of reads
++  // is a property of the CODE and the live clock's total advance is a property
++  // of the machine. Measured: two oracle runs of Cloudflare's realm both made
++  // exactly 10028 `performance.now()` calls and disagreed on every value.
++  const int64_t n = g_reads.fetch_add(1, std::memory_order_relaxed) + 1;
++  return Time::UnixEpoch() + Microseconds(origin_us) +
++         Microseconds(ObservableStepUs() * n);
++}
++
++// rebuild nonce: relink after a disk-full build corrupted the framework.
++
++namespace {
++
++std::atomic<int64_t> g_logical_origin_us{0};
++
++// Process-local fallback, used when no shared file was asked for.
++std::atomic<int64_t> g_logical_elapsed_us{0};
++
++bool LogicalClockRequested() {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_LOGICAL_CLOCK");
++    return v && *v && *v != '0';
++  }();
++  return on;
++}
++
++// The elapsed counter, shared by every process in the run when
++// SBXDIFF_LOGICAL_CLOCK_FILE names one.
++//
++// A browser has ONE clock, and the logical clock has to be one as well or it
++// is not a clock, it is a per-renderer stopwatch. Measured on rym: the oracle
++// put the page, the Turnstile widget and brunhild.challenges.cloudflare.com in
++// separate renderers, each counting from zero, while the sandbox -- where a
++// proxy has collapsed every origin onto its own -- ran all of them in one and
++// counted all of their timers. By the time the page minted the `ts` field of
++// its /httprequest/SecChk body, the two sides were 7200 ms apart, and that
++// 7200 ms was the entire difference between two otherwise byte-identical
++// request bodies (RULES.md #102, #103).
++//
++// A file rather than shared memory because it needs no handle plumbing through
++// every process launch, and every process in a run is on one machine and
++// already runs with --no-sandbox. MAP_SHARED makes the mapping coherent, and
++// the counter is a lock-free atomic, so a fetch/compare-exchange from two
++// renderers is as safe as from two threads.
++//
++// Falls back to the process-local counter if anything goes wrong, which is the
++// old behaviour rather than a crash: a clock that is wrong across processes
++// still lets a run finish and be read.
++std::atomic<int64_t>* SharedElapsed() {
++  static std::atomic<int64_t>* shared = []() -> std::atomic<int64_t>* {
++    const char* path = ::getenv("SBXDIFF_LOGICAL_CLOCK_FILE");
++    if (!path || !*path) {
++      return nullptr;
++    }
++    const int fd = ::open(path, O_RDWR | O_CREAT, 0600);
++    if (fd < 0) {
++      return nullptr;
++    }
++    // Every process does this; ftruncate to the same size is idempotent and
++    // never shrinks a file that is already right, so there is no race where
++    // one process zeroes the counter another has advanced.
++    struct stat st = {};
++    if (::fstat(fd, &st) != 0 ||
++        (st.st_size < static_cast<off_t>(sizeof(int64_t)) &&
++         ::ftruncate(fd, sizeof(int64_t)) != 0)) {
++      ::close(fd);
++      return nullptr;
++    }
++    void* map = ::mmap(nullptr, sizeof(int64_t), PROT_READ | PROT_WRITE,
++                       MAP_SHARED, fd, 0);
++    // The mapping outlives the descriptor.
++    ::close(fd);
++    if (map == MAP_FAILED) {
++      return nullptr;
++    }
++    static_assert(std::atomic<int64_t>::is_always_lock_free,
++                  "a shared counter cannot carry a lock");
++    return reinterpret_cast<std::atomic<int64_t>*>(map);
++  }();
++  return shared;
++}
++
++std::atomic<int64_t>& Elapsed() {
++  std::atomic<int64_t>* shared = SharedElapsed();
++  return shared ? *shared : g_logical_elapsed_us;
++}
++
++LogicalRealmResolver g_realm_resolver = nullptr;
++
++// Per-realm elapsed, for SBXDIFF_REALM_CLOCK. Thread-local because a realm
++// lives on one thread, so this needs no lock and no sharing across processes:
++// a realm does not span either.
++//
++// Leaked, like the tracer's caches: base builds with -Wexit-time-destructors.
++std::map<uint64_t, int64_t>& RealmElapsed() {
++  static thread_local std::map<uint64_t, int64_t>* per_realm =
++      new std::map<uint64_t, int64_t>();
++  return *per_realm;
++}
++
++uint64_t CurrentRealm() {
++  return g_realm_resolver ? g_realm_resolver() : 0;
++}
++
++}  // namespace
++
++void SetLogicalClockOrigin(Time origin) {
++  if (!LogicalClockRequested()) {
++    return;
++  }
++  g_logical_origin_us.store(
++      origin.is_null() ? 0 : (origin - Time::UnixEpoch()).InMicroseconds(),
++      std::memory_order_relaxed);
++}
++
++bool LogicalClockEnabled() {
++  return LogicalClockRequested() &&
++         g_logical_origin_us.load(std::memory_order_relaxed) != 0;
++}
++
++bool RealmClockEnabled() {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_REALM_CLOCK");
++    return v && *v && *v != '0';
++  }();
++  return on;
++}
++
++void SetLogicalRealmResolver(LogicalRealmResolver resolver) {
++  g_realm_resolver = resolver;
++}
++
++TimeDelta LogicalElapsed() {
++  if (RealmClockEnabled()) {
++    const auto& per_realm = RealmElapsed();
++    const auto it = per_realm.find(CurrentRealm());
++    return Microseconds(it == per_realm.end() ? 0 : it->second);
++  }
++  return Microseconds(Elapsed().load(std::memory_order_relaxed));
++}
++
++void AdvanceLogicalTo(TimeDelta due) {
++  if (!LogicalClockEnabled()) {
++    return;
++  }
++  const int64_t want = due.InMicroseconds();
++  if (RealmClockEnabled()) {
++    int64_t& seen = RealmElapsed()[CurrentRealm()];
++    // Never backwards, same as the shared path.
++    if (want > seen) {
++      seen = want;
++    }
++    return;
++  }
++  std::atomic<int64_t>& elapsed = Elapsed();
++  int64_t seen = elapsed.load(std::memory_order_relaxed);
++  // Never backwards: a timer that fires late must not rewind the clock for
++  // everything scheduled after it -- and with the counter shared across
++  // processes, not for another renderer either.
++  while (want > seen && !elapsed.compare_exchange_weak(
++                            seen, want, std::memory_order_relaxed)) {
++  }
++}
++
++Time LogicalNow(Time t) {
++  if (!LogicalClockEnabled()) {
++    return t;
++  }
++  return Time::UnixEpoch() +
++         Microseconds(g_logical_origin_us.load(std::memory_order_relaxed)) +
++         LogicalElapsed();
++}
++
++}  // namespace base::sbxdiff
+diff --git a/base/sbxdiff_observable_clock.h b/base/sbxdiff_observable_clock.h
+new file mode 100644
+index 0000000000000..9e9f62d1645c2
+--- /dev/null
++++ b/base/sbxdiff_observable_clock.h
+@@ -0,0 +1,96 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_SBXDIFF_OBSERVABLE_CLOCK_H_
++#define BASE_SBXDIFF_OBSERVABLE_CLOCK_H_
++
++#include "base/base_export.h"
++#include "base/time/time.h"
++
++namespace base::sbxdiff {
++
++// sbxdiff: separates what a page READS from what the scheduler RUNS on.
++//
++// A renderer that hosts only a cross-origin subframe has its own virtual clock
++// -- Chromium's ProcessTimeOverrideCoordinator is per-process -- and nothing in
++// it paces that clock, so on its first idle moment it fast-forwards to whatever
++// far-future timer happens to be pending. Which timers those are differs run to
++// run. Measured in Cloudflare's blob worker: `performance.now()` read 10028
++// times and answered 345123 in one oracle run against 602509 in the next, and
++// `Date.now()` put 50.6 seconds of real difference into a challenge payload.
++//
++// Fencing the SCHEDULER there does not work. A tight fence parks the clock and
++// the widget never does its work -- 6 of 8 request bodies became "the oracle
++// never sent this" -- and a looser one hangs the run outright, because timers
++// beyond the fence never fire. The clock has to keep moving.
++//
++// So it keeps moving, and only the value handed to script is capped. Past the
++// ceiling every read is the same number in every run, while setTimeout still
++// sees the real virtual clock.
++//
++// Lives in //base because both halves of the answer need it and they are in
++// different components: Blink's DOMHighResTimeStamp conversion, and gin's
++// V8Platform, which is where `Date.now()` bottoms out.
++
++// Turns the counter clock on and fixes where it starts. A null Time turns it
++// off, which is the default.
++BASE_EXPORT void SetObservableTimeOrigin(Time origin);
++
++// The next value of the counter clock: origin + step * (reads so far).
++// Returns `t` unchanged when the counter clock is off.
++// SBXDIFF_OBSERVABLE_STEP_US sets the step, default 100.
++BASE_EXPORT Time CapObservableTime(Time t);
++
++// The LOGICAL clock: origin + however much timer time has elapsed.
++//
++// Driven by timer SEMANTICS rather than by reads or by the wall clock. When a
++// 100 ms timer fires, it has advanced 100 ms -- which is what a per-read
++// counter could not do, and why that hung a page whose retry loop waits on
++// elapsed wall time (RULES.md #94).
++//
++// The point is to give the sandbox the progression the oracle gets from virtual
++// time, whose clock also advances to scheduled wake-ups, WITHOUT fencing the
++// scheduler -- the fencing is what the sandbox cannot survive (rule 81). Two
++// runs of the same guest code schedule the same delays, so they reach the same
++// logical time.
++//
++// SBXDIFF_LOGICAL_CLOCK=1 enables it; off by default and inert unless an origin
++// is set.
++BASE_EXPORT void SetLogicalClockOrigin(Time origin);
++BASE_EXPORT bool LogicalClockEnabled();
++// Elapsed logical time, for scheduling a timer's due point.
++BASE_EXPORT TimeDelta LogicalElapsed();
++
++// Per-REALM logical clocks, behind SBXDIFF_REALM_CLOCK.
++//
++// The clock is one counter for the whole run (RULES.md #104), which is what a
++// clock is -- and it means the page realm's timers advance every other realm's
++// clock too. On rateyourmusic the page polls every 550 ms while the challenge
++// loads, so by the time Cloudflare's widget serialises its first payload the
++// two sides are four rounds apart: "2026-09-12T23:40:17.159Z" against
++// "...19.359Z", 2200 ms, in an otherwise identical payload (RULES.md #123).
++//
++// Keyed per realm, the widget's clock advances only on the widget's own timers
++// -- a chain that is identical on both sides -- and the page's poll cannot
++// reach it.
++//
++// The cost is real and is why this is a flag rather than the default: two
++// frames can then postMessage each other `Date.now()` and disagree, which no
++// real browser does. Off unless asked for.
++BASE_EXPORT bool RealmClockEnabled();
++
++// Installed by Blink, which is the only layer that can name the realm a read is
++// happening in. `Date.now()` arrives through gin with no context argument, so
++// the resolver walks V8's current context instead. Returns 0 when there is no
++// realm, which shares one slot with everything else that has none.
++using LogicalRealmResolver = uint64_t (*)();
++BASE_EXPORT void SetLogicalRealmResolver(LogicalRealmResolver resolver);
++// Move the clock forward to `due`; never backwards.
++BASE_EXPORT void AdvanceLogicalTo(TimeDelta due);
++// `origin + LogicalElapsed()`, or `t` when the clock is off.
++BASE_EXPORT Time LogicalNow(Time t);
++
++}  // namespace base::sbxdiff
++
++#endif  // BASE_SBXDIFF_OBSERVABLE_CLOCK_H_
+diff --git a/base/sbxdiff_rand_stream.h b/base/sbxdiff_rand_stream.h
+new file mode 100644
+index 0000000000000..34770c37c6347
+--- /dev/null
++++ b/base/sbxdiff_rand_stream.h
+@@ -0,0 +1,104 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_SBXDIFF_RAND_STREAM_H_
++#define BASE_SBXDIFF_RAND_STREAM_H_
++
++#include <stdint.h>
++
++#include "base/base_export.h"
++#include "base/memory/raw_ptr.h"
++
++namespace base {
++
++// sbxdiff: selects a dedicated keystream for the deterministic PRNG.
++//
++// Why this exists. The keyed PRNG in rand_util_posix.cc derives each draw from
++// (run_key, stream_id, draw_index), with stream_id assigned per *thread*. That
++// makes streams independent of each other, but it puts every draw on a given
++// thread into one counter -- including Chromium's own internal draws. The
++// renderer main thread does a variable number of internal draws before a page
++// runs, so the page's first getRandomValues() landed at a different
++// draw_index from run to run. Measured: 3 distinct results in 5 runs, and one
++// run's first draw equalled another run's second, which is the signature of a
++// shifted counter rather than a changed key.
++//
++// Entering an explicit stream gives the enclosed draws their own counter, so
++// they are a pure function of (run_key, stream_id, n-th draw in that stream)
++// and cannot be shifted by unrelated activity on the same thread.
++//
++// Stream ids 1..15 are reserved for explicit streams; per-thread automatic ids
++// start at 16 so they can never collide.
++//
++// NOTE: implemented in rand_util_posix.cc only. This project builds macOS; the
++// Windows and Fuchsia rand_util implementations would need the same hook.
++enum : uint32_t {
++  // Web-exposed randomness: crypto.getRandomValues and crypto.randomUUID.
++  // These are the draws a page can actually see, so they get the one stream
++  // whose contents must be reproducible.
++  kSbxdiffStreamWebCrypto = 1,
++
++  // The `----WebKitFormBoundary<16 random chars>` of a multipart/form-data
++  // POST. Not web-exposed in the sense above -- a page cannot read it back --
++  // but it is in the BYTES the page sends, which is the strongest thing
++  // sbxdiff compares. Measured on rateyourmusic's /httprequest/SecChk: two
++  // oracle runs produced 2450-byte bodies that agreed on all but 28 bytes,
++  // and those 28 were the boundary appearing twice.
++  kSbxdiffStreamFormBoundary = 2,
++
++  // TimeClamper's per-process `secret_`. Every DOMHighResTimeStamp a page can
++  // read -- performance.now(), Event.timeStamp, every entry in the resource
++  // timing buffer -- is rounded up or down by a coin flip keyed on this, so an
++  // unpinned secret makes every one of them differ by one 100 us bucket between
++  // two otherwise identical runs.
++  kSbxdiffStreamTimeClamper = 3,
++
++  // Blob URLs: the UUID in `blob:https://origin/<uuid>`. Web-visible via
++  // URL.createObjectURL, and it travels -- Cloudflare hands its worker's blob
++  // URL to TrustedTypePolicy.createScriptURL, so it reaches the page's own
++  // strings. Its own stream rather than the WebCrypto one, so that a page
++  // calling crypto.randomUUID cannot shift the next blob URL.
++  kSbxdiffStreamBlobUuid = 4,
++
++  // The `<uuid>.local` mDNS hostname WebRTC puts in an ICE candidate. Drawn in
++  // the NETWORK SERVICE, a different process with its own activity shifting the
++  // shared counter. Note that the UDP port beside it in the same candidate
++  // string is assigned by the OS and no PRNG here can pin it.
++  kSbxdiffStreamMdnsName = 5,
++
++  // First automatic (per-thread) stream id.
++  kSbxdiffFirstAutoStream = 16,
++};
++
++class BASE_EXPORT SbxdiffScopedRandStream {
++ public:
++  explicit SbxdiffScopedRandStream(uint32_t stream_id);
++
++  // With an EXTERNAL counter, so the draw index can live somewhere that means
++  // something -- on the realm's own object, rather than on the thread.
++  //
++  // A per-thread counter is shifted by whatever else ran on that thread first,
++  // and the two sides do not put the same realms on the same threads: the
++  // oracle gives a cross-origin widget its own renderer, while a proxy puts
++  // every origin in one. So the guest's Nth draw was the thread's Nth on one
++  // side and its (N+k)th on the other, and every value differed however well
++  // the key was pinned. Measured: `crypto.randomUUID` still diverged after the
++  // key itself was made cross-process stable.
++  //
++  // Owned by the caller and expected to be a member of a per-realm object --
++  // `Crypto` is one per realm -- so it starts at zero for each realm and
++  // counts only that realm's draws.
++  SbxdiffScopedRandStream(uint32_t stream_id, uint64_t* counter);
++  SbxdiffScopedRandStream(const SbxdiffScopedRandStream&) = delete;
++  SbxdiffScopedRandStream& operator=(const SbxdiffScopedRandStream&) = delete;
++  ~SbxdiffScopedRandStream();
++
++ private:
++  const uint32_t previous_;
++  const raw_ptr<uint64_t> previous_counter_;
++};
++
++}  // namespace base
++
++#endif  // BASE_SBXDIFF_RAND_STREAM_H_
+diff --git a/content/browser/service_host/utility_process_host.cc b/content/browser/service_host/utility_process_host.cc
+index 1be5471d94789..aa2b4e2c77066 100644
+--- a/content/browser/service_host/utility_process_host.cc
++++ b/content/browser/service_host/utility_process_host.cc
+@@ -486,6 +486,14 @@ bool UtilityProcessHost::StartProcess() {
+ #endif
+   };
+   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
++  // sbxdiff: relayed from the same single list the renderer uses, so a switch
++  // cannot silently skip one process type. The network service is a utility
++  // process, and it draws randomness a page can SEE: the `<uuid>.local` mDNS
++  // hostname in a WebRTC ICE candidate is generated there. Without the run key
++  // that draw is real OS entropy, so two otherwise identical runs handed
++  // Cloudflare different candidates however well the renderers were pinned.
++  cmd_line->CopySwitchesFrom(browser_command_line,
++                             ::switches::kSbxdiffRendererSwitches);
+ #if BUILDFLAG(IS_WIN)
+   // Propagate WebNN-specific switches to the compiler process regardless of
+   // sandbox type, since sandbox may be overridden by
+diff --git a/gin/v8_platform.cc b/gin/v8_platform.cc
+index d68dd800adaee..f87a804c765fc 100644
+--- a/gin/v8_platform.cc
++++ b/gin/v8_platform.cc
+@@ -7,6 +7,7 @@
+ #include <algorithm>
+ 
+ #include "base/bit_cast.h"
++#include "base/sbxdiff_observable_clock.h"
+ #include "base/check_op.h"
+ #include "base/debug/dump_without_crashing.h"
+ #include "base/debug/stack_trace.h"
+@@ -341,16 +342,33 @@ double V8Platform::MonotonicallyIncreasingTime() {
+       static_cast<double>(base::Time::kMicrosecondsPerSecond);
+ }
+ 
++namespace {
++
++// sbxdiff: `Date.now()` bottoms out here. In a renderer that hosts only a
++// cross-origin subframe the virtual clock fast-forwards to a run-dependent
++// place, and this is the one hook that keeps that out of what script reads
++// without touching the clock the scheduler runs on. Inert unless Blink set a
++// ceiling; see base/sbxdiff_observable_clock.h.
++base::Time SbxObservableNow() {
++  // The logical clock first: it is the one that gives the two sides the same
++  // progression. CapObservableTime is the older per-read counter and stays off.
++  return base::sbxdiff::LogicalNow(
++      base::sbxdiff::CapObservableTime(base::Time::Now()));
++}
++
++}  // namespace
++
+ double V8Platform::CurrentClockTimeMillis() {
+-  return static_cast<double>(time_clamper_.ClampToMillis(base::Time::Now()));
++  return static_cast<double>(
++      time_clamper_.ClampToMillis(SbxObservableNow()));
+ }
+ 
+ int64_t V8Platform::CurrentClockTimeMilliseconds() {
+-  return time_clamper_.ClampToMillis(base::Time::Now());
++  return time_clamper_.ClampToMillis(SbxObservableNow());
+ }
+ 
+ double V8Platform::CurrentClockTimeMillisecondsHighResolution() {
+-  return time_clamper_.ClampToMillisHighResolution(base::Time::Now());
++  return time_clamper_.ClampToMillisHighResolution(SbxObservableNow());
+ }
+ 
+ v8::TracingController* V8Platform::GetTracingController() {
+diff --git a/services/network/mdns_responder.cc b/services/network/mdns_responder.cc
+index 327e0bb19d0b6..ad35bb83d133b 100644
+--- a/services/network/mdns_responder.cc
++++ b/services/network/mdns_responder.cc
+@@ -13,6 +13,7 @@
+ #include <utility>
+ 
+ #include "base/functional/bind.h"
++#include "base/sbxdiff_rand_stream.h"
+ #include "base/logging.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/numerics/safe_conversions.h"
+@@ -110,6 +111,12 @@ class RandomUuidNameGenerator
+     : public network::MdnsResponderManager::NameGenerator {
+  public:
+   std::string CreateName() override {
++    // sbxdiff: its own keystream. This runs in the network service, whose own
++    // activity shifts the shared per-thread counter, so the `<uuid>.local` name
++    // in an ICE candidate differed between two otherwise identical runs. The
++    // UDP port in the same candidate string is assigned by the OS and is not
++    // pinnable here.
++    base::SbxdiffScopedRandStream sbx_stream(base::kSbxdiffStreamMdnsName);
+     return base::Uuid::GenerateRandomV4().AsLowercaseString();
+   }
+ };
+diff --git a/services/network/p2p/socket_udp.cc b/services/network/p2p/socket_udp.cc
+index 2590a4d0fb80f..d36488113a424 100644
+--- a/services/network/p2p/socket_udp.cc
++++ b/services/network/p2p/socket_udp.cc
+@@ -7,6 +7,8 @@
+ #include <tuple>
+ 
+ #include "base/feature_list.h"
++#include "base/command_line.h"
++#include "base/base_switches.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/metrics/histogram_functions.h"
+@@ -240,6 +242,26 @@ void P2PSocketUdp::Init(
+     const P2PHostAndIPEndPoint& remote_address,
+     const net::NetworkAnonymizationKey& network_anonymization_key) {
+   DCHECK(!socket_);
++  // sbxdiff: pin the port range.
++  //
++  // With min_port 0 the socket binds to port 0 and the OS picks an ephemeral
++  // port, which no PRNG can make reproducible -- and the port is web-visible,
++  // in the middle of `RTCIceCandidate.candidate`. Two otherwise identical
++  // oracle runs offered Cloudflare `...local 57572` and `...local 63013`, and
++  // that string goes into the challenge payload.
++  //
++  // A RANGE rather than a single port, because the loop below takes the first
++  // one that binds: a single port that happened to be busy would fail the bind
++  // entirely and produce no candidate at all, which is a larger divergence than
++  // the one being fixed. Only when the deterministic PRNG is armed, so a normal
++  // build keeps Chromium's behaviour exactly.
++  if (min_port == 0 && max_port == 0) {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (cmd && cmd->HasSwitch(::switches::kSbxdiffRunKey)) {
++      min_port = 47000;
++      max_port = 47031;
++    }
++  }
+   DCHECK((min_port == 0 && max_port == 0) || min_port > 0);
+   DCHECK_LE(min_port, max_port);
+ 
+diff --git a/third_party/blink/renderer/core/dom/events/event.cc b/third_party/blink/renderer/core/dom/events/event.cc
+index 344a224b9acdf..a36f39a109fce 100644
+--- a/third_party/blink/renderer/core/dom/events/event.cc
++++ b/third_party/blink/renderer/core/dom/events/event.cc
+@@ -21,6 +21,8 @@
+  */
+ 
+ #include "third_party/blink/renderer/core/dom/events/event.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++#include "base/sbxdiff_observable_clock.h"
+ 
+ #include "third_party/blink/renderer/core/dom/css_pseudo_element.h"
+ #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
+@@ -98,7 +100,14 @@ Event::Event(const AtomicString& event_type,
+       handling_passive_(PassiveMode::kNotPassiveDefault),
+       event_phase_(Event::PhaseType::kNone),
+       current_target_(nullptr),
+-      platform_time_stamp_(platform_time_stamp) {}
++      platform_time_stamp_(platform_time_stamp) {
++#if BUILDFLAG(SBXDIFF)
++  platform_time_stamp_ = sbxdiff::DeterministicEventTimeStamp(platform_time_stamp);
++  // Every other Event constructor delegates here, so this is the one place the
++  // logical stamp has to be taken.
++  sbx_logical_time_stamp_ = base::sbxdiff::LogicalElapsed().InMillisecondsF();
++#endif
++}
+ 
+ Event::Event(const AtomicString& event_type,
+              const EventInit* initializer,
+@@ -378,6 +387,23 @@ double Event::timeStamp(ScriptState* script_state) const {
+   if (!script_state) {
+     return 0;
+   }
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: from the logical clock when it is running.
++  //
++  // Without virtual time the platform stamps this from the real clock, and two
++  // otherwise identical runs disagreed by a couple of milliseconds -- 612.6
++  // against 615.1, the last thing the oracle could not reproduce about itself
++  // once the logical clock replaced virtual time. `DeterministicEventTimeStamp`
++  // does not help here: it only fires when virtual time is on.
++  //
++  // Taken when the event was CONSTRUCTED, not when it is read. Reading the
++  // clock here made `timeStamp` not a timestamp at all: a page that keeps an
++  // event and reads it twice across a timer got two different numbers out of
++  // one event, which no browser does and any page can check.
++  if (base::sbxdiff::LogicalClockEnabled()) {
++    return sbx_logical_time_stamp_;
++  }
++#endif
+ 
+   if (auto* window = LocalDOMWindow::From(script_state)) {
+     Performance* performance = DOMWindowPerformance::performance(*window);
+diff --git a/third_party/blink/renderer/core/dom/events/event.h b/third_party/blink/renderer/core/dom/events/event.h
+index 746f50231784f..917fc810f751c 100644
+--- a/third_party/blink/renderer/core/dom/events/event.h
++++ b/third_party/blink/renderer/core/dom/events/event.h
+@@ -31,6 +31,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event_dispatch_result.h"
+ #include "third_party/blink/renderer/core/probe/async_task_context.h"
+ #include "third_party/blink/renderer/core/url/dom_origin_utils.h"
++#include "third_party/blink/renderer/platform/bindings/buildflags.h"
+ #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+ #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+@@ -406,6 +407,17 @@ class CORE_EXPORT Event : public ScriptWrappable, public DOMOriginUtils {
+   // event timestamp provided by the host OS and reported in the original
+   // WebInputEvent instance.
+   base::TimeTicks platform_time_stamp_;
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: the logical clock when this event was CONSTRUCTED.
++  //
++  // `timeStamp()` used to answer from the logical clock at read time, which
++  // is not a timestamp: a page that keeps an event and reads `timeStamp`
++  // twice across a timer got two different numbers out of one event, which
++  // no browser does and any page can check. It also made the value depend on
++  // WHEN each side happened to read rather than on when the event happened,
++  // which is a divergence the two runs generate for free.
++  double sbx_logical_time_stamp_ = 0;
++#endif
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/renderer/core/page/page.cc
+index d8b7ffcdccf7c..90e5d55f9c4e2 100644
+--- a/third_party/blink/renderer/core/page/page.cc
++++ b/third_party/blink/renderer/core/page/page.cc
+@@ -21,6 +21,12 @@
+ 
+ #include "third_party/blink/renderer/core/page/page.h"
+ 
++#include <cstdlib>
++
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "base/functional/callback_helpers.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/check.h"
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
+@@ -100,7 +106,10 @@
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/agent_group_scheduler.h"
++#include "third_party/blink/renderer/platform/scheduler/public/virtual_time_controller.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
+ #include "third_party/blink/renderer/platform/web_test_support.h"
+ #include "third_party/skia/include/core/SkColor.h"
+@@ -294,12 +303,79 @@ Page::Page(base::PassKey<Page>,
+   page_scheduler_ = agent_group_scheduler_->CreatePageScheduler(this);
+   // The scheduler should be set before the main frame.
+   DCHECK(!main_frame_);
++  // sbxdiff: SBXDIFF_LOG_VT=1 says, per renderer process, whether this Page
++  // took the branch that enables virtual time. An out-of-process iframe reads
++  // the REAL clock while the main frame reads the pinned one, and everything
++  // else about that renderer is fine -- crypto.getRandomValues reproduces
++  // there, so the switch relay is working. This is how to tell "the branch
++  // never ran" from "it ran and did not stick".
++  if (::getenv("SBXDIFF_LOG_VT")) {
++    LOG(WARNING) << "sbxdiff: Page ctor, vtc="
++                 << (page_scheduler_->GetVirtualTimeController() ? "yes" : "no")
++                 << " switch="
++                 << (base::CommandLine::ForCurrentProcess()->HasSwitch(
++                         ::switches::kSbxdiffInitialTime)
++                         ? "yes"
++                         : "no")
++                 << " deferred=" << (sbxdiff::VirtualTimeIsDeferred() ? 1 : 0);
++  }
+   if (auto* virtual_time_controller =
+           page_scheduler_->GetVirtualTimeController()) {
+     history_navigation_virtual_time_pauser_ =
+         virtual_time_controller->CreateWebScopedVirtualTimePauser(
+             "HistoryNavigation",
+             WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant);
++
++    // sbxdiff: enable virtual time here, before the main frame is attached and
++    // therefore before any page script can read a clock.
++    //
++    // An earlier attempt did only enable + policy and was reverted: an
++    // advancing clock with no fence jumps to the next delayed task whenever
++    // the scheduler is idle, so during startup it fast-forwards through
++    // far-future housekeeping timers (~97 minutes accrued, varying by seconds
++    // between runs). kPause instead deadlocked. The CDP flow survives because
++    // it enables, sets a policy, *and* grants a bounded budget together -- the
++    // budget is the fence that caps advancement. So all three are done here.
++    //
++    // EnableVirtualTime() early-returns if virtual time is already on, so a
++    // later CDP call still applies its own policy and budget. base::Time() is
++    // passed deliberately: the null-time fallback in
++    // ThreadSchedulerBase::EnableVirtualTime reads --sbxdiff-initial-time,
++    // keeping that switch the single source of truth.
++    //
++    // Main-thread page schedulers only. A worker must not become a second
++    // virtual-time client: TryAdvancingTime takes the min across clients, so a
++    // second registrant can pin the clock forever (RULES.md #12).
++    const base::CommandLine* sbx_cmd = base::CommandLine::ForCurrentProcess();
++    // --sbxdiff-virtual-time-after defers this to the realm that matches, so
++    // harness/service-worker setup runs on the real clock. See
++    // local_window_proxy.cc.
++    if (sbx_cmd && sbx_cmd->HasSwitch(::switches::kSbxdiffInitialTime) &&
++        !sbxdiff::VirtualTimeIsDeferred()) {
++      // Publish the instant virtual time began, so performance.timeOrigin can
++      // be pinned to it instead of to a variable point during load.
++      sbxdiff::SetVirtualTimeBase(
++          virtual_time_controller->EnableVirtualTime(base::Time()));
++      // kDeterministicLoading is the default because it is what makes a
++      // plain page load reproducible. It cannot be used for a
++      // service-worker-backed sandbox: it pauses virtual time while a load is
++      // outstanding, and that load is served by a worker whose transport needs
++      // timers to progress, so neither side ever moves. --sbxdiff-virtual-
++      // time-policy=advance keeps the clock moving under the budget fence.
++      const int policy_id = sbxdiff::VirtualTimePolicyFromSwitch();
++      auto policy =
++          policy_id == 0 ? VirtualTimeController::VirtualTimePolicy::kAdvance
++          : policy_id == 1
++              ? VirtualTimeController::VirtualTimePolicy::kPause
++              : VirtualTimeController::VirtualTimePolicy::kDeterministicLoading;
++      virtual_time_controller->SetVirtualTimePolicy(policy);
++      const int64_t budget_ms = sbxdiff::VirtualTimeBudgetFromSwitch();
++      // DoNothing: the budget is a fence, and the controller documents that the
++      // policy is unaffected when it expires, so there is nothing to undo and
++      // no Oilpan lifetime to manage.
++      virtual_time_controller->GrantVirtualTimeBudget(
++          base::Milliseconds(budget_ms), base::DoNothing());
++    }
+   }
+   UpdateColorProviders(color_provider_colors &&
+                                !color_provider_colors->IsEmpty()
+diff --git a/third_party/blink/renderer/core/scheduler/dom_timer.cc b/third_party/blink/renderer/core/scheduler/dom_timer.cc
+index 6b5d77cc149a7..0a65c44874059 100644
+--- a/third_party/blink/renderer/core/scheduler/dom_timer.cc
++++ b/third_party/blink/renderer/core/scheduler/dom_timer.cc
+@@ -25,9 +25,18 @@
+  */
+ #include "third_party/blink/renderer/core/scheduler/dom_timer.h"
+ 
++#include "base/sbxdiff_observable_clock.h"
++#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
++#include <cstdlib>
++#include <optional>
++#include <string>
+ #include <limits>
+ 
++#include "base/auto_reset.h"
+ #include "base/check_deref.h"
++#include "base/logging.h"
+ #include "base/message_loop/message_pump.h"
+ #include "base/numerics/clamped_math.h"
+ #include "base/task/single_thread_task_runner.h"
+@@ -43,6 +52,7 @@
+ #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/core/scheduler/scheduled_action.h"
++#include "third_party/blink/renderer/platform/bindings/callback_function_base.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+@@ -54,6 +64,20 @@ namespace blink {
+ 
+ namespace {
+ 
++// The due of the timer currently running, or zero outside a timer callback.
++//
++// Thread-local because timers run on the thread that scheduled them, and a
++// worker's chain is its own. See the chained-due comment in DOMTimer's
++// constructor.
++base::TimeDelta& SbxCurrentTimerDueRef() {
++  static thread_local base::TimeDelta due;
++  return due;
++}
++
++base::TimeDelta SbxCurrentTimerDue() {
++  return SbxCurrentTimerDueRef();
++}
++
+ // Step 11 of the algorithm at
+ // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html requires
+ // that a timeout less than 4ms is increased to 4ms when the nesting level is
+@@ -315,6 +339,84 @@ DOMTimer::DOMTimer(ExecutionContext& context,
+     timeout = base::TimeDelta();
+   }
+ 
++  // sbxdiff: the point on the LOGICAL clock this timer is due. Captured from
++  // the logical clock rather than the wall clock, so a chain of timers adds up
++  // the way the page wrote it -- setTimeout(100) inside setTimeout(100) is due
++  // at 200 regardless of how long the machine actually took.
++  //
++  // Only the GUEST's timers count. The sandbox runs the shim's as well, and a
++  // clock that advanced on both reached a different logical time from the
++  // oracle's -- measured, seven seconds apart, which is RULES.md #99. A timer
++  // the shim scheduled is not time the page asked to pass.
++  //
++  // "Is the guest ANYWHERE on the stack", not "is the top frame the guest's":
++  // under a proxy the guest never calls setTimeout itself. scramjet traps the
++  // global, so the top frame is always the shim's and the top-frame test
++  // classified every timer in the run as the shim's -- which froze the
++  // sandbox's logical clock, and with it `Date.now()`, at its origin for the
++  // whole run (RULES.md #101).
++  //
++  // And not by the stack either, in the end. "Guest anywhere on the stack"
++  // brought the clock back to life and left it running ahead of the oracle's,
++  // because a timer the proxy schedules for its OWN reasons while guest code
++  // happens to be running also has guest frames underneath. The callback does
++  // not have that problem: a setTimeout trap forwards the page's function
++  // untouched, so the function carries the identity the stack has lost.
++  // The point on the LOGICAL clock this timer is due, measured from the CHAIN
++  // that scheduled it rather than from the clock's current value.
++  //
++  // `LogicalElapsed() + timeout` makes a timer's due depend on whatever else
++  // has already fired, so the clock feeds back into itself and two runs that
++  // schedule the same timers in a different ORDER reach different times.
++  // Measured on rym after attribution was exact -- both sides scheduling 117
++  // guest timers, matching on every script and delay -- the two clocks parted
++  // at the twentieth timer, 200 against 550, because the sandbox's task queue
++  // drained more slowly and a 550 ms timer came due before a 100 ms one that
++  // the oracle had already run twice (RULES.md #113).
++  //
++  // Chained instead: a timer scheduled from inside a timer is due at THAT
++  // timer's due plus its own delay, so setTimeout(100) inside setTimeout(100)
++  // is due at 200 wherever it runs and whatever else the machine was doing.
++  // The clock becomes a function of the timer tree, which is a property of the
++  // page's code, and stops being a function of the scheduler.
++  // The resolver has to exist before the first read, and a timer being created
++  // is the earliest point Blink is certainly running. Idempotent and inert
++  // unless SBXDIFF_REALM_CLOCK is set.
++  blink::sbxdiff::EnsureLogicalRealmResolver();
++  const int sbx_callback_class = blink::sbxdiff::ClassifyCallback(
++      context.GetIsolate(),
++      action && action->CallbackFunction()
++          ? v8::Local<v8::Value>(action->CallbackFunction()->CallbackObject())
++          : v8::Local<v8::Value>());
++  const int sbx_guest_depth =
++      blink::sbxdiff::GuestFrameDepth(context.GetIsolate());
++  // The stack is the fallback, for a string handler or a built-in -- there is
++  // no function to ask, and the guest did still ask for the timer.
++  sbx_is_guest_timer_ =
++      sbx_callback_class >= 0 ? sbx_callback_class == 0 : sbx_guest_depth >= 0;
++  // SBXDIFF_LOG_TIMER_ATTR: one line per timer, so "which timers is the
++  // sandbox counting that the oracle is not" is a question with an answer.
++  // The two sides' logs diff directly, the same way SBXDIFF_LOG_VT's do.
++  static const bool sbx_log_attr = [] {
++    const char* v = ::getenv("SBXDIFF_LOG_TIMER_ATTR");
++    return v && *v && *v != '0';
++  }();
++  if (sbx_log_attr) {
++    const std::string sbx_cb_url = blink::sbxdiff::CallbackScriptUrl(
++        context.GetIsolate(),
++        action && action->CallbackFunction()
++            ? v8::Local<v8::Value>(action->CallbackFunction()->CallbackObject())
++            : v8::Local<v8::Value>());
++    LOG(ERROR) << "sbxdiff: timer guest=" << sbx_is_guest_timer_
++               << " cb=" << sbx_callback_class << " depth=" << sbx_guest_depth
++               << " ms=" << timeout.InMilliseconds()
++               << " at=" << base::sbxdiff::LogicalElapsed().InMilliseconds()
++               << " cburl=" << sbx_cb_url;
++  }
++  if (sbx_is_guest_timer_) {
++    sbx_logical_due_ = SbxCurrentTimerDue() + timeout;
++  }
++
+   // Steps 12 and 13:
+   // Note: The implementation increments the nesting level before using it to
+   // adjust timeout, contrary to what the spec requires crbug.com/1108877.
+@@ -405,6 +507,16 @@ void DOMTimer::ContextDestroyed() {
+ 
+ void DOMTimer::Fired() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // sbxdiff: this timer's delay has now elapsed as far as the page is
++  // concerned, so the logical clock says so. Inert unless
++  // SBXDIFF_LOGICAL_CLOCK is set and an origin was published.
++  // Scoped, so anything this callback schedules is chained onto THIS timer's
++  // due rather than onto whatever the clock happens to read.
++  std::optional<base::AutoReset<base::TimeDelta>> sbx_chain;
++  if (sbx_is_guest_timer_) {
++    base::sbxdiff::AdvanceLogicalTo(sbx_logical_due_);
++    sbx_chain.emplace(&SbxCurrentTimerDueRef(), sbx_logical_due_);
++  }
+   ExecutionContext* context = GetExecutionContext();
+   DCHECK(context);
+   DOMTimerCoordinator::From(*context).SetTimerNestingLevel(nesting_level_);
+diff --git a/third_party/blink/renderer/core/scheduler/dom_timer.h b/third_party/blink/renderer/core/scheduler/dom_timer.h
+index 481a53785faea..71dd3e5d02432 100644
+--- a/third_party/blink/renderer/core/scheduler/dom_timer.h
++++ b/third_party/blink/renderer/core/scheduler/dom_timer.h
+@@ -113,6 +113,12 @@ class CORE_EXPORT DOMTimer final : public GarbageCollected<DOMTimer>,
+ 
+   int timeout_id_;
+   int nesting_level_;
++  // sbxdiff: when this timer is due, in LOGICAL time. See
++  // base/sbxdiff_observable_clock.h -- firing it advances the clock to here, so
++  // a 100 ms timer moves the clock 100 ms whatever the machine did.
++  base::TimeDelta sbx_logical_due_;
++  // Whether the GUEST scheduled this, as opposed to the proxy's own shim.
++  bool sbx_is_guest_timer_ = true;
+   probe::AsyncTaskContext async_task_context_;
+   Member<ScheduledAction> action_;
+   SEQUENCE_CHECKER(sequence_checker_);
+diff --git a/third_party/blink/renderer/core/timing/memory_info.cc b/third_party/blink/renderer/core/timing/memory_info.cc
+index b17ada56e6d93..6e579d5a31e87 100644
+--- a/third_party/blink/renderer/core/timing/memory_info.cc
++++ b/third_party/blink/renderer/core/timing/memory_info.cc
+@@ -30,6 +30,8 @@
+ 
+ #include "third_party/blink/renderer/core/timing/memory_info.h"
+ 
++#include <cstdlib>
++
+ #include <limits>
+ 
+ #include "base/time/default_tick_clock.h"
+@@ -41,6 +43,15 @@
+ 
+ namespace blink {
+ 
++// static
++bool MemoryInfo::SbxdiffPinShimCost() {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_PIN_SHIM_COST");
++    return v && *v && *v != '0';
++  }();
++  return on;
++}
++
+ static constexpr base::TimeDelta kTwentyMinutes = base::Minutes(20);
+ static constexpr base::TimeDelta kFiftyMs = base::Milliseconds(50);
+ 
+diff --git a/third_party/blink/renderer/core/timing/memory_info.h b/third_party/blink/renderer/core/timing/memory_info.h
+index 0f08bd3b9d1fd..b67bc51e38a03 100644
+--- a/third_party/blink/renderer/core/timing/memory_info.h
++++ b/third_party/blink/renderer/core/timing/memory_info.h
+@@ -62,9 +62,31 @@ class CORE_EXPORT MemoryInfo final : public ScriptWrappable {
+ 
+   explicit MemoryInfo(Precision precision);
+ 
+-  uint64_t totalJSHeapSize() const { return info_.total_js_heap_size; }
+-  uint64_t usedJSHeapSize() const { return info_.used_js_heap_size; }
+-  uint64_t jsHeapSizeLimit() const { return info_.js_heap_size_limit; }
++  // sbxdiff: SBXDIFF_PIN_SHIM_COST reports fixed heap sizes.
++  //
++  // OFF by default, deliberately. `performance.memory` reports the whole
++  // PROCESS's heap, and the two sides do not have the same processes: the
++  // oracle gives the cross-origin widget its own renderer holding only the
++  // widget (31 MB), while the proxy puts the harness, the page under test, the
++  // widget and the shim in one (139 MB). A live server sees the 139 MB, so
++  // pinning this hides a difference the sandbox really has rather than removing
++  // noise -- unlike `navigator.connection` or resource-timing durations under
++  // replay, which measure the harness.
++  //
++  // It exists as a flag because "what would the diff look like without it" is a
++  // question worth being able to answer with a measurement instead of an
++  // argument.
++  uint64_t totalJSHeapSize() const {
++    return SbxdiffPinShimCost() ? 40000000u : info_.total_js_heap_size;
++  }
++  uint64_t usedJSHeapSize() const {
++    return SbxdiffPinShimCost() ? 20000000u : info_.used_js_heap_size;
++  }
++  uint64_t jsHeapSizeLimit() const {
++    return SbxdiffPinShimCost() ? 4294705152u : info_.js_heap_size_limit;
++  }
++
++  static bool SbxdiffPinShimCost();
+ 
+  private:
+   FRIEND_TEST_ALL_PREFIXES(MemoryInfoTest, Bucketized);
+diff --git a/third_party/blink/renderer/core/timing/performance.cc b/third_party/blink/renderer/core/timing/performance.cc
+index cfc4a252cbed0..bbc680b870b89 100644
+--- a/third_party/blink/renderer/core/timing/performance.cc
++++ b/third_party/blink/renderer/core/timing/performance.cc
+@@ -30,6 +30,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/core/timing/performance.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
+ 
+ #include <algorithm>
+ #include <optional>
+@@ -347,10 +348,47 @@ ScriptPromise<MemoryMeasurement> Performance::measureUserAgentSpecificMemory(
+                                                    exception_state);
+ }
+ 
++base::TimeTicks Performance::EffectiveTimeOrigin() const {
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: resolve the origin at USE, not at construction.
++  //
++  // `WindowPerformance` pins its origin to the instant virtual time began, but
++  // with --sbxdiff-virtual-time-after the clock starts when the realm under
++  // test appears -- which can be AFTER the window's Performance object was
++  // built. The constructor then found no base and fell back to the loader's
++  // reference time, which is real and lands a variable ~15-25 ms in.
++  //
++  // Everything downstream inherits that: `performance.now()` read 101.9 in one
++  // run of unmodified Chromium and 77.7 in the next, and `Event.timeStamp`
++  // moved with it, while `Date.now()` -- on the same virtual clock -- was
++  // identical to the millisecond. Anti-bot payloads carry those numbers, which
++  // is why two oracle runs disagreed on 6 of 8 request bodies.
++  //
++  // Reading it here costs a load and makes a late base apply to the whole run.
++  const base::TimeTicks sbx_base = sbxdiff::GetVirtualTimeBase();
++  if (!sbx_base.is_null()) {
++    return sbx_base;
++  }
++#endif
++  return time_origin_;
++}
++
+ DOMHighResTimeStamp Performance::timeOrigin() const {
+   DCHECK(!time_origin_.is_null());
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: the wall time of the origin is known exactly under virtual time --
++  // it is the instant the clock was set to. Blink derives it from
++  // `unix_at_zero_monotonic_`, a real clock reading taken when this object was
++  // constructed, so it varied run to run even after `performance.now()` had
++  // been pinned: 1789276459400.4 against 1789276472199 between two otherwise
++  // identical runs.
++  const double sbx_origin = sbxdiff::VirtualTimeOriginUnixMs();
++  if (sbx_origin != 0.0 && !sbxdiff::GetVirtualTimeBase().is_null()) {
++    return sbx_origin;
++  }
++#endif
+   base::TimeDelta time_origin_from_zero_monotonic =
+-      time_origin_ - base::TimeTicks();
++      EffectiveTimeOrigin() - base::TimeTicks();
+   return ClampTimeResolution(
+       unix_at_zero_monotonic_ + time_origin_from_zero_monotonic,
+       cross_origin_isolated_capability_);
+@@ -1338,11 +1376,33 @@ DOMHighResTimeStamp Performance::MonotonicTimeToDOMHighResTimeStamp(
+   if (monotonic_time.is_null() || time_origin.is_null())
+     return 0.0;
+ 
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: coarsen the ELAPSED time, not the two absolute instants.
++  //
++  // Upstream clamps `monotonic_time` and `time_origin` separately and
++  // subtracts. Both are `since_origin()` -- time since the machine BOOTED --
++  // and the clamper rounds up or down by a coin flip keyed on the absolute
++  // value. So the answer depends on where boot-relative ticks happen to fall
++  // on the 100 us grid, which is a different phase on every run, and two runs
++  // that are identical in every way a page can influence still disagree by one
++  // bucket. Measured across two oracle runs of rateyourmusic:
++  // `Event.timeStamp` 48 against 48.099999994039536, and `performance.now()`
++  // 59.5 against 59.3999999910593 -- one bucket apart in both cases.
++  //
++  // Clamping the difference removes the phase entirely: the result is a pure
++  // function of the elapsed time and the clamper's secret, which sbxdiff pins
++  // separately (base/sbxdiff_rand_stream.h). Same 100 us resolution, same
++  // randomized rounding, so the protection the clamper exists to provide is
++  // unchanged -- only the quantity being rounded is.
++  DOMHighResTimeStamp clamped_time = ClampTimeResolution(
++      monotonic_time - time_origin, cross_origin_isolated_capability);
++#else
+   DOMHighResTimeStamp clamped_time =
+       ClampTimeResolution(monotonic_time.since_origin(),
+                           cross_origin_isolated_capability) -
+       ClampTimeResolution(time_origin.since_origin(),
+                           cross_origin_isolated_capability);
++#endif
+   if (clamped_time < 0 && !allow_negative_value)
+     return 0.0;
+   return clamped_time;
+@@ -1350,12 +1410,54 @@ DOMHighResTimeStamp Performance::MonotonicTimeToDOMHighResTimeStamp(
+ 
+ DOMHighResTimeStamp Performance::MonotonicTimeToDOMHighResTimeStamp(
+     base::TimeTicks monotonic_time) const {
+-  return MonotonicTimeToDOMHighResTimeStamp(time_origin_, monotonic_time,
++  return MonotonicTimeToDOMHighResTimeStamp(EffectiveTimeOrigin(),
++                                            monotonic_time,
+                                             false /* allow_negative_value */,
+                                             cross_origin_isolated_capability_);
+ }
+ 
+ DOMHighResTimeStamp Performance::now() const {
++  // sbxdiff: in a renderer that hosts only a cross-origin subframe, answer from
++  // a per-read counter rather than the clock. Nothing paces that renderer's
++  // virtual time, so the clock's total advance is a property of the machine --
++  // measured, two oracle runs of Cloudflare's realm both made exactly 10028
++  // calls here and disagreed on every value, 345123 against 602509. The number
++  // of calls is a property of the CODE, so it reproduces.
++  //
++  // Deliberately here and not in MonotonicTimeToDOMHighResTimeStamp: that
++  // conversion is also used for resource-timing ENTRIES, and answering those
++  // from a counter would put them in a different order from the timeline they
++  // describe.
++  //
++  // The counter is PER Performance object, so it starts at zero in every realm
++  // and does not depend on when that realm happened to begin -- which is what
++  // makes the two sides agree without either of them knowing about the other.
++  // A process-wide counter would not: the sandbox's shim reads the clock in
++  // other realms first and would shift the guest's numbers.
++  const int64_t step_us = sbxdiff::ObservableStepUs();
++  if (step_us > 0) {
++    // The SHIM observes the clock; it does not move it.
++    //
++    // The counter is per realm, which stops draws in other realms shifting
++    // this one -- but the shim runs IN the guest's realm, so its own reads
++    // were still advancing the guest's clock and the two sides ended up at
++    // different values. Same discriminator as the timer fix: a read the proxy
++    // made is not the page asking what time it is.
++    //
++    // The TOP frame, and deliberately not "is there guest code on the stack"
++    // the way timer attribution asks it (RULES.md #113). Those are different
++    // questions: a timer scheduled beneath a guest frame is the guest's, but a
++    // clock read made by the shim inside a guest-initiated task is still the
++    // shim's. Measured by trying it -- scramjet does not trap
++    // `performance.now`, so the guest's own reads already have a guest top
++    // frame, and widening the test only let the shim's 99 reads in the
++    // Turnstile realm run the counter ahead: the guest's two reads went from
++    // the oracle's 0.04 and 0.06 to 1.96 and 2.
++    if (sbxdiff::CurrentScriptIsShim(v8::Isolate::GetCurrent())) {
++      return static_cast<double>(step_us * sbx_now_reads_) / 1000.0;
++    }
++    return static_cast<double>(step_us * ++sbx_now_reads_) / 1000.0;
++  }
+   return MonotonicTimeToDOMHighResTimeStamp(base::TimeTicks::Now());
+ }
+ 
+diff --git a/third_party/blink/renderer/core/timing/performance.h b/third_party/blink/renderer/core/timing/performance.h
+index 3520a1327cc08..bd8a1b6b1a059 100644
+--- a/third_party/blink/renderer/core/timing/performance.h
++++ b/third_party/blink/renderer/core/timing/performance.h
+@@ -134,6 +134,10 @@ class CORE_EXPORT Performance : public EventTarget {
+   // This returns a DOMHighResTimeStamp (double), representing clamped, jittered
+   // time in milliseconds. The actual clamping resolution varies based on the
+   // provided CrossOriginIsolatedCapability.
++  // sbxdiff: reads of now() in this realm, for the counter clock. Per object
++  // so each realm starts at zero; see sbxdiff::ObservableStepUs.
++  mutable int64_t sbx_now_reads_ = 0;
++
+   static DOMHighResTimeStamp ClampTimeResolution(
+       base::TimeDelta time,
+       bool cross_origin_isolated_capability);
+@@ -159,6 +163,11 @@ class CORE_EXPORT Performance : public EventTarget {
+   // Internal getter method for the time origin value.
+   base::TimeTicks GetTimeOriginInternal() const { return time_origin_; }
+ 
++  // The origin every conversion should use. Differs from `time_origin_` only
++  // under sbxdiff, and only when virtual time started after this object was
++  // built -- see the definition.
++  base::TimeTicks EffectiveTimeOrigin() const;
++
+   // Get all performance entries of the main frame. This is kept until the one
+   // with optional filtering options is enabled by default.
+   PerformanceEntryVector getEntries();
+diff --git a/third_party/blink/renderer/core/timing/performance_resource_timing.cc b/third_party/blink/renderer/core/timing/performance_resource_timing.cc
+index 4809ecca7e415..4450671b14ec9 100644
+--- a/third_party/blink/renderer/core/timing/performance_resource_timing.cc
++++ b/third_party/blink/renderer/core/timing/performance_resource_timing.cc
+@@ -31,6 +31,10 @@
+ 
+ #include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
+ 
++#include "third_party/blink/renderer/core/timing/memory_info.h"
++
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
+ #include "base/containers/fixed_flat_set.h"
+ #include "base/notreached.h"
+ #include "services/network/public/mojom/service_worker_router_info.mojom-blink-forward.h"
+@@ -92,6 +96,62 @@ AtomicString GetFilteredInitiatorType(const AtomicString& initiator_type) {
+ 
+ using network::mojom::blink::NavigationDeliveryType;
+ 
++namespace {
++
++// sbxdiff: under replay a resource was not fetched, it was handed over.
++//
++// Both sides are served from the same recorded store -- the oracle by the
++// replay loader in the network service, the sandbox by the in-page transport --
++// so what the phase timestamps measure is those two mechanisms, not the page
++// and not the sandbox. Measured on rateyourmusic, in the Turnstile widget's
++// realm: `responseStart` 0.585 against 24.6 and `PerformanceEntry.duration`
++// 14.265 against 180.3, sixteen divergences that are the harness timing
++// itself.
++//
++// Collapsing every phase onto `startTime` reports what actually happened:
++// served instantly, from something already in memory. It is the same argument
++// as pinning `navigator.connection` (RULES.md #90) -- noise removed, not a
++// difference hidden -- and it applies to both sides identically.
++//
++// Deliberately NOT applied to the sizes beside them. `decodedBodySize` is 3.8x
++// larger in the sandbox because the rewritten script really is, and that is a
++// property of the shim that a live server sees.
++// The navigation this entry belongs to, pinned.
++//
++// A per-renderer counter of navigations, and the two sides do not make the same
++// number of them: the sandbox registers a service worker and loads a harness
++// page before the guest exists. Measured on rateyourmusic, inside a payload
++// Cloudflare posts: 220 against 2585. Nothing about the page produces that
++// number and nothing about the page can reproduce it.
++uint64_t SbxdiffPinNavigationId(uint64_t navigation_id) {
++#if BUILDFLAG(SBXDIFF)
++  if (sbxdiff::SbxTracer::IsEnabled()) {
++    return 1u;
++  }
++#endif
++  return navigation_id;
++}
++
++base::TimeTicks SbxdiffCollapsePhase(base::TimeTicks time_origin,
++                                     base::TimeTicks phase) {
++#if BUILDFLAG(SBXDIFF)
++  // Onto the time ORIGIN, so the whole entry reads as zero rather than as some
++  // real instant. Collapsing onto the entry's own `startTime` was not enough:
++  // every phase then agreed with that start, and the start is still when the
++  // load happened to begin -- measured, `responseStart` went from 0.585/24.6 to
++  // 0.59/1.3, much closer and still divergent, because that is what was left.
++  //
++  // Ordering inside the buffer does not depend on this; entries are sorted by
++  // their insertion index, not by startTime.
++  if (sbxdiff::SbxTracer::IsEnabled() && !phase.is_null()) {
++    return time_origin;
++  }
++#endif
++  return phase;
++}
++
++}  // namespace
++
+ PerformanceResourceTiming::PerformanceResourceTiming(
+     mojom::blink::ResourceTimingInfoPtr info,
+     const AtomicString& initiator_type,
+@@ -103,22 +163,52 @@ PerformanceResourceTiming::PerformanceResourceTiming(
+           info->name.IsNull() ? g_empty_atom : AtomicString(info->name),
+           Performance::MonotonicTimeToDOMHighResTimeStamp(
+               time_origin,
+-              info->start_time,
++              SbxdiffCollapsePhase(time_origin, info->start_time),
+               info->allow_negative_values,
+               cross_origin_isolated_capability),
+           Performance::MonotonicTimeToDOMHighResTimeStamp(
+               time_origin,
+-              info->response_end,
++              SbxdiffCollapsePhase(time_origin, info->response_end),
+               info->allow_negative_values,
+               cross_origin_isolated_capability),
+           DynamicTo<LocalDOMWindow>(context),
+-          navigation_id),
++          SbxdiffPinNavigationId(navigation_id)),
+       initiator_type_(GetFilteredInitiatorType(initiator_type)),
+       time_origin_(time_origin),
+       cross_origin_isolated_capability_(cross_origin_isolated_capability),
+       server_timing_(
+           PerformanceServerTiming::FromParsedServerTiming(info->server_timing)),
+       info_(std::move(info)) {
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: drop the detailed phase timings. See SbxdiffCollapsePhase -- under
++  // replay nothing was fetched, and what these measure is the harness.
++  //
++  // Dropping `timing` rather than rewriting each field, because that is a state
++  // Chromium already has and every getter already handles: a resource with no
++  // detailed timing falls back through its own chain to `startTime`. Inventing
++  // per-field values would mean reproducing that chain by hand and getting it
++  // subtly different.
++  if (sbxdiff::SbxTracer::IsEnabled()) {
++    info_->timing = nullptr;
++    // `responseEnd()` reads `info_` rather than the value handed to the base
++    // class, so collapsing the constructor argument never reached it. Measured
++    // in a Cloudflare payload: 104.185 against 267.8, inside an entry whose
++    // every other phase already read 0.
++    info_->response_end = time_origin;
++    // And `start_time`, for the same reason one level down. With `timing`
++    // dropped, every phase getter falls back through `requestStart()` to
++    // `info_->start_time` -- which the constructor collapsed only on its way
++    // to the BASE class, so the fallbacks kept reading the real instant the
++    // load began. Measured in the Turnstile realm: `responseStart` 0.62
++    // against 1.2, an entry whose `startTime` already read 0 on both sides.
++    info_->start_time = time_origin;
++    // Cloudflare serialises `serverTiming` too. The oracle's replayer drops
++    // the header and the sandbox's service worker passes it through, so one
++    // side reported [] and the other [{"name":"cfExtPri",...}] -- a difference
++    // between two harnesses, not between two browsers.
++    server_timing_.clear();
++  }
++#endif
+   if (!server_timing_.empty()) {
+     UseCounter::Count(context, WebFeature::kPerformanceServerTiming);
+   }
+@@ -175,6 +265,13 @@ AtomicString PerformanceResourceTiming::GetDeliveryType() const {
+ }
+ 
+ AtomicString PerformanceResourceTiming::deliveryType() const {
++  // sbxdiff: NOT pinned, deliberately, and this is the second decision.
++  //
++  // It was pinned here, which made the two sides agree in this tree and did
++  // nothing for a sandbox running on a stock browser -- where a service-worker
++  // response still reports "cache" and a live server still sees it. A proxy
++  // property belongs to the proxy: scramjet answers it in
++  // `client/dom/performance.ts`, which works on any Chromium (RULES.md #128).
+   return info_->allow_timing_details ? GetDeliveryType() : g_empty_atom;
+ }
+ 
+@@ -503,6 +600,11 @@ DOMHighResTimeStamp PerformanceResourceTiming::responseEnd() const {
+ }
+ 
+ uint64_t PerformanceResourceTiming::transferSize() const {
++  // sbxdiff: no longer pinned under SBXDIFF_PIN_SHIM_COST either. A
++  // service-worker response reports 0 and a network response does not, so the
++  // field says "a proxy served me" on its own -- and it says that on a stock
++  // browser too, where no flag in this tree is running. scramjet computes it
++  // from the encoded body, as the spec does (RULES.md #128).
+   if (!info_->allow_timing_details) {
+     return 0;
+   }
+@@ -511,10 +613,17 @@ uint64_t PerformanceResourceTiming::transferSize() const {
+ }
+ 
+ uint64_t PerformanceResourceTiming::encodedBodySize() const {
++  // sbxdiff: no longer pinned. scramjet reports the size the SITE served,
++  // recovered from the rewriter's own sourcemap for a script (RULES.md #130)
++  // and carried with the injected payload for a document (#132) -- so the
++  // number is right on a stock browser, which is where it has to be right.
++  // Pinning it here would also destroy the measurement: a fixed 100000 makes
++  // both sides agree without either being correct.
+   return info_->encoded_body_size;
+ }
+ 
+ uint64_t PerformanceResourceTiming::decodedBodySize() const {
++  // sbxdiff: see encodedBodySize. Not pinned; scramjet answers for it.
+   return info_->decoded_body_size;
+ }
+ 
+diff --git a/third_party/blink/renderer/core/timing/time_clamper.cc b/third_party/blink/renderer/core/timing/time_clamper.cc
+index f99c122e05f37..926c4b8699722 100644
+--- a/third_party/blink/renderer/core/timing/time_clamper.cc
++++ b/third_party/blink/renderer/core/timing/time_clamper.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/bit_cast.h"
+ #include "base/rand_util.h"
++#include "base/sbxdiff_rand_stream.h"
+ 
+ #include <cmath>
+ 
+@@ -15,7 +16,23 @@ namespace {
+ const int64_t kTenLowerDigitsMod = 10000000000;
+ }  // namespace
+ 
+-TimeClamper::TimeClamper() : secret_(base::RandUint64()) {}
++namespace {
++
++uint64_t ClamperSecret() {
++  // sbxdiff: its own keystream, so a varying number of Chromium-internal draws
++  // on this thread cannot shift it. The secret decides, per timestamp, whether
++  // the 100 us clamp rounds up or down; an unpinned one makes EVERY
++  // DOMHighResTimeStamp a page reads differ by a bucket between two otherwise
++  // identical runs. See base/sbxdiff_rand_stream.h. No buildflag guard, the
++  // same as crypto.cc: the scope object is unconditional in //base and inert
++  // unless the deterministic PRNG is armed.
++  base::SbxdiffScopedRandStream sbx_stream(base::kSbxdiffStreamTimeClamper);
++  return base::RandUint64();
++}
++
++}  // namespace
++
++TimeClamper::TimeClamper() : secret_(ClamperSecret()) {}
+ 
+ // This is using int64 for timestamps, because https://bit.ly/doubles-are-bad
+ base::TimeDelta TimeClamper::ClampTimeResolution(
+diff --git a/third_party/blink/renderer/core/timing/window_performance.cc b/third_party/blink/renderer/core/timing/window_performance.cc
+index 6a4eb589f76af..cf76c4dcff5c3 100644
+--- a/third_party/blink/renderer/core/timing/window_performance.cc
++++ b/third_party/blink/renderer/core/timing/window_performance.cc
+@@ -31,6 +31,8 @@
+ 
+ #include "third_party/blink/renderer/core/timing/window_performance.h"
+ 
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
+ #include <algorithm>
+ #include <optional>
+ #include <string>
+@@ -293,6 +295,16 @@ const char kHistogramTapOrClickInteractionTypes[] = ".TapOrClick";
+ const char kHistogramAllInteractionTypes[] = ".All";
+ 
+ base::TimeTicks WindowPerformance::GetTimeOrigin(LocalDOMWindow* window) {
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: pin the origin to the instant virtual time started. The loader's
++  // reference time lands a variable ~15-17 ms later, which is where
++  // timeOrigin's and performance.now()'s ~1.7 ms of run-to-run jitter came
++  // from. Inert unless --sbxdiff-initial-time enabled virtual time.
++  const base::TimeTicks sbx_base = sbxdiff::GetVirtualTimeBase();
++  if (!sbx_base.is_null()) {
++    return sbx_base;
++  }
++#endif
+   DocumentLoader* loader = window->GetFrame()->Loader().GetDocumentLoader();
+   return loader->GetTiming().ReferenceMonotonicTime();
+ }
+diff --git a/third_party/blink/renderer/modules/crypto/crypto.cc b/third_party/blink/renderer/modules/crypto/crypto.cc
+index a5b1cc0f554cf..efe6668d6c33e 100644
+--- a/third_party/blink/renderer/modules/crypto/crypto.cc
++++ b/third_party/blink/renderer/modules/crypto/crypto.cc
+@@ -28,6 +28,9 @@
+ 
+ #include "third_party/blink/renderer/modules/crypto/crypto.h"
+ 
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
++#include "base/sbxdiff_rand_stream.h"
+ #include "crypto/random.h"
+ #include "third_party/blink/renderer/core/dom/quota_exceeded_error.h"
+ #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
+@@ -73,11 +76,36 @@ NotShared<DOMArrayBufferView> Crypto::getRandomValues(
+                array->byteLength()));
+     return NotShared<DOMArrayBufferView>(nullptr);
+   }
+-  crypto::RandBytes(array->ByteSpan());
++  {
++    // sbxdiff: web-exposed randomness draws from its own keystream, so that a
++    // varying number of Chromium-internal draws on this thread cannot shift
++    // the page's draws. See base/sbxdiff_rand_stream.h.
++    // Counted on THIS Crypto object, which is one per realm, so the index is
++    // the realm's own and not the thread's. The two sides do not put the same
++    // realms on the same threads -- the oracle gives a cross-origin widget its
++    // own renderer, a proxy puts every origin in one -- so a per-thread index
++    // made the guest's Nth draw the thread's Nth on one side and its (N+k)th on
++    // the other. See base/sbxdiff_rand_stream.h.
++    // The shim draws from its OWN counter, so its randomness cannot shift the
++    // guest's. A separate counter rather than a frozen one, because bytes are
++    // what is being asked for here -- handing back the same ones twice would
++    // be a worse answer than a different index.
++    base::SbxdiffScopedRandStream sbx_stream(
++        base::kSbxdiffStreamWebCrypto,
++        sbxdiff::CurrentScriptIsShim(v8::Isolate::GetCurrent())
++            ? &sbx_shim_draws_
++            : &sbx_draws_);
++    crypto::RandBytes(array->ByteSpan());
++  }
+   return array;
+ }
+ 
+ String Crypto::randomUUID() {
++  base::SbxdiffScopedRandStream sbx_stream(
++      base::kSbxdiffStreamWebCrypto,
++      sbxdiff::CurrentScriptIsShim(v8::Isolate::GetCurrent())
++          ? &sbx_shim_draws_
++          : &sbx_draws_);
+   return CreateCanonicalUuidString();
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/crypto/crypto.h b/third_party/blink/renderer/modules/crypto/crypto.h
+index 25196b6178be3..2de934af17890 100644
+--- a/third_party/blink/renderer/modules/crypto/crypto.h
++++ b/third_party/blink/renderer/modules/crypto/crypto.h
+@@ -56,6 +56,14 @@ class Crypto final : public ScriptWrappable {
+   void Trace(Visitor*) const override;
+ 
+  private:
++  // sbxdiff: draws made through this realm's crypto, for the deterministic
++  // keystream. Per realm rather than per thread; see
++  // base/sbxdiff_rand_stream.h.
++  mutable uint64_t sbx_draws_ = 0;
++  // The shim's draws, counted apart from the guest's so neither shifts the
++  // other. See sbxdiff::CurrentScriptIsShim.
++  mutable uint64_t sbx_shim_draws_ = 0;
++
+   Member<SubtleCrypto> subtle_crypto_;
+ };
+ 
+diff --git a/third_party/blink/renderer/modules/netinfo/network_information.cc b/third_party/blink/renderer/modules/netinfo/network_information.cc
+index 976a3c8c36dbf..611af684955bb 100644
+--- a/third_party/blink/renderer/modules/netinfo/network_information.cc
++++ b/third_party/blink/renderer/modules/netinfo/network_information.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/modules/netinfo/network_information.h"
+ 
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
+ #include <algorithm>
+ 
+ #include "base/time/time.h"
+@@ -132,6 +134,23 @@ V8EffectiveConnectionType NetworkInformation::effectiveType() {
+ }
+ 
+ uint32_t NetworkInformation::rtt() {
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: a fixed estimate.
++  //
++  // Under replay neither side touches a network -- both are served from the
++  // same recorded store -- so what these report is not a property of the page
++  // or of the sandbox, it is how long the machine happened to take. Measured on
++  // rateyourmusic, in the Turnstile widget's realm: rtt and downlink both
++  // differed between oracle and sandbox, and a connection estimate is a
++  // fingerprint an anti-bot payload carries.
++  //
++  // Chromium already rounds these (RoundRtt / RoundMbps) so a page never sees
++  // the raw measurement; this pins the bucket as well. Both sides, so it
++  // removes noise rather than hiding a difference.
++  if (sbxdiff::SbxTracer::IsEnabled()) {
++    return 50;
++  }
++#endif
+   MaybeShowWebHoldbackConsoleMsg();
+   std::optional<base::TimeDelta> override_rtt =
+       GetNetworkStateNotifier().GetWebHoldbackHttpRtt();
+@@ -148,6 +167,12 @@ uint32_t NetworkInformation::rtt() {
+ }
+ 
+ double NetworkInformation::downlink() {
++#if BUILDFLAG(SBXDIFF)
++  // See rtt(): measurement noise under replay, and a fingerprint.
++  if (sbxdiff::SbxTracer::IsEnabled()) {
++    return 1.75;
++  }
++#endif
+   MaybeShowWebHoldbackConsoleMsg();
+   std::optional<double> override_downlink_mbps =
+       GetNetworkStateNotifier().GetWebHoldbackDownlinkThroughputMbps();
+diff --git a/third_party/blink/renderer/platform/blob/blob_url.cc b/third_party/blink/renderer/platform/blob/blob_url.cc
+index dca71c35ad855..f0cc5d496380a 100644
+--- a/third_party/blink/renderer/platform/blob/blob_url.cc
++++ b/third_party/blink/renderer/platform/blob/blob_url.cc
+@@ -30,6 +30,8 @@
+ 
+ #include "third_party/blink/renderer/platform/blob/blob_url.h"
+ 
++#include "base/sbxdiff_rand_stream.h"
++
+ #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+ #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+ #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
+@@ -57,7 +59,16 @@ String BlobURL::GetOrigin(const KURL& url) {
+ KURL BlobURL::CreateBlobURL(const String& origin_string) {
+   DCHECK(!origin_string.empty());
+   String url_string =
+-      StrCat({"blob:", origin_string, "/", CreateCanonicalUuidString()});
++      StrCat({"blob:", origin_string, "/", [] {
++                // sbxdiff: its own keystream. CreateCanonicalUuidString draws
++                // from the shared per-thread counter, so the number of
++                // unrelated draws before it decided the blob URL -- and two
++                // otherwise identical oracle runs produced different ones in
++                // Cloudflare's renderer while the main frame's agreed.
++                base::SbxdiffScopedRandStream sbx_stream(
++                    base::kSbxdiffStreamBlobUuid);
++                return CreateCanonicalUuidString();
++              }()});
+   return KURL(url_string);
+ }
+ 
+diff --git a/third_party/blink/renderer/platform/network/form_data_encoder.cc b/third_party/blink/renderer/platform/network/form_data_encoder.cc
+index 898f05176e58d..f8ea55a91c168 100644
+--- a/third_party/blink/renderer/platform/network/form_data_encoder.cc
++++ b/third_party/blink/renderer/platform/network/form_data_encoder.cc
+@@ -30,6 +30,7 @@
+ #include <string_view>
+ 
+ #include "base/rand_util.h"
++#include "base/sbxdiff_rand_stream.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
+ #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
+@@ -150,7 +151,14 @@ String FormDataEncoder::GenerateUniqueBoundaryString() {
+ 
+   // Append 16 random 7bit ascii AlphaNumeric characters.
+   std::array<uint8_t, kRandomSuffixCharacters> random_bytes;
+-  base::RandBytes(random_bytes);
++  {
++    // sbxdiff: its own keystream, so a varying number of Chromium-internal
++    // draws on this thread cannot shift it. The boundary is not readable by
++    // the page, but it IS in the bytes the page POSTs, and that is what the
++    // oracle compares. See base/sbxdiff_rand_stream.h.
++    base::SbxdiffScopedRandStream sbx_stream(base::kSbxdiffStreamFormBoundary);
++    base::RandBytes(random_bytes);
++  }
+   for (uint8_t& c : random_bytes) {
+     c = kAlphaNumericEncodingMap[c & 0x3F];
+   }
+diff --git a/third_party/blink/renderer/platform/scheduler/BUILD.gn b/third_party/blink/renderer/platform/scheduler/BUILD.gn
+index 548256efd8698..2ca0711fed845 100644
+--- a/third_party/blink/renderer/platform/scheduler/BUILD.gn
++++ b/third_party/blink/renderer/platform/scheduler/BUILD.gn
+@@ -13,6 +13,8 @@ if (is_android) {
+ blink_platform_sources("scheduler") {
+   sources = [
+     "common/auto_advancing_virtual_time_domain.cc",
++    "common/sbxdiff_virtual_time.cc",
++    "common/sbxdiff_virtual_time.h",
+     "common/auto_advancing_virtual_time_domain.h",
+     "common/back_forward_cache_disabling_feature_tracker.cc",
+     "common/back_forward_cache_disabling_feature_tracker.h",
+diff --git a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
+index 80b40c343f5b6..da41a9b375110 100644
+--- a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
++++ b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
+@@ -6,6 +6,10 @@
+ 
+ #include <atomic>
+ 
++#include <cstdlib>
++#include <string_view>
++
++#include "base/logging.h"
+ #include "base/time/time_override.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
+@@ -13,6 +17,57 @@
+ namespace blink {
+ namespace scheduler {
+ 
++namespace {
++
++// sbxdiff: diagnostics and a tunable grid for virtual-clock advances.
++//
++// Both are env vars rather than switches so they can be turned on for one run
++// without threading anything through the renderer switch allowlist. A run with
++// neither set behaves exactly as upstream.
++//
++//   SBXDIFF_LOG_VT=1          log every advance, as microseconds from the
++//                             instant virtual time was enabled. Two runs'
++//                             logs diff directly, which is what says WHERE
++//                             the clocks part rather than merely that they do.
++//   SBXDIFF_VT_QUANTUM_US=n   snap each advance up to the next multiple of n
++//                             microseconds from that same instant.
++//
++// The grid exists because the clock does not only advance to times the page
++// asked for. Wake-ups already scheduled when virtual time was enabled carry
++// REAL-clock times, which sit at an arbitrary sub-millisecond offset from the
++// base -- a different offset on every run -- and every value downstream
++// inherits it. Measured across two oracle runs: `Date.now()` 1789256416618
++// against ...617, and one `performance.now()` 0.5 ms apart.
++int64_t SbxEnvInt(const char* name) {
++  const char* v = ::getenv(name);
++  if (!v || !*v) {
++    return 0;
++  }
++  // Hand-rolled rather than strtoll: -Wunsafe-buffer-usage-in-libc-call bans
++  // the pointer-out form, and this only ever parses a small decimal count.
++  int64_t parsed = 0;
++  for (std::string_view digits(v); char c : digits) {
++    if (c < '0' || c > '9' || parsed > (1LL << 50)) {
++      return 0;
++    }
++    parsed = parsed * 10 + (c - '0');
++  }
++  return parsed;
++}
++
++bool SbxLogVirtualTime() {
++  static const bool on = SbxEnvInt("SBXDIFF_LOG_VT") != 0;
++  return on;
++}
++
++base::TimeDelta SbxVirtualTimeQuantum() {
++  static const base::TimeDelta q =
++      base::Microseconds(SbxEnvInt("SBXDIFF_VT_QUANTUM_US"));
++  return q;
++}
++
++}  // namespace
++
+ AutoAdvancingVirtualTimeDomain::AutoAdvancingVirtualTimeDomain(
+     base::Time initial_time,
+     base::TimeTicks initial_time_ticks,
+@@ -51,11 +106,23 @@ base::TimeTicks AutoAdvancingVirtualTimeDomain::NowTicks() const {
+ bool AutoAdvancingVirtualTimeDomain::MaybeFastForwardToWakeUp(
+     std::optional<base::sequence_manager::WakeUp> wakeup,
+     bool quit_when_idle_requested) {
+-  if (!can_advance_virtual_time_)
++  if (!can_advance_virtual_time_) {
++    // Deliberately keeps this client's constraint: a paused page SHOULD hold
++    // the process clock, that is what pausing means.
+     return false;
++  }
++
++  if (!wakeup) {
++    // Nothing scheduled on this thread, so it must stop constraining the
++    // shared clock. Time advances only to the minimum across clients, and a
++    // client that never calls TryAdvancingTime keeps the value it registered
++    // with -- so one idle thread freezes time for every other thread. An idle
++    // service worker did exactly that: the page's clock sat at +10ms for a
++    // 30-second run while the page waited on a load the worker was to serve.
++    time_override_->ReleaseTimeConstraint();
+ 
+-  if (!wakeup)
+     return false;
++  }
+ 
+   if (MaybeAdvanceVirtualTime(wakeup->time)) {
+     task_starvation_count_ = 0;
+@@ -88,6 +155,28 @@ void AutoAdvancingVirtualTimeDomain::SetVirtualTimeFence(
+ 
+ bool AutoAdvancingVirtualTimeDomain::MaybeAdvanceVirtualTime(
+     base::TimeTicks new_virtual_time) {
++  // sbxdiff: snap the advance to a grid anchored at the instant virtual time
++  // was enabled, so an advance to a wake-up that was scheduled on the REAL
++  // clock -- and therefore lands at an arbitrary sub-millisecond offset,
++  // different every run -- stops carrying that offset into everything
++  // downstream. Rounding UP keeps the clock monotonic and never lets a timer
++  // fire early. Computed from the raw time each call rather than from the
++  // previous snapped value, so it cannot accumulate. Off unless
++  // SBXDIFF_VT_QUANTUM_US is set.
++  const base::TimeDelta quantum = SbxVirtualTimeQuantum();
++  if (quantum.is_positive() && new_virtual_time > initial_time_ticks_) {
++    const base::TimeDelta since = new_virtual_time - initial_time_ticks_;
++    const int64_t steps =
++        (since.InMicroseconds() + quantum.InMicroseconds() - 1) /
++        quantum.InMicroseconds();
++    new_virtual_time = initial_time_ticks_ + quantum * steps;
++  }
++  if (SbxLogVirtualTime()) {
++    LOG(WARNING) << "sbxdiff: VT advance +"
++                 << (new_virtual_time - initial_time_ticks_).InMicroseconds()
++                 << "us from +"
++                 << (NowTicks() - initial_time_ticks_).InMicroseconds() << "us";
++  }
+   // If set, don't advance past the end of |virtual_time_fence_|.
+   if (!virtual_time_fence_.is_null() &&
+       new_virtual_time > virtual_time_fence_) {
+diff --git a/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.cc b/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.cc
+index 193f361fd96ea..fbbaaf5801e76 100644
+--- a/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.cc
++++ b/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.h"
+ 
++
+ namespace blink::scheduler {
+ 
+ ProcessTimeOverrideCoordinator::ScopedOverride::ScopedOverride(
+@@ -21,6 +22,10 @@ ProcessTimeOverrideCoordinator::ScopedOverride::TryAdvancingTime(
+       this, requested_ticks);
+ }
+ 
++void ProcessTimeOverrideCoordinator::ScopedOverride::ReleaseTimeConstraint() {
++  ProcessTimeOverrideCoordinator::Instance().ReleaseTimeConstraint(this);
++}
++
+ base::TimeTicks ProcessTimeOverrideCoordinator::ScopedOverride::NowTicks()
+     const {
+   return ProcessTimeOverrideCoordinator::CurrentTicks();
+@@ -116,12 +121,10 @@ base::TimeTicks ProcessTimeOverrideCoordinator::TryAdvancingTime(
+ 
+   client_it->second = requested_ticks;
+ 
+-  base::TimeTicks new_ticks = requested_ticks;
+-  for (const auto& entry : requested_ticks_by_client_) {
+-    if (entry.second < new_ticks) {
+-      new_ticks = entry.second;
+-    }
+-  }
++  // Idle clients are skipped rather than counted as requesting their last
++  // value; see ReleaseTimeConstraint.
++  const std::optional<base::TimeTicks> min_requested = MinRequestedTicks();
++  base::TimeTicks new_ticks = min_requested.value_or(requested_ticks);
+ 
+   if (new_ticks > previous_ticks) {
+     current_ticks_.store(new_ticks, std::memory_order_release);
+@@ -136,6 +139,46 @@ base::TimeTicks ProcessTimeOverrideCoordinator::TryAdvancingTime(
+   return new_ticks;
+ }
+ 
++std::optional<base::TimeTicks>
++ProcessTimeOverrideCoordinator::MinRequestedTicks() const {
++  std::optional<base::TimeTicks> min;
++  for (const auto& entry : requested_ticks_by_client_) {
++    if (!entry.second.has_value()) {
++      continue;
++    }
++    if (!min.has_value() || *entry.second < *min) {
++      min = entry.second;
++    }
++  }
++  return min;
++}
++
++void ProcessTimeOverrideCoordinator::ReleaseTimeConstraint(
++    ScopedOverride* handle) {
++  base::AutoLock auto_lock(lock_);
++  auto client_it = requested_ticks_by_client_.find(handle);
++  CHECK(client_it != requested_ticks_by_client_.end());
++  if (!client_it->second.has_value()) {
++    return;
++  }
++  client_it->second = std::nullopt;
++
++  // Dropping the last constraint can unblock everyone else, so re-evaluate and
++  // wake the clients that were waiting behind this one.
++  const std::optional<base::TimeTicks> min_requested = MinRequestedTicks();
++  if (!min_requested.has_value()) {
++    return;
++  }
++  const auto previous_ticks = current_ticks_.load(std::memory_order_relaxed);
++  if (*min_requested <= previous_ticks) {
++    return;
++  }
++  current_ticks_.store(*min_requested, std::memory_order_release);
++  for (const auto& entry : requested_ticks_by_client_) {
++    entry.first->ScheduleWork();
++  }
++}
++
+ // static
+ base::Time ProcessTimeOverrideCoordinator::CurrentTime() {
+   auto& self = ProcessTimeOverrideCoordinator::Instance();
+diff --git a/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.h b/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.h
+index 9d2f4b74bdc89..4cda73d8195b1 100644
+--- a/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.h
++++ b/third_party/blink/renderer/platform/scheduler/common/process_time_override_coordinator.h
+@@ -5,6 +5,8 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_PROCESS_TIME_OVERRIDE_COORDINATOR_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_PROCESS_TIME_OVERRIDE_COORDINATOR_H_
+ 
++#include <optional>
++
+ #include "base/containers/flat_map.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/ptr_util.h"
+@@ -34,6 +36,17 @@ class PLATFORM_EXPORT ProcessTimeOverrideCoordinator {
+     // If the time advances to `requested_ticks` later as a result of another
+     // client advancing time, |schedule_work_callback_| will be called.
+     base::TimeTicks TryAdvancingTime(base::TimeTicks requested_ticks);
++
++    // Declares that this client has nothing scheduled and must therefore not
++    // hold the process clock back.
++    //
++    // Without this a client that never calls `TryAdvancingTime` keeps the tick
++    // value it registered with, and since time advances only to the minimum
++    // across clients, one permanently idle client freezes time for everyone.
++    // A service worker -- idle almost all the time, and the thing a proxied
++    // page load waits on -- hits this immediately.
++    void ReleaseTimeConstraint();
++
+     base::TimeTicks NowTicks() const;
+ 
+    private:
+@@ -84,6 +97,12 @@ class PLATFORM_EXPORT ProcessTimeOverrideCoordinator {
+ 
+   base::TimeTicks TryAdvancingTime(ScopedOverride* handle,
+                                    base::TimeTicks requested_ticks);
++  void ReleaseTimeConstraint(ScopedOverride* handle);
++
++  // Smallest tick value any client is still waiting for, or nullopt when every
++  // client is idle. Callers must hold `lock_`.
++  std::optional<base::TimeTicks> MinRequestedTicks() const
++      EXCLUSIVE_LOCKS_REQUIRED(lock_);
+ 
+   // We do all operations in terms of ticks, but we can simulate a time clock
+   // such that `requested_time` is returned just after override has been
+@@ -103,8 +122,10 @@ class PLATFORM_EXPORT ProcessTimeOverrideCoordinator {
+   // This could be a heap of pairs ordered by requested ticks, but, considering
+   // we're normally dealing with a very small number of clients, it is
+   // unlikely to bring any tangible performance benefits.
+-  base::flat_map<ScopedOverride*, base::TimeTicks> requested_ticks_by_client_
+-      GUARDED_BY(lock_);
++  // nullopt means "this client has nothing scheduled": it is skipped when
++  // taking the minimum rather than pinning it. See ReleaseTimeConstraint.
++  base::flat_map<ScopedOverride*, std::optional<base::TimeTicks>>
++      requested_ticks_by_client_ GUARDED_BY(lock_);
+ };
+ 
+ }  // namespace blink::scheduler
+diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
+new file mode 100644
+index 0000000000000..c36aedcc1786f
+--- /dev/null
++++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
+@@ -0,0 +1,118 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
++
++#include <atomic>
++
++#include "base/base_switches.h"
++#include <cstdlib>
++#include <string_view>
++
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
++
++namespace blink::sbxdiff {
++
++namespace {
++
++// Written once on the main thread when the page's start realm enables virtual
++// time; read on worker threads, which join it lazily. One process-wide clock,
++// so not thread_local, and atomic because the read is cross-thread.
++//
++// Relaxed ordering is enough: the flag guards nothing but "should I also call
++// EnableVirtualTime", and the coordinator does its own locking.
++std::atomic<bool> g_virtual_time_started{false};
++
++}  // namespace
++
++int VirtualTimePolicyFromSwitch() {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  const std::string name =
++      cmd ? cmd->GetSwitchValueASCII(::switches::kSbxdiffVirtualTimePolicy)
++          : std::string();
++  if (name == "advance") {
++    return 0;
++  }
++  if (name == "pause") {
++    return 1;
++  }
++  return 2;
++}
++
++int64_t VirtualTimeBudgetFromSwitch() {
++  int64_t budget_ms = 2000;
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  if (cmd && cmd->HasSwitch(::switches::kSbxdiffVirtualTimeBudget)) {
++    std::ignore = base::StringToInt64(
++        cmd->GetSwitchValueASCII(::switches::kSbxdiffVirtualTimeBudget),
++        &budget_ms);
++  }
++  return budget_ms;
++}
++
++int64_t SubframeVirtualTimeBudgetFromEnv() {
++  // A renderer that hosts only a cross-origin subframe has nothing pacing its
++  // clock. Chromium's ProcessTimeOverrideCoordinator is PER-PROCESS, so that
++  // renderer's virtual time advances entirely on its own, and with no page work
++  // to hold it back it fast-forwards to whatever far-future timer happens to be
++  // pending -- which is a different set on every run.
++  //
++  // Measured on rateyourmusic, in Cloudflare's blob worker, scoped with
++  // --realm challenges.cloudflare.com: `performance.now()` is read 10028 times
++  // and answered 345123 in one oracle run against 602509 in the next. 257
++  // seconds apart, stamped into the challenge payload ten thousand times, and
++  // invisible from the page's own realm, which reports zero divergences.
++  //
++  // The budget fence is the only thing that stops the fast-forward, so give
++  // such a renderer a TIGHT one: the clock reaches the fence on its first idle
++  // moment and then stays there, which makes every subsequent read the same
++  // value in every run. A large budget does not do this -- it just moves where
++  // the two runs stop disagreeing.
++  static const int64_t ms = [] {
++    const char* v = ::getenv("SBXDIFF_SUBFRAME_VT_BUDGET_MS");
++    if (!v || !*v) {
++      return int64_t{5000};
++    }
++    int64_t parsed = 0;
++    for (std::string_view digits(v); char c : digits) {
++      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
++        return int64_t{5000};
++      }
++      parsed = parsed * 10 + (c - '0');
++    }
++    return parsed;
++  }();
++  return ms;
++}
++
++bool VirtualTimeIsDeferred() {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  return cmd && cmd->HasSwitch(::switches::kSbxdiffVirtualTimeAfter);
++}
++
++bool IsVirtualTimeStartRealm(const std::string& url) {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  if (!cmd || !cmd->HasSwitch(::switches::kSbxdiffVirtualTimeAfter)) {
++    return false;
++  }
++  const std::string want =
++      cmd->GetSwitchValueASCII(::switches::kSbxdiffVirtualTimeAfter);
++  return !want.empty() && url.find(want) != std::string::npos;
++}
++
++bool VirtualTimeFencesQueues() {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  return cmd && cmd->HasSwitch(::switches::kSbxdiffVirtualTimeFence);
++}
++
++bool VirtualTimeHasStarted() {
++  return g_virtual_time_started.load(std::memory_order_relaxed);
++}
++
++void MarkVirtualTimeStarted() {
++  g_virtual_time_started.store(true, std::memory_order_relaxed);
++}
++
++}  // namespace blink::sbxdiff
+diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
+new file mode 100644
+index 0000000000000..20f969473514c
+--- /dev/null
++++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
+@@ -0,0 +1,55 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_SBXDIFF_VIRTUAL_TIME_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_SBXDIFF_VIRTUAL_TIME_H_
++
++#include <string>
++
++#include "third_party/blink/renderer/platform/platform_export.h"
++
++// sbxdiff: the command-line half of virtual time, shared by everything that
++// enables it -- Page's constructor, LocalWindowProxy (deferred enable) and
++// WorkerThreadScheduler (the worker joining the page's clock).
++//
++// These live in the scheduler rather than next to the tracer because they are
++// scheduler concerns and nothing here touches bindings. The scheduler's DEPS
++// forbids platform/ outside a small allow-list, and a tracer header does not
++// belong on that list.
++//
++// See docs/sbxdiff/CHROMIUM-PATCHES.md.
++namespace blink::sbxdiff {
++
++// 0 = kAdvance, 1 = kPause, 2 = kDeterministicLoading. Returned as an int so
++// this header stays free of scheduler types; each call site maps it.
++PLATFORM_EXPORT int VirtualTimePolicyFromSwitch();
++
++// --sbxdiff-virtual-time-budget, in milliseconds. Defaults to 2000.
++PLATFORM_EXPORT int64_t VirtualTimeBudgetFromSwitch();
++
++// Budget for a renderer that hosts only a cross-origin subframe, which has no
++// page work pacing its clock and so fast-forwards to a run-dependent place.
++// SBXDIFF_SUBFRAME_VT_BUDGET_MS, default 5000.
++PLATFORM_EXPORT int64_t SubframeVirtualTimeBudgetFromEnv();
++
++// True when --sbxdiff-virtual-time-after is set: Page's constructor then skips
++// enabling virtual time and leaves it to the realm that matches.
++PLATFORM_EXPORT bool VirtualTimeIsDeferred();
++
++// True when `url` contains the value of --sbxdiff-virtual-time-after, i.e.
++// this is the realm whose setup should start virtual time.
++PLATFORM_EXPORT bool IsVirtualTimeStartRealm(const std::string& url);
++
++// Latch: false until the start realm has enabled virtual time. Read from
++// worker threads, which join the page's clock lazily once it is set, so the
++// storage is atomic.
++// True when --sbxdiff-virtual-time-fence asks for Chromium's default fencing.
++PLATFORM_EXPORT bool VirtualTimeFencesQueues();
++
++PLATFORM_EXPORT bool VirtualTimeHasStarted();
++PLATFORM_EXPORT void MarkVirtualTimeStarted();
++
++}  // namespace blink::sbxdiff
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_SBXDIFF_VIRTUAL_TIME_H_
+diff --git a/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.cc b/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.cc
+index 31839978546a5..0d4bbca2effd4 100644
+--- a/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.cc
++++ b/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.cc
+@@ -4,6 +4,15 @@
+ 
+ #include "third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.h"
+ 
++#include <string>
++
++#include "base/base_switches.h"
++#include "base/check.h"
++#include "base/command_line.h"
++#include "base/logging.h"
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
++#include "base/strings/string_number_conversions.h"
++
+ #include "base/trace_event/trace_event.h"
+ #include "third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
+@@ -27,8 +36,26 @@ base::TimeTicks ThreadSchedulerBase::EnableVirtualTime(
+     base::Time initial_time) {
+   if (virtual_time_domain_)
+     return virtual_time_domain_->InitialTicks();
+-  if (initial_time.is_null())
+-    initial_time = base::Time::Now();
++  if (initial_time.is_null()) {
++    // sbxdiff: pin the origin when asked. Without this, virtual time is
++    // internally consistent but starts at the real wall clock, so Date.now()
++    // and performance.timeOrigin differ between two otherwise identical runs.
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (cmd && cmd->HasSwitch(::switches::kSbxdiffInitialTime)) {
++      const std::string value =
++          cmd->GetSwitchValueASCII(::switches::kSbxdiffInitialTime);
++      int64_t unix_ms = 0;
++      // Loud on a bad value: a silently ignored determinism input manufactures
++      // divergences that look real (docs/sbxdiff/RULES.md #13).
++      CHECK(base::StringToInt64(value, &unix_ms))
++          << "--" << ::switches::kSbxdiffInitialTime
++          << " must be an integer number of milliseconds since the Unix epoch,"
++          << " got: " << value;
++      initial_time = base::Time::UnixEpoch() + base::Milliseconds(unix_ms);
++    } else {
++      initial_time = base::Time::Now();
++    }
++  }
+ 
+   // TODO(caseq): Considering we're not enabling override atomically with
+   // capturing current ticks, provide a safety margin to assure the emulated
+@@ -38,6 +65,16 @@ base::TimeTicks ThreadSchedulerBase::EnableVirtualTime(
+       initial_time, initial_ticks, &GetHelper());
+   GetHelper().SetTimeDomain(virtual_time_domain_.get());
+ 
++  // Do not inherit pausers created before virtual time existed.
++  //
++  // With deferred enablement the clock starts at a realm that is reached
++  // mid-load, so pausers are already outstanding. Counting them stops virtual
++  // time instantly -- and it never restarts, because pausing fences the task
++  // queues those very loads need to complete on. Measured: virtual time went
++  // STOPPED at +0ms on enable and stayed there for a 30 s run, resuming only at
++  // teardown.
++  virtual_time_pause_baseline_ = virtual_time_pause_count_;
++
+   OnVirtualTimeEnabled();
+ 
+   DCHECK(!virtual_time_stopped_);
+@@ -111,6 +148,11 @@ base::TimeTicks ThreadSchedulerBase::IncrementVirtualTimePauseCount() {
+ void ThreadSchedulerBase::DecrementVirtualTimePauseCount() {
+   virtual_time_pause_count_--;
+   DCHECK_GE(virtual_time_pause_count_, 0);
++  // Keep the baseline at or below the live count as inherited pausers retire,
++  // so the effective count can never go negative.
++  if (virtual_time_pause_baseline_ > virtual_time_pause_count_) {
++    virtual_time_pause_baseline_ = virtual_time_pause_count_;
++  }
+   if (IsVirtualTimeEnabled())
+     ApplyVirtualTimePolicy();
+ }
+@@ -163,6 +205,17 @@ void ThreadSchedulerBase::SetVirtualTimeStopped(bool virtual_time_stopped) {
+   if (virtual_time_stopped_ == virtual_time_stopped)
+     return;
+   virtual_time_stopped_ = virtual_time_stopped;
++  // Logged under the deferred-clock switch only. "Virtual time stopped and
++  // never restarted" and "the page is simply slow" look identical from outside,
++  // and telling them apart is what found the inherited-pauser deadlock.
++  if (sbxdiff::VirtualTimeIsDeferred()) {
++    VLOG(1) << "sbxdiff: virtual time "
++            << (virtual_time_stopped ? "STOPPED" : "RUNNING") << " at +"
++            << (GetTickClock()->NowTicks() -
++                virtual_time_domain_->InitialTicks())
++                   .InMilliseconds()
++            << "ms";
++  }
+   virtual_time_domain_->SetCanAdvanceVirtualTime(!virtual_time_stopped);
+ 
+   if (virtual_time_stopped)
+@@ -197,8 +250,9 @@ void ThreadSchedulerBase::ApplyVirtualTimePolicy() {
+       // something modal is happening such as the DevTools debugger pausing the
+       // system. We also pause while the renderer is waiting for various
+       // asynchronous things e.g. resource load or navigation.
+-      SetVirtualTimeStopped(virtual_time_pause_count_ != 0 ||
+-                            GetHelper().IsInNestedRunloop());
++      SetVirtualTimeStopped(
++          virtual_time_pause_count_ > virtual_time_pause_baseline_ ||
++          GetHelper().IsInNestedRunloop());
+       break;
+   }
+ }
+diff --git a/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.h b/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.h
+index 77031ef16a00d..4be0921526a19 100644
+--- a/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.h
++++ b/third_party/blink/renderer/platform/scheduler/common/thread_scheduler_base.h
+@@ -116,6 +116,12 @@ class PLATFORM_EXPORT ThreadSchedulerBase : public VirtualTimeController,
+ 
+   raw_ptr<v8::Isolate, DanglingUntriaged> isolate_ = nullptr;
+ 
++  // Pausers already outstanding when virtual time was enabled. They are
++  // subtracted out, so a load that began on the real clock cannot gate the
++  // virtual one. Zero whenever virtual time is enabled at startup, which is
++  // every path except --sbxdiff-virtual-time-after, so this is a no-op there.
++  int virtual_time_pause_baseline_ = 0;
++
+   // Note |virtual_time_domain_| is only present iff virtual time is enabled.
+   std::unique_ptr<AutoAdvancingVirtualTimeDomain> virtual_time_domain_;
+   VirtualTimePolicy virtual_time_policy_ = VirtualTimePolicy::kAdvance;
+diff --git a/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc b/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc
+index 2bf7794e947dc..44b54af6ec0d0 100644
+--- a/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc
++++ b/third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
+ 
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
++
+ #include <algorithm>
+ #include <memory>
+ #include <optional>
+@@ -2009,6 +2011,22 @@ void MainThreadSchedulerImpl::OnVirtualTimeDisabled() {
+ }
+ 
+ void MainThreadSchedulerImpl::OnVirtualTimePaused() {
++  // sbxdiff: with a deferred clock, stop the CLOCK but do not fence the task
++  // queues.
++  //
++  // Fencing assumes a paused load can still finish, which holds when loads
++  // complete in the network process. It does not hold for a sandbox: the load
++  // is served by a service worker that delegates back to the client page, so
++  // fencing the page stops the very work that would release the pause. Measured
++  // holder: a proxied subresource pauser opened 0.2 ms after the clock stopped
++  // and released only at teardown, 70 s later.
++  //
++  // Determinism comes from the clock being frozen, which still happens. Tasks
++  // running while it is frozen is already normal for every queue whose
++  // CanRunWhenVirtualTimePaused is true (loading queues, notably).
++  if (sbxdiff::VirtualTimeIsDeferred() && !sbxdiff::VirtualTimeFencesQueues()) {
++    return;
++  }
+   for (const auto& pair : task_runners_) {
+     if (pair.first->CanRunWhenVirtualTimePaused())
+       continue;
+@@ -2019,6 +2037,11 @@ void MainThreadSchedulerImpl::OnVirtualTimePaused() {
+ }
+ 
+ void MainThreadSchedulerImpl::OnVirtualTimeResumed() {
++  // Nothing was fenced, so there is nothing to unfence. Must mirror
++  // OnVirtualTimePaused exactly or RemoveFence hits a queue without one.
++  if (sbxdiff::VirtualTimeIsDeferred() && !sbxdiff::VirtualTimeFencesQueues()) {
++    return;
++  }
+   for (const auto& pair : task_runners_) {
+     if (pair.first->CanRunWhenVirtualTimePaused())
+       continue;
+diff --git a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
+index 2c9546a603612..be9b1b658565c 100644
+--- a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
++++ b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
+@@ -2,6 +2,8 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "base/logging.h"
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
+ #include "third_party/blink/public/platform/scheduler/web_scoped_virtual_time_pauser.h"
+ 
+ #include "base/trace_event/trace_event.h"
+@@ -70,6 +72,16 @@ void WebScopedVirtualTimePauser::PauseVirtualTime() {
+                       perfetto::Track(trace_id_), "name", debug_name_.Latin1());
+   }
+   virtual_time_when_paused_ = scheduler_->IncrementVirtualTimePauseCount();
++  // Which pauser is holding the clock is the only way to find a virtual-time
++  // deadlock: the symptom is just "nothing happens".
++  // trace_id_ is `this` at construction and is carried across moves, so it
++  // identifies the logical pauser. Matching +/- by NAME is not enough: names
++  // repeat (ResponseBody, PendingScript), and a still-held pauser gets masked
++  // by a later balanced pair of the same name.
++  if (sbxdiff::VirtualTimeIsDeferred()) {
++    VLOG(1) << "sbxdiff-pauser: + id=" << trace_id_ << " "
++            << debug_name_.Latin1();
++  }
+ }
+ 
+ void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
+@@ -77,6 +89,10 @@ void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
+     return;
+ 
+   paused_ = false;
++  if (sbxdiff::VirtualTimeIsDeferred()) {
++    VLOG(1) << "sbxdiff-pauser: - id=" << trace_id_ << " "
++            << debug_name_.Latin1();
++  }
+   DecrementVirtualTimePauseCount();
+ }
+ 
+diff --git a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
+index 5522f1dbb15c3..1894e660c2477 100644
+--- a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
++++ b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
+@@ -4,6 +4,11 @@
+ 
+ #include "third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h"
+ 
++#include "base/base_switches.h"
++#include "base/logging.h"
++#include "base/command_line.h"
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
++
+ #include <memory>
+ 
+ #include "base/functional/bind.h"
+@@ -177,6 +182,18 @@ WorkerThreadScheduler::DefaultTaskQueue() {
+ 
+ void WorkerThreadScheduler::Init() {
+   initialized_ = true;
++  // sbxdiff: join here as well as on task completion. OnTaskCompleted is too
++  // late for a SHORT-LIVED worker: it reads the clock inside its first task and
++  // may never run a second one, so it spent its whole life on the real clock.
++  // Measured with clocks.html -- a blob worker owned by a cross-process iframe
++  // reported a Date.now() that differed between two otherwise identical runs
++  // while the frame that created it reported an identical one.
++  //
++  // Still latched on VirtualTimeHasStarted(), which is what keeps a sandbox's
++  // service worker from joining during its own bootstrap. Init() is exactly the
++  // "during its own startup" moment the latch exists to exclude, so the guard
++  // is doing the work here, not the call site.
++  MaybeJoinSbxdiffVirtualTime();
+   idle_helper_.EnableLongIdlePeriod();
+ 
+   v8_task_runner_ =
+@@ -185,11 +202,64 @@ void WorkerThreadScheduler::Init() {
+       TaskType::kWorkerThreadTaskQueueCompositor);
+ }
+ 
++void WorkerThreadScheduler::MaybeJoinSbxdiffVirtualTime() {
++  // sbxdiff: coordinated virtual time across the page and this worker.
++  //
++  // ProcessTimeOverrideCoordinator already does the hard part -- it advances
++  // the process clock only to the minimum requested by any participating
++  // client -- but a worker never registers as one, so the page's clock and the
++  // worker's real clock run independently. For a sandbox whose page load is
++  // *served by* a worker that is fatal: with kDeterministicLoading the page
++  // pauses virtual time waiting for a load the worker has not produced yet, and
++  // the worker is not on the same clock to make progress against.
++  //
++  // Joining is lazy and one-way. It must not happen before the page has started
++  // virtual time: the coordinator's first client fixes the clock origin, and a
++  // worker that registered during its own startup would put the whole process
++  // on virtual time during bootstrap -- which is what broke service-worker
++  // registration in the first place.
++  if (!sbxdiff::VirtualTimeHasStarted() || IsVirtualTimeEnabled()) {
++    return;
++  }
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  if (!cmd || !cmd->HasSwitch(::switches::kSbxdiffInitialTime)) {
++    return;
++  }
++  // base::Time() deliberately: the null-time fallback in
++  // ThreadSchedulerBase::EnableVirtualTime reads --sbxdiff-initial-time, so the
++  // switch stays the single source of truth for both clocks. The coordinator
++  // ignores a second client's requested origin anyway.
++  // Logged because "the worker joined" and "the worker never got a task after
++  // the latch flipped, so never joined" are otherwise indistinguishable from
++  // the outside -- both just look like a hung run (RULES.md #26).
++  VLOG(1) << "sbxdiff: worker thread joining page virtual time";
++  EnableVirtualTime(base::Time());
++  // The worker runs kAdvance even when the page is kDeterministicLoading, and
++  // that asymmetry is the point. The coordinator advances the clock to the
++  // MINIMUM requested across clients, so the page's pause-on-load still governs
++  // when time moves. A worker that also paused on its own loads would be a
++  // second brake with nothing to release it: the page is waiting for a response
++  // this worker has to produce. Pausing virtual time does not stop a thread
++  // running immediate tasks, so the worker still serves the fetch, the page's
++  // load completes, and time resumes.
++  const int policy_id = sbxdiff::VirtualTimePolicyFromSwitch();
++  SetVirtualTimePolicy(policy_id == 1 ? VirtualTimePolicy::kPause
++                                      : VirtualTimePolicy::kAdvance);
++  // Deliberately NO GrantVirtualTimeBudget here. kAdvance sets an empty fence
++  // (ApplyVirtualTimePolicy), meaning unlimited advancement; granting a budget
++  // would put a fence back, and once the worker exhausted it the worker would
++  // stop requesting advancement. Because the coordinator advances to the
++  // MINIMUM across clients, that would pin the page's clock too -- the worker
++  // becoming the brake is exactly the failure RULES.md #12 describes. The
++  // page keeps its fence, which still bounds total advancement for everyone.
++}
++
+ void WorkerThreadScheduler::OnTaskCompleted(
+     NonMainThreadTaskQueue* task_queue,
+     const base::sequence_manager::Task& task,
+     TaskQueue::TaskTiming* task_timing,
+     base::LazyNow* lazy_now) {
++  MaybeJoinSbxdiffVirtualTime();
+   PerformMicrotaskCheckpoint();
+ 
+   task_timing->RecordTaskEnd(lazy_now);
+diff --git a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h
+index e843a5ffae35f..5912c7d8f2acf 100644
+--- a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h
++++ b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h
+@@ -113,6 +113,10 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerBase,
+   virtual void PerformMicrotaskCheckpoint();
+ 
+  private:
++  // sbxdiff: join the page's virtual time once it has started one. Lazy and
++  // one-way; see the implementation for why it cannot happen at startup.
++  void MaybeJoinSbxdiffVirtualTime();
++
+   // ThreadSchedulerBase overrides
+   base::SequencedTaskRunner* GetVirtualTimeTaskRunner() override;
+   void OnVirtualTimeDisabled() override;
+diff --git a/third_party/boringssl/src/crypto/rand/getentropy.cc b/third_party/boringssl/src/crypto/rand/getentropy.cc
+index c39296b18..0ef4db88d 100644
+--- a/third_party/boringssl/src/crypto/rand/getentropy.cc
++++ b/third_party/boringssl/src/crypto/rand/getentropy.cc
+@@ -25,6 +25,7 @@
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <unistd.h>
+ 
+ #if defined(OPENSSL_MACOS) || defined(OPENSSL_FUCHSIA)
+@@ -35,8 +36,73 @@ using namespace bssl;
+ 
+ void bssl::CRYPTO_init_sysrand() {}
+ 
++// sbxdiff: a deterministic entropy source, selected by an environment variable.
++//
++// This is a research build whose entire purpose is that two runs of the browser
++// are comparable byte for byte. //base's randomness is already pinned by a
++// keyed counter PRNG, which covers `crypto.getRandomValues` and
++// `crypto.randomUUID` -- but NOT this. BoringSSL seeds its own DRBG here, and
++// WebCrypto's key generation and RSA-OAEP padding draw from that DRBG, so they
++// stayed random: measured across two otherwise identical runs,
++// `crypto.subtle.generateKey` gave c2ec846c… against c47067d9… and an RSA-OAEP
++// ciphertext of the same plaintext under the same key gave 91ed881e… against
++// b744083d….
++//
++// That is not a detail for this project. Cloudflare's challenge payload
++// prepends an RSA-encrypted random key, so the request body could never be
++// byte-identical between two runs no matter how well everything else was
++// pinned -- which is why the oracle disagreed with ITSELF on 6 of 8 request
++// bodies and why there was no noise floor to measure a sandbox against.
++//
++// Self-contained on purpose: BoringSSL cannot depend on //base, so this is a
++// SplitMix64 keyed by the variable's value and counting its own draws. It is
++// NOT cryptographically anything, and it must never be set outside this
++// harness -- with it set, every key this browser generates and every TLS nonce
++// it sends is predictable. `runChromium` passes it, the switch that pins
++// //base's PRNG passes the same run key, and nothing else sets it.
++static int sbxdiff_rand_key(uint64_t *key_out) {
++  static int checked = 0;
++  static int enabled = 0;
++  static uint64_t key = 0;
++  if (!checked) {
++    checked = 1;
++    const char *value = getenv("SBXDIFF_RAND_KEY");
++    if (value != NULL && value[0] != '\0') {
++      enabled = 1;
++      // FNV-1a over the value, so any string works as a key.
++      key = 1469598103934665603ULL;
++      for (const char *p = value; *p != '\0'; p++) {
++        key ^= (uint64_t)(unsigned char)*p;
++        key *= 1099511628211ULL;
++      }
++    }
++  }
++  *key_out = key;
++
++  return enabled;
++}
++
+ // CRYPTO_sysrand puts `requested` random bytes into `out`.
+ void bssl::CRYPTO_sysrand(uint8_t *out, size_t requested) {
++  uint64_t sbx_key = 0;
++  if (sbxdiff_rand_key(&sbx_key)) {
++    // A per-process counter, so repeated draws differ from each other while the
++    // sequence as a whole is a pure function of the key.
++    static uint64_t counter = 0;
++    while (requested > 0) {
++      uint64_t z = (sbx_key + 0x9E3779B97F4A7C15ULL * (++counter));
++      z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
++      z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
++      z = z ^ (z >> 31);
++      size_t todo = requested < sizeof(z) ? requested : sizeof(z);
++      memcpy(out, &z, todo);
++      out += todo;
++      requested -= todo;
++    }
++
++    return;
++  }
++
+   while (requested > 0) {
+     // `getentropy` can only request 256 bytes at a time.
+     size_t todo = requested <= 256 ? requested : 256;
+diff --git a/third_party/webrtc/rtc_base/crypto_random.cc b/third_party/webrtc/rtc_base/crypto_random.cc
+index caa516ff75..66b0b25cd9 100644
+--- a/third_party/webrtc/rtc_base/crypto_random.cc
++++ b/third_party/webrtc/rtc_base/crypto_random.cc
+@@ -13,6 +13,7 @@
+ #include <openssl/rand.h>
+ 
+ #include <cstddef>
++#include <cstdlib>
+ #include <cstdint>
+ #include <limits>
+ #include <memory>
+@@ -31,6 +32,73 @@ namespace webrtc {
+ 
+ namespace {
+ 
++// sbxdiff: deterministic ICE credentials.
++//
++// `ufrag` and `pwd` are generated here and go straight into an ICE candidate
++// string, which a page reads with `RTCIceCandidate.candidate` -- and an
++// anti-bot payload carries it. Measured on rateyourmusic, oracle against
++// sandbox in the Turnstile widget's realm, twelve divergences that were all
++// this:
++//
++//   candidate:... 2b29b253-....local 47003 typ host ... ufrag W8eO ...
++//   candidate:... 2b29b253-....local 47003 typ host ... ufrag azhM ...
++//
++// The mDNS name and the port already agree; this is the last piece of that
++// string that does not.
++//
++// Self-contained, like the BoringSSL patch and for the same reason: rtc_base
++// does not depend on //base, so it cannot reach the ChaCha20 keystream there.
++// SplitMix64 over FNV-1a of the same SBXDIFF_RAND_KEY the rest of the run uses,
++// so a string of a given length is a pure function of (key, length).
++bool SbxdiffRandomBytes(uint8_t* out, size_t len) {
++  static const uint64_t seed = [] () -> uint64_t {
++    const char* v = ::getenv("SBXDIFF_RAND_KEY");
++    if (!v || !*v) {
++      return 0;
++    }
++    uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
++    for (const char* p = v; *p; ++p) {
++      h ^= static_cast<uint8_t>(*p);
++      h *= 1099511628211ull;
++    }
++    // Never 0: that is the "disabled" sentinel.
++    return h ? h : 1ull;
++  }();
++  if (seed == 0) {
++    return false;
++  }
++  // No counter: the value is a pure function of (key, length, position), so
++  // every call of a given length returns the same string.
++  //
++  // A counter is wrong here, and the oracle says so. Both sides create exactly
++  // two PeerConnections and read exactly 24 candidates, but the ORACLE produced
++  // ONE distinct ufrag across both and the sandbox produced two -- because the
++  // oracle's two connections live in different renderers (the page and the
++  // cross-origin widget) and each counter starts at zero, while the proxy puts
++  // both in one renderer so the second draw advances. Matching that means every
++  // connection getting the first value, which is what no counter gives.
++  //
++  // It also explains why resetting the counter at RTCPeerConnection
++  // construction did nothing (RULES.md #91): both connections are constructed
++  // before either mints credentials, so both resets land before both draws.
++  //
++  // Sharing a ufrag between two connections is safe here for the same reason
++  // the oracle already does it: nothing is on a real network, and the page can
++  // only read the string.
++  for (size_t i = 0; i < len; ++i) {
++    uint64_t z = (seed + 0x9E3779B97F4A7C15ull * (i + 1) +
++                  0x1234567890ABCDEFull * len);
++    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
++    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
++    out[i] = static_cast<uint8_t>((z ^ (z >> 31)) & 0xFF);
++  }
++  return true;
++}
++
++}  // namespace
++
++namespace {
++
+ // The OpenSSL RNG.
+ class SecureRandomGenerator : public RandomGenerator {
+  public:
+@@ -133,7 +201,8 @@ static bool CreateRandomString(size_t len,
+     return false;
+   }
+   std::unique_ptr<uint8_t[]> bytes(new uint8_t[len]);
+-  if (!Rng().Generate(bytes.get(), len)) {
++  if (!SbxdiffRandomBytes(bytes.get(), len) &&
++      !Rng().Generate(bytes.get(), len)) {
+     RTC_LOG(LS_ERROR) << "Failed to generate random string!";
+     return false;
+   }
+@@ -194,6 +263,17 @@ std::string CreateRandomUuid() {
+ 
+ uint32_t CreateRandomId() {
+   uint32_t id;
++  // sbxdiff: same deterministic source as CreateRandomString, and for the same
++  // reason -- this one reaches a page too. The ICE TIE-BREAKER is drawn here,
++  // and `Candidate::ComputeFoundation` hashes it into the foundation, which is
++  // the first field of the candidate string. Measured after the ufrag was
++  // pinned: `ufrag 93E0` agreed on both sides and the candidates still differ by
++  // their foundation, 1678960707 against 893012184.
++  if (SbxdiffRandomBytes(reinterpret_cast<uint8_t*>(&id), sizeof(id))) {
++    // Never zero: CreateRandomNonZeroId loops until it gets a non-zero value,
++    // and a DETERMINISTIC zero would make that loop never end.
++    return id ? id : 1u;
++  }
+   RTC_CHECK(Rng().Generate(&id, sizeof(id)));
+   return id;
+ }

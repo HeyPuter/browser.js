@@ -1,0 +1,253 @@
+diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
+index 995d8584f3f1c..5c724066791ef 100644
+--- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
++++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
+@@ -839,8 +839,21 @@ def _make_bindings_logging_id(cg_context):
+ def make_bindings_trace_event(cg_context):
+     assert isinstance(cg_context, CodeGenContext)
+ 
+-    return TextNode("BLINK_BINDINGS_TRACE_EVENT(\"{}\");".format(
+-        _make_bindings_logging_id(cg_context)))
++    logging_id = _make_bindings_logging_id(cg_context)
++    # sbxdiff: SBX_BINDING_SCOPE is a no-op unless the `sbxdiff` GN arg is set.
++    # It is emitted here because this is the prologue of every generated
++    # callback -- before make_check_receiver and before every early return, so
++    # the attribute-setter fast paths and the return-value-cache path are all
++    # inside the scope -- and because `info` is in scope at all 7 call sites.
++    node = ListNode([
++        TextNode("BLINK_BINDINGS_TRACE_EVENT(\"{}\");".format(logging_id)),
++        TextNode("SBX_BINDING_SCOPE(\"{}\", info);".format(logging_id)),
++    ])
++    node.accumulate(
++        CodeGenAccumulator.require_include_headers([
++            "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_scope.h"
++        ]))
++    return node
+ 
+ 
+ def make_check_argument_length(cg_context):
+@@ -1017,6 +1030,7 @@ def make_check_security_of_return_value(cg_context):
+     node.accumulate(
+         CodeGenAccumulator.require_include_headers([
+             "third_party/blink/renderer/bindings/core/v8/binding_security.h",
++            "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h",
+             "third_party/blink/renderer/core/frame/web_feature.h",
+             "third_party/blink/renderer/platform/instrumentation/use_counter.h",
+         ]))
+@@ -2732,8 +2746,45 @@ def _make_interceptor_callback_def(cg_context, function_name, return_type,
+         body.add_template_var(arg_name, arg_name)
+     bind_callback_local_vars(body, cg_context)
+ 
++    # sbxdiff chokepoint B. Interceptor callbacks never receive
++    # BLINK_BINDINGS_TRACE_EVENT, so window[name], coll[i] and coll["name"] are
++    # otherwise completely untraced. `info` is always the last argument here; the
++    # key argument is v8_property_name for Named, index for Indexed, and absent
++    # for Enumerator/IndexOf/IterableToList -- which is exactly what arg_names
++    # tells us. No-op unless the `sbxdiff` GN arg is set.
++    # Setters and definers also carry the value being written, in
++    # v8_property_value. Without it a named/indexed *set* records only the key,
++    # so two runs writing different values to the same key are identical in the
++    # trace -- the same blindness binding arguments had.
++    sbx_id = "{}.{}".format(cg_context.class_like.identifier, function_name)
++    has_value = "v8_property_value" in arg_names
++    if "v8_property_name" in arg_names and has_value:
++        sbx_node = TextNode(
++            "SBX_INTERCEPTOR_SCOPE_NAMED_VALUE(\"{}\", v8_property_name, "
++            "v8_property_value, info);".format(sbx_id))
++    elif "index" in arg_names and has_value:
++        sbx_node = TextNode(
++            "SBX_INTERCEPTOR_SCOPE_INDEXED_VALUE(\"{}\", index, "
++            "v8_property_value, info);".format(sbx_id))
++    elif "v8_property_name" in arg_names:
++        sbx_node = TextNode(
++            "SBX_INTERCEPTOR_SCOPE_NAMED(\"{}\", v8_property_name, info);".
++            format(sbx_id))
++    elif "index" in arg_names:
++        sbx_node = TextNode(
++            "SBX_INTERCEPTOR_SCOPE_INDEXED(\"{}\", index, info);".format(
++                sbx_id))
++    else:
++        sbx_node = TextNode(
++            "SBX_INTERCEPTOR_SCOPE(\"{}\", info);".format(sbx_id))
++    sbx_node.accumulate(
++        CodeGenAccumulator.require_include_headers([
++            "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_scope.h"
++        ]))
++
+     body.extend([
+         make_runtime_call_timer_scope(cg_context, runtime_call_timer_name),
++        sbx_node,
+         EmptyNode(),
+     ])
+ 
+@@ -6012,23 +6063,23 @@ def make_indexed_and_named_property_callbacks_and_install_node(cg_context):
+ // Named interceptors
+ {interceptor_template}->SetHandler(
+     v8::NamedPropertyHandlerConfiguration(
+-        {impl_bridge}::NamedPropertyGetterCallback,
+-        {impl_bridge}::NamedPropertySetterCallback,
++        SBX_INTERCEPT({impl_bridge}::NamedPropertyGetterCallback),
++        SBX_INTERCEPT({impl_bridge}::NamedPropertySetterCallback),
+ % if "NotEnumerable" not in \
+ interface.indexed_and_named_properties.named_getter.extended_attributes:
+-        {impl_bridge}::NamedPropertyQueryCallback,
++        SBX_INTERCEPT({impl_bridge}::NamedPropertyQueryCallback),
+ % else:
+         nullptr,  // query
+ % endif
+-        {impl_bridge}::NamedPropertyDeleterCallback,
++        SBX_INTERCEPT({impl_bridge}::NamedPropertyDeleterCallback),
+ % if "NotEnumerable" not in \
+ interface.indexed_and_named_properties.named_getter.extended_attributes:
+         {impl_bridge}::NamedPropertyEnumeratorCallback,
+ % else:
+         nullptr,  // enumerator
+ % endif
+-        {impl_bridge}::NamedPropertyDefinerCallback,
+-        {impl_bridge}::NamedPropertyDescriptorCallback,
++        SBX_INTERCEPT({impl_bridge}::NamedPropertyDefinerCallback),
++        SBX_INTERCEPT({impl_bridge}::NamedPropertyDescriptorCallback),
+         v8::Local<v8::Value>(),
+         {property_handler_flags}));"""
+         install_node.append(
+@@ -6036,6 +6087,10 @@ interface.indexed_and_named_properties.named_getter.extended_attributes:
+               interceptor_template=interceptor_template,
+               impl_bridge=impl_bridge,
+               property_handler_flags=property_handler_flags))
++        install_node.accumulate(
++            CodeGenAccumulator.require_include_headers([
++                "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h"
++            ]))
+ 
+     if props.own_indexed_getter or props.own_named_getter:
+         add_callback(*make_indexed_property_getter_callback(
+@@ -6088,17 +6143,17 @@ interface.indexed_and_named_properties.named_getter.extended_attributes:
+ // Indexed interceptors
+ {interceptor_template}->SetHandler(
+     v8::IndexedPropertyHandlerConfiguration(
+-        {impl_bridge}::IndexedPropertyGetterCallback,
+-        {impl_bridge}::IndexedPropertySetterCallback,
++        SBX_INTERCEPT({impl_bridge}::IndexedPropertyGetterCallback),
++        SBX_INTERCEPT({impl_bridge}::IndexedPropertySetterCallback),
+         nullptr,  // query
+-        {impl_bridge}::IndexedPropertyDeleterCallback,
++        SBX_INTERCEPT({impl_bridge}::IndexedPropertyDeleterCallback),
+ % if interface.indexed_and_named_properties.indexed_getter:
+         {impl_bridge}::IndexedPropertyEnumeratorCallback,
+ % else:
+         nullptr,  // enumerator
+ % endif
+-        {impl_bridge}::IndexedPropertyDefinerCallback,
+-        {impl_bridge}::IndexedPropertyDescriptorCallback,
++        SBX_INTERCEPT({impl_bridge}::IndexedPropertyDefinerCallback),
++        SBX_INTERCEPT({impl_bridge}::IndexedPropertyDescriptorCallback),
+ % if interface.enable_index_of:
+         {impl_bridge}::IndexedPropertyIndexOfCallback,
+ % else:
+@@ -6116,6 +6171,10 @@ interface.indexed_and_named_properties.named_getter.extended_attributes:
+               interceptor_template=interceptor_template,
+               impl_bridge=impl_bridge,
+               property_handler_flags=property_handler_flags))
++        install_node.accumulate(
++            CodeGenAccumulator.require_include_headers([
++                "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h"
++            ]))
+ 
+     func_defs.accumulate(
+         CodeGenAccumulator.require_include_headers([
+@@ -6269,23 +6328,23 @@ def make_cross_origin_property_callbacks_and_install_node(
+ ${instance_template}->SetAccessCheckCallbackAndHandler(
+     CrossOriginAccessCheckCallback,
+     v8::NamedPropertyHandlerConfiguration(
+-        CrossOriginNamedGetterCallback,
+-        CrossOriginNamedSetterCallback,
+-        CrossOriginNamedQueryCallback,
+-        CrossOriginNamedDeleterCallback,
++        SBX_INTERCEPT(CrossOriginNamedGetterCallback),
++        SBX_INTERCEPT(CrossOriginNamedSetterCallback),
++        SBX_INTERCEPT(CrossOriginNamedQueryCallback),
++        SBX_INTERCEPT(CrossOriginNamedDeleterCallback),
+         CrossOriginNamedEnumeratorCallback,
+-        CrossOriginNamedDefinerCallback,
+-        CrossOriginNamedDescriptorCallback,
++        SBX_INTERCEPT(CrossOriginNamedDefinerCallback),
++        SBX_INTERCEPT(CrossOriginNamedDescriptorCallback),
+         v8::Local<v8::Value>(),
+         v8::PropertyHandlerFlags::kNone),
+     v8::IndexedPropertyHandlerConfiguration(
+-        CrossOriginIndexedGetterCallback,
+-        CrossOriginIndexedSetterCallback,
++        SBX_INTERCEPT(CrossOriginIndexedGetterCallback),
++        SBX_INTERCEPT(CrossOriginIndexedSetterCallback),
+         nullptr,  // query
+-        CrossOriginIndexedDeleterCallback,
++        SBX_INTERCEPT(CrossOriginIndexedDeleterCallback),
+         CrossOriginIndexedEnumeratorCallback,
+-        CrossOriginIndexedDefinerCallback,
+-        CrossOriginIndexedDescriptorCallback,
++        SBX_INTERCEPT(CrossOriginIndexedDefinerCallback),
++        SBX_INTERCEPT(CrossOriginIndexedDescriptorCallback),
+         nullptr,  // index_of
+         nullptr,  // iterable_to_list
+         v8::Local<v8::Value>(),
+@@ -6295,6 +6354,7 @@ ${instance_template}->SetAccessCheckCallbackAndHandler(
+     install_node.accumulate(
+         CodeGenAccumulator.require_include_headers([
+             "third_party/blink/renderer/bindings/core/v8/binding_security.h",
++            "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h",
+             "third_party/blink/renderer/platform/bindings/v8_cross_origin_property_support.h",
+         ]))
+ 
+@@ -6657,6 +6717,43 @@ def make_v8_context_snapshot_api(cg_context, component, attribute_entries,
+     return header_ns, source_ns
+ 
+ 
++# sbxdiff: interceptor callbacks that are wrapped with SBX_INTERCEPT at their
++# registration sites. The v8 context snapshot serializes the *installed*
++# function pointers and resolves them against this table, so an entry missing
++# here fails the snapshot build with "Unknown external reference" -- which is
++# exactly what happened when only the registration sites were wrapped.
++_SBX_DECLINING_INTERCEPTOR_KINDS = ("Getter", "Setter", "Query", "Deleter",
++                                    "Definer", "Descriptor")
++
++
++def _sbx_is_wrapped_interceptor(callback_name):
++    """True if SBX_INTERCEPT is applied to this callback at its install site."""
++    base = callback_name.rsplit("::", 1)[-1]
++    if not base.endswith("Callback"):
++        return False
++    kind = base[:-len("Callback")]
++    for prefix in ("CrossOriginNamed", "CrossOriginIndexed", "NamedProperty",
++                   "IndexedProperty"):
++        if kind.startswith(prefix):
++            return kind[len(prefix):] in _SBX_DECLINING_INTERCEPTOR_KINDS
++    return False
++
++
++def _sbx_add_ref_table_entries(callback_names):
++    """Adds the wrapper address alongside each wrapped interceptor.
++
++    Both are kept: the wrapper is what the templates install and therefore what
++    the snapshot must resolve, and leaving the raw entry in place costs one
++    pointer while keeping the table a superset of anything else that might
++    reference it.
++    """
++    extra = [
++        "SBX_INTERCEPT({})".format(name) for name in callback_names
++        if name and _sbx_is_wrapped_interceptor(name)
++    ]
++    callback_names.extend(extra)
++
++
+ def _make_v8_context_snapshot_get_reference_table_function(
+         cg_context, function_name, attribute_entries, constant_entries,
+         constructor_entries, exposed_construct_entries, operation_entries,
+@@ -6691,6 +6788,8 @@ def _make_v8_context_snapshot_get_reference_table_function(
+             callback_names.append(
+                 _format("${class_name}::{}", node.function_name))
+ 
++    _sbx_add_ref_table_entries(callback_names)
++
+     entry_nodes = list(
+         map(
+             lambda name: TextNode("reinterpret_cast<intptr_t>({}),".format(name

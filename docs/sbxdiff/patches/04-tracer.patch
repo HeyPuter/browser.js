@@ -1,0 +1,2241 @@
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+index d97d685b454b7..49d7f8a64f2c5 100644
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -271,6 +271,11 @@ declare_args() {
+   # Enable TRACE_EVENT instrumentation for Blink bindings.
+   # Disabled by default as it increases binary size.
+   enable_blink_bindings_tracing = extended_tracing_enabled
++
++  # sbxdiff: build the differential-oracle tracer into the generated bindings.
++  # Off by default so sbxdiff=false is a byte-stock Chromium.
++  # See docs/sbxdiff/ in the browser.js repo.
++  sbxdiff = false
+ }
+ 
+ # ZSTD compression is available on Fuchsia (crbug.com/534838085) but disable in
+@@ -285,6 +290,7 @@ buildflag_header("bindings_buildflags") {
+     "RCS_COUNT_EVERYTHING=$runtime_call_stats_count_everything",
+     "BLINK_BINDINGS_TRACE_ENABLED=$enable_blink_bindings_tracing",
+     "HAS_ZSTD_COMPRESSION=$has_zstd_compression",
++    "SBXDIFF=$sbxdiff",
+   ]
+ }
+ 
+@@ -551,6 +557,10 @@ component("platform") {
+     "bindings/v8_per_context_data.h",
+     "bindings/v8_per_isolate_data.cc",
+     "bindings/v8_per_isolate_data.h",
++    "bindings/sbxdiff/sbx_intercept.h",
++    "bindings/sbxdiff/sbx_scope.h",
++    "bindings/sbxdiff/sbx_tracer.cc",
++    "bindings/sbxdiff/sbx_tracer.h",
+     "bindings/v8_private_property.cc",
+     "bindings/v8_private_property.h",
+     "bindings/v8_set_return_value.cc",
+diff --git a/third_party/blink/renderer/platform/bindings/exception_state.cc b/third_party/blink/renderer/platform/bindings/exception_state.cc
+index ccb0a68b49e96..e628d16748f4a 100644
+--- a/third_party/blink/renderer/platform/bindings/exception_state.cc
++++ b/third_party/blink/renderer/platform/bindings/exception_state.cc
+@@ -30,6 +30,8 @@
+ 
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ 
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
+ #include "base/check.h"
+ #include "base/check_op.h"
+ #include "base/debug/crash_logging.h"
+@@ -86,6 +88,13 @@ NOINLINE void ExceptionState::ThrowDOMException(DOMExceptionCode exception_code,
+ void ExceptionState::SetExceptionInfo(ExceptionCode exception_code,
+                                       const String& message) {
+   had_exception_ = true;
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: every binding throw funnels through here, so this is the one
++  // place that sees the exception's identity. See SbxTracer::TraceException.
++  if (auto* sbx_tracer = sbxdiff::SbxTracer::GetIfExists()) {
++    sbx_tracer->TraceException(exception_code, message.Utf8());
++  }
++#endif
+   if (isolate_) {
+     V8PerIsolateData::From(isolate_)->SetLastExceptionInfo(context_,
+                                                            exception_code);
+diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h
+new file mode 100644
+index 0000000000000..3724783749298
+--- /dev/null
++++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_intercept.h
+@@ -0,0 +1,88 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_INTERCEPT_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_INTERCEPT_H_
++
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++#include "v8/include/v8-template.h"
++
++namespace blink::sbxdiff {
++
++#if BUILDFLAG(SBXDIFF)
++
++// Records whether an interceptor *declined*.
++//
++// `v8::Intercepted::kNo` means "I did not handle this; fall through to the
++// ordinary lookup", and it is guest-observable: a sandbox that declines where
++// Chromium intercepts resolves the property differently. But the outcome is a
++// return value, so the SbxInterceptorScope in the callback body -- which
++// records on entry -- cannot see it.
++//
++// The plan called for renaming every generated callback to `<name>Impl` and
++// emitting a thin public wrapper. This is cheaper and touches no callback
++// bodies: wrap at the *registration* site instead, where the function pointer
++// is handed to v8::NamedPropertyHandlerConfiguration. One class template with
++// two partial specializations covers all twelve Intercepted-returning
++// callbacks, because they all have the shape
++//
++//     Intercepted (*)(Key, [Extra,] const PropertyCallbackInfo<R>&)
++//
++// and the types are deduced from the function pointer. (The enumerator
++// callbacks return void and cannot decline, so they are left alone.)
++//
++// No name plumbing is needed: the body's own scope already wrote a record
++// carrying the interface + function name, and the outcome record refers back
++// to it by seq. The seq is sampled *before* the inner call, so an interceptor
++// that re-enters JS and triggers nested interceptors still attributes its own
++// outcome correctly -- nested records take higher seqs.
++template <auto Fn>
++struct SbxIntercept;
++
++// Getter / query / deleter / descriptor: (Key, Info).
++template <typename Key,
++          typename Info,
++          v8::Intercepted (*Fn)(Key, const Info&)>
++struct SbxIntercept<Fn> {
++  static v8::Intercepted Run(Key key, const Info& info) {
++    SbxTracer* tracer = SbxTracer::Get();
++    const uint64_t mark = tracer ? tracer->PeekSeq() : 0;
++    const v8::Intercepted result = Fn(key, info);
++    if (tracer) {
++      tracer->TraceInterceptorOutcome(
++          mark, result == v8::Intercepted::kYes);
++    }
++    return result;
++  }
++};
++
++// Setter / definer: (Key, Value-or-PropertyDescriptor, Info).
++template <typename Key,
++          typename Extra,
++          typename Info,
++          v8::Intercepted (*Fn)(Key, Extra, const Info&)>
++struct SbxIntercept<Fn> {
++  static v8::Intercepted Run(Key key, Extra extra, const Info& info) {
++    SbxTracer* tracer = SbxTracer::Get();
++    const uint64_t mark = tracer ? tracer->PeekSeq() : 0;
++    const v8::Intercepted result = Fn(key, extra, info);
++    if (tracer) {
++      tracer->TraceInterceptorOutcome(
++          mark, result == v8::Intercepted::kYes);
++    }
++    return result;
++  }
++};
++
++#endif  // BUILDFLAG(SBXDIFF)
++
++}  // namespace blink::sbxdiff
++
++#if BUILDFLAG(SBXDIFF)
++#define SBX_INTERCEPT(fn) (&::blink::sbxdiff::SbxIntercept<fn>::Run)
++#else
++#define SBX_INTERCEPT(fn) (fn)
++#endif
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_INTERCEPT_H_
+diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_scope.h b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_scope.h
+new file mode 100644
+index 0000000000000..ec6b760ae282d
+--- /dev/null
++++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_scope.h
+@@ -0,0 +1,278 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++//
++// sbxdiff: the RAII scope that bind_gen's existing BLINK_BINDINGS_TRACE_EVENT
++// macro expands to when BUILDFLAG(SBXDIFF) is on.
++//
++// Why this needs no generator change: interface.py:842 already emits
++//   BLINK_BINDINGS_TRACE_EVENT("Iface.prop.get");
++// at the prologue of every generated attribute get/set, operation, constructor,
++// exposed construct, legacy factory function, overload dispatcher and
++// stringifier callback -- 1,152 of the 2,928 generated .cc files -- and `info`
++// is always in scope there, always named `info`, and always a
++// const v8::FunctionCallbackInfo<v8::Value>&. So redefining the macro reaches
++// chokepoint A in full.
++//
++// Interceptor callbacks (named/indexed property getters, i.e. window[name],
++// coll[i], coll["name"]) do NOT get this macro and are therefore NOT covered.
++// Verified empirically: 30 accesses each produced zero trace events. Those need
++// the second chokepoint, _make_interceptor_callback_def, which is a real
++// generator change. See docs/sbxdiff/PROGRESS.md (M1).
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_SCOPE_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_SCOPE_H_
++
++#include <array>
++
++#include "base/containers/span.h"
++#include "third_party/blink/renderer/platform/bindings/buildflags.h"
++
++#if BUILDFLAG(SBXDIFF)
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++#endif
++#include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
++#include "v8/include/v8-function-callback.h"
++#include "v8/include/v8-object.h"
++#include "v8/include/v8-isolate.h"
++#include "v8/include/v8-local-handle.h"
++
++#if BUILDFLAG(SBXDIFF)
++
++namespace blink::sbxdiff {
++
++// bind_gen emits the macro into three distinct callback signatures, measured
++// across both generated trees:
++//   const v8::FunctionCallbackInfo<v8::Value>&    13418 sites
++//   const v8::PropertyCallbackInfo<v8::Value>&     2212 sites
++//   const v8::PropertyCallbackInfo<v8::Boolean>&      2 sites (cross-origin
++//                                                             Location setters)
++// always named `info`. The two info types expose *different* receiver
++// accessors -- FunctionCallbackInfo has This() and no Holder(), while
++// PropertyCallbackInfo has Holder() and no This() -- so the receiver is
++// selected by overload rather than assumed.
++//
++// FIDELITY CAVEAT: for PropertyCallbackInfo sites we therefore record Holder()
++// (the object the property was found on) rather than the receiver the guest
++// actually used. Those differ when the property is inherited or reached through
++// an interceptor. Revisit if V8 exposes This() on PropertyCallbackInfo.
++template <typename T>
++inline v8::Local<v8::Object> SbxReceiver(
++    const v8::FunctionCallbackInfo<T>& info) {
++  return info.This();
++}
++
++// Argument access, selected by overload for the same reason the receiver is.
++// FunctionCallbackInfo carries the JS arguments -- which for an attribute
++// setter is the value being written; PropertyCallbackInfo carries none.
++//
++// Without these the trace is blind to every value a page writes: a setter
++// records `-> undefined` and nothing else, so a sandbox setting
++// textContent='A' where Chromium sets 'B' produced a byte-identical trace.
++template <typename T>
++inline int SbxArgCount(const v8::FunctionCallbackInfo<T>& info) {
++  return info.Length();
++}
++template <typename T>
++inline int SbxArgCount(const v8::PropertyCallbackInfo<T>&) {
++  return 0;
++}
++
++template <typename T>
++inline v8::Local<v8::Value> SbxArgAt(const v8::FunctionCallbackInfo<T>& info,
++                                     int i) {
++  return info[i];
++}
++template <typename T>
++inline v8::Local<v8::Value> SbxArgAt(const v8::PropertyCallbackInfo<T>&, int) {
++  return v8::Local<v8::Value>();
++}
++
++// Arguments recorded per call. Capped rather than unbounded: this is the
++// change most likely to inflate trace size, and the true count is recorded
++// alongside so the differ can tell truncation from a short call.
++inline constexpr int kMaxTracedArgs = 8;
++
++template <typename T>
++inline v8::Local<v8::Object> SbxReceiver(
++    const v8::PropertyCallbackInfo<T>& info) {
++  return info.Holder();
++}
++
++// Records one generated binding callback: receiver identity on entry, and
++// return value plus exception state on exit.
++//
++// The return value can only be read on destruction, because the generated
++// prologue runs before bindings::V8SetReturnValue. v8::ReturnValue<T>::Get()
++// yields undefined when nothing was set, which is the correct encoding for a
++// void operation, and neither it nor HasPendingException can execute JS.
++template <typename InfoType>
++class SbxBindingScope {
++  STACK_ALLOCATED();
++
++ public:
++  SbxBindingScope(const char* name, const InfoType& info)
++      : tracer_(SbxTracer::Get()), name_(name), info_(&info) {}
++
++  SbxBindingScope(const SbxBindingScope&) = delete;
++  SbxBindingScope& operator=(const SbxBindingScope&) = delete;
++
++  ~SbxBindingScope() {
++    if (!tracer_ || SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    v8::Isolate* isolate = info_->GetIsolate();
++    const int argc_total = SbxArgCount(*info_);
++    const int argc = argc_total < kMaxTracedArgs ? argc_total : kMaxTracedArgs;
++    std::array<v8::Local<v8::Value>, kMaxTracedArgs> argv;
++    for (int i = 0; i < argc; ++i) {
++      argv[i] = SbxArgAt(*info_, i);
++    }
++    // Instrumenting the prologue means every early return in the generated body
++    // -- the four attribute-setter fast paths and the
++    // make_return_value_cache_return_early path -- still lands here.
++    tracer_->TraceBindingCall(
++        name_, isolate, SbxReceiver(*info_), info_->GetReturnValue().Get(),
++        isolate->HasPendingException(), static_cast<uint32_t>(argc_total),
++        base::span<const v8::Local<v8::Value>>(argv).first(
++            static_cast<size_t>(argc)));
++  }
++
++ private:
++  SbxTracer* tracer_;
++  const char* name_;
++  const InfoType* info_;
++};
++
++// Records one interceptor callback on entry. Separate from SbxBindingScope
++// because interceptors cannot report an outcome from a destructor: they return
++// v8::Intercepted (a decline is guest-observable but invisible to a destructor),
++// and the IndexOf variant takes PropertyCallbackInfo<void>, which has no usable
++// return value at all. Recording happens in the constructor, so nothing here
++// depends on the info's template parameter beyond GetIsolate()/Holder().
++template <typename InfoType>
++class SbxInterceptorScope {
++  STACK_ALLOCATED();
++
++ public:
++  // Named property interceptors: key is a v8::Name.
++  SbxInterceptorScope(const char* name,
++                      v8::Local<v8::Name> key,
++                      const InfoType& info) {
++    if (SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    if (SbxTracer* tracer = SbxTracer::Get()) {
++      tracer->TraceInterceptorNamed(name, info.GetIsolate(),
++                                    SbxReceiver(info), key);
++    }
++  }
++
++  // Indexed property interceptors.
++  SbxInterceptorScope(const char* name, uint32_t index, const InfoType& info) {
++    if (SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    if (SbxTracer* tracer = SbxTracer::Get()) {
++      tracer->TraceInterceptorIndexed(name, info.GetIsolate(),
++                                      SbxReceiver(info), index);
++    }
++  }
++
++  // Named setter / definer: also carries the value being written.
++  SbxInterceptorScope(const char* name,
++                      v8::Local<v8::Name> key,
++                      v8::Local<v8::Value> value,
++                      const InfoType& info) {
++    if (SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    if (SbxTracer* tracer = SbxTracer::Get()) {
++      tracer->TraceInterceptorNamed(name, info.GetIsolate(), SbxReceiver(info),
++                                    key, value);
++    }
++  }
++
++  // Indexed setter / definer.
++  SbxInterceptorScope(const char* name,
++                      uint32_t index,
++                      v8::Local<v8::Value> value,
++                      const InfoType& info) {
++    if (SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    if (SbxTracer* tracer = SbxTracer::Get()) {
++      tracer->TraceInterceptorIndexed(name, info.GetIsolate(),
++                                      SbxReceiver(info), index, value);
++    }
++  }
++
++  // Enumerator / IndexOf / IterableToList: no key argument.
++  SbxInterceptorScope(const char* name, const InfoType& info) {
++    if (SbxTracer::ScopeWorkDisabled()) {
++      return;
++    }
++    if (SbxTracer* tracer = SbxTracer::Get()) {
++      tracer->TraceInterceptorNoKey(name, info.GetIsolate(),
++                                    SbxReceiver(info));
++    }
++  }
++
++  SbxInterceptorScope(const SbxInterceptorScope&) = delete;
++  SbxInterceptorScope& operator=(const SbxInterceptorScope&) = delete;
++};
++
++}  // namespace blink::sbxdiff
++
++// Emitted by bind_gen into every generated binding callback prologue. Declared
++// as a macro rather than written into runtime_call_stats.h because that header
++// is pulled in by v8_per_isolate_data.h/v8_dom_wrapper.h and therefore by
++// essentially all of Blink core and modules: editing it costs ~28,650 build
++// edges, whereas this header is included ONLY by generated bindings code, so an
++// edit costs ~1,152 leaf TUs. See docs/sbxdiff/CHROMIUM-PATCHES.md.
++#define SBX_BINDING_SCOPE(name, info) \
++  ::blink::sbxdiff::SbxBindingScope sbx_binding_scope(name, info)
++
++// Chokepoint B: named/indexed property interceptors. These do NOT receive
++// BLINK_BINDINGS_TRACE_EVENT, so without these macros window[name], coll[i] and
++// coll["name"] are completely untraced -- measured as zero records for 30
++// accesses each. window[name] is a classic sandbox-escape vector.
++#define SBX_INTERCEPTOR_SCOPE_NAMED(name, key, info) \
++  ::blink::sbxdiff::SbxInterceptorScope sbx_interceptor_scope(name, key, info)
++#define SBX_INTERCEPTOR_SCOPE_INDEXED(name, index, info) \
++  ::blink::sbxdiff::SbxInterceptorScope sbx_interceptor_scope(name, index, info)
++#define SBX_INTERCEPTOR_SCOPE(name, info) \
++  ::blink::sbxdiff::SbxInterceptorScope sbx_interceptor_scope(name, info)
++#define SBX_INTERCEPTOR_SCOPE_NAMED_VALUE(name, key, value, info) \
++  ::blink::sbxdiff::SbxInterceptorScope sbx_interceptor_scope(name, key, value, \
++                                                              info)
++#define SBX_INTERCEPTOR_SCOPE_INDEXED_VALUE(name, index, value, info)       \
++  ::blink::sbxdiff::SbxInterceptorScope sbx_interceptor_scope(name, index,  \
++                                                              value, info)
++
++#else  // !BUILDFLAG(SBXDIFF)
++
++// sbxdiff=false: the generated source still carries the call, but it compiles
++// to nothing, so the resulting binary is unchanged.
++#define SBX_BINDING_SCOPE(name, info) \
++  do {                                \
++  } while (false)
++#define SBX_INTERCEPTOR_SCOPE_NAMED(name, key, info) \
++  do {                                               \
++  } while (false)
++#define SBX_INTERCEPTOR_SCOPE_INDEXED(name, index, info) \
++  do {                                                   \
++  } while (false)
++#define SBX_INTERCEPTOR_SCOPE(name, info) \
++  do {                                    \
++  } while (false)
++#define SBX_INTERCEPTOR_SCOPE_NAMED_VALUE(name, key, value, info) \
++  do {                                                           \
++  } while (false)
++#define SBX_INTERCEPTOR_SCOPE_INDEXED_VALUE(name, index, value, info) \
++  do {                                                                \
++  } while (false)
++
++#endif  // BUILDFLAG(SBXDIFF)
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_SCOPE_H_
+diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
+new file mode 100644
+index 0000000000000..52d7cd49edf95
+--- /dev/null
++++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
+@@ -0,0 +1,1310 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
++#include <array>
++#include <atomic>
++#include <bit>
++#include <map>
++#include <vector>
++#include <memory>
++#include <string_view>
++
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "third_party/blink/public/common/switches.h"
++#include "base/files/file.h"
++#include <set>
++#include "base/files/file_util.h"
++#include "base/strings/string_split.h"
++#include "base/hash/hash.h"
++#include <cstdlib>
++
++#include "base/no_destructor.h"
++#include "base/sbxdiff_observable_clock.h"
++#include "base/time/time_override.h"
++#include "base/files/file_path.h"
++#include "base/process/process_handle.h"
++#include "base/containers/span.h"
++#include "base/numerics/byte_conversions.h"
++#include "base/strings/string_number_conversions.h"
++#include "v8/include/v8-debug.h"
++#include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
++#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
++#include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
++#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
++#include "v8/include/v8-container.h"
++#include "v8/include/v8-context.h"
++#include "v8/include/v8-function.h"
++#include "v8/include/v8-isolate.h"
++#include "v8/include/v8-object.h"
++#include "v8/include/v8-primitive.h"
++#include "v8/include/v8-proxy.h"
++
++namespace blink::sbxdiff {
++
++namespace {
++
++// Keep in sync with docs/sbxdiff/ARCHITECTURE.md "Trace format".
++constexpr char kMagic[4] = {'S', 'B', 'X', 'D'};
++constexpr uint32_t kFormatVersion = 4;  // 4: realm records carry a creation time
++constexpr size_t kFlushThreshold = 4 * 1024;
++
++// Strings are recorded verbatim up to this many UTF-8 bytes, then truncated
++// (the true length is always recorded). T0 leak detection has to match the host
++// origin and the "/~/sj/" proxy prefix inside guest-visible strings, so a hash
++// is not sufficient -- the bytes are the signal.
++constexpr size_t kMaxStringBytes = 512;
++
++bool g_enabled_computed = false;
++bool g_enabled = false;
++
++// Key for the per-object run-local id. A v8::Private with kInternal kind: not
++// merely non-enumerable but filtered out of every JS key operation, skips
++// cross-origin access checks, and on a Proxy is stored on the proxy itself
++
++}  // namespace
++
++namespace {
++
++// sbxdiff: bisection aid, --sbxdiff-debug-disable=<mask>. Lets one build test
++// several hypotheses about which part of the tracer perturbs the embedder.
++// Not part of the oracle; a traced run leaves this unset.
++enum DebugDisable : int {
++  kDisableBindingCalls = 1,
++  kDisableInterceptors = 2,
++  kDisableObjectIds = 4,
++  kDisableDomEncode = 8,
++  kDisableScopeWork = 16,
++  kDisableTraceFile = 32,   // open /dev/null instead of a real trace file
++  kDisablePendingRealm = 64,  // skip the deferred-realm thread_local write
++  kDisableAttribution = 128,  // skip script attribution (measures its cost)
++};
++
++int DebugDisableMask() {
++  static const int mask = [] {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(::switches::kSbxdiffDebugDisable)) {
++      return 0;
++    }
++    int parsed = 0;
++    std::ignore = base::StringToInt(
++        cmd->GetSwitchValueASCII(::switches::kSbxdiffDebugDisable), &parsed);
++    return parsed;
++  }();
++  return mask;
++}
++
++}  // namespace
++
++// static
++bool SbxTracer::ScopeWorkDisabled() {
++  return (DebugDisableMask() & kDisableScopeWork) != 0;
++}
++
++// static
++bool SbxTracer::IsEnabled() {
++  if (!g_enabled_computed) {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    g_enabled = cmd && cmd->HasSwitch(switches::kSbxdiffTraceOut);
++    g_enabled_computed = true;
++  }
++  return g_enabled;
++}
++
++namespace {
++
++// Realm URL recorded before this thread had a tracer. Deliberately a POD
++// buffer rather than a thread_local std::string: Chromium builds with
++// -Wexit-time-destructors, and a non-trivially-destructible thread_local trips
++// it. Truncation is acceptable -- the tracer already truncates strings.
++// No default member initializers: those make the type non-trivially
++// constructible, which trips -Wglobal-constructors. A thread_local of trivial
++// type is zero-initialized.
++struct PendingRealm {
++  size_t len;
++  std::array<char, 2048> url;
++};
++thread_local PendingRealm g_pending_realm;
++
++// unique_ptr, not a raw pointer: ThreadSpecific destroys the *value* on
++// thread exit, so this is what makes ~SbxTracer (and its final Flush) run.
++// With a raw pointer the buffered tail was silently dropped -- which is why
++// the first working run produced header-only 10-byte trace files.
++ThreadSpecific<std::unique_ptr<SbxTracer>>& TracerSlot() {
++  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<std::unique_ptr<SbxTracer>>,
++                                  tracer, ());
++  return tracer;
++}
++
++}  // namespace
++
++// static
++SbxTracer* SbxTracer::GetIfExists() {
++  if (!IsEnabled()) {
++    return nullptr;
++  }
++  return TracerSlot()->get();
++}
++
++// static
++void SbxTracer::NoteRealmForContext(v8::Isolate* isolate,
++                                    v8::Local<v8::Object> global,
++                                    std::string_view url) {
++  if (!IsEnabled()) {
++    return;
++  }
++  if (SbxTracer* tracer = GetIfExists()) {
++    tracer->NoteRealm(isolate, global, url);
++    return;
++  }
++  if (DebugDisableMask() & kDisablePendingRealm) {
++    return;
++  }
++  const size_t len = std::min(url.size(), g_pending_realm.url.size());
++  g_pending_realm.len = len;
++  if (len > 0) {
++    std::ranges::copy(url.substr(0, len), g_pending_realm.url.begin());
++  }
++}
++
++// static
++SbxTracer* SbxTracer::Get() {
++  if (!IsEnabled()) {
++    return nullptr;
++  }
++  // Fast path: a plain POD thread_local, which is a direct TLS access.
++  //
++  // The slow path below goes through WTF::ThreadSpecific (pthread_getspecific
++  // plus WTF's own indirection), and this function runs on *every* binding
++  // call. Measured on 40k traced calls: going through ThreadSpecific each time
++  // cost ~10ms (13.2ms vs 3.3ms baseline) even with every record disabled --
++  // i.e. the lookup, not the recording, was the entire overhead. That made the
++  // browser ~4x slow at DOM work, which is detectable by timing.
++  //
++  // `cached` may dangle after the owning ThreadSpecific destroys the tracer at
++  // thread exit, but nothing runs on a thread after that point.
++  static thread_local SbxTracer* cached = nullptr;
++  static thread_local bool cached_valid = false;
++  if (cached_valid) {
++    return cached;
++  }
++  ThreadSpecific<std::unique_ptr<SbxTracer>>& tracer = TracerSlot();
++  if (!*tracer) {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    base::FilePath dir = cmd->GetSwitchValuePath(switches::kSbxdiffTraceOut);
++    // pid + thread discriminator keeps concurrent writers from interleaving.
++    static std::atomic<int> thread_counter{0};
++    int n = thread_counter.fetch_add(1);
++    base::FilePath path =
++        (DebugDisableMask() & kDisableTraceFile)
++            ? base::FilePath(FILE_PATH_LITERAL("/dev/null"))
++            : dir.AppendASCII("trace." +
++                              base::NumberToString(base::GetCurrentProcId()) +
++                              "." + base::NumberToString(n) + ".sbxd");
++    base::File file(path, base::File::FLAG_CREATE_ALWAYS |
++                              base::File::FLAG_WRITE);
++    if (!file.IsValid()) {
++      // Disable rather than crash: a missing --no-sandbox is the usual cause.
++      // IsEnabled() is now false, so the fast path above is not reached.
++      g_enabled = false;
++      return nullptr;
++    }
++    // Provenance only: lets a reader confirm two traces came from the same
++    // run key. The key itself is an arbitrary string (base/rand_util_posix.cc
++    // hashes it to 256 bits), so record a stable digest instead of parsing an
++    // integer -- an earlier integer parse silently yielded 0 for any
++    // non-numeric key.
++    uint64_t run_key = 0;
++    if (cmd->HasSwitch(::switches::kSbxdiffRunKey)) {
++      const std::string value =
++          cmd->GetSwitchValueASCII(::switches::kSbxdiffRunKey);
++      run_key = base::PersistentHash(base::as_byte_span(value));
++    }
++    *tracer = std::make_unique<SbxTracer>(std::move(file), run_key);
++  }
++  cached = tracer->get();
++  cached_valid = true;
++  return cached;
++}
++
++SbxTracer::SbxTracer(base::File file, uint64_t run_key)
++    : file_(std::move(file)) {
++  buffer_.reserve(kFlushThreshold + 4096);
++  record_buf_.reserve(512);
++  PutBytes(base::as_byte_span(std::string_view(kMagic, sizeof(kMagic))));
++  PutVarint(kFormatVersion);
++  PutVarint(static_cast<uint64_t>(base::GetCurrentProcId()));
++  PutVarint(run_key);
++  Flush();
++}
++
++SbxTracer::~SbxTracer() {
++  Flush();
++}
++
++void SbxTracer::PutU8(uint8_t v) {
++  Sink().push_back(v);
++}
++
++void SbxTracer::PutVarint(uint64_t v) {
++  while (v >= 0x80) {
++    Sink().push_back(static_cast<uint8_t>(v) | 0x80);
++    v >>= 7;
++  }
++  Sink().push_back(static_cast<uint8_t>(v));
++}
++
++void SbxTracer::PutBytes(base::span<const uint8_t> data) {
++  Sink().Append(data.begin(), data.end());
++}
++
++void SbxTracer::Flush() {
++  if (buffer_.empty() || !file_.IsValid()) {
++    return;
++  }
++  std::ignore = file_.WriteAtCurrentPos(base::span(buffer_));
++  buffer_.Shrink(0);
++}
++
++void SbxTracer::MaybeFlush() {
++  // Flush on a size threshold, and additionally at every task boundary (see
++  // OnCallCompleted). Not per record.
++  //
++  // Per-record flushing was correct but unusable: one write() syscall per
++  // binding call made DOM operations ~17x slower than stock (73.3ms vs 5.2ms
++  // for 20k setAttribute/getAttribute pairs, 89k records). That is trivially
++  // detectable by timing, and it is what made Cloudflare Turnstile loop
++  // forever on rateyourmusic.com while the same build with tracing off passed.
++  //
++  // Plain size-threshold batching is what per-record flushing replaced,
++  // because it lost the tail *nondeterministically*: a renderer is usually torn
++  // down without running thread destructors, and three runs of one page gave
++  // 1591, 2352 and 2956 records. Truncation that moves with timing is fatal for
++  // a differential oracle.
++  //
++  // Flushing at task boundaries fixes both. Syscalls drop from per-record to
++  // per-task, and any truncation lands on a task boundary -- a deterministic
++  // point -- rather than mid-buffer. At most one task's records can be lost,
++  // and the differ already segments by task.
++  if (buffer_.size() >= kFlushThreshold) {
++    Flush();
++  }
++}
++
++uint32_t SbxTracer::CurrentScriptId(v8::Isolate* isolate) {
++  if (DebugDisableMask() & kDisableAttribution) {
++    return 0;
++  }
++  const int id = v8::StackTrace::CurrentScriptId(isolate);
++  if (id <= 0) {
++    // No JS on the stack: the binding was reached from C++ (parser-driven
++    // work, a platform callback). Recorded as 0 rather than omitted, so the
++    // differ can see that it happened rather than inferring it.
++    return 0;
++  }
++  const uint32_t script_id = static_cast<uint32_t>(id);
++  if (known_scripts_.Contains(script_id)) {
++    return script_id;
++  }
++  known_scripts_.insert(script_id);
++
++  // Resolve the URL once per script. This allocates a handle, which is why it
++  // is not on the per-record path.
++  std::string url;
++  v8::Local<v8::String> name =
++      v8::StackTrace::CurrentScriptNameOrSourceURL(isolate);
++  if (!name.IsEmpty()) {
++    const size_t len = name->Utf8Length(isolate);
++    if (len > 0 && len <= kMaxStringBytes) {
++      std::vector<char> buf(len);
++      const size_t written =
++          name->WriteUtf8(isolate, buf.data(), buf.size());
++      url.assign(buf.data(), written);
++    }
++  }
++
++  // Emit into buffer_, never into a record under construction, so the mapping
++  // precedes the record that references it (same rule as InternLiteral).
++  bool saved = building_record_;
++  building_record_ = false;
++  PutVarint(static_cast<uint64_t>(RecordKind::kScript));
++  PutVarint(script_id);
++  PutVarint(url.size());
++  if (!url.empty()) {
++    PutBytes(base::as_byte_span(url));
++  }
++  building_record_ = saved;
++  return script_id;
++}
++
++uint32_t SbxTracer::InternLiteral(const char* literal) {
++  // Keyed on the pointer: bind_gen always passes a string literal, so pointer
++  // identity is sound and makes this a single hash lookup on the hot path.
++  auto it = interned_.find(literal);
++  if (it != interned_.end()) {
++    return it->value;
++  }
++  uint32_t id = next_intern_id_++;
++  interned_.insert(literal, id);
++
++  // Always emit into buffer_, never into a record under construction, so the
++  // intern record precedes the record that references it.
++  bool saved = building_record_;
++  building_record_ = false;
++  std::string_view name(literal);
++  PutVarint(static_cast<uint64_t>(RecordKind::kIntern));
++  PutVarint(id);
++  PutVarint(name.size());
++  PutBytes(base::as_byte_span(name));
++  building_record_ = saved;
++  return id;
++}
++
++uint64_t SbxTracer::ObjectIdFor(v8::Isolate* isolate,
++                                v8::Local<v8::Object> object) {
++  if (DebugDisableMask() & kDisableObjectIds) {
++    return next_object_id_++;
++  }
++  if (!isolate->InContext()) {
++    return 0;
++  }
++  // Identity WITHOUT touching the page's object.
++  //
++  // This used to stash the id in a v8::Private on the object itself. Private
++  // symbols are invisible to every reflection path -- Object.keys, proxies,
++  // cross-origin checks, all verified -- but "invisible to reflection" is not
++  // "no observable effect": adding a property forces a hidden-class
++  // transition, which can turn a monomorphic inline cache megamorphic for code
++  // touching that object. A page can detect that by timing operations on its
++  // *own* objects without ever seeing the property.
++  //
++  // Measured on rateyourmusic.com: full tracing looped the Cloudflare
++  // challenge forever; disabling only the private-property write (mask=4) made
++  // it pass, as did disabling recording entirely. Aggregate overhead was ~14ms
++  // across seconds of challenge work, far too little for a timing check -- so
++  // the signal was structural, not temporal.
++  //
++  // A DOM wrapper already carries a stable identity: the Blink object behind
++  // it. Reading it mutates nothing.
++  if (V8DOMWrapper::IsWrapper(isolate, object)) {
++    if (ScriptWrappable* wrappable = ToAnyScriptWrappable(isolate, object)) {
++      const void* key = static_cast<const void*>(wrappable);
++      auto it = wrappable_ids_.find(key);
++      if (it != wrappable_ids_.end()) {
++        return it->value;
++      }
++      const uint64_t id = next_object_id_++;
++      wrappable_ids_.Set(key, id);
++      return id;
++    }
++  }
++  // Non-wrapper objects (plain JS objects, functions, proxies) get no stable
++  // id. Giving them one would mean either mutating them or holding weak
++  // handles; the differ can still pair them positionally by seq. Recorded as
++  // 0 = "unidentified" so this is visible rather than silently aliased.
++  return 0;
++}
++
++uint64_t SbxTracer::CurrentRealmId(v8::Isolate* isolate) {
++  if (!isolate->InContext()) {
++    return 0;
++  }
++  // Global() is the global *proxy*, which is stable for the realm's lifetime.
++  return ObjectIdFor(isolate, isolate->GetCurrentContext()->Global());
++}
++
++// static
++void SbxTracer::OnBeforeCallEntered(v8::Isolate*) {
++  // Thread-specific, so this resolves to the tracer for the thread whose
++  // isolate just entered JS.
++  if (SbxTracer* tracer = SbxTracer::Get()) {
++    if (!tracer->in_js_) {
++      tracer->in_js_ = true;
++      tracer->current_task_id_ = ++tracer->next_task_id_;
++      // Must be cleared wherever the task id changes, not just in
++      // EnsureTaskOpen: a stale entry script would attribute this task's work
++      // to whoever entered the previous one.
++      tracer->current_entry_script_ = 0;
++    }
++  }
++}
++
++// static
++void SbxTracer::OnCallCompleted(v8::Isolate*) {
++  // Fires only for the outermost JS execution, and only after V8 has drained
++  // the microtask checkpoint, so everything the task caused is already
++  // recorded under current_task_id_.
++  if (SbxTracer* tracer = SbxTracer::Get()) {
++    tracer->in_js_ = false;
++    tracer->current_task_id_ = 0;
++    tracer->current_entry_script_ = 0;
++    // Task boundary: a deterministic place to flush, so truncation can only
++    // ever land here rather than at an arbitrary point inside a task.
++    tracer->Flush();
++  }
++}
++
++// static
++bool SbxTracer::ShouldBlockRequest(std::string_view url) {
++  // Parsed once. An empty optional means the switch is absent, in which case
++  // the gate is inert -- a traced run without --sbxdiff-net-allow behaves
++  // exactly as before.
++  // NoDestructor: a static std::set has an exit-time destructor, which is
++  // -Werror here.
++  static base::NoDestructor<std::optional<std::set<std::string>>> allow([] {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(::switches::kSbxdiffNetAllow)) {
++      return std::optional<std::set<std::string>>();
++    }
++    std::set<std::string> urls;
++    std::string contents;
++    if (base::ReadFileToString(
++            cmd->GetSwitchValuePath(::switches::kSbxdiffNetAllow), &contents)) {
++      for (std::string_view line : base::SplitStringPiece(
++               contents, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++        urls.emplace(line);
++      }
++    }
++    return std::optional<std::set<std::string>>(std::move(urls));
++  }());
++  if (!allow->has_value()) {
++    return false;
++  }
++  return !(*allow)->contains(std::string(url));
++}
++
++void SbxTracer::TraceNetRequest(std::string_view method,
++                                std::string_view url,
++                                bool blocked) {
++  // No isolate here: resource loads are not necessarily inside a v8 context,
++  // so this record carries the task id (thread-local, always available) but no
++  // realm id. Ordering against binding records comes from seq.
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kNetRequest));
++  PutVarint(seq_++);
++  PutVarint(CurrentTaskId());
++  PutU8(blocked ? 1 : 0);
++  PutVarint(method.size());
++  PutBytes(base::as_byte_span(method));
++  PutVarint(url.size());
++  PutBytes(base::as_byte_span(url));
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  Flush();
++}
++
++void SbxTracer::TraceException(int exception_code, std::string_view message) {
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kException));
++  PutVarint(seq_++);
++  PutVarint(CurrentTaskId());
++  PutVarint(static_cast<uint64_t>(exception_code));
++  const size_t emit = std::min(message.size(), kMaxStringBytes);
++  PutVarint(message.size());
++  PutVarint(emit);
++  if (emit > 0) {
++    PutBytes(base::as_byte_span(message.substr(0, emit)));
++  }
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  MaybeFlush();
++}
++
++void SbxTracer::FlushPendingRealm(v8::Isolate* isolate) {
++  if (g_pending_realm.len == 0) {
++    return;
++  }
++  const std::string url(g_pending_realm.url.data(), g_pending_realm.len);
++  // Clear first: NoteRealm must not be able to re-enter this.
++  g_pending_realm.len = 0;
++  if (!isolate->InContext()) {
++    return;
++  }
++  NoteRealm(isolate, isolate->GetCurrentContext()->Global(), url);
++}
++
++void SbxTracer::EnsureTaskOpen() {
++  if (current_task_id_ == 0) {
++    current_task_id_ = ++next_task_id_;
++    // Captured once per task rather than per record: the script that entered
++    // the task is what says *whose* work this is, and it cannot change within
++    // the task.
++    current_entry_script_ = 0;
++  }
++}
++
++void SbxTracer::EnsureIsolateHooks(v8::Isolate* isolate) {
++  if (isolate_hooked_ || !isolate) {
++    return;
++  }
++  isolate_hooked_ = true;
++  isolate->AddBeforeCallEnteredCallback(&SbxTracer::OnBeforeCallEntered);
++  isolate->AddCallCompletedCallback(&SbxTracer::OnCallCompleted);
++}
++
++void SbxTracer::NoteRealm(v8::Isolate* isolate,
++                          v8::Local<v8::Object> global,
++                          std::string_view url) {
++#if DCHECK_IS_ON()
++  v8::Isolate::DisallowJavascriptExecutionScope no_js(
++      isolate, v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);
++#endif
++  uint64_t realm_id = ObjectIdFor(isolate, global);
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kRealm));
++  PutVarint(seq_++);
++  PutVarint(realm_id);
++  PutVarint(url.size());
++  PutBytes(base::as_byte_span(url));
++  // When this realm was created, on a clock that is comparable ACROSS trace
++  // files -- which `seq` is not. seq counts records within one file, so two
++  // realms in different files both begin at 1, and the differ's rule for
++  // picking the document a run ended on ("latest first seq") is a coin flip
++  // between them. Measured on rateyourmusic: the oracle's two realms at
++  // https://rateyourmusic.com/ are in file 1 and file 16, both firstSeq=1, one
++  // with 2106 records and one with 7465.
++  //
++  // Deliberately the UNOVERRIDDEN clock: virtual time is per-process and would
++  // make the stamps incomparable between a page's renderer and a cross-origin
++  // subframe's, which is exactly the comparison this has to support.
++  PutVarint(static_cast<uint64_t>(
++      base::subtle::TimeTicksNowIgnoringOverride().since_origin()
++          .InMicroseconds()));
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  Flush();
++}
++
++void SbxTracer::EncodeValue(v8::Isolate* isolate, v8::Local<v8::Value> value) {
++  // Every branch below must be JS-free. Do not add ToString/Get/Has/
++  // GetOwnPropertyNames/GetOwnPropertyDescriptor/JSON::Stringify or
++  // GetPrototype here; see RULES.md #1.
++  if (value.IsEmpty() || value->IsUndefined()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kUndefined));
++    return;
++  }
++  if (value->IsNull()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kNull));
++    return;
++  }
++  if (value->IsBoolean()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kBool));
++    PutU8(value->IsTrue() ? 1 : 0);
++    return;
++  }
++  if (value->IsNumber()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kNumber));
++    // Raw IEEE-754 bits: exact, and distinguishes -0 from 0 and NaN payloads.
++    PutVarint(std::bit_cast<uint64_t>(value.As<v8::Number>()->Value()));
++    return;
++  }
++  if (value->IsString()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kString));
++    v8::Local<v8::String> s = value.As<v8::String>();
++    // Utf8Length/WriteUtf8, not the V2 spellings: those are V8_DEPRECATE_SOON.
++    // Both only flatten the string; neither can run JS.
++    PutVarint(s->Utf8Length(isolate));
++    std::array<char, kMaxStringBytes> buf;
++    const size_t emit = s->WriteUtf8(isolate, buf.data(), buf.size());
++    PutVarint(emit);
++    if (emit > 0) {
++      // Via string_view so this stays span-based; Chromium builds with
++      // -Wunsafe-buffer-usage as an error, so no pointer arithmetic.
++      PutBytes(base::as_byte_span(std::string_view(buf.data(), emit)));
++    }
++    return;
++  }
++  if (value->IsBigInt()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kBigInt));
++    return;
++  }
++  if (value->IsSymbol()) {
++    PutU8(static_cast<uint8_t>(ValueTag::kSymbol));
++    return;
++  }
++  if (value->IsProxy()) {
++    // Tag before IsObject: a Proxy is an object, and conflating them would
++    // hide exactly the wrapper scramjet hands the guest.
++    PutU8(static_cast<uint8_t>(ValueTag::kProxy));
++    PutVarint(ObjectIdFor(isolate, value.As<v8::Object>()));
++    return;
++  }
++  if (value->IsObject()) {
++    v8::Local<v8::Object> object = value.As<v8::Object>();
++    // ToWrapperTypeInfo is NOT a safe probe on an arbitrary object: it calls
++    // ToAnyWrappable, which reads the wrapper internal fields without first
++    // checking they exist, and faults (BUS_ADRALN) on an object that has none.
++    // A v8::Function is an Object, so this fired immediately on an
++    // ExposedConstruct getter (window.ShadowRoot returns an interface object).
++    // V8DOMWrapper::IsWrapper is the sanctioned guard -- see the comment on
++    // HasInternalFieldsSet in v8_dom_wrapper.h, which says to prefer it.
++    const WrapperTypeInfo* type_info =
++        (!(DebugDisableMask() & kDisableDomEncode) &&
++         V8DOMWrapper::IsWrapper(isolate, object))
++            ? ToWrapperTypeInfo(object)
++            : nullptr;
++    if (type_info) {
++      PutU8(static_cast<uint8_t>(ValueTag::kDomWrapper));
++      PutVarint(ObjectIdFor(isolate, object));
++      PutVarint(InternLiteral(type_info->interface_name));
++      return;
++    }
++    PutU8(static_cast<uint8_t>(value->IsFunction() ? ValueTag::kFunction
++                                                   : ValueTag::kObject));
++    PutVarint(ObjectIdFor(isolate, object));
++    return;
++  }
++  PutU8(static_cast<uint8_t>(ValueTag::kOpaque));
++}
++
++void SbxTracer::TraceBindingCall(const char* name,
++                                 v8::Isolate* isolate,
++                                 v8::Local<v8::Value> receiver,
++                                 v8::Local<v8::Value> result,
++                                 bool threw,
++                                 uint32_t argc_total,
++                                 base::span<const v8::Local<v8::Value>> args) {
++  // Mechanical proof that nothing below re-enters JS (RULES.md #1).
++#if DCHECK_IS_ON()
++  v8::Isolate::DisallowJavascriptExecutionScope no_js(
++      isolate, v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);
++#endif
++  if (DebugDisableMask() & kDisableBindingCalls) {
++    return;
++  }
++  uint32_t name_id = InternLiteral(name);
++  // Before the record starts building -- this writes a record of its own.
++  FlushPendingRealm(isolate);
++
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kBindingCall));
++  PutU8(static_cast<uint8_t>(Level::kCompared));
++  PutVarint(seq_++);
++  PutVarint(CurrentRealmId(isolate));
++  EnsureIsolateHooks(isolate);
++  EnsureTaskOpen();
++  PutVarint(CurrentTaskId());
++  {
++    const uint32_t top = CurrentScriptId(isolate);
++    if (current_entry_script_ == 0) {
++      current_entry_script_ = top;
++    }
++    PutVarint(top);
++    PutVarint(current_entry_script_);
++  }
++  PutVarint(name_id);
++  PutU8(threw ? 1 : 0);
++  EncodeValue(isolate, receiver);
++  EncodeValue(isolate, result);
++  // Arguments last, so the rest of the record keeps its v1 layout. argc_total
++  // is the real count and args.size() what was emitted; they differ only when
++  // a call exceeds kMaxTracedArgs, and the differ needs to tell that from a
++  // genuinely shorter call.
++  PutVarint(argc_total);
++  PutVarint(args.size());
++  for (const v8::Local<v8::Value>& arg : args) {
++    EncodeValue(isolate, arg);
++  }
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++
++  ++records_written_;
++  MaybeFlush();
++}
++
++void SbxTracer::TraceInterceptorNamed(const char* name,
++                                      v8::Isolate* isolate,
++                                      v8::Local<v8::Value> receiver,
++                                      v8::Local<v8::Value> key,
++                                      v8::Local<v8::Value> value) {
++#if DCHECK_IS_ON()
++  v8::Isolate::DisallowJavascriptExecutionScope no_js(
++      isolate, v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);
++#endif
++  if (DebugDisableMask() & kDisableInterceptors) {
++    return;
++  }
++  uint32_t name_id = InternLiteral(name);
++  // Before the record starts building -- this writes a record of its own.
++  FlushPendingRealm(isolate);
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kInterceptor));
++  PutU8(static_cast<uint8_t>(Level::kCompared));
++  PutVarint(seq_++);
++  PutVarint(CurrentRealmId(isolate));
++  EnsureIsolateHooks(isolate);
++  EnsureTaskOpen();
++  PutVarint(CurrentTaskId());
++  {
++    const uint32_t top = CurrentScriptId(isolate);
++    if (current_entry_script_ == 0) {
++      current_entry_script_ = top;
++    }
++    PutVarint(top);
++    PutVarint(current_entry_script_);
++  }
++  PutVarint(name_id);
++  PutU8(0);  // key kind: 0 = name/value
++  EncodeValue(isolate, receiver);
++  EncodeValue(isolate, key);
++  // Setter/definer interceptors carry the value being written; reads do not.
++  // A flag rather than an always-present value, so read records stay the size
++  // they were -- interceptor reads are the highest-volume record kind.
++  PutU8(value.IsEmpty() ? 0 : 1);
++  if (!value.IsEmpty()) {
++    EncodeValue(isolate, value);
++  }
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  MaybeFlush();
++}
++
++void SbxTracer::TraceInterceptorIndexed(const char* name,
++                                        v8::Isolate* isolate,
++                                        v8::Local<v8::Value> receiver,
++                                        uint32_t index,
++                                        v8::Local<v8::Value> value) {
++#if DCHECK_IS_ON()
++  v8::Isolate::DisallowJavascriptExecutionScope no_js(
++      isolate, v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);
++#endif
++  if (DebugDisableMask() & kDisableInterceptors) {
++    return;
++  }
++  uint32_t name_id = InternLiteral(name);
++  // Before the record starts building -- this writes a record of its own.
++  FlushPendingRealm(isolate);
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kInterceptor));
++  PutU8(static_cast<uint8_t>(Level::kCompared));
++  PutVarint(seq_++);
++  PutVarint(CurrentRealmId(isolate));
++  EnsureIsolateHooks(isolate);
++  EnsureTaskOpen();
++  PutVarint(CurrentTaskId());
++  {
++    const uint32_t top = CurrentScriptId(isolate);
++    if (current_entry_script_ == 0) {
++      current_entry_script_ = top;
++    }
++    PutVarint(top);
++    PutVarint(current_entry_script_);
++  }
++  PutVarint(name_id);
++  PutU8(1);  // key kind: 1 = index
++  EncodeValue(isolate, receiver);
++  PutVarint(index);
++  PutU8(value.IsEmpty() ? 0 : 1);
++  if (!value.IsEmpty()) {
++    EncodeValue(isolate, value);
++  }
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  MaybeFlush();
++}
++
++void SbxTracer::TraceInterceptorNoKey(const char* name,
++                                      v8::Isolate* isolate,
++                                      v8::Local<v8::Value> receiver) {
++#if DCHECK_IS_ON()
++  v8::Isolate::DisallowJavascriptExecutionScope no_js(
++      isolate, v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);
++#endif
++  if (DebugDisableMask() & kDisableInterceptors) {
++    return;
++  }
++  uint32_t name_id = InternLiteral(name);
++  // Before the record starts building -- this writes a record of its own.
++  FlushPendingRealm(isolate);
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kInterceptor));
++  PutU8(static_cast<uint8_t>(Level::kCompared));
++  PutVarint(seq_++);
++  PutVarint(CurrentRealmId(isolate));
++  EnsureIsolateHooks(isolate);
++  EnsureTaskOpen();
++  PutVarint(CurrentTaskId());
++  {
++    const uint32_t top = CurrentScriptId(isolate);
++    if (current_entry_script_ == 0) {
++      current_entry_script_ = top;
++    }
++    PutVarint(top);
++    PutVarint(current_entry_script_);
++  }
++  PutVarint(name_id);
++  PutU8(2);  // key kind: 2 = none (enumerator / IndexOf / IterableToList)
++  EncodeValue(isolate, receiver);
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  MaybeFlush();
++}
++
++void SbxTracer::TraceInterceptorOutcome(uint64_t target_seq,
++                                        bool intercepted) {
++  // The inner callback is expected to have written its own record at
++  // `target_seq`. If it did not (tracer disabled mid-run, or a callback with
++  // no scope), there is nothing to annotate -- emitting a dangling reference
++  // would be worse than emitting nothing.
++  if (seq_ <= target_seq) {
++    return;
++  }
++  // No seq of its own: this is an annotation on an existing record, not an
++  // event in the guest-observable order.
++  record_buf_.Shrink(0);
++  building_record_ = true;
++  PutVarint(static_cast<uint64_t>(RecordKind::kInterceptorOutcome));
++  PutVarint(target_seq);
++  PutU8(intercepted ? 1 : 0);
++  building_record_ = false;
++  buffer_.Append(record_buf_.begin(), record_buf_.end());
++  ++records_written_;
++  MaybeFlush();
++}
++
++namespace {
++// Set once, on the main thread, before any document exists.
++base::TimeTicks g_virtual_time_base;
++}  // namespace
++
++void SetVirtualTimeBase(base::TimeTicks base) {
++  g_virtual_time_base = base;
++}
++
++base::TimeTicks GetVirtualTimeBase() {
++  return g_virtual_time_base;
++}
++
++namespace {
++
++// Set once, on the main thread, when a renderer turns out to host only a
++// cross-origin subframe. Read from every timestamp conversion afterwards.
++bool g_subframe_only_renderer = false;
++
++}  // namespace
++
++namespace {
++
++// "<origin>,<prefix>" from --sbxdiff-shim-scripts, split once.
++const std::pair<std::string, std::string>& ShimScriptMarkers() {
++  static const base::NoDestructor<std::pair<std::string, std::string>> markers(
++      [] {
++        const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++        std::string v =
++            cmd ? cmd->GetSwitchValueASCII(::switches::kSbxdiffShimScripts)
++                : std::string();
++        const size_t comma = v.find(',');
++        if (comma == std::string::npos) {
++          return std::pair<std::string, std::string>();
++        }
++        return std::pair<std::string, std::string>(v.substr(0, comma),
++                                                   v.substr(comma + 1));
++      }());
++  return *markers;
++}
++
++}  // namespace
++
++namespace {
++
++// script id -> "this script is the shim's", per isolate.
++//
++// Leaked on purpose. Chromium builds with -Wexit-time-destructors and a
++// non-trivially-destructible thread_local trips it -- the same reason
++// PendingRealm above is a POD buffer rather than a std::string.
++std::map<uint32_t, bool>& ShimScriptCache() {
++  static thread_local std::map<uint32_t, bool>* cache =
++      new std::map<uint32_t, bool>();
++  return *cache;
++}
++
++std::string Utf8Of(v8::Isolate* isolate, v8::Local<v8::String> name) {
++  std::string url;
++  if (name.IsEmpty()) {
++    return url;
++  }
++  const size_t len = name->Utf8Length(isolate);
++  if (len > 0 && len <= kMaxStringBytes) {
++    std::vector<char> buf(len);
++    const size_t written = name->WriteUtf8(isolate, buf.data(), buf.size());
++    url.assign(buf.data(), written);
++  }
++  return url;
++}
++
++// On the proxy's origin, but NOT behind its prefix: that is the shim itself.
++// A guest script is on the same origin and does carry the prefix, which is
++// what makes these separable at all.
++bool UrlIsShim(const std::string& url) {
++  const auto& markers = ShimScriptMarkers();
++  return url.rfind(markers.first, 0) == 0 &&
++         url.find(markers.second) == std::string::npos;
++}
++
++// The browser's own UI, which is not the page on either side.
++//
++// It has timers -- chrome://webui-toolbar.top-chrome/app.js schedules two of
++// 50 ms each -- and once the logical clock became one counter for the whole
++// run (RULES.md #104) those started advancing the PAGE's clock. Measured as a
++// constant 50 ms offset between the two sides at the first poll round, before
++// the challenge script had run a line.
++bool UrlIsBrowserUi(const std::string& url) {
++  return url.rfind("chrome://", 0) == 0 ||
++         url.rfind("chrome-untrusted://", 0) == 0 ||
++         url.rfind("devtools://", 0) == 0 ||
++         url.rfind("chrome-extension://", 0) == 0;
++}
++
++// "This code is not the guest's", for deciding whose time is passing.
++//
++// Wider than UrlIsShim in one direction and narrower in another: the browser's
++// UI is never the guest even when no shim markers are configured, which is the
++// oracle, and that asymmetry is the point -- excluding it on one side only
++// would create exactly the divergence it is there to remove.
++bool IsNotGuest(const std::string& url) {
++  if (UrlIsBrowserUi(url)) {
++    return true;
++  }
++  if (ShimScriptMarkers().first.empty()) {
++    return false;
++  }
++  return UrlIsShim(url);
++}
++
++// Separate from ShimScriptCache because the predicate is different; both are
++// keyed on the script id V8 already assigns.
++std::map<uint32_t, bool>& NotGuestCache() {
++  static thread_local std::map<uint32_t, bool>* cache =
++      new std::map<uint32_t, bool>();
++  return *cache;
++}
++
++// How far down to look for a guest frame.
++//
++// Deep enough to see through a proxy's trap machinery, which is a handful of
++// frames, and bounded because this runs on every setTimeout and V8 has to
++// materialise every frame it is asked for.
++constexpr int kGuestFrameSearchDepth = 24;
++
++}  // namespace
++
++bool CurrentScriptIsShim(v8::Isolate* isolate) {
++  const auto& markers = ShimScriptMarkers();
++  if (markers.first.empty() || !isolate) {
++    return false;
++  }
++  const int id = v8::StackTrace::CurrentScriptId(isolate);
++  if (id <= 0) {
++    // No JS on the stack, so nothing to attribute. Not the shim.
++    return false;
++  }
++  // Per isolate, and keyed on the script id V8 already assigns, so the URL is
++  // resolved once per script rather than once per call.
++  auto& cache = ShimScriptCache();
++  const uint32_t script_id = static_cast<uint32_t>(id);
++  const auto it = cache.find(script_id);
++  if (it != cache.end()) {
++    return it->second;
++  }
++  const bool is_shim =
++      UrlIsShim(Utf8Of(isolate, v8::StackTrace::CurrentScriptNameOrSourceURL(
++                                    isolate)));
++  cache.emplace(script_id, is_shim);
++  return is_shim;
++}
++
++bool StackHasGuestFrame(v8::Isolate* isolate) {
++  return GuestFrameDepth(isolate) >= 0;
++}
++
++namespace {
++
++// The function actually behind a callback: past any Proxy, past any bind.
++//
++// A `setTimeout` trap forwards the page's function, but a function does not
++// have to carry a script. `Function.prototype.bind` produces one with
++// `ScriptId() <= 0` and no script origin, and so does a Proxy. Measured on rym
++// after the script-name test was in place, the two sides agreed EXACTLY on
++// every named script -- 29 gtag, 11 gtag, 8 challenge, 5 cdn-cgi, 4 turnstile,
++// 2 bundle.js, 1 page, on both -- and disagreed only on the scriptless ones:
++// 48 in the oracle against 58 in the sandbox. Those ten were the whole
++// remaining difference, and every one of them fell back to the stack and was
++// counted as the guest's without being looked at.
++//
++// Bounded: bind of a proxy of a bind is legal, a cycle is not, and the bound
++// costs nothing while a hang here would cost the run.
++v8::Local<v8::Value> UnwrapCallback(v8::Local<v8::Value> value) {
++  for (int i = 0; i < 8 && !value.IsEmpty(); ++i) {
++    if (value->IsProxy()) {
++      v8::Local<v8::Proxy> proxy = value.As<v8::Proxy>();
++      if (proxy->IsRevoked()) {
++        break;
++      }
++      value = proxy->GetTarget();
++      continue;
++    }
++    if (value->IsFunction()) {
++      const v8::Local<v8::Value> bound =
++          value.As<v8::Function>()->GetBoundFunction();
++      // Undefined for a function that is not bound, which is the exit.
++      if (!bound.IsEmpty() && bound->IsFunction() && bound != value) {
++        value = bound;
++        continue;
++      }
++    }
++    break;
++  }
++  return value;
++}
++
++}  // namespace
++
++std::string CallbackScriptUrl(v8::Isolate* isolate,
++                              v8::Local<v8::Value> callback) {
++  if (!isolate || callback.IsEmpty() || !callback->IsFunction()) {
++    return "(none)";
++  }
++  v8::HandleScope scope(isolate);
++  const v8::Local<v8::Value> target = UnwrapCallback(callback);
++  if (target.IsEmpty() || !target->IsFunction()) {
++    return "(not-a-function)";
++  }
++  v8::Local<v8::Function> fn = target.As<v8::Function>();
++  v8::Local<v8::Value> name = fn->GetScriptOrigin().ResourceName();
++  if (name.IsEmpty() || !name->IsString()) {
++    return "(no-script)";
++  }
++  const std::string url = Utf8Of(isolate, name.As<v8::String>());
++  return url.empty() ? "(empty)" : url;
++}
++
++int ClassifyCallback(v8::Isolate* isolate, v8::Local<v8::Value> callback) {
++  if (!isolate) {
++    return 0;
++  }
++  if (callback.IsEmpty() || !callback->IsFunction()) {
++    return -1;
++  }
++  v8::HandleScope scope(isolate);
++  const v8::Local<v8::Value> target = UnwrapCallback(callback);
++  if (target.IsEmpty() || !target->IsFunction()) {
++    return -1;
++  }
++  v8::Local<v8::Function> fn = target.As<v8::Function>();
++  const int id = fn->ScriptId();
++  if (id <= 0) {
++    // A built-in, or a function V8 has no script for.
++    return -1;
++  }
++  auto& cache = NotGuestCache();
++  const uint32_t script_id = static_cast<uint32_t>(id);
++  const auto it = cache.find(script_id);
++  if (it != cache.end()) {
++    return it->second ? 1 : 0;
++  }
++  std::string url;
++  v8::Local<v8::Value> name = fn->GetScriptOrigin().ResourceName();
++  if (!name.IsEmpty() && name->IsString()) {
++    url = Utf8Of(isolate, name.As<v8::String>());
++  }
++  const bool not_guest = IsNotGuest(url);
++  cache.emplace(script_id, not_guest);
++  return not_guest ? 1 : 0;
++}
++
++int GuestFrameDepth(v8::Isolate* isolate) {
++  if (!isolate) {
++    return 0;
++  }
++  v8::HandleScope scope(isolate);
++  // Default options, not kScriptNameOrSourceURL: the options are documented as
++  // deprecated and ignored today, and asking for one field would be a promise
++  // to break `GetScriptId()` the day they start being honoured again.
++  v8::Local<v8::StackTrace> stack =
++      v8::StackTrace::CurrentStackTrace(isolate, kGuestFrameSearchDepth);
++  if (stack.IsEmpty() || stack->GetFrameCount() == 0) {
++    // No JS on the stack: the browser itself scheduled this, and the oracle
++    // counts the same thing. Treating it as the shim's would make the two
++    // sides disagree about a timer neither page asked for.
++    return 0;
++  }
++  auto& cache = NotGuestCache();
++  for (int i = 0; i < stack->GetFrameCount(); ++i) {
++    v8::Local<v8::StackFrame> frame =
++        stack->GetFrame(isolate, static_cast<uint32_t>(i));
++    if (frame.IsEmpty()) {
++      continue;
++    }
++    const int id = frame->GetScriptId();
++    if (id <= 0) {
++      continue;
++    }
++    const uint32_t script_id = static_cast<uint32_t>(id);
++    const auto it = cache.find(script_id);
++    bool not_guest;
++    if (it != cache.end()) {
++      not_guest = it->second;
++    } else {
++      not_guest = IsNotGuest(Utf8Of(isolate, frame->GetScriptNameOrSourceURL()));
++      cache.emplace(script_id, not_guest);
++    }
++    if (!not_guest) {
++      return i;
++    }
++  }
++  return -1;
++}
++
++int64_t ObservableStepUs() {
++  // 0 means off, so a build with nothing set behaves exactly as Chromium does.
++  static const int64_t us = [] {
++    const char* v = ::getenv("SBXDIFF_OBSERVABLE_STEP_US");
++    if (!v || !*v) {
++      return int64_t{0};
++    }
++    int64_t parsed = 0;
++    for (std::string_view digits(v); char c : digits) {
++      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
++        return int64_t{0};
++      }
++      parsed = parsed * 10 + (c - '0');
++    }
++    return parsed;
++  }();
++  return us;
++}
++
++void MarkSubframeOnlyRenderer() {
++  g_subframe_only_renderer = true;
++  // The same ceiling for the wall clock, so `Date.now()` is capped too. It
++  // bottoms out in gin's V8Platform, a different component, which is why the
++  // ceiling itself lives in //base. Without this the cap would only cover
++  // performance timestamps -- and the value that first exposed all of this was
++  // a `Date.now()`, put into a Cloudflare payload 50.6 seconds apart across two
++  // otherwise identical runs.
++  //
++  // `Date.now()` is deliberately NOT counter-driven, and this is the second
++  // time that call has been removed.
++  //
++  // A counter advances per READ, while timers still fire on the virtual clock.
++  // So a retry loop bounded by wall time -- wait 100 ms, check `Date.now()`,
++  // try again -- advances 20 us per attempt and never reaches its deadline,
++  // however many times the timer fires. That hangs the run rather than
++  // diverging, and it hung it in a way that looked like a sandbox problem: the
++  // ORACLE was the side that stopped exiting, and the oracle runs no proxy
++  // code at all, which is what identified this as a Chromium patch.
++  //
++  // `performance.now()` is counter-driven and is safe, because it is answered
++  // per realm from `Performance::now` and nothing schedules against it. That is
++  // where the benchmark fix came from (5700/6496 digests -> 5000/5000); none of
++  // it needed `Date.now()`.
++}
++
++base::TimeTicks CapObservableTicks(base::TimeTicks t) {
++  // Separate what the page READS from what the scheduler RUNS on.
++  //
++  // A renderer hosting only a cross-origin subframe has its own virtual clock
++  // -- the coordinator is per-process -- and nothing paces it, so it
++  // fast-forwards to whatever far-future timer is pending. Measured in
++  // Cloudflare's blob worker: `performance.now()` read 10028 times and answered
++  // 345123 in one oracle run against 602509 in the next.
++  //
++  // Fencing the SCHEDULER there does not work. A tight fence parks the clock
++  // and the widget never does its work (6 of 8 request bodies went to "oracle
++  // never sent this"); a looser one hangs the run outright at 60 s. Timers have
++  // to keep firing, so the clock has to keep moving.
++  //
++  // So let it move, and cap only the value handed to script. Beyond the cap
++  // every read is the same number in every run, which is what the payload
++  // needs, while setTimeout and friends still see the real virtual clock and
++  // the widget still runs.
++  if (!g_subframe_only_renderer || g_virtual_time_base.is_null() ||
++      t.is_null()) {
++    return t;
++  }
++  static std::atomic<int64_t> reads{0};
++  // Anchored where the clock already was, for the same reason: going backwards
++  // is worse than diverging.
++  static const base::TimeTicks anchor = base::TimeTicks::Now();
++  return anchor +
++         base::Microseconds(ObservableStepUs() *
++                            (reads.fetch_add(1, std::memory_order_relaxed) + 1));
++}
++
++base::TimeTicks DeterministicEventTimeStamp(
++    base::TimeTicks platform_time_stamp) {
++  const base::TimeTicks base_ticks = g_virtual_time_base;
++  if (base_ticks.is_null() || platform_time_stamp.is_null()) {
++    return platform_time_stamp;
++  }
++  // WHICH CLOCK stamped this? An event the page made itself is stamped by
++  // TimeTicks::Now(), which virtual time overrides, so it lands near the
++  // VIRTUAL now. An input event is stamped in the browser process, outside the
++  // override, so it lands near the REAL now. Virtual time compresses the run --
++  // a 50 s journey can take 600 s of virtual clock -- so the two are far apart
++  // and whichever the stamp is nearer to is the clock it came from.
++  //
++  // An earlier version asked whether the stamp was in the FUTURE relative to
++  // TimeTicks::Now(). That was backwards: a fast-forwarding virtual clock puts
++  // every real stamp in the past, so the test never fired and `Event.timeStamp`
++  // went on diverging (558 against 563.5 across two oracle runs).
++  const base::TimeDelta from_virtual =
++      (platform_time_stamp - base::TimeTicks::Now()).magnitude();
++  const base::TimeDelta from_real =
++      (platform_time_stamp - base::subtle::TimeTicksNowIgnoringOverride())
++          .magnitude();
++  if (from_virtual <= from_real) {
++    // Virtual already, so it reproduces. Leave it exactly alone.
++    return platform_time_stamp;
++  }
++  // From the real clock: give it a slot on a 16 ms cadence -- reproducible, and
++  // the shape a real input stream has. Keyed on the RAW stamp so that events
++  // the platform stamped together stay together, which is what a browser does
++  // and what a page comparing two events' timestamps expects.
++  static base::TimeTicks last_raw;
++  static int64_t n = 0;
++  if (platform_time_stamp != last_raw) {
++    last_raw = platform_time_stamp;
++    ++n;
++  }
++  return base_ticks + base::Milliseconds(16 * n);
++}
++
++double VirtualTimeOriginUnixMs() {
++  // Parsed once: this is read on every `performance.timeOrigin`.
++  static const double origin = [] {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(::switches::kSbxdiffInitialTime)) {
++      return 0.0;
++    }
++    int64_t unix_ms = 0;
++    if (!base::StringToInt64(
++            cmd->GetSwitchValueASCII(::switches::kSbxdiffInitialTime),
++            &unix_ms)) {
++      return 0.0;
++    }
++
++    return static_cast<double>(unix_ms);
++  }();
++
++  return origin;
++}
++
++}  // namespace blink::sbxdiff
+diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
+new file mode 100644
+index 0000000000000..95c8b1792bd4b
+--- /dev/null
++++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
+@@ -0,0 +1,479 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++//
++// sbxdiff: the trace sink for the browser.js/scramjet differential oracle.
++//
++// Lives in platform/bindings/ rather than core/ on purpose: bind_gen emits the
++// BLINK_BINDINGS_TRACE_EVENT macro into BOTH bindings/core/v8 (549 files) and
++// bindings/modules/v8 (603 files), and blink_platform is the only component
++// visible to both. See docs/sbxdiff/ARCHITECTURE.md.
++//
++// HARD RULE (docs/sbxdiff/RULES.md #1): nothing reachable from here may execute
++// page JS. The encoder body runs inside a DisallowJavascriptExecutionScope with
++// kCrashOnFailure in DCHECK builds so that is enforced mechanically rather than
++// by review.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_TRACER_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_TRACER_H_
++
++#include <cstdint>
++#include <memory>
++#include <string>
++#include <string_view>
++
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/time/time.h"
++#include "third_party/blink/renderer/platform/platform_export.h"
++#include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
++#include "third_party/blink/renderer/platform/wtf/hash_map.h"
++#include "third_party/blink/renderer/platform/wtf/hash_set.h"
++#include "third_party/blink/renderer/platform/wtf/vector.h"
++#include "v8/include/v8-forward.h"
++
++namespace blink::sbxdiff {
++
++// Record kinds. Wire values are stable; append only.
++// Bumped to 2 when kBindingCall gained arguments. A decoder that reads v1
++// cannot read v2: the argument block sits between the result and the end of
++// the record.
++//
++// Bumped to 3 when every compared record gained script attribution: a
++// `top_script` and an `entry_script` varint after the task id. In a sandbox the
++// shim and the guest share one realm, so without this there is no way to tell
++// a native call the guest made from one the shim made on its own initiative.
++enum class RecordKind : uint8_t {
++  kIntern = 0,       // id -> string, emitted on first use of a name
++  kBindingCall = 1,  // one generated binding callback
++  kInterceptor = 2,  // one named/indexed property interceptor callback
++  kRealm = 3,        // realm id -> document URL, emitted when a realm is set up
++  kInterceptorOutcome = 4,  // did interceptor record <seq> intercept or decline
++  kNetRequest = 5,   // one resource request, and whether the gate blocked it
++  kException = 6,    // a binding threw: ExceptionCode + message
++  kScript = 7,       // V8 script id -> script URL, on first sighting
++};
++
++// Comparison level. The `level` byte IS the cut described in ARCHITECTURE.md:
++// the differ reads only kCompared, while kInternal records stay in the same
++// ordered stream for post-mortem attribution.
++enum class Level : uint8_t {
++  kCompared = 0,
++  kInternal = 1,  // demoted: nested inside a guest-op bracket
++  kDebug = 2,
++};
++
++// Value type tags. Identity and shape only -- never contents (RULES.md #2).
++enum class ValueTag : uint8_t {
++  kUndefined = 0,
++  kNull = 1,
++  kBool = 2,
++  kNumber = 3,
++  kString = 4,   // length + hash, not bytes, for long strings
++  kBigInt = 5,
++  kSymbol = 6,
++  kObject = 7,   // object id + constructor name id
++  kDomWrapper = 8,  // object id + WrapperTypeInfo interface name id
++  kFunction = 9,
++  kProxy = 10,
++  kOpaque = 11,  // could not be encoded without risking JS execution
++};
++
++// Per-thread trace sink. Blink runs one isolate per thread, so thread-local is
++// both correct and cheaper than a per-isolate map.
++class PLATFORM_EXPORT SbxTracer {
++  USING_FAST_MALLOC(SbxTracer);
++
++ public:
++  // Null unless --sbxdiff-trace-out was passed. Callers must null-check; the
++  // hot path in sbx_scope.h does so before doing any work at all.
++  static SbxTracer* Get();
++
++  // Bisection aid for --sbxdiff-debug-disable=<mask>; bit 16 makes the scopes
++  // skip their destructor body entirely, which is the only way to separate
++  // "a tracer exists" from "the scope reads GetReturnValue()/This()".
++  // Not part of the oracle; a traced run leaves the switch unset.
++  static bool ScopeWorkDisabled();
++
++  // Returns the tracer for this thread only if one already exists. Unlike
++  // Get(), never creates one (and so never opens a trace file).
++  static SbxTracer* GetIfExists();
++
++  // Records a realm's URL, deferring if this thread has no tracer yet.
++  //
++  // The realm hooks run during context initialization, which is *before* the
++  // thread has necessarily run any JS. Calling Get() there would create a
++  // tracer -- and open a trace file -- on threads that may never record
++  // anything. A worker thread whose script fails to load is exactly that case,
++  // and it hung the run 5/5 (PROGRESS.md M4 part 3). So when no tracer exists,
++  // the URL is stashed and emitted with this thread's first real record, whose
++  // realm is the one being initialized here.
++  static void NoteRealmForContext(v8::Isolate* isolate,
++                                  v8::Local<v8::Object> global,
++                                  std::string_view url);
++
++  // True if tracing was requested for this process. Cheap; safe before Get().
++  static bool IsEnabled();
++
++  SbxTracer(const SbxTracer&) = delete;
++  SbxTracer& operator=(const SbxTracer&) = delete;
++  ~SbxTracer();
++
++  // Records one generated binding callback. `name` must be a string literal
++  // with static storage duration -- interning is keyed on the pointer, which
++  // is what makes this O(1) and 4 bytes on the wire.
++  void TraceBindingCall(const char* name,
++                        v8::Isolate* isolate,
++                        v8::Local<v8::Value> receiver,
++                        v8::Local<v8::Value> result,
++                        bool threw,
++                        uint32_t argc_total,
++                        base::span<const v8::Local<v8::Value>> args);
++
++  // Records one interceptor callback (named/indexed property getter, setter,
++  // deleter, definer, descriptor, query, enumerator). Entry-only: these return
++  // v8::Intercepted and whether the interceptor *declined* is not visible to a
++  // destructor, and PropertyCallbackInfo<void> (IndexOf) has no usable return
++  // value at all. Capturing the decline outcome needs the rename-to-Impl plus
++  // wrapper approach; recording the consultation and its key is already far
++  // more than the zero coverage these had.
++  // `value` is empty for reads and set for setter/definer interceptors, where
++  // it is the value being written. Without it a named set records only the key.
++  void TraceInterceptorNamed(const char* name,
++                             v8::Isolate* isolate,
++                             v8::Local<v8::Value> receiver,
++                             v8::Local<v8::Value> key,
++                             v8::Local<v8::Value> value =
++                                 v8::Local<v8::Value>());
++  void TraceInterceptorIndexed(const char* name,
++                               v8::Isolate* isolate,
++                               v8::Local<v8::Value> receiver,
++                               uint32_t index,
++                               v8::Local<v8::Value> value =
++                                   v8::Local<v8::Value>());
++  void TraceInterceptorNoKey(const char* name,
++                             v8::Isolate* isolate,
++                             v8::Local<v8::Value> receiver);
++
++  // Associates a realm with a document URL. Called from core (which knows about
++  // Document; platform does not) when a window proxy's document is installed.
++  // Without this, trace files are only identifiable by guessing from call
++  // counts -- a run writes one file per process and there is no size heuristic.
++  void NoteRealm(v8::Isolate* isolate,
++                 v8::Local<v8::Object> global,
++                 std::string_view url);
++
++  // Records whether the interceptor whose record has seq `target_seq` handled
++  // the access or declined it. Declining (v8::Intercepted::kNo) means "fall
++  // through to the ordinary lookup" and is guest-observable, but it is a
++  // return value, so the in-body scope -- which records on entry -- cannot
++  // see it. Emitted from the registration-site wrapper in sbx_intercept.h.
++  void TraceInterceptorOutcome(uint64_t target_seq, bool intercepted);
++
++  // Seq the *next* record will take. Sampled by the interceptor wrapper before
++  // it calls the real callback, so nested interceptors (which take higher
++  // seqs) cannot steal the outcome.
++  uint64_t PeekSeq() const { return seq_; }
++
++  // Records a resource request. `blocked` means the replay gate refused it
++  // because it was not in the allow-list -- which is a *divergence*, not an
++  // error: the run must not fall through to the real network (that breaks
++  // hermeticity silently) and must not abort (that loses why it was asked for).
++  // See RULES.md #14.
++  void TraceNetRequest(std::string_view method,
++                       std::string_view url,
++                       bool blocked);
++
++  // True when --sbxdiff-net-allow is set and `url` is not in the allow-list.
++  // Always false when the switch is absent, so the gate is inert by default.
++  static bool ShouldBlockRequest(std::string_view url);
++
++  // Records a thrown binding exception.
++  //
++  // The `threw` bool on kBindingCall catches throw-vs-no-throw but not *what*
++  // was thrown, and V8 exposes a pending exception only through v8::TryCatch —
++  // installing one in the binding scope would change exception propagation,
++  // which an oracle must not do. Blink funnels every binding throw through
++  // ExceptionState::SetExceptionInfo instead, which knows the code and message
++  // before V8 ever sees them, so that is where this is called from.
++  void TraceException(int exception_code, std::string_view message);
++
++  void Flush();
++
++  uint64_t records_written() const { return records_written_; }
++
++  // Public only so ThreadSpecific<std::unique_ptr<SbxTracer>> can own one, which
++  // is what makes ~SbxTracer (and its final Flush) run on thread exit. Callers
++  // should use Get().
++  SbxTracer(base::File file, uint64_t run_key);
++
++ private:
++  uint32_t InternLiteral(const char* literal);
++
++  // V8 script id of the frame on top of the JS stack, emitting a kScript
++  // record the first time an id is seen. 0 when there is no JS on the stack
++  // (a binding reached from C++, e.g. parser-driven work).
++  //
++  // StackTrace::CurrentScriptId is the stable, allocation-free spelling --
++  // CurrentScriptIdsAndContexts is V8_DEPRECATE_SOON (fatal under Chromium's
++  // -Werror) and CurrentScriptData is flagged experimental. It cannot run JS,
++  // so it is safe under RULES.md #1.
++  uint32_t CurrentScriptId(v8::Isolate* isolate);
++  void EncodeValue(v8::Isolate* isolate, v8::Local<v8::Value> value);
++
++  // Assigns (lazily, only for values actually written to a kCompared record) a
++  // run-local id. Uses a v8::Private symbol, which is invisible to every JS
++  // enumeration and does not trip Proxy traps. See PINNED_ASSUMPTIONS.md #3.
++  uint64_t ObjectIdFor(v8::Isolate* isolate, v8::Local<v8::Object> object);
++
++  // Run-local id of the realm a record belongs to: the object id of the
++  // current context's global proxy, which is stable per realm. 0 when no
++  // context is entered.
++  uint64_t CurrentRealmId(v8::Isolate* isolate);
++
++  // Id of the task (top-level JS execution, including the microtasks drained
++  // at its end) a record belongs to.
++  //
++  // NOT from Blink's TaskAttributionTracker. That looked like the obvious
++  // source, but it is an opt-in propagation channel for SoftNavigationContext
++  // / ResourceTimingContext / WebSchedulingTaskState: its CurrentTaskState()
++  // is null whenever there is "nothing to propagate", which on an ordinary
++  // page is always. Measured 0 of 3126 records attributed before this was
++  // replaced -- see PROGRESS.md M4.
++  //
++  // Instead the id comes from V8's own call-entered/call-completed pair, which
++  // brackets exactly one top-level JS execution: BeforeCallEntered fires on
++  // every entry including re-entrance, so a fresh id is minted only on the
++  // 0 -> 1 transition and nested C++ -> JS -> C++ -> JS keeps one id;
++  // CallCompleted fires only when the outermost one ends.
++  //
++  // Microtasks need separate handling, and an earlier comment here got this
++  // wrong. V8 *would* drain the checkpoint before firing CallCompleted, but
++  // only under MicrotasksPolicy::kAuto; Blink sets kScoped
++  // (v8_initializer.cc), so Blink drains microtasks itself after call depth
++  // has already hit zero -- and V8 does not fire BeforeCallEntered for
++  // microtask jobs at all. Measured result: every promise continuation was
++  // unattributed (task 0) while script and timer tasks were correct.
++  //
++  // Fixed by opening a task lazily in the record path (EnsureTaskOpen), with
++  // CallCompleted as the only close. No microtask hook is needed, and none
++  // would have been enough anyway: v8::Isolate's microtasks-completed callback
++  // covers only the isolate's default queue, while Blink drains per-agent
++  // MicrotaskQueues.
++  //
++  // Granularity is one id per microtask *checkpoint*, not per microtask job;
++  // within a checkpoint records are still strictly ordered by seq. Per-job ids
++  // would need v8::Isolate::SetPromiseHook, a contended single-slot API whose
++  // perf cost is potentially page-observable -- deliberately not used.
++  //
++  // Do not build a generation counter off wall-clock time: the prior harness
++  // did and its own README flagged it as wrong.
++  uint64_t CurrentTaskId() const { return current_task_id_; }
++
++  // Registers the V8 callbacks above, once per tracer (one tracer per thread,
++  // one isolate per thread in Blink).
++  void EnsureIsolateHooks(v8::Isolate* isolate);
++  static void OnBeforeCallEntered(v8::Isolate* isolate);
++  static void OnCallCompleted(v8::Isolate* isolate);
++  // Emits any realm record deferred by NoteRealmForContext. Must be called
++  // *before* a record starts building: it writes a record of its own, and
++  // splicing one record into another corrupts the stream (the same bug
++  // interning caused once already).
++  void FlushPendingRealm(v8::Isolate* isolate);
++
++  // Mints a task id if none is open. Called from the record path, which is
++  // what attributes microtask jobs: they get no BeforeCallEntered, so the
++  // first record of a checkpoint opens the task and the rest of the
++  // checkpoint reuses it. Deliberately does NOT set in_js_, so the next real
++  // JS entry still mints a fresh id rather than inheriting this one.
++  void EnsureTaskOpen();
++
++  void PutU8(uint8_t v);
++  void PutVarint(uint64_t v);
++  void PutBytes(base::span<const uint8_t> data);
++  void MaybeFlush();
++  Vector<uint8_t>& Sink() {
++    return building_record_ ? record_buf_ : buffer_;
++  }
++
++  base::File file_;
++  Vector<uint8_t> buffer_;
++  // Records are assembled here, then appended to buffer_ as a unit. Interning
++  // emits its own record and can be triggered *mid-value* when EncodeValue
++  // meets a new interface name; writing both to one buffer spliced the intern
++  // record into the middle of the binding record and corrupted the stream.
++  Vector<uint8_t> record_buf_;
++  // Selects where Put* writes. A bool rather than a pointer member because
++  // Chromium's raw_ptr plugin rejects raw pointer fields.
++  bool building_record_ = false;
++  HashMap<const char*, uint32_t> interned_;
++  // ScriptWrappable* -> run-local object id. Addresses only; never
++  // dereferenced. An address freed and reused by Oilpan would alias two
++  // objects, which the differ would read as identity -- acceptable for now and
++  // far better than mutating page objects to carry an id (see ObjectIdFor).
++  HashMap<const void*, uint64_t> wrappable_ids_;
++  uint32_t next_intern_id_ = 0;
++  uint64_t next_object_id_ = 1;
++  uint64_t seq_ = 0;
++  // Task id state driven by the V8 callbacks above.
++  bool isolate_hooked_ = false;
++  bool in_js_ = false;
++  uint64_t current_task_id_ = 0;
++  uint64_t next_task_id_ = 0;
++  // Script that was on top of the stack when the current task opened. Paired
++  // with each record's own top script this gives the differ a three-way split:
++  // guest task + guest top (the guest doing its own work), guest task + shim
++  // top (the shim acting on the guest's behalf -- a trap), shim task + shim
++  // top (the shim's own work, e.g. its startup platform snapshot).
++  uint32_t current_entry_script_ = 0;
++  // V8 script ids already emitted as kScript. Keyed on the id, not a pointer:
++  // unlike interned literals these are not compile-time constants.
++  //
++  // WTF hash tables reserve 0 as the empty-bucket sentinel for integer keys,
++  // so 0 must never be inserted. CurrentScriptId returns early for id <= 0,
++  // which is also the "no JS on the stack" case, so it never reaches here.
++  HashSet<uint32_t> known_scripts_;
++  uint64_t records_written_ = 0;
++};
++
++// sbxdiff: the TimeTicks virtual time started from, published by Page's
++// constructor when --sbxdiff-initial-time enables it.
++//
++// performance.timeOrigin is normally the document loader's reference ticks,
++// which under virtual time land a variable ~15-17 ms after the clock starts --
++// measured as ~1.7 ms of jitter in timeOrigin and performance.now() across
++// runs, while Date.now() was already exact. Pinning the origin to the instant
++// virtual time began removes the variable term.
++PLATFORM_EXPORT void SetVirtualTimeBase(base::TimeTicks base);
++
++// Note that this renderer hosts only a cross-origin subframe, so its virtual
++// clock has nothing pacing it. See CapObservableTicks.
++// Step, in microseconds, for the counter clock that answers performance.now().
++// 0 = off. SBXDIFF_OBSERVABLE_STEP_US.
++//
++// Why a counter and not the clock. Cloudflare's challenge worker measures the
++// machine with `while (performance.now() - start < 100) { digest(...) }` and
++// reports the iteration count -- 5700 in the oracle against 6496 in the
++// sandbox, a 14% difference that goes straight into the payload. No amount of
++// pinning a real clock fixes that, because it is a measurement of how fast the
++// machine actually is.
++//
++// Answering from a counter makes the loop a pure function of the clock
++// SEQUENCE: it runs exactly 100 ms / step iterations wherever it runs. And
++// because the loop compares a DIFFERENCE, a shim that reads the clock a few
++// extra times shifts both ends equally and cancels out -- which is what makes
++// this symmetric between the two sides, unlike anything keyed on process
++// topology.
++// Is the script on top of the JS stack the SHIM's rather than the guest's?
++//
++// The discriminator rules 88, 89 and 99 all needed and none of them had. It is
++// available here because a proxy's own scripts and the pages it rewrites are
++// distinguishable by URL: the shim's are on the proxy's origin, the guest's are
++// on that origin BEHIND the proxy prefix. `--sbxdiff-shim-scripts=<origin>,
++// <prefix>` supplies both; with the switch absent nothing is a shim, which is
++// what the oracle wants since it has none.
++//
++// Cached per script id, because resolving the URL allocates a handle and this
++// is called wherever a guest-vs-shim decision has to be made -- currently every
++// setTimeout.
++PLATFORM_EXPORT bool CurrentScriptIsShim(v8::Isolate* isolate);
++
++// Is there GUEST code anywhere on the JS stack?
++//
++// `CurrentScriptIsShim` asks about the top frame, which is the right question
++// for "who made this call" and the wrong one for "who asked for this timer".
++// Every `setTimeout` the guest schedules under a proxy is scheduled by the
++// proxy: scramjet traps the global and calls the real one, so the top frame is
++// always the shim's. Attributing timers by the top frame classified ALL of
++// them as the shim's and left the sandbox's logical clock frozen at its origin
++// for a whole run -- measured, `Event.timeStamp` read 0 for all 22 reads in the
++// sandbox against 0, 3300 and 5000 in the oracle, which is a `Date.now()` that
++// never moves.
++//
++// A frame BELOW the shim's trap is the guest asking, so the guest's timers come
++// back and the shim's own -- scheduled from its init, with nothing of the
++// page's underneath -- stay out.
++//
++// True when no markers are configured or no JS is on the stack, so the oracle,
++// which has no shim, sees every timer as the guest's exactly as before.
++PLATFORM_EXPORT bool StackHasGuestFrame(v8::Isolate* isolate);
++
++// How far down the JS stack the nearest GUEST frame is, or -1 for none.
++//
++// `StackHasGuestFrame` is this, thresholded. Exposed separately because the
++// threshold is the open question: a proxy's setTimeout trap puts the guest a
++// couple of frames down, and a timer the proxy schedules for its own reasons
++// while guest code happens to be running puts it much further, and the two are
++// only separable if you can see the number. 0 when no markers are configured.
++PLATFORM_EXPORT int GuestFrameDepth(v8::Isolate* isolate);
++
++// Whose code will run when this callback fires: 0 guest, 1 shim, -1 unknown.
++//
++// Sharper than any stack test, and for a reason that is a property of proxies
++// rather than of one of them: a setTimeout trap forwards the page's function
++// untouched -- scramjet's is literally
++// `if (typeof handler === "function") return handler;` -- so the function
++// carries the identity the stack has already lost by the time the binding is
++// reached. A timer the proxy schedules for itself has the proxy's own closure.
++//
++// -1 when there is no function to look at: a string handler, a built-in, a
++// bound function with no script. The caller falls back to the stack there.
++// 0 when no markers are configured, which is the oracle.
++PLATFORM_EXPORT int ClassifyCallback(v8::Isolate* isolate,
++                                     v8::Local<v8::Value> callback);
++
++// The script URL `ClassifyCallback` judged, for the log to print.
++//
++// "(none)" when there is no function -- a string handler -- and "(no-script)"
++// when V8 has a function but no script for it. Diagnostics only: the two are
++// different reasons to fall back to the stack and they call for different
++// fixes, which a bare -1 cannot tell you.
++PLATFORM_EXPORT std::string CallbackScriptUrl(v8::Isolate* isolate,
++                                              v8::Local<v8::Value> callback);
++
++PLATFORM_EXPORT int64_t ObservableStepUs();
++
++PLATFORM_EXPORT void MarkSubframeOnlyRenderer();
++
++// Clamp a tick value on its way to script, WITHOUT clamping the clock the
++// scheduler runs on. SBXDIFF_OBSERVABLE_CAP_MS, default 10000; inert outside a
++// subframe-only renderer.
++PLATFORM_EXPORT base::TimeTicks CapObservableTicks(base::TimeTicks t);
++
++// Virtual time switch helpers moved to
++// platform/scheduler/common/sbxdiff_virtual_time.h -- the scheduler needs them
++// and its DEPS forbids including a bindings header.
++PLATFORM_EXPORT base::TimeTicks GetVirtualTimeBase();
++
++// The wall clock instant virtual time starts at, in unix milliseconds, or 0
++// when --sbxdiff-initial-time was not given.
++//
++// `performance.timeOrigin` is defined as the wall time of the origin, and Blink
++// builds it from a real clock reading taken when the Performance object was
++// constructed -- which varies per run even when everything downstream is
++// pinned. Under virtual time the answer is known exactly: it is the instant the
++// clock was set to.
++PLATFORM_EXPORT double VirtualTimeOriginUnixMs();
++
++// A reproducible timestamp for an event stamped OUTSIDE the virtual timeline.
++//
++// Input is synthesized in the browser process, on the real clock, and carries
++// `ui::EventTimeForNow()`. Delivered into a page whose clock is virtual, that
++// stamp lands at a different point of the virtual timeline every run --
++// measured on rateyourmusic, `Event.timeStamp` read 555.6 against 567.4 across
++// 34 events in two otherwise identical oracle runs, and it was the last thing
++// keeping the oracle from reproducing its own request bodies.
++//
++// Events the PAGE creates already read the virtual clock and are already
++// reproducible, so they must be left alone. The two are told apart by the only
++// thing that distinguishes them: a stamp from outside is ahead of the virtual
++// clock, which advances only when the scheduler is idle and therefore lags real
++// time. Anything at or behind `TimeTicks::Now()` is returned untouched.
++//
++// Inert unless virtual time is running.
++PLATFORM_EXPORT base::TimeTicks DeterministicEventTimeStamp(
++    base::TimeTicks platform_time_stamp);
++
++}  // namespace blink::sbxdiff
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_TRACER_H_

@@ -1,0 +1,32 @@
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 3f87ec84fb32a..c68b05e94f8a0 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "components/embedder_support/user_agent_utils.h"
+ 
++#include "third_party/blink/public/common/switches.h"
++
+ #include <stdint.h>
+ 
+ #include <array>
+@@ -215,7 +217,17 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
+ // depending on the Reduce User-Agent reduction phase features.
+ std::string GetUserAgentInternal() {
+   std::string product = GetProductAndVersion();
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  // sbxdiff: suppress the "HeadlessChrome" token during a diff run. It is the
++  // loudest bot-detection tell there is and would poison any network archive
++  // captured with this binary. Gated on the runtime switch rather than
++  // BUILDFLAG(SBXDIFF) because components/ must not include
++  // third_party/blink/renderer/** -- blink/public/common is fine.
++  // Note this is *not* headless_shell code: `chrome --headless` reaches this
++  // shared embedder_support path too.
++  // See docs/sbxdiff/CHROMIUM-PATCHES.md #0002.
++  if (cmd->HasSwitch(kHeadless) &&
++      !cmd->HasSwitch(blink::switches::kSbxdiffTraceOut)) {
+     product.insert(0, "Headless");
+   }
+ 

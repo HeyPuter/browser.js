@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8" />
+<body>
+	<script>
+		const h = (a) =>
+			Array.from(a)
+				.map((x) => x.toString(16).padStart(2, "0"))
+				.join("");
+		const d1 = new Uint8Array(16),
+			d2 = new Uint8Array(16);
+		crypto.getRandomValues(d1);
+		crypto.getRandomValues(d2);
+		document.body.textContent = JSON.stringify({
+			draw1: h(d1),
+			draw2: h(d2),
+			uuid: crypto.randomUUID(),
+		});
+	</script>
+</body>

@@ -1,0 +1,182 @@
+diff --git a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
+index 57c48e2ca9a77..d90adf25acba4 100644
+--- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
++++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
+@@ -44,6 +44,15 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_context_snapshot.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_html_document.h"
++#include "third_party/blink/renderer/platform/bindings/buildflags.h"
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "base/functional/callback_helpers.h"
++#include "base/strings/string_number_conversions.h"
++#include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
++#include "third_party/blink/renderer/platform/scheduler/public/virtual_time_controller.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
+@@ -464,6 +473,126 @@ void LocalWindowProxy::UpdateDocumentProperty() {
+   // Update the cached accessor for window.document.
+   CHECK(V8PrivateProperty::GetWindowDocumentCachedAccessor(GetIsolate())
+             .Set(context->Global(), document_wrapper));
++
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: tell the tracer which document this realm hosts. The tracer lives
++  // in platform/ and cannot see Document, so the association has to be pushed
++  // from core. Without it a trace file can only be identified by guessing from
++  // call counts. See docs/sbxdiff/CHROMIUM-PATCHES.md #0005.
++  Document* document = GetFrame()->GetDocument();
++  // NoteRealmForContext defers when this thread has no tracer yet, so a realm
++  // hook never causes a trace file to be opened on its own.
++  sbxdiff::SbxTracer::NoteRealmForContext(
++      GetIsolate(), context->Global(),
++      document ? document->Url().GetString().Utf8() : std::string());
++
++  // sbxdiff: re-arm the virtual time budget now that the document exists.
++  //
++  // Page's constructor grants a fence to stop virtual time fast-forwarding
++  // through far-future startup timers. But that fence is *consumed* during
++  // load, so by the time page script runs the clock sits at the fence and
++  // cannot advance: a setTimeout(0) still fires because it is already due,
++  // while any setTimeout(n>0) never fires at all. Measured on a two-timer
++  // page -- the first callback ran, the second never did, at both a 2000 ms
++  // and a 10000 ms fence, which is what ruled out "the fence is too small".
++  //
++  // This was previously masked by --virtual-time-budget, which grants a second
++  // budget over CDP after the page has started; the in-binary runner has no
++  // such second grant, so it has to happen here.
++  //
++  // GrantVirtualTimeBudget *sets the remaining budget*, so calling it here
++  // re-arms the fence relative to the current virtual time, at the last point
++  // before script can observe a clock.
++  if (World().IsMainWorld()) {
++    const base::CommandLine* sbx_cmd = base::CommandLine::ForCurrentProcess();
++    if (sbx_cmd && sbx_cmd->HasSwitch(::switches::kSbxdiffInitialTime)) {
++      if (Page* page = GetFrame()->GetPage()) {
++        if (auto* scheduler = page->GetPageScheduler()) {
++          if (auto* vtc = scheduler->GetVirtualTimeController()) {
++            const std::string url =
++                document ? document->Url().GetString().Utf8() : std::string();
++            // --sbxdiff-virtual-time-after: enable here, at the realm being
++            // compared, rather than in Page's constructor.
++            //
++            // Virtual time during a sandbox's own bootstrap is what broke it:
++            // `deterministic` never activated the service worker at all and
++            // `advance` activated it three times while the guest realm got 2
++            // records instead of 1746. Setup runs on the real clock; the page
++            // under test runs on virtual time. Both sides enable at their own
++            // guest realm, so the runs stay symmetric.
++            bool arm_budget = true;
++            // A renderer that hosts ONLY a cross-origin subframe can never see
++            // the start realm, because the start realm is the page under test
++            // and it lives in a different process. Deferring there does not
++            // delay virtual time, it cancels it: measured, the Turnstile
++            // widget's renderer ran the whole journey on the real wall clock
++            // and stamped it into Cloudflare's payload -- two oracle runs sent
++            // `|1789282059420|` and `|1789282110001|`, 50.6 s apart, which is
++            // the real gap between the runs, and about 7.7 hours past the
++            // pinned origin. Every request body built there diverged, and the
++            // page's own realm showed zero divergences the whole time.
++            //
++            // The deferral exists to keep a SANDBOX's bootstrap -- its harness
++            // page and its service worker registration -- off the virtual
++            // clock. A renderer whose main frame is remote hosts no bootstrap,
++            // so there is nothing there to protect and it starts immediately.
++            const bool subframe_only_renderer =
++                page->MainFrame() && !page->MainFrame()->IsLocalFrame();
++            if (sbxdiff::VirtualTimeIsDeferred()) {
++              if (sbxdiff::IsVirtualTimeStartRealm(url) ||
++                  subframe_only_renderer) {
++                if (subframe_only_renderer) {
++                  sbxdiff::MarkSubframeOnlyRenderer();
++                }
++                const int policy_id = sbxdiff::VirtualTimePolicyFromSwitch();
++                auto policy =
++                    policy_id == 0
++                        ? VirtualTimeController::VirtualTimePolicy::kAdvance
++                    : policy_id == 1
++                        ? VirtualTimeController::VirtualTimePolicy::kPause
++                        : VirtualTimeController::VirtualTimePolicy::
++                              kDeterministicLoading;
++                // EnableVirtualTime early-returns when it is already on, so a
++                // second matching realm (an iframe of the page under test)
++                // re-arms the budget without restarting the clock.
++                sbxdiff::SetVirtualTimeBase(
++                    vtc->EnableVirtualTime(base::Time()));
++                vtc->SetVirtualTimePolicy(policy);
++                sbxdiff::MarkVirtualTimeStarted();
++              } else if (!sbxdiff::VirtualTimeHasStarted()) {
++                // Before the start realm: leave the clock alone entirely, so
++                // the sandbox's own bootstrap runs on the real clock.
++                //
++                // A flag rather than an early return, so anything added to
++                // this function later still runs.
++                arm_budget = false;
++              }
++              // After the start realm, every realm re-arms: under kAdvance the
++              // clock only moves while budget remains, and the page load is
++              // serviced by a worker that needs it to keep moving.
++            }
++            if (arm_budget) {
++              // The budget is the SAME on both, deliberately. Nothing paces
++              // a subframe-only renderer's clock -- the coordinator is
++              // per-process, so its virtual time is its own -- and it
++              // fast-forwards to whatever far-future timer is pending, which
++              // is a different set every run. Fencing the scheduler to stop
++              // that does not work: a tight fence parks the clock and the
++              // widget never does its work (6 of 8 request bodies became
++              // "oracle never sent this"), and a looser one hangs the run
++              // outright at 60 s, because timers beyond the fence never fire.
++              // The clock has to keep moving. What gets capped instead is the
++              // value handed to SCRIPT -- see sbxdiff::CapObservableTicks.
++              vtc->GrantVirtualTimeBudget(
++                  base::Milliseconds(sbxdiff::VirtualTimeBudgetFromSwitch()),
++                  base::DoNothing());
++            }
++          }
++        }
++      }
++    }
++  }
++#endif
+ }
+ 
+ void LocalWindowProxy::UpdateActivityLogger() {
+diff --git a/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc b/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc
+index e4cbe33f771c8..015301421fc69 100644
+--- a/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc
++++ b/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc
+@@ -46,6 +46,7 @@
+ #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
+ #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
+ #include "third_party/blink/renderer/platform/bindings/origin_trial_features.h"
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
+ #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
+ #include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+@@ -225,6 +226,22 @@ void WorkerOrWorkletScriptController::Initialize(const KURL& url_for_debugger) {
+                              context);
+   }
+ 
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: realm identity for workers and worklets. LocalWindowProxy's hook
++  // (UpdateDocumentProperty) is main-world only, so without this a worker
++  // realm gets an id but no URL -- and the sandbox's client runs in a worker,
++  // which makes worker realms the ones that matter most. `url_for_debugger` is
++  // the script URL Blink has already computed for precisely this purpose, and
++  // this runs after the global proxy is associated, so the object id is
++  // stable. Outside both branches above so worklets are covered too.
++  // See docs/sbxdiff/CHROMIUM-PATCHES.md #0006.
++  // NoteRealmForContext, not Get()+NoteRealm: Get() would create a tracer and
++  // open a trace file on a worker thread that may never run any JS. A worker
++  // whose script fails to load is exactly that, and it hung the run 5/5.
++  sbxdiff::SbxTracer::NoteRealmForContext(isolate_, global_proxy,
++                                          url_for_debugger.GetString().Utf8());
++#endif
++
+   if (!disable_eval_pending_.empty()) {
+     DisableEvalInternal(disable_eval_pending_);
+     disable_eval_pending_ = String();

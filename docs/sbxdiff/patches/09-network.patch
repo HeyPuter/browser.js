@@ -1,0 +1,2135 @@
+diff --git a/base/sbxdiff_body_hash.h b/base/sbxdiff_body_hash.h
+new file mode 100644
+index 0000000000000..8707541d813bc
+--- /dev/null
++++ b/base/sbxdiff_body_hash.h
+@@ -0,0 +1,54 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_SBXDIFF_BODY_HASH_H_
++#define BASE_SBXDIFF_BODY_HASH_H_
++
++#include <algorithm>
++#include <cstdint>
++#include <string>
++#include <string_view>
++
++namespace base::sbxdiff {
++
++// FNV-1a over a request body, rendered "<length>:<hash in base36>".
++//
++// A request body is guest-observable output in the strongest sense: it is what
++// the page TELLS the server about itself. Comparing the oracle's against the
++// sandbox's is the only check sbxdiff has that reaches divergences the API
++// trace never sees -- but the oracle builds its bodies here, in C++ inside the
++// network service, while the sandbox builds its own in the guest's JavaScript.
++// There is no object the two can share, only a string both can independently
++// derive, so the SAME hash has to exist in three places: here, `bodyHash` in
++// runway's `sbxdiff/store.ts`, and `SbxdiffTransport.hash` in
++// `sbxdiff-transport.js`. If they ever disagree the comparison silently stops
++// meaning anything -- every request looks divergent, or none do.
++//
++// Hence this header: no dependencies beyond the standard library, deliberately,
++// so `sbxdiff/bodyhash.test.ts` can compile it on its own in about a second and
++// hold all three to one set of golden vectors on every run.
++//
++// Not a digest. It only has to distinguish payloads, and it has to be cheap
++// enough to run on the request path of every load.
++inline std::string BodyHash(std::string_view body) {
++  uint32_t h = 0x811c9dc5u;
++  for (const char c : body) {
++    h ^= static_cast<uint8_t>(c);
++    h *= 0x01000193u;
++  }
++  std::string base36;
++  if (h == 0) {
++    base36 = "0";
++  }
++  while (h) {
++    base36.push_back("0123456789abcdefghijklmnopqrstuvwxyz"[h % 36]);
++    h /= 36;
++  }
++  std::reverse(base36.begin(), base36.end());
++  return std::to_string(body.size()) + ":" + base36;
++}
++
++}  // namespace base::sbxdiff
++
++#endif  // BASE_SBXDIFF_BODY_HASH_H_
+diff --git a/base/sbxdiff_net_store.cc b/base/sbxdiff_net_store.cc
+new file mode 100644
+index 0000000000000..3f3711863b38e
+--- /dev/null
++++ b/base/sbxdiff_net_store.cc
+@@ -0,0 +1,337 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/sbxdiff_net_store.h"
++
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <functional>
++#include <map>
++#include <optional>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "base/files/file_enumerator.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/hash/hash.h"
++#include "base/no_destructor.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/synchronization/lock.h"
++#include "base/time/time_override.h"
++
++namespace base::sbxdiff {
++
++namespace {
++
++const FilePath& RecordDir() {
++  static NoDestructor<FilePath> dir([] {
++    const CommandLine* cmd = CommandLine::ForCurrentProcess();
++    return cmd ? cmd->GetSwitchValuePath(::switches::kSbxdiffNetRecord)
++               : FilePath();
++  }());
++  return *dir;
++}
++
++const FilePath& ReplayDir() {
++  static NoDestructor<FilePath> dir([] {
++    const CommandLine* cmd = CommandLine::ForCurrentProcess();
++    return cmd ? cmd->GetSwitchValuePath(::switches::kSbxdiffNetReplay)
++               : FilePath();
++  }());
++  return *dir;
++}
++
++// 64 bits of filename, from two independent hashes. The URL is stored in the
++// file and verified on read, so a collision degrades to a recorded miss rather
++// than serving the wrong body.
++//
++// The URL is used whole. An earlier version stripped Cloudflare's per-attempt
++// `__cf_chl_tk`/`__cf_chl_rt_tk` parameters, on the theory that a token minted
++// during recording could never be asked for again. That was wrong twice over:
++// the token is minted by the SERVER and lives in the recorded challenge HTML,
++// so a replay of those exact bytes asks for exactly the same URL; and stripping
++// collapsed four distinct steps of the challenge -- the bare URL, the redirect
++// token, the challenge, the success token -- onto one key, which scrambled the
++// ordinals that put them back in order.
++std::string KeyFor(const std::string& url) {
++  const uint32_t a = PersistentHash(url);
++  std::string reversed(url.rbegin(), url.rend());
++  const uint32_t b = PersistentHash(reversed);
++  return NumberToString(a) + "_" + NumberToString(b);
++}
++
++// Every recording gets its own file; the suffix is what puts them back in
++// order. A URL can be requested more than once and return different bodies,
++// so one file per URL would lose all but the last.
++//
++// The clock is deliberately the REAL one: under --sbxdiff-initial-time
++// Time::Now() is virtual and may not advance at all between two writes, which
++// would make the suffix useless exactly when it is needed. The per-process
++// counter breaks ties within a microsecond; ordering across processes comes
++// from the timestamp, which matters because a challenge page and the page it
++// leads to are often in different renderers.
++std::string OrderSuffix() {
++  static std::atomic<uint32_t> seq{0};
++  const int64_t micros =
++      (subtle::TimeNowIgnoringOverride() - Time::UnixEpoch()).InMicroseconds();
++  return NumberToString(micros) + "_" +
++         NumberToString(seq.fetch_add(1, std::memory_order_relaxed));
++}
++
++constexpr char kSep = '\n';
++constexpr std::string_view kMagicV2 = "SBXD2\n";
++constexpr std::string_view kMagicV3 = "SBXD3\n";
++
++std::string Serialize(const std::string& url,
++                      const std::string& mime_type,
++                      const std::string& encoding,
++                      const std::string& raw_headers,
++                      const std::string& request_body,
++                      const char* data,
++                      size_t size) {
++  std::string out;
++  out.reserve(kMagicV3.size() + url.size() + raw_headers.size() +
++              request_body.size() + size + 64);
++  out.append(kMagicV3);
++  out.append(url).push_back(kSep);
++  out.append(mime_type).push_back(kSep);
++  out.append(encoding).push_back(kSep);
++  out.append(NumberToString(raw_headers.size())).push_back(kSep);
++  out.append(NumberToString(request_body.size())).push_back(kSep);
++  out.append(raw_headers);
++  out.append(request_body);
++  if (data && size) {
++    out.append(data, size);
++  }
++  return out;
++}
++
++// Splits a record back into its URL and its parts. Understands both the v2
++// format and the older headerless one.
++bool Deserialize(const std::string& contents,
++                 std::string* url_out,
++                 StoredResponse* out) {
++  size_t pos = 0;
++  bool v2 = false;
++  bool v3 = false;
++  if (contents.size() >= kMagicV3.size() &&
++      std::string_view(contents).substr(0, kMagicV3.size()) == kMagicV3) {
++    v2 = v3 = true;
++    pos = kMagicV3.size();
++  } else if (contents.size() >= kMagicV2.size() &&
++             std::string_view(contents).substr(0, kMagicV2.size()) == kMagicV2) {
++    v2 = true;
++    pos = kMagicV2.size();
++  }
++  auto field = [&](std::string* dest) {
++    const size_t end = contents.find(kSep, pos);
++    if (end == std::string::npos) {
++      return false;
++    }
++    dest->assign(contents, pos, end - pos);
++    pos = end + 1;
++    return true;
++  };
++  std::string url;
++  std::string mime;
++  std::string encoding;
++  if (!field(&url) || !field(&mime) || !field(&encoding)) {
++    return false;
++  }
++  std::string raw_headers;
++  std::string request_body;
++  if (v2) {
++    std::string len_str;
++    if (!field(&len_str)) {
++      return false;
++    }
++    size_t header_len = 0;
++    if (!StringToSizeT(len_str, &header_len)) {
++      return false;
++    }
++    size_t body_len = 0;
++    if (v3) {
++      std::string body_len_str;
++      if (!field(&body_len_str) || !StringToSizeT(body_len_str, &body_len)) {
++        return false;
++      }
++    }
++    if (pos + header_len + body_len > contents.size()) {
++      return false;
++    }
++    raw_headers.assign(contents, pos, header_len);
++    pos += header_len;
++    request_body.assign(contents, pos, body_len);
++    pos += body_len;
++  }
++  if (url_out) {
++    *url_out = url;
++  }
++  if (out) {
++    out->mime_type = std::move(mime);
++    out->encoding = std::move(encoding);
++    out->raw_headers = std::move(raw_headers);
++    out->request_body = std::move(request_body);
++    out->body.assign(contents, pos, std::string::npos);
++  }
++  return true;
++}
++
++}  // namespace
++
++bool IsRecordingResponses() {
++  return !RecordDir().empty();
++}
++
++bool IsReplayingResponses() {
++  return !ReplayDir().empty();
++}
++
++void RecordResponse(const std::string& url,
++                    const std::string& mime_type,
++                    const std::string& encoding,
++                    const std::string& raw_headers,
++                    const std::string& request_body,
++                    const char* data,
++                    size_t size) {
++  if (RecordDir().empty() || url.empty()) {
++    return;
++  }
++  std::string out = Serialize(url, mime_type, encoding, raw_headers,
++                              request_body, data, size);
++
++  // Drop a repeat of the response we just recorded for this URL.
++  //
++  // Browser-side interception can see one fetch more than once, and a duplicate
++  // is not harmless here: ordinals are the sequence, so a doubled entry shifts
++  // every later response. Measured on rateyourmusic, the root URL recorded five
++  // times instead of twice, which put a DIFFERENT challenge instance at ordinal
++  // 1 and made the next request's `?ray=` not match anything in the store.
++  //
++  // Only an immediately-repeated identical record is dropped, and headers are
++  // part of what is compared. A URL that really does answer differently on a
++  // second request -- a challenge and then the real page, or two redirects to
++  // different tokens -- still gets both, which is the whole point of ordinals.
++  {
++    static NoDestructor<std::map<std::string, size_t>> last_record_hash;
++    static NoDestructor<Lock> lock;
++    AutoLock guard(*lock);
++    const size_t h = std::hash<std::string>{}(out);
++    auto it = last_record_hash->find(url);
++    if (it != last_record_hash->end() && it->second == h) {
++      return;
++    }
++    (*last_record_hash)[url] = h;
++  }
++
++  // Best effort: a failed write shows up as a replay miss later, which is a
++  // recorded divergence rather than a silent wrong answer.
++  std::ignore =
++      WriteFile(RecordDir().AppendASCII(KeyFor(url) + "_" + OrderSuffix()), out);
++}
++
++namespace {
++
++// url -> every recording for it, in record order. Built once: the directory
++// has to be scanned to recover ordering from the filename suffixes, and the
++// bodies are needed on a hit anyway.
++using ReplayIndex = std::map<std::string, std::vector<StoredResponse>>;
++
++const ReplayIndex& GetReplayIndex() {
++  static NoDestructor<ReplayIndex> index([] {
++    ReplayIndex built;
++    if (ReplayDir().empty()) {
++      return built;
++    }
++    // (suffix, record) so entries sort into record order. The suffix sorts
++    // numerically, not lexicographically, hence the pair rather than a string.
++    std::map<std::string,
++             std::vector<std::pair<std::pair<int64_t, uint32_t>, StoredResponse>>>
++        staged;
++    FileEnumerator files(ReplayDir(), /*recursive=*/false,
++                         FileEnumerator::FILES);
++    for (FilePath path = files.Next(); !path.empty(); path = files.Next()) {
++      std::string contents;
++      if (!ReadFileToString(path, &contents)) {
++        continue;
++      }
++      std::string url;
++      StoredResponse resp;
++      if (!Deserialize(contents, &url, &resp)) {
++        continue;
++      }
++      // Trailing "_<micros>_<seq>"; anything without it predates ordinals and
++      // sorts first, which keeps an old store readable.
++      int64_t micros = 0;
++      uint32_t seq = 0;
++      const std::string name = path.BaseName().MaybeAsASCII();
++      const size_t last = name.rfind('_');
++      if (last != std::string::npos && last > 0) {
++        const size_t prev = name.rfind('_', last - 1);
++        if (prev != std::string::npos) {
++          std::ignore =
++              StringToInt64(name.substr(prev + 1, last - prev - 1), &micros);
++          std::ignore = StringToUint(name.substr(last + 1), &seq);
++        }
++      }
++      staged[url].emplace_back(std::make_pair(micros, seq), std::move(resp));
++    }
++    for (auto& [url, entries] : staged) {
++      std::sort(entries.begin(), entries.end(),
++                [](const auto& a, const auto& b) { return a.first < b.first; });
++      std::vector<StoredResponse> ordered;
++      ordered.reserve(entries.size());
++      for (auto& entry : entries) {
++        ordered.push_back(std::move(entry.second));
++      }
++      built[url] = std::move(ordered);
++    }
++    return built;
++  }());
++  return *index;
++}
++
++}  // namespace
++
++bool LookupResponse(const std::string& url,
++                    size_t ordinal,
++                    StoredResponse* out) {
++  if (ReplayDir().empty()) {
++    return false;
++  }
++  const ReplayIndex& index = GetReplayIndex();
++  auto it = index.find(url);
++  if (it == index.end() || it->second.empty()) {
++    return false;
++  }
++  // Past the end reuses the last: a resource fetched more times than it was
++  // recorded is normal, and the oracle never saw more than it recorded.
++  *out = it->second[std::min(ordinal, it->second.size() - 1)];
++  return true;
++}
++
++bool LookupNextResponse(const std::string& url,
++                        StoredResponse* out,
++                        size_t* ordinal_out) {
++  size_t ordinal = 0;
++  {
++    static NoDestructor<std::map<std::string, size_t>> counts;
++    static NoDestructor<Lock> lock;
++    AutoLock guard(*lock);
++    ordinal = (*counts)[url]++;
++  }
++  if (ordinal_out) {
++    *ordinal_out = ordinal;
++  }
++  return LookupResponse(url, ordinal, out);
++}
++
++}  // namespace base::sbxdiff
+diff --git a/base/sbxdiff_net_store.h b/base/sbxdiff_net_store.h
+new file mode 100644
+index 0000000000000..132143e43f909
+--- /dev/null
++++ b/base/sbxdiff_net_store.h
+@@ -0,0 +1,107 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_SBXDIFF_NET_STORE_H_
++#define BASE_SBXDIFF_NET_STORE_H_
++
++#include <stddef.h>
++
++#include <string>
++
++#include "base/base_export.h"
++
++namespace base::sbxdiff {
++
++// sbxdiff: on-disk response store for hermetic network replay.
++//
++// Lives in //base because both ends need it and they are in different
++// processes: recording happens in the browser (a URLLoaderFactory interceptor,
++// the only layer that sees opaque cross-origin bodies) and so does replay.
++//
++// A file holds a v2 record:
++//
++//   "SBXD3\n" url "\n" mime "\n" encoding "\n" <header_bytes> "\n"
++//   <request_body_bytes> "\n" <raw_headers> <request_body> <body>
++//
++// `raw_headers` is net::HttpResponseHeaders::raw_headers() verbatim -- a NUL
++// separated status line and field list -- hence the explicit length, and hence
++// it cannot be a newline-delimited field, and the same for the request body.
++// A v2 file (no request body) and a headerless v1 file both still read.
++//
++// Headers are stored because the response a page sees is not just its bytes.
++// Measured on rateyourmusic: Cloudflare answers the first navigation with
++// `Critical-CH`, Chromium restarts the navigation to resend client hints, and
++// the SECOND fetch is the challenge that actually runs -- the first is thrown
++// away. A replay that serves bodies under a synthetic `200 OK` never restarts,
++// so it hands the page the abandoned challenge, whose orchestrate/fo endpoints
++// are not in the store at all. The same applies to `Location`: see
++// RecordResponse.
++//
++// The URL is stored in the file and verified on read, so a filename-hash
++// collision degrades to a recorded replay miss -- a divergence -- rather than
++// silently serving the wrong body.
++struct BASE_EXPORT StoredResponse {
++  std::string mime_type;
++  std::string encoding;
++  std::string raw_headers;
++  // The request body that produced this response, when there was one. A store
++  // answers by URL and ordinal and cannot grade a request, so an anti-bot
++  // endpoint hands back the recorded "you passed" whatever was posted to it.
++  // Keeping what the recording actually sent is what lets a replay CHECK that
++  // it is being handed a verdict on the same answer, rather than assume it.
++  std::string request_body;
++  std::string body;
++};
++
++BASE_EXPORT bool IsRecordingResponses();
++BASE_EXPORT bool IsReplayingResponses();
++
++// Appends one response. A redirect is a response: it is recorded with its
++// headers and an empty body, and the chain continues under the new URL.
++//
++// Recording only the final body of a redirect chain loses the URL the page
++// actually ends up at, and that URL is content. Cloudflare bounces
++// `https://site/` to `https://site/?__cf_chl_rt_tk=<token>`; the challenge
++// script reads the token out of `location`. Flatten the chain and the script
++// runs at a URL that has no token.
++BASE_EXPORT void RecordResponse(const std::string& url,
++                                const std::string& mime_type,
++                                const std::string& encoding,
++                                const std::string& raw_headers,
++                                const std::string& request_body,
++                                const char* data,
++                                size_t size);
++
++// The `ordinal`-th recorded response for `url`, in the order they were
++// recorded. False on a miss; the caller must treat that as a divergence
++// (RULES.md #14).
++//
++// The ordinal matters because a URL can legitimately return different bodies on
++// successive requests, and collapsing them silently changes what a replay does.
++// rateyourmusic serves a Cloudflare challenge and then the real page at the SAME
++// url: with a URL-only key the second overwrote the first, so replay jumped
++// straight to the real page and the challenge never happened. That is a
++// different user journey from the one that was recorded, and a sandbox that
++// cannot survive the challenge would have looked fine.
++//
++// An ordinal beyond the recorded count returns the LAST recording rather than
++// missing: a resource fetched twice with identical bytes is normal, and the
++// oracle only ever saw as many distinct responses as it recorded.
++BASE_EXPORT bool LookupResponse(const std::string& url,
++                                size_t ordinal,
++                                StoredResponse* out);
++
++// Same, with the ordinal drawn from a process-global per-URL counter.
++//
++// Global rather than per-factory on purpose. WillCreateURLLoaderFactory runs
++// once per factory, and a navigation that restarts (Critical-CH) gets a fresh
++// factory; a per-factory counter restarts at 0 and serves the same recording
++// twice, which is exactly the case ordinals exist to distinguish.
++BASE_EXPORT bool LookupNextResponse(const std::string& url,
++                                    StoredResponse* out,
++                                    size_t* ordinal_out);
++
++}  // namespace base::sbxdiff
++
++#endif  // BASE_SBXDIFF_NET_STORE_H_
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index b8f49cfc8b437..912922f9afb13 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -102,6 +102,7 @@
+ #include "chrome/browser/font_family_cache.h"
+ #include "chrome/browser/glic/host/guest_util.h"
+ #include "chrome/browser/glic/public/features.h"
++#include "chrome/browser/headless/sbxdiff_net_replay.h"
+ #include "chrome/browser/headless/headless_mode_util.h"
+ #include "chrome/browser/hid/chrome_hid_delegate.h"
+ #include "chrome/browser/history/history_service_factory.h"
+@@ -6678,6 +6679,11 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+     network::mojom::URLLoaderFactoryOverridePtr* factory_override,
+     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
+     bool is_for_network_service) {
++  // sbxdiff: install the replay interceptor first, so a replayed run serves
++  // every request -- navigation included -- from the recorded store and never
++  // reaches the network. No-op unless --sbxdiff-net-replay is set.
++  sbxdiff::MaybeInstallReplayInterceptor(factory_builder);
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   auto* web_request_api =
+       extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(
+diff --git a/chrome/browser/headless/sbxdiff_net_replay.cc b/chrome/browser/headless/sbxdiff_net_replay.cc
+new file mode 100644
+index 0000000000000..91361bd83d161
+--- /dev/null
++++ b/chrome/browser/headless/sbxdiff_net_replay.cc
+@@ -0,0 +1,692 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/headless/sbxdiff_net_replay.h"
++
++#include <map>
++#include <optional>
++#include <string>
++#include <utility>
++
++#include "base/base_switches.h"
++#include "base/byte_size.h"
++#include "base/command_line.h"
++#include "base/environment.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/memory/weak_ptr.h"
++#include "base/no_destructor.h"
++#include "base/sbxdiff_body_hash.h"
++#include "base/sbxdiff_net_store.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/task/sequenced_task_runner.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "mojo/public/cpp/bindings/self_owned_receiver.h"
++#include "mojo/public/cpp/system/data_pipe.h"
++#include "mojo/public/cpp/system/data_pipe_drainer.h"
++#include "net/base/net_errors.h"
++#include "net/http/http_response_headers.h"
++#include "net/http/http_util.h"
++#include "net/url_request/redirect_info.h"
++#include "services/network/public/cpp/parsed_headers.h"
++#include "services/network/public/cpp/data_element.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/resource_request_body.h"
++#include "services/network/public/cpp/url_loader_completion_status.h"
++#include "services/network/public/cpp/url_loader_factory_builder.h"
++#include "services/network/public/mojom/early_hints.mojom.h"
++#include "services/network/public/mojom/url_loader.mojom.h"
++#include "services/network/public/mojom/url_loader_factory.mojom.h"
++#include "services/network/public/cpp/timing_allow_origin_parser.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "url/gurl.h"
++
++namespace sbxdiff {
++
++namespace {
++
++// Mirror of the harness's `bodyFileStem` (runway/src/sbxdiff/store.ts), so the
++// oracle's bytes land beside the sandbox's under the same name and a divergence
++// can be BYTE-DIFFED rather than just counted. The two sides share no object --
++// one is C++ in the network service, the other is JavaScript in the guest --
++// only this derivation, so it has to stay in step on both.
++std::string BodyFileStem(const std::string& url, int ordinal) {
++  std::string key = url + "#" + base::NumberToString(ordinal);
++  std::string out;
++  bool in_run = false;
++  for (char c : key) {
++    const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
++                      (c >= '0' && c <= '9') || c == '.' || c == '_' ||
++                      c == '-';
++    if (safe) {
++      out.push_back(c);
++      in_run = false;
++    } else if (!in_run) {
++      out.push_back('_');
++      in_run = true;
++    }
++  }
++  if (out.size() > 120) {
++    out = out.substr(out.size() - 120);
++  }
++  return out;
++}
++
++// Where to drop them, or nowhere. An env var rather than a switch because this
++// is a diagnostic the harness turns on for one run, and a switch would have to
++// be threaded through the renderer allowlist for no benefit.
++const base::FilePath& BodyDumpDir() {
++  static const base::NoDestructor<base::FilePath> dir([] {
++    std::optional<std::string> v =
++        base::Environment::Create()->GetVar("SBXDIFF_BODY_DUMP_DIR");
++    if (v && !v->empty()) {
++      return base::FilePath(*v);
++    }
++    return base::FilePath();
++  }());
++  return *dir;
++}
++
++}  // namespace
++
++namespace {
++
++// Records a response in the BROWSER process, by sitting between the network
++// service and the renderer.
++//
++// Renderer-side probes cannot do this. A cross-origin response without CORS is
++// opaque: the renderer never receives its bytes, so a probe has nothing to
++// record. Measured on rateyourmusic, 20 of 78 requested URLs never reached the
++// store that way -- every web font, a no-cors analytics beacon, and two
++// Cloudflare challenge endpoints among them. A replay then blocks requests the
++// recording had no trouble with, and an anti-bot challenge that depends on them
++// cannot pass.
++//
++// The body is buffered and forwarded once complete rather than teed
++// incrementally. That trades streaming for a great deal less flow-control
++// machinery; a recording run is not timing-critical, and the bytes the page
++// finally sees are identical.
++class RecordingClient : public network::mojom::URLLoaderClient,
++                        public mojo::DataPipeDrainer::Client {
++ public:
++  // Self-owned, but NOT via MakeSelfOwnedReceiver: that deletes on pipe
++  // disconnect, and the network service closes its end as soon as it has sent
++  // OnComplete -- while the drainer is still reading asynchronously. The
++  // response then never reaches the renderer and the page simply does not load.
++  // Lifetime has to outlive delivery, not the pipe.
++  static void Create(GURL url,
++                     std::string request_body,
++                     mojo::PendingReceiver<network::mojom::URLLoaderClient> recv,
++                     mojo::PendingRemote<network::mojom::URLLoaderClient> real) {
++    auto* self = new RecordingClient(std::move(url), std::move(request_body),
++                                     std::move(real));
++    self->receiver_.Bind(std::move(recv));
++    self->receiver_.set_disconnect_handler(base::BindOnce(
++        &RecordingClient::OnUpstreamGone, base::Unretained(self)));
++  }
++
++  RecordingClient(GURL url,
++                  std::string request_body,
++                  mojo::PendingRemote<network::mojom::URLLoaderClient> real)
++      : url_(std::move(url)),
++        request_body_(std::move(request_body)),
++        real_(std::move(real)) {}
++
++  RecordingClient(const RecordingClient&) = delete;
++  RecordingClient& operator=(const RecordingClient&) = delete;
++  ~RecordingClient() override = default;
++
++  // network::mojom::URLLoaderClient:
++  void OnReceiveEarlyHints(network::mojom::EarlyHintsPtr hints) override {
++    real_->OnReceiveEarlyHints(std::move(hints));
++  }
++
++  void OnReceiveResponse(network::mojom::URLResponseHeadPtr head,
++                         mojo::ScopedDataPipeConsumerHandle body,
++                         std::optional<mojo_base::BigBuffer> metadata) override {
++    if (head) {
++      mime_type_ = head->mime_type;
++      charset_ = head->charset;
++      raw_headers_ = head->headers ? head->headers->raw_headers() : std::string();
++    }
++    head_ = std::move(head);
++    metadata_ = std::move(metadata);
++    if (!body) {
++      Deliver();
++
++      return;
++    }
++    drainer_ = std::make_unique<mojo::DataPipeDrainer>(this, std::move(body));
++  }
++
++  void OnReceiveRedirect(const net::RedirectInfo& info,
++                         network::mojom::URLResponseHeadPtr head) override {
++    // A redirect is a recording of its own, under the URL that produced it.
++    //
++    // Following the chain silently and storing only the final body loses the
++    // fact that the page moved, and the URL it moved to. Cloudflare's managed
++    // challenge sends `/` -> `/?__cf_chl_rt_tk=<token>`, and the challenge
++    // script reads that token out of `location`; a replay that answers `/` with
++    // the challenge body directly runs the script at a URL with no token.
++    if (head) {
++      base::sbxdiff::RecordResponse(
++          url_.spec(), head->mime_type, head->charset,
++          head->headers ? head->headers->raw_headers() : std::string(),
++          request_body_, /*data=*/nullptr, /*size=*/0);
++    }
++    url_ = info.new_url;
++    real_->OnReceiveRedirect(info, std::move(head));
++  }
++
++  void OnUploadProgress(int64_t current,
++                        int64_t total,
++                        OnUploadProgressCallback callback) override {
++    real_->OnUploadProgress(current, total, std::move(callback));
++  }
++
++  void OnTransferSizeUpdated(int32_t diff) override {
++    real_->OnTransferSizeUpdated(diff);
++  }
++
++  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
++    completion_ = status;
++    if (delivered_) {
++      real_->OnComplete(status);
++      Finish();
++    }
++  }
++
++  // mojo::DataPipeDrainer::Client:
++  void OnDataAvailable(base::span<const uint8_t> data) override {
++    body_.append(reinterpret_cast<const char*>(data.data()), data.size());
++  }
++
++  void OnDataComplete() override { Deliver(); }
++
++ private:
++  // Upstream finished and dropped us. Deliver whatever was drained; if the
++  // drain never started there is nothing to wait for.
++  void OnUpstreamGone() {
++    upstream_gone_ = true;
++    if (!drainer_ || delivered_) {
++      Deliver();
++      Finish();
++    }
++  }
++
++  void Finish() {
++    if (finished_) {
++      return;
++    }
++    finished_ = true;
++    // Deleting inline would unwind through the mojo dispatch that called us.
++    base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
++  }
++
++  void Deliver() {
++    if (delivered_) {
++      return;
++    }
++    delivered_ = true;
++    base::sbxdiff::RecordResponse(url_.spec(), mime_type_, charset_,
++                                  raw_headers_, request_body_, body_.data(),
++                                  body_.size());
++
++    mojo::ScopedDataPipeProducerHandle producer;
++    mojo::ScopedDataPipeConsumerHandle consumer;
++    const MojoCreateDataPipeOptions options = {
++        sizeof(MojoCreateDataPipeOptions), MOJO_CREATE_DATA_PIPE_FLAG_NONE, 1,
++        static_cast<uint32_t>(body_.empty() ? 1 : body_.size())};
++    if (mojo::CreateDataPipe(&options, producer, consumer) != MOJO_RESULT_OK) {
++      real_->OnComplete(
++          network::URLLoaderCompletionStatus(net::ERR_INSUFFICIENT_RESOURCES));
++
++      return;
++    }
++    real_->OnReceiveResponse(std::move(head_), std::move(consumer),
++                             std::move(metadata_));
++    if (!body_.empty()) {
++      // The pipe was sized to the body, so one write suffices.
++      size_t written = 0;
++      producer->WriteData(base::as_byte_span(body_), MOJO_WRITE_DATA_FLAG_NONE,
++                          written);
++    }
++    producer.reset();
++    if (completion_) {
++      real_->OnComplete(*completion_);
++    }
++    if (upstream_gone_) {
++      Finish();
++    }
++  }
++
++  GURL url_;
++  std::string request_body_;
++  mojo::Remote<network::mojom::URLLoaderClient> real_;
++  network::mojom::URLResponseHeadPtr head_;
++  std::optional<mojo_base::BigBuffer> metadata_;
++  std::optional<network::URLLoaderCompletionStatus> completion_;
++  std::unique_ptr<mojo::DataPipeDrainer> drainer_;
++  std::string mime_type_;
++  std::string charset_;
++  std::string raw_headers_;
++  std::string body_;
++  bool delivered_ = false;
++  bool upstream_gone_ = false;
++  bool finished_ = false;
++  mojo::Receiver<network::mojom::URLLoaderClient> receiver_{this};
++};
++
++// The request body, as far as it can be read without consuming it.
++//
++// Only `kBytes` elements are readable here: a data pipe would have to be
++// drained, and draining it is what the network service is about to do. A body
++// that arrives as a pipe is recorded as an empty string and compares equal to
++// anything, which is a gap, not a pass -- see the mismatch check in
++// ReplayLoader::Serve.
++std::string ReadableRequestBody(const network::ResourceRequest& request) {
++  if (!request.request_body) {
++    return std::string();
++  }
++  std::string out;
++  for (const network::DataElement& element : *request.request_body->elements()) {
++    if (element.type() != network::DataElement::Tag::kBytes) {
++      continue;
++    }
++    const auto& bytes = element.As<network::DataElementBytes>().bytes();
++    out.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
++  }
++  return out;
++}
++
++// Rebuilds the response head from a recording.
++//
++// The recorded headers are replayed verbatim, not summarised into a synthetic
++// `200 OK`. What a page does depends on them: `Critical-CH` makes Chromium
++// restart the navigation (so the store's ordinal 0 and 1 are two different
++// challenge instances, and only the second is the one whose sub-requests were
++// recorded), `Location` moves the document, `Content-Type` and CSP change how
++// the body is treated. A store written before headers existed still replays,
++// under the old synthetic head.
++network::mojom::URLResponseHeadPtr MakeHead(
++    const base::sbxdiff::StoredResponse& stored,
++    const GURL& url,
++    const std::optional<url::Origin>& initiator) {
++  auto head = network::mojom::URLResponseHead::New();
++  if (stored.raw_headers.empty()) {
++    // An empty mime type is not a `Content-Type:` header.
++    //
++    // A response recorded with no headers at all -- Cloudflare's worker fetches
++    // one from brunhild.challenges.cloudflare.com -- was replayed with a
++    // synthesised `Content-Type: `, and the page can see it: the challenge's
++    // worker enumerates that response's headers and posted
++    // `[["content-type",""]]` on the oracle against `[]` on the sandbox, which
++    // is what the site actually sent. The harness inventing a header is the
++    // same mistake as the harness inventing an encoding (RULES.md #131), and
++    // here the ORACLE was the wrong side.
++    head->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
++        net::HttpUtil::AssembleRawHeaders(
++            stored.mime_type.empty()
++                ? std::string("HTTP/1.1 200 OK\r\n\r\n")
++                : base::StrCat({"HTTP/1.1 200 OK\r\nContent-Type: ",
++                                stored.mime_type, "\r\n\r\n"})));
++  } else {
++    head->headers =
++        base::MakeRefCounted<net::HttpResponseHeaders>(stored.raw_headers);
++  }
++  // The recording is of DECODED bytes, so it must not claim an encoding.
++  //
++  // `OnReceiveResponse` drains the body out of the pipe the network service
++  // hands over, and that body has already been un-brotli'd -- but the headers
++  // stored beside it are the ones that came off the wire, and 21 of this
++  // store's 97 responses say `content-encoding: br|gzip|zstd`. Replaying that
++  // header verbatim serves identity bytes under a name that is not identity:
++  // `PerformanceResourceTiming.contentEncoding` then reads "br" on the oracle
++  // against "" on the sandbox, whose service worker never had an encoding to
++  // report either.
++  //
++  // Stripping it here is what makes the replay self-consistent, and it removes
++  // the reason the Blink getter was pinned -- a patch that changed what the
++  // ORACLE tells a page, which is the thing this project cannot do.
++  head->headers->RemoveHeader("Content-Encoding");
++  head->mime_type = stored.mime_type;
++  head->charset = stored.encoding;
++  head->content_length = static_cast<int64_t>(stored.body.size());
++  head->request_time = base::Time::Now();
++  head->response_time = base::Time::Now();
++  // Populated because the browser reads it, not the renderer: the Critical-CH
++  // navigation restart is driven off parsed_headers, and a null one means the
++  // restart never happens and the replay diverges from the recording at the
++  // very first response.
++  head->parsed_headers =
++      network::PopulateParsedHeaders(head->headers.get(), url);
++  // Timing-Allow-Origin, which the network service computes from the real
++  // request and a synthesized response has to compute for itself.
++  //
++  // Blink zeroes `encodedBodySize`, `decodedBodySize`, `transferSize` and
++  // `serverTiming` for a cross-origin resource that did not pass it. Leaving it
++  // false reported 0 for every cross-origin resource the oracle served --
++  // against a real number from the sandbox, where a proxy has collapsed every
++  // origin onto its own and the check never applies at all. Cloudflare
++  // serialises those fields into its payload, so the two runs told the server
++  // different things about a resource neither of them fetched over a network
++  // (RULES.md #109).
++  //
++  // rateyourmusic's own challenge really does receive
++  // `timing-allow-origin: https://rateyourmusic.com` from
++  // challenges.cloudflare.com, so this is the value a real browser computes,
++  // not a value invented to make two numbers agree.
++  if (initiator.has_value() && head->parsed_headers &&
++      head->parsed_headers->timing_allow_origin) {
++    head->timing_allow_passed = network::TimingAllowOriginCheck(
++        head->parsed_headers->timing_allow_origin, *initiator);
++  }
++  return head;
++}
++
++// Serves one request, and the redirect chain it turns into, out of the store.
++//
++// Stateful because a redirect is not a response: the client has to be told to
++// follow it and comes back through FollowRedirect(), at which point the next
++// recording -- keyed by the *new* URL -- is what it gets.
++class ReplayLoader : public network::mojom::URLLoader {
++ public:
++  static void Create(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const network::ResourceRequest& request) {
++    auto* self = new ReplayLoader(std::move(client), request);
++    self->receiver_.Bind(std::move(loader));
++    self->receiver_.set_disconnect_handler(
++        base::BindOnce(&ReplayLoader::Finish, base::Unretained(self)));
++    self->Serve();
++  }
++
++  ReplayLoader(const ReplayLoader&) = delete;
++  ReplayLoader& operator=(const ReplayLoader&) = delete;
++  // Public for DeleteSoon; construction still goes through Create().
++  ~ReplayLoader() override = default;
++
++  // network::mojom::URLLoader:
++  void FollowRedirect(network::HttpRequestHeadersUpdateParams,
++                      const std::optional<GURL>& new_url) override {
++    if (new_url) {
++      url_ = *new_url;
++    }
++    Serve();
++  }
++
++  void SetPriority(net::RequestPriority, int32_t) override {}
++
++ private:
++  ReplayLoader(mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++               const network::ResourceRequest& request)
++      : client_(std::move(client)),
++        url_(request.url),
++        request_body_(ReadableRequestBody(request)),
++        method_(request.method),
++        site_for_cookies_(request.site_for_cookies),
++        referrer_(request.referrer),
++        referrer_policy_(request.referrer_policy),
++        initiator_(request.request_initiator),
++        is_outermost_main_frame_(request.is_outermost_main_frame) {}
++
++  void Finish() {
++    if (finished_) {
++      return;
++    }
++    finished_ = true;
++    base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
++  }
++
++  void Fail(int error) {
++    client_->OnComplete(network::URLLoaderCompletionStatus(error));
++    Finish();
++  }
++
++  void Serve() {
++    base::sbxdiff::StoredResponse stored;
++    size_t ordinal = 0;
++    if (!base::sbxdiff::LookupNextResponse(url_.spec(), &stored, &ordinal)) {
++      // Loud: a miss here is a divergence, and a silent one looks exactly like
++      // the page misbehaving. The post-challenge navigation missing produced a
++      // 109-iteration retry loop with no diagnostic anywhere.
++      LOG(WARNING) << "sbxdiff: replay MISS #" << ordinal << " " << url_.spec();
++      if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
++              ::switches::kSbxdiffNetReplaySoftMiss)) {
++        // Replay miss: fail rather than fall through to the network. Silently
++        // fetching would break hermeticity, which is the whole point.
++        Fail(net::ERR_BLOCKED_BY_CLIENT);
++        return;
++      }
++      // Serve nothing rather than refusing. Still counted above; refusing is
++      // itself a behaviour the recording never exhibited.
++      stored = base::sbxdiff::StoredResponse();
++      stored.mime_type = "text/plain";
++    }
++
++    // Was this verdict graded on THIS answer?
++    //
++    // A store cannot grade a request, so an anti-bot endpoint's recorded "you
++    // passed" comes back whatever was posted to it. Comparing the body against
++    // the one the recording sent is what tells "the sandbox produced the same
++    // answer" apart from "the store told it whatever it wanted to hear".
++    //
++    // Logged for EVERY request that carries a body, not only on a mismatch
++    // against the recording, because the recording is the wrong thing to hold
++    // either side to. Measured on rateyourmusic: unmodified Chromium replaying
++    // this store sends 2263 bytes where the recording sent 2274, and mismatches
++    // on all five of the endpoints the sandbox does. Cloudflare's payload is
++    // built from the clock and from entropy drawn during the run, so the bytes
++    // are not reproducible across runs BY ANYONE -- holding the sandbox to them
++    // scores it against noise. The comparison that means something is oracle
++    // against sandbox, and that needs this side's hash to exist at all.
++    if (!request_body_.empty()) {
++      LOG(WARNING) << "sbxdiff: replay REQBODY #" << ordinal << " "
++                   << base::sbxdiff::BodyHash(request_body_) << " " << url_.spec();
++      const base::FilePath& dump_dir = BodyDumpDir();
++      if (!dump_dir.empty() && base::CreateDirectory(dump_dir)) {
++        const std::string stem = BodyFileStem(url_.spec(), ordinal);
++        base::WriteFile(dump_dir.AppendASCII(stem + ".oracle"), request_body_);
++        base::WriteFile(dump_dir.AppendASCII(stem + ".url"),
++                        url_.spec() + "\n#" + base::NumberToString(ordinal) +
++                            "\n");
++      }
++      if (!stored.request_body.empty() &&
++          request_body_ != stored.request_body) {
++        LOG(WARNING) << "sbxdiff: replay BODY MISMATCH #" << ordinal << " sent "
++                     << request_body_.size() << "b vs recorded "
++                     << stored.request_body.size() << "b " << url_.spec();
++      }
++    }
++
++    auto head = MakeHead(stored, url_, initiator_);
++    std::string location;
++    if (head->headers && head->headers->IsRedirect(&location)) {
++      const GURL new_location = url_.Resolve(location);
++      if (!new_location.is_valid()) {
++        Fail(net::ERR_INVALID_REDIRECT);
++        return;
++      }
++      const net::RedirectInfo info = net::RedirectInfo::ComputeRedirectInfo(
++          method_, url_, site_for_cookies_,
++          is_outermost_main_frame_
++              ? net::RedirectInfo::FirstPartyURLPolicy::UPDATE_URL_ON_REDIRECT
++              : net::RedirectInfo::FirstPartyURLPolicy::NEVER_CHANGE_URL,
++          referrer_policy_, referrer_.spec(), initiator_,
++          head->headers->response_code(), new_location,
++          head->headers->GetNormalizedHeader("Referrer-Policy"),
++          /*insecure_scheme_was_upgraded=*/false);
++      url_ = info.new_url;
++      method_ = info.new_method;
++      site_for_cookies_ = info.new_site_for_cookies;
++      referrer_ = GURL(info.new_referrer);
++      referrer_policy_ = info.new_referrer_policy;
++      client_->OnReceiveRedirect(info, std::move(head));
++      // The client comes back through FollowRedirect(), or drops us.
++      return;
++    }
++
++    mojo::ScopedDataPipeProducerHandle producer;
++    mojo::ScopedDataPipeConsumerHandle consumer;
++    if (mojo::CreateDataPipe(stored.body.size() + 1, producer, consumer) !=
++        MOJO_RESULT_OK) {
++      Fail(net::ERR_INSUFFICIENT_RESOURCES);
++      return;
++    }
++
++    client_->OnReceiveResponse(std::move(head), std::move(consumer),
++                               std::nullopt);
++
++    // The pipe was sized to the body, so a single write suffices.
++    if (!stored.body.empty()) {
++      size_t written = 0;
++      producer->WriteData(base::as_byte_span(stored.body),
++                          MOJO_WRITE_DATA_FLAG_NONE, written);
++    }
++    producer.reset();
++
++    network::URLLoaderCompletionStatus status(net::OK);
++    status.encoded_data_length = base::ByteSize(stored.body.size());
++    // `encoded_body_length` as well, which is what Blink reports as
++    // `PerformanceResourceTiming.encodedBodySize`. Leaving it unset reported 0
++    // for every resource the oracle served, against a real number from the
++    // sandbox -- and Cloudflare serialises that field into its payload, so the
++    // two runs told the server different things about a resource neither of
++    // them fetched over a network (RULES.md #109).
++    //
++    // The stored body is what was served, decoded, so encoded and decoded are
++    // the same number here. That is also what the sandbox reports, because a
++    // service worker hands over bytes it has already decoded.
++    status.encoded_body_length = base::ByteSize(stored.body.size());
++    status.decoded_body_length = base::ByteSize(stored.body.size());
++    client_->OnComplete(status);
++    // Deliberately NOT deleted here: the client keeps its URLLoader handle for
++    // the lifetime of the request and a dead receiver looks like a crash.
++  }
++
++  mojo::Remote<network::mojom::URLLoaderClient> client_;
++  GURL url_;
++  std::string request_body_;
++  std::string method_;
++  net::SiteForCookies site_for_cookies_;
++  GURL referrer_;
++  net::ReferrerPolicy referrer_policy_;
++  std::optional<url::Origin> initiator_;
++  bool is_outermost_main_frame_ = false;
++  bool finished_ = false;
++  mojo::Receiver<network::mojom::URLLoader> receiver_{this};
++};
++
++// Forwards every request to the real factory, recording what comes back.
++class RecordingFactory : public network::mojom::URLLoaderFactory {
++ public:
++  static void Create(
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++      mojo::PendingRemote<network::mojom::URLLoaderFactory> target) {
++    auto* factory = new RecordingFactory(std::move(target));
++    factory->receivers_.Add(factory, std::move(receiver));
++    factory->receivers_.set_disconnect_handler(base::BindRepeating(
++        &RecordingFactory::OnDisconnect, base::Unretained(factory)));
++  }
++
++  void CreateLoaderAndStart(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader,
++      int32_t request_id,
++      uint32_t options,
++      const network::ResourceRequest& request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& annotation) override {
++    mojo::PendingRemote<network::mojom::URLLoaderClient> recording;
++    RecordingClient::Create(request.url, ReadableRequestBody(request),
++                            recording.InitWithNewPipeAndPassReceiver(),
++                            std::move(client));
++    target_->CreateLoaderAndStart(std::move(loader), request_id, options,
++                                  request, std::move(recording), annotation);
++  }
++
++  void Clone(mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver)
++      override {
++    receivers_.Add(this, std::move(receiver));
++  }
++
++ private:
++  explicit RecordingFactory(
++      mojo::PendingRemote<network::mojom::URLLoaderFactory> target)
++      : target_(std::move(target)) {}
++
++  void OnDisconnect() {
++    if (receivers_.empty()) {
++      delete this;
++    }
++  }
++
++  mojo::Remote<network::mojom::URLLoaderFactory> target_;
++  mojo::ReceiverSet<network::mojom::URLLoaderFactory> receivers_;
++};
++
++class ReplayFactory : public network::mojom::URLLoaderFactory {
++ public:
++  static void Create(
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver) {
++    // Owned by its ReceiverSet; deleted when the last client disconnects.
++    auto* factory = new ReplayFactory();
++    factory->receivers_.Add(factory, std::move(receiver));
++    factory->receivers_.set_disconnect_handler(base::BindRepeating(
++        &ReplayFactory::OnDisconnect, base::Unretained(factory)));
++  }
++
++  void CreateLoaderAndStart(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader,
++      int32_t request_id,
++      uint32_t options,
++      const network::ResourceRequest& request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& annotation) override {
++    ReplayLoader::Create(std::move(loader), std::move(client), request);
++  }
++
++  void Clone(mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver)
++      override {
++    receivers_.Add(this, std::move(receiver));
++  }
++
++ private:
++  ReplayFactory() = default;
++  ~ReplayFactory() override = default;
++
++  void OnDisconnect() {
++    if (receivers_.empty()) {
++      delete this;
++    }
++  }
++
++  mojo::ReceiverSet<network::mojom::URLLoaderFactory> receivers_;
++};
++
++}  // namespace
++
++void MaybeInstallReplayInterceptor(network::URLLoaderFactoryBuilder& builder) {
++  if (base::sbxdiff::IsRecordingResponses()) {
++    // Record here rather than in the renderer: an opaque cross-origin response
++    // never reaches the renderer at all.
++    auto [receiver, remote] = builder.Append();
++    RecordingFactory::Create(std::move(receiver), std::move(remote));
++
++    return;
++  }
++  if (!base::sbxdiff::IsReplayingResponses()) {
++    return;
++  }
++  auto [receiver, unused_remote] = builder.Append();
++  // The remote is dropped deliberately: strict replay never forwards.
++  ReplayFactory::Create(std::move(receiver));
++}
++
++}  // namespace sbxdiff
+diff --git a/chrome/browser/headless/sbxdiff_net_replay.h b/chrome/browser/headless/sbxdiff_net_replay.h
+new file mode 100644
+index 0000000000000..9d67d56779312
+--- /dev/null
++++ b/chrome/browser/headless/sbxdiff_net_replay.h
+@@ -0,0 +1,35 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_HEADLESS_SBXDIFF_NET_REPLAY_H_
++#define CHROME_BROWSER_HEADLESS_SBXDIFF_NET_REPLAY_H_
++
++namespace network {
++class URLLoaderFactoryBuilder;
++}
++
++namespace sbxdiff {
++
++// sbxdiff: serves every network request from the recorded store, so a replayed
++// run touches no server at all.
++//
++// Installed as a URLLoaderFactory interceptor in the browser process, which is
++// the only layer that sees *every* request uniformly -- navigation, subresource,
++// fetch()/XHR, worker scripts. Earlier attempts sat in Blink's ResourceFetcher
++// and could not cover navigation (DocumentLoader does not go through it) or
++// fetch()/XHR (ResourceType::kRaw refuses the synthetic-body path).
++//
++// Strict by design: a URL with no recorded body is **not** fetched from the
++// network. It is failed with ERR_BLOCKED_BY_CLIENT, which surfaces as a replay
++// miss rather than silently breaking hermeticity (RULES.md #14). That also
++// means this never needs to proxy to a real factory, so there is no data-pipe
++// teeing here -- recording happens separately, in the renderer, via Blink
++// probes.
++//
++// No-op unless --sbxdiff-net-replay is set.
++void MaybeInstallReplayInterceptor(network::URLLoaderFactoryBuilder& builder);
++
++}  // namespace sbxdiff
++
++#endif  // CHROME_BROWSER_HEADLESS_SBXDIFF_NET_REPLAY_H_
+diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
+index 1788baf80729c..2add220024777 100644
+--- a/net/http/http_network_transaction.cc
++++ b/net/http/http_network_transaction.cc
+@@ -1446,6 +1446,42 @@ int HttpNetworkTransaction::BuildRequestHeaders(
+ 
+   response_.did_use_server_http_auth =
+       request_headers_.HasHeader(HttpRequestHeaders::kAuthorization);
++
++  // sbxdiff: the headers that actually go on the wire.
++  //
++  // Every earlier attempt to compare these sat too high. In the renderer,
++  // `accept`, `accept-language`, `user-agent` and the `sec-ch-*` family are not
++  // there yet -- the network service adds them below -- so a proxy that sets
++  // its own explicitly reads as "only sandbox: user-agent", which is an
++  // artifact and not a leak (RULES.md #165). This is the last point before the
++  // bytes are serialised, after `extra_headers` and the modify callbacks, so
++  // what is printed here is what the server sees.
++  //
++  // Off unless SBXDIFF_LOG_WIRE_HEADERS is set. One sorted line per request,
++  // so two runs' logs diff directly.
++  {
++    static const bool sbx_on = [] {
++      const char* v = ::getenv("SBXDIFF_LOG_WIRE_HEADERS");
++      return v && *v && *v != '0';
++    }();
++    if (sbx_on) {
++      std::vector<std::string> sbx_pairs;
++      for (const auto& sbx_header : request_headers_.GetHeaderVector()) {
++        std::string sbx_name = sbx_header.key;
++        for (char& c : sbx_name) {
++          c = base::ToLowerASCII(c);
++        }
++        sbx_pairs.push_back(sbx_name + ": " + sbx_header.value);
++      }
++      std::sort(sbx_pairs.begin(), sbx_pairs.end());
++      std::string sbx_joined;
++      for (const auto& sbx_p : sbx_pairs) {
++        sbx_joined += sbx_p + " | ";
++      }
++      LOG(ERROR) << "sbxdiff: wirehdr " << request_->method << " "
++                 << request_->url.spec() << " :: " << sbx_joined;
++    }
++  }
+   return OK;
+ }
+ 
+diff --git a/services/network/sec_header_helpers.cc b/services/network/sec_header_helpers.cc
+index dd92a9e88d53d..adfc8e68c19bd 100644
+--- a/services/network/sec_header_helpers.cc
++++ b/services/network/sec_header_helpers.cc
+@@ -274,6 +274,53 @@ void SetSecFetchFrameAncestorsHeader(
+ 
+ }  // namespace
+ 
++// sbxdiff: let the sandbox's transport speak for the SITE, not for itself.
++//
++// Everything above computes Sec-Fetch-* from what the request literally is. For
++// the proxy that is always the same answer and always the wrong one: a fetch
++// from the proxy origin to the site is `site: cross-site`, `mode: cors`,
++// `dest: empty` -- on every upstream request, including ones that are the
++// site's own navigation or its own script. Measured against a direct load:
++//
++//     sec-fetch-dest   document / script / image   vs   empty
++//     sec-fetch-mode   navigate / no-cors          vs   cors
++//     sec-fetch-site   none / same-origin          vs   cross-site
++//
++// Scramjet already computes the right values -- `applyFetchMetadataHeaders`
++// deletes the browser's and recomputes them in the site's URL space -- and
++// `fetch()` drops them, because the family is forbidden.
++//
++// HERE, not in the renderer. The first attempt restored them in
++// `ResourceFetcher` alongside `Cookie`, and every upstream fetch then failed
++// with `TypeError: Failed to fetch`: the network service does not accept
++// Sec-Fetch-* from a renderer, and rightly so. This is the layer that owns
++// them, and it runs after the computation it is correcting.
++//
++// Off unless SBXDIFF_PROXY_HEADERS is set.
++void SbxdiffApplyProxyFetchMetadata(net::URLRequest& request) {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
++    return v && *v && *v != '0';
++  }();
++  if (!on) {
++    return;
++  }
++  static constexpr std::string_view kCarrier = "x-sbxdiff-h-sec-fetch-";
++  static constexpr std::string_view kNames[] = {
++      "site", "mode", "dest", "user", "storage-access"};
++  for (std::string_view name : kNames) {
++    const std::string carrier = std::string(kCarrier) + std::string(name);
++    const std::optional<std::string> value =
++        request.extra_request_headers().GetHeader(carrier);
++    if (!value.has_value()) {
++      continue;
++    }
++    const std::string real = "Sec-Fetch-" + std::string(name);
++    request.SetExtraRequestHeaderByName(real, *value, /*overwrite=*/true);
++    request.RemoveRequestHeaderByName(carrier);
++  }
++}
++
+ void SetFetchMetadataHeaders(
+     net::URLRequest& request,
+     network::mojom::RequestMode mode,
+@@ -300,6 +347,7 @@ void SetFetchMetadataHeaders(
+   SetSecFetchStorageAccessHeader(request, credentials_mode);
+   SetSecFetchFrameTop(request, pending_redirect_url);
+   SetSecFetchFrameAncestorsHeader(request, pending_redirect_url);
++  SbxdiffApplyProxyFetchMetadata(request);
+ }
+ 
+ void MaybeRemoveSecHeaders(net::URLRequest& request,
+diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
+index 383115087fb61..fc383c1de048a 100644
+--- a/third_party/blink/renderer/core/BUILD.gn
++++ b/third_party/blink/renderer/core/BUILD.gn
+@@ -20,6 +20,7 @@ import("//third_party/blink/renderer/build/scripts/scripts.gni")
+ import("//third_party/blink/renderer/config.gni")
+ import("//third_party/blink/renderer/core/accessibility/build.gni")
+ import("//third_party/blink/renderer/core/ad_tracker/build.gni")
++import("//third_party/blink/renderer/core/sbxdiff/build.gni")
+ import("//third_party/blink/renderer/core/animation/build.gni")
+ import("//third_party/blink/renderer/core/animation_frame/build.gni")
+ import("//third_party/blink/renderer/core/annotation/build.gni")
+@@ -304,6 +305,7 @@ component("core") {
+                          "fragment_directive")
+   sources += rebase_path(blink_core_sources_frame, "", "frame")
+   sources += rebase_path(blink_core_sources_ad_tracker, "", "ad_tracker")
++  sources += rebase_path(blink_core_sources_sbxdiff, "", "sbxdiff")
+   sources += get_target_outputs(":make_deprecation_info")
+   sources += rebase_path(blink_core_sources_fullscreen, "", "fullscreen")
+   sources += rebase_path(blink_core_sources_geolocation, "", "geolocation")
+diff --git a/third_party/blink/renderer/core/fetch/fetch_response_data.cc b/third_party/blink/renderer/core/fetch/fetch_response_data.cc
+index 1b453222bf3e3..e43ca053e0862 100644
+--- a/third_party/blink/renderer/core/fetch/fetch_response_data.cc
++++ b/third_party/blink/renderer/core/fetch/fetch_response_data.cc
+@@ -59,6 +59,53 @@ FetchResponseData* FetchResponseData::CreateWithBuffer(
+   return response;
+ }
+ 
++namespace {
++
++// sbxdiff: let the sandbox's transport see `Set-Cookie`.
++//
++// It is a forbidden RESPONSE header, so every filtered response drops it and
++// JavaScript can never read one. Correct for a page, fatal for a proxy:
++// scramjet's jar is filled from the responses its transport receives, so with
++// `fetch()` as the transport the jar is never filled, `Cookie` is never sent,
++// every request arrives as a fresh visitor, and a cookie-based challenge loops
++// forever. Measured on rateyourmusic -- `cf_clearance` was never issued in any
++// live run, and of 59 requests that had headers restored on the way out, not
++// one carried a cookie.
++//
++// Exposed under a RENAMED header rather than by unforbidding the real one.
++// `Set-Cookie` stays invisible under its own name, so nothing a page can
++// observe about the platform changes: the same reason the request half went
++// under a prefix instead of widening Blink's forbidden-header check.
++//
++// One header per cookie, indexed. `Headers.get()` joins repeats with ", " and
++// a cookie's `Expires` contains a comma, so a single joined value cannot be
++// split back apart.
++//
++// Off unless SBXDIFF_PROXY_HEADERS is set.
++bool SbxExposeSetCookieEnabled() {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
++    return v && *v && *v != '0';
++  }();
++  return on;
++}
++
++void SbxCopySetCookie(const FetchHeaderList& from, FetchHeaderList* to) {
++  if (!SbxExposeSetCookieEnabled()) {
++    return;
++  }
++  unsigned index = 0;
++  for (const auto& header : from.List()) {
++    if (!EqualIgnoringAsciiCase(header.first, "set-cookie")) {
++      continue;
++    }
++    to->Append("x-sbxdiff-h-set-cookie-" + String::Number(index++),
++               header.second);
++  }
++}
++
++}  // namespace
++
+ FetchResponseData* FetchResponseData::CreateBasicFilteredResponse() const {
+   DCHECK_EQ(type_, Type::kDefault);
+   // "A basic filtered response is a filtered response whose type is |basic|,
+@@ -72,6 +119,8 @@ FetchResponseData* FetchResponseData::CreateBasicFilteredResponse() const {
+       continue;
+     response->header_list_->Append(header.first, header.second);
+   }
++  // sbxdiff: see SbxCopySetCookie.
++  SbxCopySetCookie(*header_list_, response->header_list_);
+   response->buffer_ = buffer_;
+   response->mime_type_ = mime_type_;
+   response->internal_response_ = const_cast<FetchResponseData*>(this);
+@@ -99,6 +148,8 @@ FetchResponseData* FetchResponseData::CreateCorsFilteredResponse(
+       response->header_list_->Append(name, header.second);
+     }
+   }
++  // sbxdiff: see SbxCopySetCookie.
++  SbxCopySetCookie(*header_list_, response->header_list_);
+   response->cors_exposed_header_names_ = exposed_headers;
+   response->buffer_ = buffer_;
+   response->mime_type_ = mime_type_;
+diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
+index 23536986534de..e841ddc3ed8a9 100644
+--- a/third_party/blink/renderer/core/frame/local_frame.cc
++++ b/third_party/blink/renderer/core/frame/local_frame.cc
+@@ -220,6 +220,8 @@
+ #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
+ #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+ #include "third_party/blink/renderer/core/paint/timing/first_meaningful_paint_detector.h"
++#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h"
++#include "base/sbxdiff_net_store.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/core/script/classic_script.h"
+ #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
+@@ -435,6 +437,21 @@ void LocalFrame::Init(
+     policy_container = PolicyContainer::CreateEmpty();
+   }
+ 
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: create the response-body recorder. This call was missing, so the
++  // observer was dead code and recording silently fell back to the
++  // ResourceFetcher buffer path -- which cannot see fetch()/XHR bodies
++  // (kDoNotBufferData) or the main document (loaded by DocumentLoader).
++  // Superseded by browser-side recording (chrome/browser/headless/
++  // sbxdiff_net_replay.cc). Renderer probes cannot see an opaque cross-origin
++  // response at all -- 20 of 78 URLs on rateyourmusic, every web font and two
++  // Cloudflare challenge endpoints among them -- and running both recorders
++  // wrote every response twice, which shifts the ordinals that ARE the
++  // recorded sequence.
++  //
++  // MaybeCreateSbxdiffNetObserver();
++#endif
++
+   CoreInitializer::GetInstance().InitLocalFrame(*this);
+ 
+   GetInterfaceRegistry()->AddInterface(BindRepeating(
+@@ -538,6 +555,9 @@ void LocalFrame::Trace(Visitor* visitor) const {
+   visitor->Trace(ad_tracker_);
+   visitor->Trace(extension_script_tracker_);
+   visitor->Trace(script_initiation_monitor_);
++#if BUILDFLAG(SBXDIFF)
++  visitor->Trace(sbxdiff_net_observer_);
++#endif
+   visitor->Trace(script_observer_);
+   visitor->Trace(probe_sink_);
+   visitor->Trace(performance_monitor_);
+@@ -825,6 +845,11 @@ bool LocalFrame::DetachImpl(FrameDetachType type) {
+     if (script_initiation_monitor_) {
+       script_initiation_monitor_->Shutdown();
+     }
++#if BUILDFLAG(SBXDIFF)
++    if (sbxdiff_net_observer_) {
++      sbxdiff_net_observer_->Shutdown();
++    }
++#endif
+     // Unregister only if this is LocalRoot because the paint_image_generator_
+     // was created on LocalRoot.
+     if (background_color_paint_image_generator_) {
+@@ -2500,6 +2525,22 @@ ScriptInitiationMonitor* LocalFrame::GetScriptInitiationMonitor() const {
+   return LocalFrameRoot().script_initiation_monitor_.Get();
+ }
+ 
++#if BUILDFLAG(SBXDIFF)
++void LocalFrame::MaybeCreateSbxdiffNetObserver() {
++  // Only on the local root, and only when recording: the observer is pure
++  // overhead otherwise, and creating it would put probe dispatch on the hot
++  // loading path of every normal run.
++  if (!base::sbxdiff::IsRecordingResponses()) {
++    return;
++  }
++  LocalFrame& root = LocalFrameRoot();
++  if (!root.sbxdiff_net_observer_) {
++    root.sbxdiff_net_observer_ =
++        MakeGarbageCollected<SbxdiffNetObserver>(&root);
++  }
++}
++#endif
++
+ ScriptInitiationMonitor* LocalFrame::GetOrCreateScriptInitiationMonitor() {
+   LocalFrame& root = LocalFrameRoot();
+   if (!root.script_initiation_monitor_) {
+diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/blink/renderer/core/frame/local_frame.h
+index c9f63eadd7bda..c578e6508a147 100644
+--- a/third_party/blink/renderer/core/frame/local_frame.h
++++ b/third_party/blink/renderer/core/frame/local_frame.h
+@@ -77,6 +77,7 @@
+ #include "third_party/blink/renderer/core/ad_tracker/ad_script_identifier.h"
+ #include "third_party/blink/renderer/core/ad_tracker/ad_tracker.h"
+ #include "third_party/blink/renderer/core/core_export.h"
++#include "third_party/blink/renderer/platform/bindings/buildflags.h"
+ #include "third_party/blink/renderer/core/dom/weak_identifier_map.h"
+ #include "third_party/blink/renderer/core/editing/forward.h"
+ #include "third_party/blink/renderer/core/editing/iterators/text_iterator_behavior.h"
+@@ -123,6 +124,7 @@ namespace blink {
+ 
+ class AdTracker;
+ class ScriptInitiationMonitor;
++class SbxdiffNetObserver;
+ class AssociatedInterfaceProvider;
+ class AuditsIssue;
+ class BackgroundColorPaintImageGenerator;
+@@ -553,6 +555,12 @@ class CORE_EXPORT LocalFrame final
+   ExtensionScriptTracker* GetExtensionScriptTracker();
+   ScriptInitiationMonitor* GetScriptInitiationMonitor() const;
+   ScriptInitiationMonitor* GetOrCreateScriptInitiationMonitor();
++
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: creates the response-body recorder on the local root when
++  // --sbxdiff-net-record is set. See core/sbxdiff/sbxdiff_net_observer.h.
++  void MaybeCreateSbxdiffNetObserver();
++#endif
+   void SetAdTrackerForTesting(AdTracker* ad_tracker);
+ 
+   // Configures extension script tracking for this frame if it is a local root,
+@@ -1164,6 +1172,9 @@ class CORE_EXPORT LocalFrame final
+   Member<AdTracker> ad_tracker_;
+   Member<ExtensionScriptTracker> extension_script_tracker_;
+   Member<ScriptInitiationMonitor> script_initiation_monitor_;
++#if BUILDFLAG(SBXDIFF)
++  Member<SbxdiffNetObserver> sbxdiff_net_observer_;
++#endif
+   Member<IdlenessDetector> idleness_detector_;
+   base::OnceClosureList network_idle_callbacks_;
+   Member<InspectorIssueReporter> inspector_issue_reporter_;
+diff --git a/third_party/blink/renderer/core/probe/core_probes.json5 b/third_party/blink/renderer/core/probe/core_probes.json5
+index f1c698b3403b4..5d53d0d53d094 100644
+--- a/third_party/blink/renderer/core/probe/core_probes.json5
++++ b/third_party/blink/renderer/core/probe/core_probes.json5
+@@ -193,6 +193,14 @@
+         "PlayerPropertiesChanged",
+       ]
+     },
++    SbxdiffNetObserver: {
++      include_path: "third_party/blink/renderer/core/sbxdiff",
++      probes: [
++        "DidReceiveResourceResponse",
++        "DidReceiveData",
++        "DidFinishLoading",
++      ]
++    },
+     InspectorNetworkAgent: {
+       probes: [
+         "DidBlockRequest",
+diff --git a/third_party/blink/renderer/core/sbxdiff/build.gni b/third_party/blink/renderer/core/sbxdiff/build.gni
+new file mode 100644
+index 0000000000000..e30c99190cad8
+--- /dev/null
++++ b/third_party/blink/renderer/core/sbxdiff/build.gni
+@@ -0,0 +1,10 @@
++# Copyright 2026 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++blink_core_sources_sbxdiff = [
++  "sbxdiff_net_observer.cc",
++  "sbxdiff_net_observer.h",
++  "sbxdiff_realm_clock.cc",
++  "sbxdiff_realm_clock.h",
++]
+diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc
+new file mode 100644
+index 0000000000000..875109577e0a4
+--- /dev/null
++++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc
+@@ -0,0 +1,89 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h"
++
++#include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/probe/core_probes.h"
++#include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
++#include "base/sbxdiff_net_store.h"
++
++namespace blink {
++
++SbxdiffNetObserver::SbxdiffNetObserver(LocalFrame* local_root)
++    : local_root_(local_root) {
++  local_root_->GetProbeSink()->AddSbxdiffNetObserver(this);
++}
++
++void SbxdiffNetObserver::Shutdown() {
++  if (!local_root_) {
++    return;
++  }
++  local_root_->GetProbeSink()->RemoveSbxdiffNetObserver(this);
++  local_root_ = nullptr;
++}
++
++void SbxdiffNetObserver::DidReceiveResourceResponse(
++    uint64_t identifier,
++    DocumentLoader*,
++    const ResourceResponse& response,
++    const Resource*) {
++  if (!base::sbxdiff::IsRecordingResponses()) {
++    return;
++  }
++  Pending pending;
++  pending.url = response.CurrentRequestUrl().GetString();
++  pending.mime_type = response.MimeType();
++  pending.encoding = response.TextEncodingName();
++  pending_.Set(identifier, std::move(pending));
++}
++
++void SbxdiffNetObserver::DidReceiveData(uint64_t identifier,
++                                        DocumentLoader*,
++                                        base::SpanOrSize<const char> data) {
++  if (!base::sbxdiff::IsRecordingResponses()) {
++    return;
++  }
++  auto it = pending_.find(identifier);
++  if (it == pending_.end()) {
++    return;
++  }
++  // This is the call that makes fetch()/XHR recordable: the bytes arrive here
++  // even when the Resource itself never buffers them.
++  if (auto span = data.span(); span) {
++    // WTF Vector has no AppendSpan; Append(begin, end) is the iterator form.
++    it->value.body.Append(span->begin(), span->end());
++  }
++}
++
++void SbxdiffNetObserver::DidFinishLoading(uint64_t identifier,
++                                         DocumentLoader*,
++                                         base::TimeTicks,
++                                         int64_t,
++                                         int64_t) {
++  if (!base::sbxdiff::IsRecordingResponses()) {
++    return;
++  }
++  auto it = pending_.find(identifier);
++  if (it == pending_.end()) {
++    return;
++  }
++  const Pending& pending = it->value;
++  // No headers: a Blink probe sees a parsed ResourceResponse, not the raw
++  // header block, and the store wants the bytes verbatim. That, plus opaque
++  // cross-origin bodies never arriving here at all, is why this recorder is
++  // superseded by the browser-side one and is no longer installed --
++  // see LocalFrame's MaybeCreateSbxdiffNetObserver call site.
++  base::sbxdiff::RecordResponse(pending.url.Utf8(), pending.mime_type.Utf8(),
++                                pending.encoding.Utf8(), /*raw_headers=*/"",
++                                /*request_body=*/"", pending.body.data(),
++                                pending.body.size());
++  pending_.erase(it);
++}
++
++void SbxdiffNetObserver::Trace(Visitor* visitor) const {
++  visitor->Trace(local_root_);
++}
++
++}  // namespace blink
+diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h
+new file mode 100644
+index 0000000000000..0259ce9963d70
+--- /dev/null
++++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h
+@@ -0,0 +1,90 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
++#define THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
++
++#include <stdint.h>
++
++#include "base/containers/span_or_size.h"
++#include "base/time/time.h"
++#include "third_party/blink/renderer/core/core_export.h"
++#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
++#include "third_party/blink/renderer/platform/heap/member.h"
++#include "third_party/blink/renderer/platform/wtf/hash_map.h"
++#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++#include "third_party/blink/renderer/platform/wtf/vector.h"
++
++namespace blink {
++
++class DocumentLoader;
++class LocalFrame;
++class Resource;
++class ResourceResponse;
++
++// sbxdiff: records response bodies for hermetic replay, via the same probes
++// DevTools uses.
++//
++// Why probes and not the ResourceFetcher hook this replaced. Capturing from
++// `Resource::ResourceBuffer()` misses exactly the resources that matter most on
++// a real site:
++//
++//   - `fetch()` and XHR are `ResourceType::kRaw` with
++//     `kDoNotBufferData` -- the body streams straight to the consumer and is
++//     never buffered on the Resource, so a recorded body came out **empty**.
++//   - the main document is loaded by DocumentLoader, not ResourceFetcher, so it
++//     was not recorded at all.
++//
++// `probe::DidReceiveData` carries the raw bytes for *every* load, which is how
++// DevTools can show a fetch() response body; `InspectorNetworkAgent` explicitly
++// buffers when the policy is `kDoNotBufferData`. The probes are plain Blink
++// observers (`InspectorTraceEvents`, `LCPScriptObserver` and others use them
++// with no DevTools session), so this needs no CDP -- which matters because a
++// DevTools session is page-observable and would invalidate the oracle.
++//
++// `NetworkResourcesData::Clear(preserved_loader_id)` is the equivalent
++// cross-navigation handling on the DevTools side; here each request's buffer is
++// keyed by identifier and flushed on DidFinishLoading, so a navigation simply
++// ends the requests belonging to the old loader.
++class CORE_EXPORT SbxdiffNetObserver
++    : public GarbageCollected<SbxdiffNetObserver> {
++ public:
++  explicit SbxdiffNetObserver(LocalFrame* local_root);
++  SbxdiffNetObserver(const SbxdiffNetObserver&) = delete;
++  SbxdiffNetObserver& operator=(const SbxdiffNetObserver&) = delete;
++
++  void Shutdown();
++
++  // Probe hooks, called by core_probes. Do not call directly.
++  void DidReceiveResourceResponse(uint64_t identifier,
++                                  DocumentLoader*,
++                                  const ResourceResponse&,
++                                  const Resource*);
++  void DidReceiveData(uint64_t identifier,
++                      DocumentLoader*,
++                      base::SpanOrSize<const char> data);
++  void DidFinishLoading(uint64_t identifier,
++                        DocumentLoader*,
++                        base::TimeTicks finish_time,
++                        int64_t encoded_data_length,
++                        int64_t decoded_body_length);
++
++  void Trace(Visitor*) const;
++
++ private:
++  struct Pending {
++    String url;
++    String mime_type;
++    String encoding;
++    Vector<char> body;
++  };
++
++  Member<LocalFrame> local_root_;
++  // Keyed by probe identifier; entries live only until DidFinishLoading.
++  HashMap<uint64_t, Pending> pending_;
++};
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
+diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.cc b/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.cc
+new file mode 100644
+index 0000000000000..1c20c85fc9a99
+--- /dev/null
++++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.cc
+@@ -0,0 +1,55 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.h"
++
++#include "base/sbxdiff_observable_clock.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/platform/bindings/v8_binding.h"
++#include "v8/include/v8-context.h"
++#include "v8/include/v8-isolate.h"
++
++namespace blink::sbxdiff {
++
++namespace {
++
++// The realm a read is happening in, as its ExecutionContext pointer.
++//
++// 0 for anything with no entered context -- a platform callback, a timer
++// firing before any script -- and everything in that state shares one slot,
++// which is right: they are not any realm's time.
++uint64_t CurrentRealmKey() {
++  v8::Isolate* isolate = v8::Isolate::TryGetCurrent();
++  if (!isolate || !isolate->InContext()) {
++    return 0;
++  }
++  // The ENTERED context, not the current one: a binding reached from another
++  // realm's code should be charged to the realm whose script is running, which
++  // is the same rule the tracer's realm id follows.
++  v8::Local<v8::Context> context = isolate->GetEnteredOrMicrotaskContext();
++  if (context.IsEmpty()) {
++    context = isolate->GetCurrentContext();
++  }
++  if (context.IsEmpty()) {
++    return 0;
++  }
++
++  return reinterpret_cast<uint64_t>(ExecutionContext::From(context));
++}
++
++}  // namespace
++
++void EnsureLogicalRealmResolver() {
++  if (!base::sbxdiff::RealmClockEnabled()) {
++    return;
++  }
++  static bool installed = false;
++  if (installed) {
++    return;
++  }
++  installed = true;
++  base::sbxdiff::SetLogicalRealmResolver(&CurrentRealmKey);
++}
++
++}  // namespace blink::sbxdiff
+diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.h b/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.h
+new file mode 100644
+index 0000000000000..40455bb873dae
+--- /dev/null
++++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.h
+@@ -0,0 +1,25 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_REALM_CLOCK_H_
++#define THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_REALM_CLOCK_H_
++
++#include "third_party/blink/renderer/core/core_export.h"
++
++namespace blink::sbxdiff {
++
++// Teach `base::sbxdiff`'s logical clock how to name the realm it is being read
++// in, for SBXDIFF_REALM_CLOCK.
++//
++// `Date.now()` reaches the clock through `gin::V8Platform`, which is handed no
++// context and cannot depend on Blink to find one. So Blink installs a resolver
++// and base calls back into it. The key is the `ExecutionContext` pointer, which
++// is per realm, stable for its lifetime, and needs no bookkeeping of its own.
++//
++// Idempotent, and cheap enough to call from anywhere that might be first.
++CORE_EXPORT void EnsureLogicalRealmResolver();
++
++}  // namespace blink::sbxdiff
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_REALM_CLOCK_H_
+diff --git a/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc b/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
+index 49281bb85eced..1417ab15b3a46 100644
+--- a/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
++++ b/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
+@@ -27,6 +27,8 @@
+ 
+ #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
+ 
++#include "third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h"
++
+ #include <algorithm>
+ #include <limits>
+ #include <optional>
+@@ -34,6 +36,8 @@
+ #include <string_view>
+ #include <utility>
+ 
++#include "base/containers/span.h"
++#include "base/strings/string_util.h"
+ #include "base/auto_reset.h"
+ #include "base/feature_list.h"
+ #include "base/logging.h"
+@@ -1351,11 +1355,175 @@ ukm::MojoUkmRecorder* ResourceFetcher::UkmRecorder() {
+   return ukm_recorder_.get();
+ }
+ 
++#if BUILDFLAG(SBXDIFF)
++namespace {
++
++// sbxdiff: put back the headers `fetch()` forbids a page from setting.
++//
++// Production egress for the sandbox is scramjet's own transport, which owns the
++// wire and sends exactly the headers scramjet computed -- `Cookie` among them,
++// from scramjet's jar. The Blink transport exists so a live diagnostic's
++// upstream requests carry a real browser's TLS instead of libcurl's, but
++// `fetch()` drops a forbidden header SILENTLY: the diagnostic was sending
++// something production never sends, which is no cookie at all. Measured on
++// rateyourmusic, the challenge sets a cookie, the next request arrives without
++// it, the server sees a fresh visitor, and the page loops forever.
++//
++// So the transport sends them under a private prefix and this restores them
++// verbatim, which makes the Blink path carry the same bytes the production
++// transport would.
++//
++// A prefix rather than widening Blink's forbidden-header check, because that
++// check is WEB-FACING: making `Cookie` settable on any `Headers` object is a
++// difference a page can read, and a page reading a difference is the one thing
++// this browser exists to prevent. Nothing here is reachable from script -- the
++// prefixed names are ordinary custom headers on the way in, and by the time
++// they are renamed the request has left JavaScript.
++constexpr char kSbxProxyHeaderPrefix[] = "x-sbxdiff-h-";
++
++bool SbxRestoreProxyHeadersEnabled() {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
++    return v && *v && *v != '0';
++  }();
++  return on;
++}
++
++// sbxdiff: what the two sides actually put on a request.
++//
++// The differ compares response BODIES and has no request-header comparison at
++// all, which left a whole class of divergence unmeasurable -- and the class
++// anti-bots read most directly. It cost a session: the payload was driven down
++// to 92% timing and the challenge still would not pass live, with nothing left
++// to look at because the headers were never in the instrument.
++//
++// The renderer is the right layer for a DIFF even though it is not the wire.
++// Both sides run the same binary with the same flags, so everything the
++// browser adds below this point is identical by construction; what differs
++// between oracle and sandbox is exactly what the page and the proxy set, and
++// that is what is visible here.
++//
++// One line per request, sorted, so the two sides' logs diff directly the way
++// SBXDIFF_LOG_TIMER_ATTR's do. SBXDIFF_LOG_REQ_HEADERS.
++void SbxLogRequestHeaders(const ResourceRequest& request) {
++  static const bool on = [] {
++    const char* v = ::getenv("SBXDIFF_LOG_REQ_HEADERS");
++    return v && *v && *v != '0';
++  }();
++  if (!on) {
++    return;
++  }
++  // std::string throughout: the WTF string helpers move between revisions and
++  // this is a diagnostic, not a hot path.
++  std::vector<std::string> pairs;
++  for (const auto& header : request.HttpHeaderFields()) {
++    std::string name = header.key.GetString().Utf8();
++    for (char& c : name) {
++      c = base::ToLowerASCII(c);
++    }
++    pairs.push_back(name + ": " + header.value.GetString().Utf8());
++  }
++  std::sort(pairs.begin(), pairs.end());
++  std::string joined;
++  for (const auto& p : pairs) {
++    joined += p + " | ";
++  }
++  LOG(ERROR) << "sbxdiff: reqhdr " << request.HttpMethod().Utf8() << " "
++             << request.Url().GetString().Utf8() << " :: " << joined;
++}
++
++void SbxRestoreProxyHeaders(ResourceRequest& request) {
++  if (!SbxRestoreProxyHeadersEnabled()) {
++    return;
++  }
++  // Collected before anything is written: mutating a map while iterating it is
++  // undefined, and a restored header can collide with one already present.
++  // Parallel vectors rather than pairs -- WTF::Vector does not brace-init one.
++  Vector<AtomicString> drop;
++  Vector<AtomicString> restored_names;
++  Vector<AtomicString> restored_values;
++  const size_t prefix_length = sizeof(kSbxProxyHeaderPrefix) - 1;
++  for (const auto& header : request.HttpHeaderFields()) {
++    // Compared as UTF-8: header names are ASCII, and this avoids depending on
++    // which case-insensitive helpers WTF::String exposes in a given revision.
++    std::string name = header.key.GetString().Utf8();
++    for (char& c : name) {
++      c = base::ToLowerASCII(c);
++    }
++    if (name.rfind(kSbxProxyHeaderPrefix, 0) != 0) {
++      continue;
++    }
++    // The Sec-Fetch family is NOT restored here. The network service owns
++    // those and refuses them from a renderer -- restoring them here made every
++    // upstream fetch fail with `TypeError: Failed to fetch`. They are carried
++    // past this point untouched and applied in
++    // `services/network/sec_header_helpers.cc`, which is the layer that
++    // computes them.
++    if (name.rfind("x-sbxdiff-h-sec-fetch-", 0) == 0) {
++      continue;
++    }
++    drop.push_back(header.key);
++    const std::string real = name.substr(prefix_length);
++    if (real.empty()) {
++      continue;
++    }
++    restored_names.push_back(
++        AtomicString(String::FromUtf8(base::as_byte_span(real))));
++    restored_values.push_back(header.value);
++  }
++  for (const auto& name : drop) {
++    request.ClearHttpHeaderField(name);
++  }
++  for (wtf_size_t i = 0; i < restored_names.size(); ++i) {
++    request.SetHttpHeaderField(restored_names[i], restored_values[i]);
++  }
++  if (!restored_names.empty()) {
++    // One line per request that carried any, so "did the rename fire" is a
++    // question with an answer rather than an inference from a cookie count.
++    std::string names;
++    for (const auto& n : restored_names) {
++      names += n.GetString().Utf8() + ",";
++    }
++    LOG(ERROR) << "sbxdiff: restored proxy headers [" << names << "] for "
++               << request.Url().GetString().Utf8().substr(0, 90);
++  }
++}
++
++}  // namespace
++#endif  // BUILDFLAG(SBXDIFF)
++
+ Resource* ResourceFetcher::RequestResource(FetchParameters& params,
+                                            const ResourceFactory& factory,
+                                            ResourceClient* client) {
+   base::AutoReset<bool> r(&is_in_request_resource_, true);
+ 
++#if BUILDFLAG(SBXDIFF)
++  // sbxdiff: every subresource load funnels through here -- scripts, images,
++  // stylesheets, XHR/fetch, worker scripts -- so this is the single place that
++  // makes the network visible to the trace and enforceable by the replay gate.
++  //
++  // A blocked request is a *divergence*, not an error (RULES.md #14): it is
++  // recorded and the load is refused via the existing blocked-request path
++  // below, so the run never silently falls through to the real network and
++  // never aborts and loses the reason the sandbox asked.
++  const bool sbx_blocked = sbxdiff::SbxTracer::ShouldBlockRequest(
++      params.Url().GetString().Utf8());
++  if (auto* sbx_tracer = sbxdiff::SbxTracer::GetIfExists()) {
++    sbx_tracer->TraceNetRequest(
++        params.GetResourceRequest().HttpMethod().Utf8(),
++        params.Url().GetString().Utf8(), sbx_blocked);
++  }
++  if (sbx_blocked) {
++    return ResourceForBlockedRequest(
++        params, factory, ResourceRequestBlockedReason::kOther, client);
++  }
++  // sbxdiff: see SbxRestoreProxyHeaders. After the trace and the replay gate,
++  // so what is recorded is what the page asked for and what goes on the wire is
++  // what the production transport would have sent.
++  SbxRestoreProxyHeaders(params.MutableResourceRequest());
++  SbxLogRequestHeaders(params.GetResourceRequest());
++#endif
++
+   // If detached, we do very early return here to skip all processing below.
+   if (properties_->IsDetached()) {
+     return ResourceForBlockedRequest(
+@@ -2584,6 +2752,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
+                                          uint32_t inflight_keepalive_bytes) {
+   DCHECK(resource);
+ 
++
+   // kRaw might not be subresource, and we do not need them.
+   if (resource->GetType() != ResourceType::kRaw) {
+     ++subresource_load_metrics_.number_of_subresources_loaded;

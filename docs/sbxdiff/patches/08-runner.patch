@@ -1,0 +1,725 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index b8eeec779ce30..eb3302eab0240 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -10,6 +10,7 @@
+ #include <variant>
+ 
+ #include "base/base_paths.h"
++#include "base/sbxdiff_observable_clock.h"
+ #include "base/check.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+@@ -35,7 +36,9 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/thread_pool/thread_pool_instance.h"
+ #include "base/threading/hang_watcher.h"
++#include "base/no_destructor.h"
+ #include "base/time/time.h"
++#include "base/time/time_override.h"
+ #include "base/timer/timer.h"
+ #include "build/build_config.h"
+ #include "chrome/common/buildflags.h"
+@@ -45,6 +48,8 @@
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/chrome_paths.h"
+ #include "chrome/common/chrome_paths_internal.h"
++#include "base/base_switches.h"
++#include "base/strings/string_number_conversions.h"
+ #include "chrome/common/chrome_result_codes.h"
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/common/crash_keys.h"
+@@ -1113,6 +1118,77 @@ void ChromeMainDelegate::SetupTracing() {
+ }
+ 
+ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
++  // sbxdiff: validate switch *syntax* here, the earliest callback, so a bad
++  // value aborts the whole run with a clear message before any child process
++  // is spawned. The renderer-side CHECK remains as a backstop, but on its own
++  // it is the wrong kind of loud: it kills the renderer and leaves a headless
++  // run hanging, which is the silent-failure shape RULES.md #13 exists to
++  // prevent. Returning a value from this function exits with that code.
++  {
++    const base::CommandLine* sbx_cmd = base::CommandLine::ForCurrentProcess();
++    for (const char* sbx_switch : {::switches::kSbxdiffInitialTime,
++                                   ::switches::kSbxdiffTimeOffset,
++                                   ::switches::kSbxdiffVirtualTimeBudget}) {
++      if (!sbx_cmd || !sbx_cmd->HasSwitch(sbx_switch)) {
++        continue;
++      }
++      const std::string value = sbx_cmd->GetSwitchValueASCII(sbx_switch);
++      int64_t unused_ms = 0;
++      if (!base::StringToInt64(value, &unused_ms)) {
++        LOG(ERROR) << "--" << sbx_switch
++                   << " must be an integer number of milliseconds, got: "
++                   << value;
++        return CHROME_RESULT_CODE_INVALID_CMDLINE_URL;
++      }
++    }
++
++    // sbxdiff: shift the wall clock's ORIGIN without making it virtual.
++    //
++    // A sandbox cannot have virtual time (RULES.md #59), so it ran on the real
++    // wall clock while the oracle ran from a pinned origin. That is guest
++    // readable, and not only as a fingerprint: Cloudflare's JS detections take
++    // the challenge's issue time out of `__CF$cv$params.t` and compare it
++    // against `Date.now()`, so a recorded challenge replayed hours later looks
++    // stale and the script stops without an error.
++    //
++    // The delta is computed once, here, before any thread is reading the
++    // clock, and then `Time::Now()` runs at real speed from the new origin.
++    // `TimeNowIgnoringOverride` on both sides of the arithmetic so this
++    // composes with, rather than fights, any other override.
++    if (sbx_cmd && sbx_cmd->HasSwitch(::switches::kSbxdiffTimeOffset)) {
++      int64_t origin_ms = 0;
++      if (base::StringToInt64(
++              sbx_cmd->GetSwitchValueASCII(::switches::kSbxdiffTimeOffset),
++              &origin_ms)) {
++        static base::TimeDelta g_sbxdiff_time_delta =
++            (base::Time::UnixEpoch() + base::Milliseconds(origin_ms)) -
++            base::subtle::TimeNowIgnoringOverride();
++        // NoDestructor: the override must outlive every thread that reads
++        // the clock, and tearing it down at exit would be both pointless and
++        // a -Wexit-time-destructors error.
++        static base::NoDestructor<base::subtle::ScopedTimeClockOverrides>
++            g_sbxdiff_clock(
++                []() {
++                  return base::subtle::TimeNowIgnoringOverride() +
++                         g_sbxdiff_time_delta;
++                },
++                nullptr, nullptr);
++        // sbxdiff: and publish the same origin to the LOGICAL clock.
++        //
++        // Only here, which means only on the side that has no virtual time --
++        // --sbxdiff-time-offset and --sbxdiff-initial-time are mutually
++        // exclusive in the harness. That is the point: the oracle gets its
++        // progression from virtual time, and this gives the sandbox the same
++        // progression without fencing the scheduler, which is the part the
++        // sandbox cannot survive (RULES.md #81).
++        //
++        // Inert unless SBXDIFF_LOGICAL_CLOCK is set.
++        base::sbxdiff::SetLogicalClockOrigin(base::Time::UnixEpoch() +
++                                             base::Milliseconds(origin_ms));
++      }
++    }
++  }
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
+ #endif
+diff --git a/chrome/browser/headless/BUILD.gn b/chrome/browser/headless/BUILD.gn
+index f79dae11d0424..eaebe0c905327 100644
+--- a/chrome/browser/headless/BUILD.gn
++++ b/chrome/browser/headless/BUILD.gn
+@@ -76,6 +76,10 @@ if (!is_android) {
+     sources = [
+       "headless_command_processor.cc",
+       "headless_command_processor.h",
++      "sbxdiff_net_replay.cc",
++      "sbxdiff_net_replay.h",
++      "sbxdiff_runner.cc",
++      "sbxdiff_runner.h",
+     ]
+ 
+     configs += [ "//build/config/compiler:wexit_time_destructors" ]
+@@ -87,6 +91,9 @@ if (!is_android) {
+       "//components/headless/command_handler",
+       "//components/keep_alive_registry",
+       "//content/public/browser",
++      "//net",
++      "//services/network/public/cpp",
++      "//services/network/public/mojom",
+     ]
+   }
+ 
+diff --git a/chrome/browser/headless/sbxdiff_runner.cc b/chrome/browser/headless/sbxdiff_runner.cc
+new file mode 100644
+index 0000000000000..35598ddf30f5a
+--- /dev/null
++++ b/chrome/browser/headless/sbxdiff_runner.cc
+@@ -0,0 +1,508 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/headless/sbxdiff_runner.h"
++
++#include <algorithm>
++#include <memory>
++
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "build/build_config.h"
++#include "chrome/browser/lifetime/application_lifetime_desktop.h"
++#include "components/keep_alive_registry/keep_alive_types.h"
++#include "components/keep_alive_registry/scoped_keep_alive.h"
++#include "content/public/browser/navigation_handle.h"
++#include <vector>
++#include "base/strings/string_split.h"
++#include "content/public/browser/render_frame_host.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "content/public/browser/render_widget_host.h"
++#include "components/viz/common/frame_sinks/copy_output_result.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "third_party/blink/public/common/input/web_mouse_event.h"
++#include "ui/events/base_event_utils.h"
++#include "base/files/file_util.h"
++#include "base/strings/stringprintf.h"
++#include "ui/gfx/codec/png_codec.h"
++#include "ui/gfx/geometry/rect.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_observer.h"
++
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/app_controller_mac.h"
++#endif
++
++namespace sbxdiff {
++
++namespace {
++
++// Real-time grace after the page stops loading, before the browser quits.
++// Virtual time is already fenced renderer-side, so the page is quiescent by
++// then and this only needs to cover the tail of any already-scheduled work.
++constexpr base::TimeDelta kDefaultGrace = base::Milliseconds(1000);
++
++base::TimeDelta GracePeriod() {
++  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++  const std::string value = cmd->GetSwitchValueASCII(switches::kSbxdiffRun);
++  int64_t ms = 0;
++  if (!value.empty() && base::StringToInt64(value, &ms) && ms >= 0) {
++    return base::Milliseconds(ms);
++  }
++  return kDefaultGrace;
++}
++
++// Self-owned: destroyed on Finish() or when the tab goes away.
++class Runner : public content::WebContentsObserver {
++ public:
++  explicit Runner(content::WebContents* web_contents)
++      : content::WebContentsObserver(web_contents),
++        keepalive_(std::make_unique<ScopedKeepAlive>(
++            KeepAliveOrigin::HEADLESS_COMMAND,
++            KeepAliveRestartOption::DISABLED)) {}
++
++  Runner(const Runner&) = delete;
++  Runner& operator=(const Runner&) = delete;
++
++  ~Runner() override = default;
++
++  // content::WebContentsObserver:
++  // Quiet-period semantics: finish once the page has stopped loading and
++  // stayed quiet for the grace period, with no further navigation.
++  //
++  // The first version latched on the first DidStopLoading, which is wrong for
++  // any page that navigates itself. On rateyourmusic.com the first load that
++  // settles is Cloudflare's challenge page; the run ended there and the trace
++  // never contained the real page. Each DidStopLoading now restarts the timer
++  // and stale timers are ignored via a generation counter.
++  void DidStopLoading() override {
++    MaybeStartShots();
++    MaybeScheduleClick();
++    MaybeStartPointerActivity();
++    RestartGraceTimer();
++  }
++
++  void DidStartNavigation(content::NavigationHandle*) override {
++    // A new navigation means the previous quiet period is void.
++    ++generation_;
++  }
++
++  // The tab can go away before the grace period elapses; there is then nothing
++  // left to wait for.
++  void WebContentsDestroyed() override { Finish(); }
++
++ private:
++  // Parses --sbxdiff-click=x,y[,delay_ms[,repeat[,interval_ms]]].
++  //
++  // Repeats matter: a challenge widget is not interactive the moment the page
++  // stops loading -- Cloudflare's shows "Verifying..." first and only later
++  // accepts a click -- so a single shot has to guess the right instant. Firing
++  // a few times over a window removes that guess. Extra clicks on an already
++  // solved widget are harmless.
++  static bool ClickSpec(double* x,
++                        double* y,
++                        base::TimeDelta* delay,
++                        int* repeat,
++                        base::TimeDelta* interval) {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(switches::kSbxdiffClick)) {
++      return false;
++    }
++    const std::vector<std::string> parts = base::SplitString(
++        cmd->GetSwitchValueASCII(switches::kSbxdiffClick), ",",
++        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++    if (parts.size() < 2) {
++      return false;
++    }
++    int px = 0, py = 0, ms = 1500, times = 1, every = 2000;
++    if (!base::StringToInt(parts[0], &px) ||
++        !base::StringToInt(parts[1], &py)) {
++      return false;
++    }
++    if (parts.size() >= 3) {
++      std::ignore = base::StringToInt(parts[2], &ms);
++    }
++    if (parts.size() >= 4) {
++      std::ignore = base::StringToInt(parts[3], &times);
++    }
++    if (parts.size() >= 5) {
++      std::ignore = base::StringToInt(parts[4], &every);
++    }
++    *x = px;
++    *y = py;
++    *delay = base::Milliseconds(ms);
++    *repeat = std::max(1, times);
++    *interval = base::Milliseconds(every);
++    return true;
++  }
++
++  static void DispatchClick(content::RenderWidgetHost* rwh,
++                            double x,
++                            double y) {
++    if (!rwh) {
++      return;
++    }
++    // Move, then press, then release. The move matters: a widget that watches
++    // for pointer movement before accepting a click sees a plausible sequence
++    // rather than a click materialising from nowhere.
++    // Where this widget sits on the screen, so the SCREEN position is a screen
++    // position and not a repeat of the widget one.
++    //
++    // `x`/`y` are relative to the widget the event is sent to, and for a
++    // child frame that is the FRAME's origin, not the window's. Setting the
++    // screen position to the same pair loses the frame's offset entirely, and
++    // the page reads the difference straight off `MouseEvent.screenX`.
++    //
++    // Measured with `clickgeo.html` -- a cross-origin iframe at left:60px,
++    // top:80px, clicked at (22,32). The oracle reported screenX 22, the
++    // sandbox 82. 82 is the right answer: under the proxy the frame is
++    // same-origin, the click goes to the MAIN frame's widget, and the frame's
++    // offset is already in the coordinate. The oracle was the wrong one, and
++    // this was the runner's bug rather than the sandbox's -- it had been on
++    // the list as "harness geometry" with the offset blamed on the wrong side.
++    gfx::Point origin;
++    if (content::RenderWidgetHostView* view = rwh->GetView()) {
++      origin = view->GetViewBounds().origin();
++    }
++    auto make = [&](blink::WebInputEvent::Type type) {
++      blink::WebMouseEvent e(type, blink::WebInputEvent::kNoModifiers,
++                             ui::EventTimeForNow());
++      e.SetPositionInWidget(x, y);
++      e.SetPositionInScreen(origin.x() + x, origin.y() + y);
++      e.button = blink::WebMouseEvent::Button::kLeft;
++      e.click_count = 1;
++      e.pointer_type = blink::WebPointerProperties::PointerType::kMouse;
++      return e;
++    };
++    blink::WebMouseEvent move = make(blink::WebInputEvent::Type::kMouseMove);
++    move.button = blink::WebMouseEvent::Button::kNoButton;
++    move.click_count = 0;
++    rwh->ForwardMouseEvent(move);
++    rwh->ForwardMouseEvent(make(blink::WebInputEvent::Type::kMouseDown));
++    rwh->ForwardMouseEvent(make(blink::WebInputEvent::Type::kMouseUp));
++  }
++
++  // Second half of a same-process click: `offset` is "dx,dy" in root
++  // coordinates, from the frame itself.
++  void OnFrameOffset(double x, double y, base::Value offset) {
++    if (!web_contents() || !web_contents()->GetRenderWidgetHostView()) {
++      return;
++    }
++    double dx = 0, dy = 0;
++    if (offset.is_string()) {
++      const std::string& s = offset.GetString();
++      const size_t comma = s.find(',');
++      if (comma != std::string::npos) {
++        std::ignore = base::StringToDouble(s.substr(0, comma), &dx);
++        std::ignore = base::StringToDouble(s.substr(comma + 1), &dy);
++      }
++    }
++    DispatchClick(
++        web_contents()->GetRenderWidgetHostView()->GetRenderWidgetHost(),
++        x + dx, y + dy);
++  }
++
++  void SendTrustedClick(double x, double y) {
++    if (!web_contents() || !web_contents()->GetRenderWidgetHostView()) {
++      return;
++    }
++    content::RenderWidgetHostView* root =
++        web_contents()->GetRenderWidgetHostView();
++
++    // Move the pointer across the PAGE before going anywhere near the frame.
++    //
++    // A frame-targeted click delivers every event straight into the widget, so
++    // the main document never sees a pointer at all -- and an event inside an
++    // iframe does not bubble out of it. That is not how any real input works: a
++    // user reaching a widget moves across the page to get there.
++    //
++    // It is load-bearing, not cosmetic. rateyourmusic arms its own anti-bot
++    // check with `$("body").on("mousemove touchend", ...)` and posts the result
++    // to /httprequest/SecChk. Measured: the oracle's main realm received
++    // `MouseEvent.constructor` three times and posted 2450 bytes; the sandbox's
++    // received none and never posted at all, with all 83 of its mouse records
++    // landing in the Turnstile frame. Every API that check reads --
++    // `Navigator.permissions`, `Notification.permission`, `Window.outerHeight`,
++    // `Navigator.plugins` -- had been sitting in the baseline as a missing call
++    // for as long as the baseline has existed.
++    //
++    // (1,1) rather than anywhere else: the top-left corner is outside any
++    // centered challenge widget, so the move reaches the main document rather
++    // than being hit-tested back into the frame. A move, never a press -- this
++    // must not be able to activate whatever it passes over.
++    {
++      blink::WebMouseEvent over(blink::WebInputEvent::Type::kMouseMove,
++                                blink::WebInputEvent::kNoModifiers,
++                                ui::EventTimeForNow());
++      over.SetPositionInWidget(1, 1);
++      over.SetPositionInScreen(1, 1);
++      over.button = blink::WebMouseEvent::Button::kNoButton;
++      over.click_count = 0;
++      over.pointer_type = blink::WebPointerProperties::PointerType::kMouse;
++      root->GetRenderWidgetHost()->ForwardMouseEvent(over);
++    }
++
++    content::RenderFrameHost* target = nullptr;
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    const std::string frame_match =
++        cmd ? cmd->GetSwitchValueASCII(switches::kSbxdiffClickFrame)
++            : std::string();
++    if (!frame_match.empty()) {
++      web_contents()->GetPrimaryMainFrame()->ForEachRenderFrameHost(
++          [&](content::RenderFrameHost* rfh) {
++            if (target) {
++              return;
++            }
++            if (rfh->GetLastCommittedURL().spec().find(frame_match) !=
++                std::string::npos) {
++              target = rfh;
++            }
++          });
++    }
++
++    if (target) {
++      content::RenderWidgetHostView* view = target->GetView();
++      if (view && view != root) {
++        // Out-of-process: the frame has a widget of its own and the
++        // coordinates are already frame-local.
++        DispatchClick(view->GetRenderWidgetHost(), x, y);
++
++        return;
++      }
++      // Same PROCESS as its parent, so it has no widget of its own --
++      // `GetView()` hands back the root -- and a root click at frame-local
++      // coordinates lands in the top-left corner of the main frame instead.
++      //
++      // That is not a corner case here, it is the norm for a sandbox: the
++      // oracle sees Cloudflare's Turnstile widget cross-origin and therefore
++      // out-of-process, while a proxy serves every frame from one origin, so
++      // the widget shares its parent's process. Measured on rateyourmusic, the
++      // oracle's widget realm received MouseEvents and the sandbox's received
++      // none.
++      //
++      // Ask the frame where it is instead. An ISOLATED world, so the page
++      // cannot see the question: it shares the DOM but not the prototypes, so
++      // a page that has replaced getBoundingClientRect does not observe this.
++      target->ExecuteJavaScriptInIsolatedWorld(
++          u"(()=>{let x=0,y=0,w=window,e=w.frameElement;"
++          u"while(e){const b=e.getBoundingClientRect();x+=b.x;y+=b.y;"
++          u"w=e.ownerDocument.defaultView;e=w.frameElement;}"
++          u"return x+','+y;})()",
++          base::BindOnce(&Runner::OnFrameOffset, weak_factory_.GetWeakPtr(), x,
++                         y),
++          ISOLATED_WORLD_ID_CHROME_INTERNAL);
++
++      return;
++    }
++
++    DispatchClick(root->GetRenderWidgetHost(), x, y);
++  }
++
++  // Keep the pointer moving over the page for as long as the run lasts.
++  //
++  // A click is a moment; a pointer is continuous. Tying pointer movement to
++  // the click schedule means a document that commits after the last click
++  // never sees a pointer at all -- measured on rateyourmusic, the sandbox's
++  // real page committed at 78% of the run, the last click landed at 70%, and
++  // its `$("body").on("mousemove", ...)` anti-bot check therefore never ran
++  // while the oracle's did. The two sides have different clocks there by
++  // necessity (RULES.md #59), so any fixed schedule of moments lands at
++  // different points in the two page lifetimes. Something continuous does not.
++  //
++  // Two alternating points, so each is a real move rather than a repeat of a
++  // position the compositor will coalesce away. Never a press: this crosses
++  // whatever the page has put in the corner and must not activate it.
++  void MaybeStartPointerActivity() {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (pointer_started_ || !cmd || !cmd->HasSwitch(switches::kSbxdiffClick)) {
++      return;
++    }
++    pointer_started_ = true;
++    MovePointer();
++  }
++
++  void MovePointer() {
++    if (finished_ || !web_contents() ||
++        !web_contents()->GetRenderWidgetHostView()) {
++      return;
++    }
++    pointer_at_ = pointer_at_ == 1 ? 2 : 1;
++    blink::WebMouseEvent move(blink::WebInputEvent::Type::kMouseMove,
++                              blink::WebInputEvent::kNoModifiers,
++                              ui::EventTimeForNow());
++    move.SetPositionInWidget(pointer_at_, 1);
++    move.SetPositionInScreen(pointer_at_, 1);
++    move.button = blink::WebMouseEvent::Button::kNoButton;
++    move.click_count = 0;
++    move.pointer_type = blink::WebPointerProperties::PointerType::kMouse;
++    web_contents()
++        ->GetRenderWidgetHostView()
++        ->GetRenderWidgetHost()
++        ->ForwardMouseEvent(move);
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&Runner::MovePointer, weak_factory_.GetWeakPtr()),
++        base::Milliseconds(500));
++  }
++
++  void MaybeScheduleClick() {
++    double x = 0, y = 0;
++    int repeat = 1;
++    base::TimeDelta delay, interval;
++    if (clicked_ || !ClickSpec(&x, &y, &delay, &repeat, &interval)) {
++      return;
++    }
++    clicked_ = true;
++    for (int i = 0; i < repeat; ++i) {
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&Runner::SendTrustedClick, weak_factory_.GetWeakPtr(),
++                         x, y),
++          delay + i * interval);
++    }
++  }
++
++  // Periodic viewport capture, so a run can be inspected after the fact.
++  void MaybeStartShots() {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (shots_started_ || !cmd || !cmd->HasSwitch(switches::kSbxdiffShots)) {
++      return;
++    }
++    const std::vector<std::string> parts = base::SplitString(
++        cmd->GetSwitchValueASCII(switches::kSbxdiffShots), ",",
++        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++    if (parts.empty()) {
++      return;
++    }
++    shots_started_ = true;
++    shots_dir_ = base::FilePath(parts[0]);
++    int ms = 2000;
++    if (parts.size() >= 2) {
++      std::ignore = base::StringToInt(parts[1], &ms);
++    }
++    shots_interval_ = base::Milliseconds(ms);
++    TakeShot();
++  }
++
++  void TakeShot() {
++    if (finished_ || !web_contents()) {
++      return;
++    }
++    content::RenderWidgetHostView* view =
++        web_contents()->GetRenderWidgetHostView();
++    if (view) {
++      const int n = shot_index_++;
++      view->CopyFromSurface(
++          gfx::Rect(), gfx::Size(), base::Seconds(2),
++          base::BindOnce(
++              [](base::FilePath dir, int n,
++                 const content::CopyFromSurfaceResult& result) {
++                if (!result.has_value()) {
++                  return;
++                }
++                std::optional<std::vector<uint8_t>> png =
++                    gfx::PNGCodec::FastEncodeBGRASkBitmap(
++                        result.value().bitmap, /*discard_transparency=*/false);
++                if (!png) {
++                  return;
++                }
++                std::ignore = base::WriteFile(
++                    dir.AppendASCII(base::StringPrintf("shot_%02d.png", n)),
++                    *png);
++              },
++              shots_dir_, n));
++    }
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE, base::BindOnce(&Runner::TakeShot, weak_factory_.GetWeakPtr()),
++        shots_interval_);
++  }
++
++  void RestartGraceTimer() {
++    const int generation = ++generation_;
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&Runner::MaybeFinish, weak_factory_.GetWeakPtr(),
++                       generation),
++        GracePeriod());
++    if (!deadline_armed_) {
++      // Hard cap, so a page that never goes quiet still terminates. Ten grace
++      // periods: long enough for a challenge/redirect flow, bounded enough to
++      // not hang a batch.
++      deadline_armed_ = true;
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE, base::BindOnce(&Runner::Finish, weak_factory_.GetWeakPtr()),
++          10 * GracePeriod());
++    }
++  }
++
++  void MaybeFinish(int generation) {
++    // Superseded by a later load or navigation.
++    if (generation != generation_) {
++      return;
++    }
++    Finish();
++  }
++
++  void Finish() {
++    // Re-entrant by construction: CloseAllBrowsersAndQuit() destroys the
++    // WebContents, which calls WebContentsDestroyed(), which calls Finish()
++    // again. The first version deleted `this` at the end of both paths and
++    // segfaulted the browser on exit (exit=139).
++    if (finished_) {
++      return;
++    }
++    finished_ = true;
++    // Stop observing before tearing down, so the teardown cannot call back in.
++    Observe(nullptr);
++#if BUILDFLAG(IS_MAC)
++    // Chrome keeps running on macOS after the last window closes, which is not
++    // what a batch run wants. Same call the headless command path makes.
++    app_controller_mac::AllowApplicationToTerminate();
++#endif
++    chrome::CloseAllBrowsersAndQuit();
++    // Released only after the quit is requested: the keepalive is what stops
++    // the browser exiting before the trace is complete.
++    keepalive_.reset();
++    // DeleteSoon, not `delete this`: Finish() can be running inside an
++    // observer callback from the very object being torn down.
++    base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE,
++                                                                 this);
++  }
++
++  std::unique_ptr<ScopedKeepAlive> keepalive_;
++  int generation_ = 0;
++  bool deadline_armed_ = false;
++  bool clicked_ = false;
++  bool pointer_started_ = false;
++  int pointer_at_ = 1;
++  bool shots_started_ = false;
++  int shot_index_ = 0;
++  base::FilePath shots_dir_;
++  base::TimeDelta shots_interval_;
++  bool finished_ = false;
++  base::WeakPtrFactory<Runner> weak_factory_{this};
++};
++
++}  // namespace
++
++bool ShouldRunSbxdiff() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      switches::kSbxdiffRun);
++}
++
++void AttachSbxdiffRunner(content::WebContents* web_contents) {
++  if (!web_contents) {
++    return;
++  }
++  // Owns itself; see Runner.
++  new Runner(web_contents);
++}
++
++}  // namespace sbxdiff
+diff --git a/chrome/browser/headless/sbxdiff_runner.h b/chrome/browser/headless/sbxdiff_runner.h
+new file mode 100644
+index 0000000000000..949386c4913d2
+--- /dev/null
++++ b/chrome/browser/headless/sbxdiff_runner.h
+@@ -0,0 +1,44 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_HEADLESS_SBXDIFF_RUNNER_H_
++#define CHROME_BROWSER_HEADLESS_SBXDIFF_RUNNER_H_
++
++namespace content {
++class WebContents;
++}
++
++namespace sbxdiff {
++
++// sbxdiff: in-binary run driver, selected by --sbxdiff-run[=<grace_ms>].
++//
++// Replaces --dump-dom / --virtual-time-budget for traced runs. Those go through
++// the headless command handler, which navigates a *second* WebContents to
++// chrome://headless/headless_command.html and drives the target over CDP. That
++// costs two things the oracle cares about:
++//
++//   1. The handler page is a whole extra realm in every trace (34 records per
++//      run of chrome://headless/headless_command.html), which the differ then
++//      has to know to ignore.
++//   2. Attaching a DevTools session is observable from the page -- enabling
++//      the Runtime and Debugger domains changes console and stack-trace
++//      behaviour -- so a CDP-driven run is not a valid oracle for a site that
++//      looks.
++//
++// This driver attaches to the tab the normal startup path already opened, so
++// the page runs in an ordinary browser tab rather than a synthetic WebContents,
++// and quits once the page has stopped loading and a grace period has passed.
++// Virtual time does not need CDP any more: it is enabled renderer-side in
++// Page's constructor (see docs/sbxdiff/CHROMIUM-PATCHES.md 0010).
++//
++// The trace files are the output; nothing is dumped to stdout.
++bool ShouldRunSbxdiff();
++
++// Attaches a self-owned observer to `web_contents`. Must only be called when
++// ShouldRunSbxdiff() is true.
++void AttachSbxdiffRunner(content::WebContents* web_contents);
++
++}  // namespace sbxdiff
++
++#endif  // CHROME_BROWSER_HEADLESS_SBXDIFF_RUNNER_H_
+diff --git a/chrome/browser/ui/startup/startup_browser_creator_impl.cc b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+index 3f4c0479b1719..4e45faf9c1424 100644
+--- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+@@ -26,6 +26,7 @@
+ #include "chrome/browser/defaults.h"
+ #include "chrome/browser/first_run/first_run.h"
+ #include "chrome/browser/headless/headless_command_processor.h"
++#include "chrome/browser/headless/sbxdiff_runner.h"
+ #include "chrome/browser/lifetime/application_lifetime_desktop.h"
+ #include "chrome/browser/prefs/session_startup_pref.h"
+ #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+@@ -452,6 +453,14 @@ BrowserWindowInterface* StartupBrowserCreatorImpl::OpenTabsInBrowser(
+ #endif  // BUILDFLAG(ENABLE_RLZ)
+ 
+     Navigate(&params);
++    // sbxdiff: drive the run from the tab the normal startup path just opened,
++    // rather than from a chrome://headless/ page over CDP. Attaching here
++    // keeps the page in an ordinary browser tab, which matters because the
++    // whole point is that the traced run be indistinguishable from a normal
++    // one. See chrome/browser/headless/sbxdiff_runner.h.
++    if (first_tab && sbxdiff::ShouldRunSbxdiff()) {
++      sbxdiff::AttachSbxdiffRunner(params.navigated_or_inserted_contents);
++    }
+     first_tab = false;
+   }
+   if (!browser->GetTabStripModel()->GetActiveWebContents() &&
