@@ -11,6 +11,7 @@
 		"sbxdiff": "node --experimental-strip-types --no-warnings src/sbxdiff/index.ts",
 		"serve": "node --experimental-strip-types --no-warnings src/sbxdiff/serve.ts",
 		"sbxoffline": "node --experimental-strip-types --no-warnings src/sbxdiff/offline.ts",
+		"sbxplaintext": "node --experimental-strip-types --no-warnings src/sbxdiff/plaintext.ts",
 		"test:coverage": "SCRAMJET_COVERAGE=1 node --experimental-strip-types --no-warnings src/index.ts",
 		"generate:wpt": "node --experimental-strip-types --no-warnings scripts/generate-wpt.ts",
 		"test:sbxdiff": "node --experimental-strip-types --no-warnings --test src/sbxdiff/*.test.ts"
