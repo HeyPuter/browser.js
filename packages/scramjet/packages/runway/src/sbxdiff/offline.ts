@@ -34,6 +34,7 @@ import { coverage, formatCoverage } from "./coverage.ts";
 import { loadSide } from "./sides.ts";
 import { guestOps, guestOpStats } from "./guestop.ts";
 import { diffExtraRealms, formatTimeline, realmTimeline } from "./realms.ts";
+import { loadStructural, structuralVerdict } from "./structural.ts";
 import {
 	formatSequences,
 	requestSequence,
@@ -258,6 +259,11 @@ const baselineSet = has("--no-baseline")
 	: await loadBaseline(target);
 const { buckets: noiseBuckets, spreads: noiseSpreadsByBucket } =
 	await loadNoise(target);
+// The gate reads this and the offline re-differ did not, so the two disagreed
+// by exactly the number of structural entries -- and the whole point of the
+// fast loop is that it reproduces the live run's numbers. A divergence the two
+// sides provably cannot agree on is accepted in both or in neither.
+const structural = await loadStructural(target);
 
 if (!has("--no-diff")) {
 	const divergences = diff(oracle, sandbox, opts);
@@ -375,10 +381,26 @@ if (!has("--no-realms")) {
 		console.log(`\n  realm ${url}`);
 		for (const k of keys) {
 			const b = r.buckets.get(k)!;
-			const known = baselineSet?.has(`${url}||${k}`) ? "  (baselined)" : "";
+			// Same three gates the live run applies, in the same order.
+			const baselined = baselineSet?.has(`${url}||${k}`) ?? false;
+			const v = structuralVerdict(structural, k, b.sample, url);
+			const noisy = noiseBuckets?.has(`${url}||${k}`) ?? false;
+			const known =
+				baselined || v.covered || noisy
+					? baselined
+						? "  (baselined)"
+						: v.covered
+							? "  (structural)"
+							: "  (oracle noise)"
+					: "";
 			console.log(`      ${k}  x${b.count}${known}`);
 			console.log(`          oracle : ${b.sample.oracle}`);
 			console.log(`          sandbox: ${b.sample.sandbox}`);
+			if (v.exceeded) {
+				console.log(
+					`          EXCEEDS its structural bound: ${v.exceeded.spread} > ${v.exceeded.bound}`
+				);
+			}
 			if (!known) n++;
 		}
 	}

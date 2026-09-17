@@ -40,7 +40,11 @@ import {
 	formatExceptions,
 	thrownErrors,
 } from "./exceptions.ts";
-import { formatStructural, loadStructural } from "./structural.ts";
+import {
+	formatStructural,
+	loadStructural,
+	structuralVerdict,
+} from "./structural.ts";
 import { Kind } from "./trace.ts";
 import { loadStore, mountStoreEndpoint, reqBodyKey } from "./store.ts";
 import { guestOps as readGuestOps, guestOpStats } from "./guestop.ts";
@@ -1057,6 +1061,30 @@ async function main() {
 	// cause and a magnitude bound. NOT a baseline -- see structural.ts. Printed
 	// in full below, every run, because an exception nobody reads is a baseline.
 	const structural = await loadStructural(target);
+	// Loaded HERE, beside the baseline, and not further down where it used to
+	// sit -- the realm sweep runs between the two and needs it. The noise file
+	// is the ONLY writer of `<realm-url>||<bucket>` keys, and the sweep was the
+	// only reader that never consulted it, so every realm-scoped entry in it
+	// was dead on arrival and its findings re-failed every run.
+	//
+	// Not loaded under --self-check: subtracting the noise floor from the run
+	// that measures it would always report zero.
+	let noise: Set<string> | undefined;
+	// How far the oracle disagreed with ITSELF in each numeric bucket. A run
+	// inside that is noise; a run far outside it is a finding wearing the same
+	// bucket key (RULES.md #127).
+	let noiseSpreads: Record<string, number> = {};
+	if (!selfCheck) {
+		try {
+			const f = noiseFile(target);
+			const parsed = JSON.parse(await readFile(f, "utf8"));
+			noise = new Set(parsed.buckets);
+			noiseSpreads = parsed.spreads ?? {};
+		} catch {
+			// Optional. Without it every bucket is attributed to the sandbox,
+			// which is the conservative direction.
+		}
+	}
 
 	// T0 and T1 in ANY realm both sides have, not just the page's.
 	//
@@ -1086,28 +1114,14 @@ async function main() {
 		sample: { oracle: unknown; sandbox: unknown } | undefined,
 		realm?: string
 	): boolean => {
-		const entry =
-			(realm ? structural.entries.get(`${realm}||${key}`) : undefined) ??
-			structural.entries.get(key);
-		if (!entry) return false;
-		// Without the magnitude check "the heap differs" would license the heap
-		// differing by anything, which is the failure the file exists to avoid
-		// (RULES #127, in a new place).
-		if (entry.maxSpread !== undefined && sample) {
-			const spread = numericSpread({
-				oracle: sample.oracle,
-				sandbox: sample.sandbox,
-			} as Divergence);
-			if (spread !== undefined && spread > entry.maxSpread) {
-				console.log(
-					`          EXCEEDS its structural bound: ${spread} > ${entry.maxSpread}`
-				);
-
-				return false;
-			}
+		const v = structuralVerdict(structural, key, sample, realm);
+		if (v.exceeded) {
+			console.log(
+				`          EXCEEDS its structural bound: ${v.exceeded.spread} > ${v.exceeded.bound}`
+			);
 		}
 
-		return true;
+		return v.covered;
 	};
 	if (allRealms) {
 		const notes: string[] = [];
@@ -1135,7 +1149,12 @@ async function main() {
 				// heap differing by anything, which is the failure the file exists
 				// to avoid (RULES #127, in a new place).
 				const coveredHere = coveredByStructural(k, b.sample, url);
-				if (!baseline?.has(`${url}||${k}`) && !coveredHere) {
+				// The oracle's own floor counts here too. A bucket the oracle
+				// could not reproduce against ITSELF in this realm is not
+				// evidence about the sandbox, and `rym.sh noise` has been
+				// recording exactly these keys all along.
+				const noisyHere = noise?.has(`${url}||${k}`) ?? false;
+				if (!baseline?.has(`${url}||${k}`) && !coveredHere && !noisyHere) {
 					extraRealmFindings.push(`${url}||${k}`);
 				}
 				if (coveredHere) structuralHits.add(`${url}||${k}`);
@@ -1288,25 +1307,6 @@ async function main() {
 		console.log("  T0 leaks are never baselined; they always fail.");
 		printSummary(report.divergences, null, null);
 		process.exit(0);
-	}
-
-	// Not loaded under --self-check: subtracting the noise floor from the run
-	// that measures it would always report zero.
-	let noise: Set<string> | undefined;
-	// How far the oracle disagreed with ITSELF in each numeric bucket. A run
-	// inside that is noise; a run far outside it is a finding wearing the same
-	// bucket key (RULES.md #127).
-	let noiseSpreads: Record<string, number> = {};
-	if (!selfCheck) {
-		try {
-			const f = noiseFile(target);
-			const parsed = JSON.parse(await readFile(f, "utf8"));
-			noise = new Set(parsed.buckets);
-			noiseSpreads = parsed.spreads ?? {};
-		} catch {
-			// Optional. Without it every bucket is attributed to the sandbox,
-			// which is the conservative direction.
-		}
 	}
 
 	console.log(formatReport(report, baseline));

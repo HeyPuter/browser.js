@@ -121,34 +121,48 @@ export async function loadStructural(target: string): Promise<Structural> {
  * A divergence is covered only when the key matches AND, for a numeric bucket,
  * this run stayed inside the recorded bound. Exceeding it is a finding again.
  */
-export function applyStructural(
-	divergences: Divergence[],
+export type StructuralVerdict =
+	/** An entry covers this bucket, and the run is inside its recorded bound. */
+	| { covered: true }
+	/** No entry, or an entry whose magnitude bound this run exceeded. */
+	| { covered: false; exceeded?: { spread: number; bound: number } };
+
+/**
+ * Does an entry cover this bucket, and is the run still inside its bound?
+ *
+ * Keyed by bucket, optionally scoped by realm -- the same API diverging in the
+ * page and in an embedded widget are two findings with two causes, so an entry
+ * may name either. A realm-scoped entry wins over a bare one.
+ *
+ * Returns rather than prints. This used to exist twice: once here, taking
+ * `Divergence[]`, imported by nobody; and once inline in `index.ts`, taking a
+ * bucket key, doing the real work and logging from inside a predicate. Two
+ * implementations of one rule is how the gate and the offline re-differ came to
+ * disagree about which findings were accepted.
+ */
+export function structuralVerdict(
 	s: Structural,
-	realmOf?: (d: Divergence) => string | undefined
-): { covered: Divergence[]; exceeded: Divergence[]; rest: Divergence[] } {
-	const covered: Divergence[] = [];
-	const exceeded: Divergence[] = [];
-	const rest: Divergence[] = [];
-	for (const d of divergences) {
-		const realm = realmOf?.(d);
-		const entry =
-			(realm ? s.entries.get(`${realm}||${d.bucket}`) : undefined) ??
-			s.entries.get(d.bucket);
-		if (!entry) {
-			rest.push(d);
-			continue;
+	key: string,
+	sample: { oracle?: unknown; sandbox?: unknown } | undefined,
+	realm?: string
+): StructuralVerdict {
+	const entry =
+		(realm ? s.entries.get(`${realm}||${key}`) : undefined) ??
+		s.entries.get(key);
+	if (!entry) return { covered: false };
+	// Without the magnitude check "the heap differs" would license the heap
+	// differing by anything, which is the failure this file exists to avoid.
+	if (entry.maxSpread !== undefined && sample) {
+		const spread = numericSpread({
+			oracle: sample.oracle,
+			sandbox: sample.sandbox,
+		} as Divergence);
+		if (spread !== undefined && spread > entry.maxSpread) {
+			return { covered: false, exceeded: { spread, bound: entry.maxSpread } };
 		}
-		if (entry.maxSpread !== undefined) {
-			const spread = numericSpread(d);
-			if (spread !== undefined && spread > entry.maxSpread) {
-				exceeded.push(d);
-				continue;
-			}
-		}
-		covered.push(d);
 	}
 
-	return { covered, exceeded, rest };
+	return { covered: true };
 }
 
 /** Printed in full on every run: an exception nobody reads is a baseline. */
