@@ -38,7 +38,21 @@ independent check on that decoder.
 
 ## Building the browser
 
-Against Chromium **155.0.8051.0**.
+Against Chromium tag **155.0.8050.1**.
+
+The patch set was generated from a trunk checkout whose `chrome/VERSION` reads
+155.0.8051.0, and that is a version string with no tag behind it — a tag is cut
+at release and 8051 was still in development. Verified against the nearest tag
+instead: at 155.0.8050.1 all 72 files apply with no conflict and every hunk
+regenerates byte-identical, because the only upstream change to a patched file
+in the 170 commits between them is a BUILDFLAG rename elsewhere in
+`render_process_host_impl.cc`.
+
+Target the tag. It is reproducible, and a shallow clone can fetch it directly:
+
+```sh
+gclient sync --revision src@155.0.8050.1 --no-history
+```
 
 ```sh
 cd src && git apply /path/to/docs/sbxdiff/patches/all.patch

@@ -1,15 +1,27 @@
 # Patch set
 
-Against Chromium **155.0.8051.0**. Regenerated from the working tree and
-verified: every patch reverse-applies against it, the nine area patches are a
-**disjoint partition** of the 42 changed files, and their concatenation equals
-`all.patch`.
+Against Chromium tag **155.0.8050.1** (see `../README.md` for why the tag and
+not the 155.0.8051.0 that `chrome/VERSION` reports). Regenerated from the
+working tree and verified: every patch reverse-applies against it, the nine
+area patches are a **disjoint partition** of the 72 changed files, and their
+concatenation equals `all.patch`.
 
 ## Applying
 
 ```sh
+gclient sync --revision src@155.0.8050.1 --no-history   # if starting fresh
 cd src && git apply /path/to/all.patch
 ```
+
+**Apply after the last `gclient sync`, not before.** Two of the files are in
+DEPS sub-repositories — `third_party/boringssl/src/crypto/rand/getentropy.cc`
+and `third_party/webrtc/rtc_base/crypto_random.cc` — and a sync checks those out
+fresh, silently discarding both. That is not hypothetical: the BoringSSL entropy
+pin was listed in `07-determinism` from the day it was written and contributed
+nothing to the patch set for the life of the project, because the outer
+`git diff` cannot see inside a sub-repository. `regen.sh` discovers them now
+rather than taking a list, and the run prints the file count so a silent loss
+shows up as 70 where it should say 72.
 
 `all.patch` is the authoritative artifact — it reproduces the built binary.
 New files are included with full content, so there is nothing to copy in

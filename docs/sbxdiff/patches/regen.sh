@@ -50,7 +50,8 @@ subdiff() {
     for path in "$@"; do
       case "$path" in
         "$sub"/*)
-          git -C "$sub" diff --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
+          git -C "$sub" diff --ignore-submodules=all \
+              --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
               -- "${path#"$sub"/}"
           ;;
       esac
@@ -58,7 +59,7 @@ subdiff() {
   done
 }
 
-mk() { n="$1"; shift; { git diff -- "$@"; subdiff "$@"; } > "$P/$n"; }
+mk() { n="$1"; shift; { git diff --ignore-submodules=all -- "$@"; subdiff "$@"; } > "$P/$n"; }
 
 mk 01-host-build-fixes.patch build/config/apple/sdk_info.py build/mac/find_sdk.py \
    components/remote_cocoa/browser/scoped_cg_window_id.cc
@@ -124,10 +125,26 @@ mk 09-network.patch base/sbxdiff_body_hash.h \
    third_party/blink/renderer/core/fetch/fetch_response_data.cc \
    net/http/http_network_transaction.cc \
    services/network/sec_header_helpers.cc
+# --ignore-submodules=all, everywhere a diff is taken.
+#
+# A DEPS checkout carries ~18 gitlinks -- v8, skia, angle, pdfium and the rest --
+# and `git diff` reports one as modified whenever the submodule's checked-out
+# revision differs from what the current commit records. That is the NORMAL
+# state whenever src is not sitting exactly where gclient last synced it, which
+# includes every attempt to retarget the patch set at a release tag: checking
+# out 155.0.8050.1 put eighteen `Subproject commit` one-liners into all.patch
+# and into the "modified but not captured" check.
+#
+# They are never part of the patch set. A gitlink says which revision of another
+# repository to sync, which is DEPS's job, and sbxdiff changes the CONTENTS of
+# two sub-repos rather than the revisions they are pinned to -- those contents
+# are picked up by `subdiff` below, from inside each sub-repo, where a gitlink
+# cannot appear.
 {
-  git diff
+  git diff --ignore-submodules=all
   for sub in $SUBREPOS; do
-    git -C "$sub" diff --src-prefix="a/$sub/" --dst-prefix="b/$sub/"
+    git -C "$sub" diff --ignore-submodules=all \
+        --src-prefix="a/$sub/" --dst-prefix="b/$sub/"
   done
 } > "$P/all.patch"
 
@@ -146,9 +163,10 @@ missing=$(comm -23 <(grep '^diff --git' "$P/all.patch" | sort) \
 # This is the check that was missing. The area patches were verified against
 # all.patch and all.patch against itself, so a file the outer repo cannot see
 # was absent from both and agreed with itself perfectly.
-changed=$({ git diff --name-only
+changed=$({ git diff --ignore-submodules=all --name-only
             for sub in $SUBREPOS; do
-              git -C "$sub" diff --name-only | sed "s|^|$sub/|"
+              git -C "$sub" diff --ignore-submodules=all --name-only \
+                | sed "s|^|$sub/|"
             done
           } | sort -u)
 captured=$(grep '^diff --git' "$P/all.patch" \
