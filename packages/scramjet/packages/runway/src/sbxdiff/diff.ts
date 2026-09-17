@@ -968,6 +968,25 @@ export function diff(
 		)
 	);
 
+	// The absolute leak scan, over the sandbox's own records.
+	//
+	// It needs no pair and no alignment, which is exactly why it has to run:
+	// everything below this point only classifies a value once literal
+	// comparison has already FAILED, so a leak reaches a tier only if it also
+	// happens to diverge and to be paired. Two classes fall through that:
+	//
+	//   - An ARGUMENT. The argument loop below pushes at T2 unconditionally,
+	//     even when `classify` answers `proxy-url-leak` -- so a proxy URL the
+	//     guest passed INTO a native was reported, at a tier a baseline
+	//     swallows, rather than failing the run.
+	//   - Anything an interceptor WROTE. `apiSequences` reads `kBindingCall`
+	//     only, so `kInterceptor` records -- which carry the value the guest
+	//     assigned -- were compared by nothing at all.
+	//
+	// Realm-scoped like everything else, so the realm sweep runs it again for
+	// each paired realm.
+	out.push(...scanLeaks(sandbox, opts.markers));
+
 	const oSeq = apiSequences(oracle, opts.oracleAttribution);
 	const sSeq = apiSequences(sandbox, opts.sandboxAttribution);
 	if (opts.sandboxGuestOps) {
