@@ -270,7 +270,7 @@ if (!has("--no-diff")) {
 	divergences.push(...bodyDivergences(bodies));
 	const report = bucketize(divergences);
 	const baseline = baselineSet;
-	console.log(`\n${formatReport(report, baseline)}`);
+	console.log(`\n${formatReport(report, baseline, noiseBuckets)}`);
 	const t0 = report.divergences.filter((d) => d.tier === "T0").length;
 	const fresh = new Set(
 		report.divergences

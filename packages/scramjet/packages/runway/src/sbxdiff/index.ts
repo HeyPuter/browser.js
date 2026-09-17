@@ -1099,15 +1099,12 @@ async function main() {
 	const structuralBuckets = new Set<string>();
 
 	/**
-	 * Does a structural entry cover this bucket, and did the run stay inside
-	 * the bound it recorded?
+	 * `structuralVerdict`, with this file's voice for a bound that was exceeded.
 	 *
-	 * One implementation for the compared realm and the realm sweep both. A
-	 * divergence being unfixable is a property of the divergence, not of which
-	 * realm happened to notice it -- and the exceptions file is keyed by
-	 * bucket, so keying the CHECK by realm as well made an entry that named a
-	 * compared-realm bucket impossible to ever apply. `applyStructural` was
-	 * imported and never called, which is what that looked like from outside.
+	 * The rule itself lives in `structural.ts` so the gate and the offline
+	 * re-differ share it. A divergence being unfixable is a property of the
+	 * divergence and not of which realm happened to notice it, so an entry may
+	 * name a bare bucket or a realm-scoped one and the realm-scoped one wins.
 	 */
 	const coveredByStructural = (
 		key: string,
@@ -1309,7 +1306,7 @@ async function main() {
 		process.exit(0);
 	}
 
-	console.log(formatReport(report, baseline));
+	console.log(formatReport(report, baseline, noise));
 	printSummary(report.divergences, baseline ?? null, noise ?? null);
 
 	// A T0 leak always fails, even if the oracle is unstable in that bucket: a
@@ -1364,13 +1361,30 @@ async function main() {
 				` -- this fails the run.`
 		);
 	}
+	// Exceptions and request sequences went straight into the exit code with no
+	// suppression consulted at all -- the only two producers that did. They are
+	// gated now, but on the NOISE floor and the structural file and NOT on the
+	// baseline: every divergence they emit is T1, and a baseline records T2 and
+	// below by construction. Suppressing a T1 by baselining it is the one thing
+	// none of these files is allowed to do.
+	const gatedExceptions = exceptions.divergences.filter((d) => {
+		if (noise?.has(d.bucket)) return false;
+
+		return !structuralVerdict(structural, d.bucket, d).covered;
+	});
+	if (exceptions.divergences.length !== gatedExceptions.length) {
+		console.log(
+			`\n  ${exceptions.divergences.length - gatedExceptions.length} exception` +
+				` divergence(s) are the oracle's own noise or a structural exception.`
+		);
+	}
 	process.exit(
 		newBuckets.length ||
 			bodyDivergences.length ||
 			extraRealmFindings.length ||
 			structural.errors.length ||
 			seqDivergences.length ||
-			exceptions.divergences.length ||
+			gatedExceptions.length ||
 			storeLeniencies
 			? 1
 			: 0

@@ -934,11 +934,6 @@ export type DiffOptions = {
 	oracleAttribution?: Attribution;
 	sandboxAttribution?: Attribution;
 	/**
-	 * APIs whose sandbox-side sequence is longer by construction (the shim does
-	 * extra work through the same native). Extra calls on these are T4.
-	 */
-	shimBusyApis?: Set<string>;
-	/**
 	 * What the guest asked scramjet for, from the in-page recorder.
 	 *
 	 * Supplied for the sandbox only -- the oracle has no scramjet, so its
@@ -1344,10 +1339,23 @@ export function bucketize(divergences: Divergence[]): Report {
 
 const TIER_ORDER: Tier[] = ["T0", "T1", "T2", "T3", "T4"];
 
-export function formatReport(report: Report, baseline?: Set<string>): string {
+export function formatReport(
+	report: Report,
+	baseline?: Set<string>,
+	/**
+	 * What the oracle could not reproduce against ITSELF.
+	 *
+	 * Taken here as well as in the gate because the two were disagreeing in
+	 * print: the summary line subtracted noisy buckets and this listing did
+	 * not, so a run showed N buckets in full and then said it had fewer. A T0
+	 * is never hidden by either -- a guest-observable leak is not something the
+	 * oracle can be noisy about.
+	 */
+	noise?: Set<string>
+): string {
 	const lines: string[] = [];
 	const shown = [...report.buckets.entries()].filter(
-		([k, v]) => v.tier === "T0" || !baseline?.has(k)
+		([k, v]) => v.tier === "T0" || (!baseline?.has(k) && !noise?.has(k))
 	);
 	const suppressed = report.buckets.size - shown.length;
 
