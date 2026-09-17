@@ -236,10 +236,10 @@ index 6560a29287de4..74ef09f2bf404 100644
    static NoDestructor<URandomFd> urandom_fd;
 diff --git a/base/sbxdiff_observable_clock.cc b/base/sbxdiff_observable_clock.cc
 new file mode 100644
-index 0000000000000..7d3731fb77f99
+index 0000000000000..0e831dcbc5b6c
 --- /dev/null
 +++ b/base/sbxdiff_observable_clock.cc
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,181 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -257,70 +257,6 @@ index 0000000000000..7d3731fb77f99
 +#include <string_view>
 +
 +namespace base::sbxdiff {
-+
-+namespace {
-+
-+// Microseconds since the Time epoch of the observable origin, or 0 for off.
-+//
-+// Written once on the renderer's main thread, read from any thread that runs
-+// script -- a worker reads `Date.now()` through the same V8 platform hook -- so
-+// atomic. Relaxed is enough: it guards no other memory, and a read that races
-+// the single write either caps or does not, and the write happens before any
-+// page script runs.
-+std::atomic<int64_t> g_origin_us{0};
-+
-+int64_t ObservableStepUs() {
-+  static const int64_t us = [] {
-+    const char* v = ::getenv("SBXDIFF_OBSERVABLE_STEP_US");
-+    if (!v || !*v) {
-+      return int64_t{100};
-+    }
-+    int64_t parsed = 0;
-+    for (std::string_view digits(v); char c : digits) {
-+      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
-+        return int64_t{100};
-+      }
-+      parsed = parsed * 10 + (c - '0');
-+    }
-+    return parsed == 0 ? int64_t{100} : parsed;
-+  }();
-+  return us;
-+}
-+
-+// Reads so far, shared by every thread in the process that runs script.
-+std::atomic<int64_t> g_reads{0};
-+
-+}  // namespace
-+
-+void SetObservableTimeOrigin(Time origin) {
-+  g_origin_us.store(
-+      origin.is_null() ? 0 : (origin - Time::UnixEpoch()).InMicroseconds(),
-+      std::memory_order_relaxed);
-+}
-+
-+Time CapObservableTime(Time t) {
-+  const int64_t origin_us = g_origin_us.load(std::memory_order_relaxed);
-+  if (origin_us == 0 || t.is_null()) {
-+    return t;
-+  }
-+  // Advance by a fixed step PER READ, not by however far the live clock got.
-+  //
-+  // An earlier version froze the clock at a ceiling. That is deterministic and
-+  // it hangs: `while (Date.now() - start < n) {}` never terminates once the
-+  // answer stops moving, and the oracle stopped exiting at all. A counter
-+  // always advances, so every such loop still ends -- after n/step reads
-+  // instead of n milliseconds.
-+  //
-+  // And it reproduces where a clock reading cannot, because the number of reads
-+  // is a property of the CODE and the live clock's total advance is a property
-+  // of the machine. Measured: two oracle runs of Cloudflare's realm both made
-+  // exactly 10028 `performance.now()` calls and disagreed on every value.
-+  const int64_t n = g_reads.fetch_add(1, std::memory_order_relaxed) + 1;
-+  return Time::UnixEpoch() + Microseconds(origin_us) +
-+         Microseconds(ObservableStepUs() * n);
-+}
-+
-+// rebuild nonce: relink after a disk-full build corrupted the framework.
 +
 +namespace {
 +
@@ -487,10 +423,10 @@ index 0000000000000..7d3731fb77f99
 +}  // namespace base::sbxdiff
 diff --git a/base/sbxdiff_observable_clock.h b/base/sbxdiff_observable_clock.h
 new file mode 100644
-index 0000000000000..9e9f62d1645c2
+index 0000000000000..7658ef4226935
 --- /dev/null
 +++ b/base/sbxdiff_observable_clock.h
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,87 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -525,15 +461,6 @@ index 0000000000000..9e9f62d1645c2
 +// Lives in //base because both halves of the answer need it and they are in
 +// different components: Blink's DOMHighResTimeStamp conversion, and gin's
 +// V8Platform, which is where `Date.now()` bottoms out.
-+
-+// Turns the counter clock on and fixes where it starts. A null Time turns it
-+// off, which is the default.
-+BASE_EXPORT void SetObservableTimeOrigin(Time origin);
-+
-+// The next value of the counter clock: origin + step * (reads so far).
-+// Returns `t` unchanged when the counter clock is off.
-+// SBXDIFF_OBSERVABLE_STEP_US sets the step, default 100.
-+BASE_EXPORT Time CapObservableTime(Time t);
 +
 +// The LOGICAL clock: origin + however much timer time has elapsed.
 +//
@@ -717,7 +644,7 @@ index 1be5471d94789..aa2b4e2c77066 100644
    // Propagate WebNN-specific switches to the compiler process regardless of
    // sandbox type, since sandbox may be overridden by
 diff --git a/gin/v8_platform.cc b/gin/v8_platform.cc
-index d68dd800adaee..f87a804c765fc 100644
+index d68dd800adaee..acde0f59b8f05 100644
 --- a/gin/v8_platform.cc
 +++ b/gin/v8_platform.cc
 @@ -7,6 +7,7 @@
@@ -728,7 +655,7 @@ index d68dd800adaee..f87a804c765fc 100644
  #include "base/check_op.h"
  #include "base/debug/dump_without_crashing.h"
  #include "base/debug/stack_trace.h"
-@@ -341,16 +342,33 @@ double V8Platform::MonotonicallyIncreasingTime() {
+@@ -341,16 +342,30 @@ double V8Platform::MonotonicallyIncreasingTime() {
        static_cast<double>(base::Time::kMicrosecondsPerSecond);
  }
  
@@ -740,10 +667,7 @@ index d68dd800adaee..f87a804c765fc 100644
 +// without touching the clock the scheduler runs on. Inert unless Blink set a
 +// ceiling; see base/sbxdiff_observable_clock.h.
 +base::Time SbxObservableNow() {
-+  // The logical clock first: it is the one that gives the two sides the same
-+  // progression. CapObservableTime is the older per-read counter and stays off.
-+  return base::sbxdiff::LogicalNow(
-+      base::sbxdiff::CapObservableTime(base::Time::Now()));
++  return base::sbxdiff::LogicalNow(base::Time::Now());
 +}
 +
 +}  // namespace
@@ -914,7 +838,7 @@ index 746f50231784f..917fc810f751c 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/renderer/core/page/page.cc
-index d8b7ffcdccf7c..90e5d55f9c4e2 100644
+index d8b7ffcdccf7c..5b3f4053abba0 100644
 --- a/third_party/blink/renderer/core/page/page.cc
 +++ b/third_party/blink/renderer/core/page/page.cc
 @@ -21,6 +21,12 @@
@@ -941,29 +865,7 @@ index d8b7ffcdccf7c..90e5d55f9c4e2 100644
  #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
  #include "third_party/blink/renderer/platform/web_test_support.h"
  #include "third_party/skia/include/core/SkColor.h"
-@@ -294,12 +303,79 @@ Page::Page(base::PassKey<Page>,
-   page_scheduler_ = agent_group_scheduler_->CreatePageScheduler(this);
-   // The scheduler should be set before the main frame.
-   DCHECK(!main_frame_);
-+  // sbxdiff: SBXDIFF_LOG_VT=1 says, per renderer process, whether this Page
-+  // took the branch that enables virtual time. An out-of-process iframe reads
-+  // the REAL clock while the main frame reads the pinned one, and everything
-+  // else about that renderer is fine -- crypto.getRandomValues reproduces
-+  // there, so the switch relay is working. This is how to tell "the branch
-+  // never ran" from "it ran and did not stick".
-+  if (::getenv("SBXDIFF_LOG_VT")) {
-+    LOG(WARNING) << "sbxdiff: Page ctor, vtc="
-+                 << (page_scheduler_->GetVirtualTimeController() ? "yes" : "no")
-+                 << " switch="
-+                 << (base::CommandLine::ForCurrentProcess()->HasSwitch(
-+                         ::switches::kSbxdiffInitialTime)
-+                         ? "yes"
-+                         : "no")
-+                 << " deferred=" << (sbxdiff::VirtualTimeIsDeferred() ? 1 : 0);
-+  }
-   if (auto* virtual_time_controller =
-           page_scheduler_->GetVirtualTimeController()) {
-     history_navigation_virtual_time_pauser_ =
+@@ -300,6 +309,57 @@ Page::Page(base::PassKey<Page>,
          virtual_time_controller->CreateWebScopedVirtualTimePauser(
              "HistoryNavigation",
              WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant);
@@ -1022,7 +924,7 @@ index d8b7ffcdccf7c..90e5d55f9c4e2 100644
    UpdateColorProviders(color_provider_colors &&
                                 !color_provider_colors->IsEmpty()
 diff --git a/third_party/blink/renderer/core/scheduler/dom_timer.cc b/third_party/blink/renderer/core/scheduler/dom_timer.cc
-index 6b5d77cc149a7..0a65c44874059 100644
+index 6b5d77cc149a7..419195fcc1511 100644
 --- a/third_party/blink/renderer/core/scheduler/dom_timer.cc
 +++ b/third_party/blink/renderer/core/scheduler/dom_timer.cc
 @@ -25,9 +25,18 @@
@@ -1073,7 +975,7 @@ index 6b5d77cc149a7..0a65c44874059 100644
  // Step 11 of the algorithm at
  // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html requires
  // that a timeout less than 4ms is increased to 4ms when the nesting level is
-@@ -315,6 +339,84 @@ DOMTimer::DOMTimer(ExecutionContext& context,
+@@ -315,6 +339,65 @@ DOMTimer::DOMTimer(ExecutionContext& context,
      timeout = base::TimeDelta();
    }
  
@@ -1132,25 +1034,6 @@ index 6b5d77cc149a7..0a65c44874059 100644
 +  // no function to ask, and the guest did still ask for the timer.
 +  sbx_is_guest_timer_ =
 +      sbx_callback_class >= 0 ? sbx_callback_class == 0 : sbx_guest_depth >= 0;
-+  // SBXDIFF_LOG_TIMER_ATTR: one line per timer, so "which timers is the
-+  // sandbox counting that the oracle is not" is a question with an answer.
-+  // The two sides' logs diff directly, the same way SBXDIFF_LOG_VT's do.
-+  static const bool sbx_log_attr = [] {
-+    const char* v = ::getenv("SBXDIFF_LOG_TIMER_ATTR");
-+    return v && *v && *v != '0';
-+  }();
-+  if (sbx_log_attr) {
-+    const std::string sbx_cb_url = blink::sbxdiff::CallbackScriptUrl(
-+        context.GetIsolate(),
-+        action && action->CallbackFunction()
-+            ? v8::Local<v8::Value>(action->CallbackFunction()->CallbackObject())
-+            : v8::Local<v8::Value>());
-+    LOG(ERROR) << "sbxdiff: timer guest=" << sbx_is_guest_timer_
-+               << " cb=" << sbx_callback_class << " depth=" << sbx_guest_depth
-+               << " ms=" << timeout.InMilliseconds()
-+               << " at=" << base::sbxdiff::LogicalElapsed().InMilliseconds()
-+               << " cburl=" << sbx_cb_url;
-+  }
 +  if (sbx_is_guest_timer_) {
 +    sbx_logical_due_ = SbxCurrentTimerDue() + timeout;
 +  }
@@ -1158,7 +1041,7 @@ index 6b5d77cc149a7..0a65c44874059 100644
    // Steps 12 and 13:
    // Note: The implementation increments the nesting level before using it to
    // adjust timeout, contrary to what the spec requires crbug.com/1108877.
-@@ -405,6 +507,16 @@ void DOMTimer::ContextDestroyed() {
+@@ -405,6 +488,16 @@ void DOMTimer::ContextDestroyed() {
  
  void DOMTimer::Fired() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1877,7 +1760,7 @@ index 548256efd8698..2ca0711fed845 100644
      "common/back_forward_cache_disabling_feature_tracker.cc",
      "common/back_forward_cache_disabling_feature_tracker.h",
 diff --git a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
-index 80b40c343f5b6..da41a9b375110 100644
+index 80b40c343f5b6..b163ca3a4cef1 100644
 --- a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
 +++ b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
 @@ -6,6 +6,10 @@
@@ -1891,24 +1774,21 @@ index 80b40c343f5b6..da41a9b375110 100644
  #include "base/time/time_override.h"
  #include "build/build_config.h"
  #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
-@@ -13,6 +17,57 @@
+@@ -13,6 +17,49 @@
  namespace blink {
  namespace scheduler {
  
 +namespace {
 +
-+// sbxdiff: diagnostics and a tunable grid for virtual-clock advances.
++// sbxdiff: a tunable grid for virtual-clock advances.
 +//
-+// Both are env vars rather than switches so they can be turned on for one run
-+// without threading anything through the renderer switch allowlist. A run with
-+// neither set behaves exactly as upstream.
-+//
-+//   SBXDIFF_LOG_VT=1          log every advance, as microseconds from the
-+//                             instant virtual time was enabled. Two runs'
-+//                             logs diff directly, which is what says WHERE
-+//                             the clocks part rather than merely that they do.
 +//   SBXDIFF_VT_QUANTUM_US=n   snap each advance up to the next multiple of n
-+//                             microseconds from that same instant.
++//                             microseconds from the instant virtual time was
++//                             enabled.
++//
++// An env var rather than a switch so it can be set for one run without
++// threading anything through the renderer switch allowlist. Unset, this file
++// behaves exactly as upstream.
 +//
 +// The grid exists because the clock does not only advance to times the page
 +// asked for. Wake-ups already scheduled when virtual time was enabled carry
@@ -1933,11 +1813,6 @@ index 80b40c343f5b6..da41a9b375110 100644
 +  return parsed;
 +}
 +
-+bool SbxLogVirtualTime() {
-+  static const bool on = SbxEnvInt("SBXDIFF_LOG_VT") != 0;
-+  return on;
-+}
-+
 +base::TimeDelta SbxVirtualTimeQuantum() {
 +  static const base::TimeDelta q =
 +      base::Microseconds(SbxEnvInt("SBXDIFF_VT_QUANTUM_US"));
@@ -1949,7 +1824,7 @@ index 80b40c343f5b6..da41a9b375110 100644
  AutoAdvancingVirtualTimeDomain::AutoAdvancingVirtualTimeDomain(
      base::Time initial_time,
      base::TimeTicks initial_time_ticks,
-@@ -51,11 +106,23 @@ base::TimeTicks AutoAdvancingVirtualTimeDomain::NowTicks() const {
+@@ -51,11 +98,23 @@ base::TimeTicks AutoAdvancingVirtualTimeDomain::NowTicks() const {
  bool AutoAdvancingVirtualTimeDomain::MaybeFastForwardToWakeUp(
      std::optional<base::sequence_manager::WakeUp> wakeup,
      bool quit_when_idle_requested) {
@@ -1975,7 +1850,7 @@ index 80b40c343f5b6..da41a9b375110 100644
  
    if (MaybeAdvanceVirtualTime(wakeup->time)) {
      task_starvation_count_ = 0;
-@@ -88,6 +155,28 @@ void AutoAdvancingVirtualTimeDomain::SetVirtualTimeFence(
+@@ -88,6 +147,22 @@ void AutoAdvancingVirtualTimeDomain::SetVirtualTimeFence(
  
  bool AutoAdvancingVirtualTimeDomain::MaybeAdvanceVirtualTime(
      base::TimeTicks new_virtual_time) {
@@ -1994,12 +1869,6 @@ index 80b40c343f5b6..da41a9b375110 100644
 +        (since.InMicroseconds() + quantum.InMicroseconds() - 1) /
 +        quantum.InMicroseconds();
 +    new_virtual_time = initial_time_ticks_ + quantum * steps;
-+  }
-+  if (SbxLogVirtualTime()) {
-+    LOG(WARNING) << "sbxdiff: VT advance +"
-+                 << (new_virtual_time - initial_time_ticks_).InMicroseconds()
-+                 << "us from +"
-+                 << (NowTicks() - initial_time_ticks_).InMicroseconds() << "us";
 +  }
    // If set, don't advance past the end of |virtual_time_fence_|.
    if (!virtual_time_fence_.is_null() &&
@@ -2150,10 +2019,10 @@ index 9d2f4b74bdc89..4cda73d8195b1 100644
  }  // namespace blink::scheduler
 diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
 new file mode 100644
-index 0000000000000..c36aedcc1786f
+index 0000000000000..61016db579fab
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,83 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -2208,41 +2077,6 @@ index 0000000000000..c36aedcc1786f
 +  return budget_ms;
 +}
 +
-+int64_t SubframeVirtualTimeBudgetFromEnv() {
-+  // A renderer that hosts only a cross-origin subframe has nothing pacing its
-+  // clock. Chromium's ProcessTimeOverrideCoordinator is PER-PROCESS, so that
-+  // renderer's virtual time advances entirely on its own, and with no page work
-+  // to hold it back it fast-forwards to whatever far-future timer happens to be
-+  // pending -- which is a different set on every run.
-+  //
-+  // Measured on rateyourmusic, in Cloudflare's blob worker, scoped with
-+  // --realm challenges.cloudflare.com: `performance.now()` is read 10028 times
-+  // and answered 345123 in one oracle run against 602509 in the next. 257
-+  // seconds apart, stamped into the challenge payload ten thousand times, and
-+  // invisible from the page's own realm, which reports zero divergences.
-+  //
-+  // The budget fence is the only thing that stops the fast-forward, so give
-+  // such a renderer a TIGHT one: the clock reaches the fence on its first idle
-+  // moment and then stays there, which makes every subsequent read the same
-+  // value in every run. A large budget does not do this -- it just moves where
-+  // the two runs stop disagreeing.
-+  static const int64_t ms = [] {
-+    const char* v = ::getenv("SBXDIFF_SUBFRAME_VT_BUDGET_MS");
-+    if (!v || !*v) {
-+      return int64_t{5000};
-+    }
-+    int64_t parsed = 0;
-+    for (std::string_view digits(v); char c : digits) {
-+      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
-+        return int64_t{5000};
-+      }
-+      parsed = parsed * 10 + (c - '0');
-+    }
-+    return parsed;
-+  }();
-+  return ms;
-+}
-+
 +bool VirtualTimeIsDeferred() {
 +  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
 +  return cmd && cmd->HasSwitch(::switches::kSbxdiffVirtualTimeAfter);
@@ -2274,10 +2108,10 @@ index 0000000000000..c36aedcc1786f
 +}  // namespace blink::sbxdiff
 diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
 new file mode 100644
-index 0000000000000..20f969473514c
+index 0000000000000..c1b6fc45b051c
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,50 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -2307,11 +2141,6 @@ index 0000000000000..20f969473514c
 +
 +// --sbxdiff-virtual-time-budget, in milliseconds. Defaults to 2000.
 +PLATFORM_EXPORT int64_t VirtualTimeBudgetFromSwitch();
-+
-+// Budget for a renderer that hosts only a cross-origin subframe, which has no
-+// page work pacing its clock and so fast-forwards to a run-dependent place.
-+// SBXDIFF_SUBFRAME_VT_BUDGET_MS, default 5000.
-+PLATFORM_EXPORT int64_t SubframeVirtualTimeBudgetFromEnv();
 +
 +// True when --sbxdiff-virtual-time-after is set: Page's constructor then skips
 +// enabling virtual time and leaves it to the realm that matches.
@@ -2506,47 +2335,6 @@ index 2bf7794e947dc..44b54af6ec0d0 100644
    for (const auto& pair : task_runners_) {
      if (pair.first->CanRunWhenVirtualTimePaused())
        continue;
-diff --git a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-index 2c9546a603612..be9b1b658565c 100644
---- a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-+++ b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-@@ -2,6 +2,8 @@
- // Use of this source code is governed by a BSD-style license that can be
- // found in the LICENSE file.
- 
-+#include "base/logging.h"
-+#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
- #include "third_party/blink/public/platform/scheduler/web_scoped_virtual_time_pauser.h"
- 
- #include "base/trace_event/trace_event.h"
-@@ -70,6 +72,16 @@ void WebScopedVirtualTimePauser::PauseVirtualTime() {
-                       perfetto::Track(trace_id_), "name", debug_name_.Latin1());
-   }
-   virtual_time_when_paused_ = scheduler_->IncrementVirtualTimePauseCount();
-+  // Which pauser is holding the clock is the only way to find a virtual-time
-+  // deadlock: the symptom is just "nothing happens".
-+  // trace_id_ is `this` at construction and is carried across moves, so it
-+  // identifies the logical pauser. Matching +/- by NAME is not enough: names
-+  // repeat (ResponseBody, PendingScript), and a still-held pauser gets masked
-+  // by a later balanced pair of the same name.
-+  if (sbxdiff::VirtualTimeIsDeferred()) {
-+    VLOG(1) << "sbxdiff-pauser: + id=" << trace_id_ << " "
-+            << debug_name_.Latin1();
-+  }
- }
- 
- void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
-@@ -77,6 +89,10 @@ void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
-     return;
- 
-   paused_ = false;
-+  if (sbxdiff::VirtualTimeIsDeferred()) {
-+    VLOG(1) << "sbxdiff-pauser: - id=" << trace_id_ << " "
-+            << debug_name_.Latin1();
-+  }
-   DecrementVirtualTimePauseCount();
- }
- 
 diff --git a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
 index 5522f1dbb15c3..1894e660c2477 100644
 --- a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc

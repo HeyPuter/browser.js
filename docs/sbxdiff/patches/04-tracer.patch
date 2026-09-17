@@ -440,10 +440,10 @@ index 0000000000000..ec6b760ae282d
 +#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_SCOPE_H_
 diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
 new file mode 100644
-index 0000000000000..52d7cd49edf95
+index 0000000000000..c1e5f744e0134
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
-@@ -0,0 +1,1310 @@
+@@ -0,0 +1,1241 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1340,14 +1340,6 @@ index 0000000000000..52d7cd49edf95
 +
 +namespace {
 +
-+// Set once, on the main thread, when a renderer turns out to host only a
-+// cross-origin subframe. Read from every timestamp conversion afterwards.
-+bool g_subframe_only_renderer = false;
-+
-+}  // namespace
-+
-+namespace {
-+
 +// "<origin>,<prefix>" from --sbxdiff-shim-scripts, split once.
 +const std::pair<std::string, std::string>& ShimScriptMarkers() {
 +  static const base::NoDestructor<std::pair<std::string, std::string>> markers(
@@ -1474,10 +1466,6 @@ index 0000000000000..52d7cd49edf95
 +                                    isolate)));
 +  cache.emplace(script_id, is_shim);
 +  return is_shim;
-+}
-+
-+bool StackHasGuestFrame(v8::Isolate* isolate) {
-+  return GuestFrameDepth(isolate) >= 0;
 +}
 +
 +namespace {
@@ -1637,63 +1625,6 @@ index 0000000000000..52d7cd49edf95
 +  return us;
 +}
 +
-+void MarkSubframeOnlyRenderer() {
-+  g_subframe_only_renderer = true;
-+  // The same ceiling for the wall clock, so `Date.now()` is capped too. It
-+  // bottoms out in gin's V8Platform, a different component, which is why the
-+  // ceiling itself lives in //base. Without this the cap would only cover
-+  // performance timestamps -- and the value that first exposed all of this was
-+  // a `Date.now()`, put into a Cloudflare payload 50.6 seconds apart across two
-+  // otherwise identical runs.
-+  //
-+  // `Date.now()` is deliberately NOT counter-driven, and this is the second
-+  // time that call has been removed.
-+  //
-+  // A counter advances per READ, while timers still fire on the virtual clock.
-+  // So a retry loop bounded by wall time -- wait 100 ms, check `Date.now()`,
-+  // try again -- advances 20 us per attempt and never reaches its deadline,
-+  // however many times the timer fires. That hangs the run rather than
-+  // diverging, and it hung it in a way that looked like a sandbox problem: the
-+  // ORACLE was the side that stopped exiting, and the oracle runs no proxy
-+  // code at all, which is what identified this as a Chromium patch.
-+  //
-+  // `performance.now()` is counter-driven and is safe, because it is answered
-+  // per realm from `Performance::now` and nothing schedules against it. That is
-+  // where the benchmark fix came from (5700/6496 digests -> 5000/5000); none of
-+  // it needed `Date.now()`.
-+}
-+
-+base::TimeTicks CapObservableTicks(base::TimeTicks t) {
-+  // Separate what the page READS from what the scheduler RUNS on.
-+  //
-+  // A renderer hosting only a cross-origin subframe has its own virtual clock
-+  // -- the coordinator is per-process -- and nothing paces it, so it
-+  // fast-forwards to whatever far-future timer is pending. Measured in
-+  // Cloudflare's blob worker: `performance.now()` read 10028 times and answered
-+  // 345123 in one oracle run against 602509 in the next.
-+  //
-+  // Fencing the SCHEDULER there does not work. A tight fence parks the clock
-+  // and the widget never does its work (6 of 8 request bodies went to "oracle
-+  // never sent this"); a looser one hangs the run outright at 60 s. Timers have
-+  // to keep firing, so the clock has to keep moving.
-+  //
-+  // So let it move, and cap only the value handed to script. Beyond the cap
-+  // every read is the same number in every run, which is what the payload
-+  // needs, while setTimeout and friends still see the real virtual clock and
-+  // the widget still runs.
-+  if (!g_subframe_only_renderer || g_virtual_time_base.is_null() ||
-+      t.is_null()) {
-+    return t;
-+  }
-+  static std::atomic<int64_t> reads{0};
-+  // Anchored where the clock already was, for the same reason: going backwards
-+  // is worse than diverging.
-+  static const base::TimeTicks anchor = base::TimeTicks::Now();
-+  return anchor +
-+         base::Microseconds(ObservableStepUs() *
-+                            (reads.fetch_add(1, std::memory_order_relaxed) + 1));
-+}
-+
 +base::TimeTicks DeterministicEventTimeStamp(
 +    base::TimeTicks platform_time_stamp) {
 +  const base::TimeTicks base_ticks = g_virtual_time_base;
@@ -1756,10 +1687,10 @@ index 0000000000000..52d7cd49edf95
 +}  // namespace blink::sbxdiff
 diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
 new file mode 100644
-index 0000000000000..95c8b1792bd4b
+index 0000000000000..6430e388ea33d
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
-@@ -0,0 +1,479 @@
+@@ -0,0 +1,471 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1816,13 +1747,19 @@ index 0000000000000..95c8b1792bd4b
 +  kScript = 7,       // V8 script id -> script URL, on first sighting
 +};
 +
-+// Comparison level. The `level` byte IS the cut described in ARCHITECTURE.md:
-+// the differ reads only kCompared, while kInternal records stay in the same
-+// ordered stream for post-mortem attribution.
++// Comparison level, and at present there is only one.
++//
++// The design this came from demoted records nested inside a guest-op bracket to
++// a second level, so the differ could read only the outermost while the rest
++// stayed in the stream for post-mortem attribution. That bracket was never
++// built in C++ -- the recorder ended up in the page, counting depth in JS -- so
++// every record ever written carries kCompared and the byte is a constant.
++//
++// The enumerators are gone because a value nothing can produce is a documented
++// behaviour that does not exist. The byte itself stays until the next wire
++// format bump, which has to land in both readers at once.
 +enum class Level : uint8_t {
 +  kCompared = 0,
-+  kInternal = 1,  // demoted: nested inside a guest-op bracket
-+  kDebug = 2,
 +};
 +
 +// Value type tags. Identity and shape only -- never contents (RULES.md #2).
@@ -2108,8 +2045,6 @@ index 0000000000000..95c8b1792bd4b
 +// virtual time began removes the variable term.
 +PLATFORM_EXPORT void SetVirtualTimeBase(base::TimeTicks base);
 +
-+// Note that this renderer hosts only a cross-origin subframe, so its virtual
-+// clock has nothing pacing it. See CapObservableTicks.
 +// Step, in microseconds, for the counter clock that answers performance.now().
 +// 0 = off. SBXDIFF_OBSERVABLE_STEP_US.
 +//
@@ -2152,17 +2087,10 @@ index 0000000000000..95c8b1792bd4b
 +// sandbox against 0, 3300 and 5000 in the oracle, which is a `Date.now()` that
 +// never moves.
 +//
-+// A frame BELOW the shim's trap is the guest asking, so the guest's timers come
-+// back and the shim's own -- scheduled from its init, with nothing of the
-+// page's underneath -- stay out.
-+//
-+// True when no markers are configured or no JS is on the stack, so the oracle,
-+// which has no shim, sees every timer as the guest's exactly as before.
-+PLATFORM_EXPORT bool StackHasGuestFrame(v8::Isolate* isolate);
 +
 +// How far down the JS stack the nearest GUEST frame is, or -1 for none.
 +//
-+// `StackHasGuestFrame` is this, thresholded. Exposed separately because the
++// Exposed as a depth rather than a boolean because the
 +// threshold is the open question: a proxy's setTimeout trap puts the guest a
 +// couple of frames down, and a timer the proxy schedules for its own reasons
 +// while guest code happens to be running puts it much further, and the two are
@@ -2195,12 +2123,7 @@ index 0000000000000..95c8b1792bd4b
 +
 +PLATFORM_EXPORT int64_t ObservableStepUs();
 +
-+PLATFORM_EXPORT void MarkSubframeOnlyRenderer();
 +
-+// Clamp a tick value on its way to script, WITHOUT clamping the clock the
-+// scheduler runs on. SBXDIFF_OBSERVABLE_CAP_MS, default 10000; inert outside a
-+// subframe-only renderer.
-+PLATFORM_EXPORT base::TimeTicks CapObservableTicks(base::TimeTicks t);
 +
 +// Virtual time switch helpers moved to
 +// platform/scheduler/common/sbxdiff_virtual_time.h -- the scheduler needs them

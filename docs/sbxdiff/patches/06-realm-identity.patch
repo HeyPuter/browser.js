@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
-index 57c48e2ca9a77..d90adf25acba4 100644
+index 57c48e2ca9a77..d419e3d2d245b 100644
 --- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 +++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 @@ -44,6 +44,15 @@
@@ -18,7 +18,7 @@ index 57c48e2ca9a77..d90adf25acba4 100644
  #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
-@@ -464,6 +473,126 @@ void LocalWindowProxy::UpdateDocumentProperty() {
+@@ -464,6 +473,122 @@ void LocalWindowProxy::UpdateDocumentProperty() {
    // Update the cached accessor for window.document.
    CHECK(V8PrivateProperty::GetWindowDocumentCachedAccessor(GetIsolate())
              .Set(context->Global(), document_wrapper));
@@ -90,9 +90,6 @@ index 57c48e2ca9a77..d90adf25acba4 100644
 +            if (sbxdiff::VirtualTimeIsDeferred()) {
 +              if (sbxdiff::IsVirtualTimeStartRealm(url) ||
 +                  subframe_only_renderer) {
-+                if (subframe_only_renderer) {
-+                  sbxdiff::MarkSubframeOnlyRenderer();
-+                }
 +                const int policy_id = sbxdiff::VirtualTimePolicyFromSwitch();
 +                auto policy =
 +                    policy_id == 0
@@ -130,8 +127,7 @@ index 57c48e2ca9a77..d90adf25acba4 100644
 +              // widget never does its work (6 of 8 request bodies became
 +              // "oracle never sent this"), and a looser one hangs the run
 +              // outright at 60 s, because timers beyond the fence never fire.
-+              // The clock has to keep moving. What gets capped instead is the
-+              // value handed to SCRIPT -- see sbxdiff::CapObservableTicks.
++              // The clock has to keep moving.
 +              vtc->GrantVirtualTimeBudget(
 +                  base::Milliseconds(sbxdiff::VirtualTimeBudgetFromSwitch()),
 +                  base::DoNothing());

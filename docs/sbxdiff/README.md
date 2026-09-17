@@ -49,6 +49,12 @@ files are included with full content. The nine area patches are a disjoint
 partition of it and exist for reading, not for applying selectively — see
 `patches/README.md`.
 
+72 files, and what is *not* in them is deliberate. The patch records and
+replays, pins randomness and the clock, and traces bindings. It does not change
+what a web API returns for the sandbox's benefit: a divergence closed by
+patching this browser is closed only here, and scramjet has to be right on a
+stock one.
+
 The one GN arg that matters:
 
 ```gn

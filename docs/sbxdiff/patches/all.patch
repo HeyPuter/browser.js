@@ -978,10 +978,10 @@ index 0000000000000..132143e43f909
 +#endif  // BASE_SBXDIFF_NET_STORE_H_
 diff --git a/base/sbxdiff_observable_clock.cc b/base/sbxdiff_observable_clock.cc
 new file mode 100644
-index 0000000000000..7d3731fb77f99
+index 0000000000000..0e831dcbc5b6c
 --- /dev/null
 +++ b/base/sbxdiff_observable_clock.cc
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,181 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -999,70 +999,6 @@ index 0000000000000..7d3731fb77f99
 +#include <string_view>
 +
 +namespace base::sbxdiff {
-+
-+namespace {
-+
-+// Microseconds since the Time epoch of the observable origin, or 0 for off.
-+//
-+// Written once on the renderer's main thread, read from any thread that runs
-+// script -- a worker reads `Date.now()` through the same V8 platform hook -- so
-+// atomic. Relaxed is enough: it guards no other memory, and a read that races
-+// the single write either caps or does not, and the write happens before any
-+// page script runs.
-+std::atomic<int64_t> g_origin_us{0};
-+
-+int64_t ObservableStepUs() {
-+  static const int64_t us = [] {
-+    const char* v = ::getenv("SBXDIFF_OBSERVABLE_STEP_US");
-+    if (!v || !*v) {
-+      return int64_t{100};
-+    }
-+    int64_t parsed = 0;
-+    for (std::string_view digits(v); char c : digits) {
-+      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
-+        return int64_t{100};
-+      }
-+      parsed = parsed * 10 + (c - '0');
-+    }
-+    return parsed == 0 ? int64_t{100} : parsed;
-+  }();
-+  return us;
-+}
-+
-+// Reads so far, shared by every thread in the process that runs script.
-+std::atomic<int64_t> g_reads{0};
-+
-+}  // namespace
-+
-+void SetObservableTimeOrigin(Time origin) {
-+  g_origin_us.store(
-+      origin.is_null() ? 0 : (origin - Time::UnixEpoch()).InMicroseconds(),
-+      std::memory_order_relaxed);
-+}
-+
-+Time CapObservableTime(Time t) {
-+  const int64_t origin_us = g_origin_us.load(std::memory_order_relaxed);
-+  if (origin_us == 0 || t.is_null()) {
-+    return t;
-+  }
-+  // Advance by a fixed step PER READ, not by however far the live clock got.
-+  //
-+  // An earlier version froze the clock at a ceiling. That is deterministic and
-+  // it hangs: `while (Date.now() - start < n) {}` never terminates once the
-+  // answer stops moving, and the oracle stopped exiting at all. A counter
-+  // always advances, so every such loop still ends -- after n/step reads
-+  // instead of n milliseconds.
-+  //
-+  // And it reproduces where a clock reading cannot, because the number of reads
-+  // is a property of the CODE and the live clock's total advance is a property
-+  // of the machine. Measured: two oracle runs of Cloudflare's realm both made
-+  // exactly 10028 `performance.now()` calls and disagreed on every value.
-+  const int64_t n = g_reads.fetch_add(1, std::memory_order_relaxed) + 1;
-+  return Time::UnixEpoch() + Microseconds(origin_us) +
-+         Microseconds(ObservableStepUs() * n);
-+}
-+
-+// rebuild nonce: relink after a disk-full build corrupted the framework.
 +
 +namespace {
 +
@@ -1229,10 +1165,10 @@ index 0000000000000..7d3731fb77f99
 +}  // namespace base::sbxdiff
 diff --git a/base/sbxdiff_observable_clock.h b/base/sbxdiff_observable_clock.h
 new file mode 100644
-index 0000000000000..9e9f62d1645c2
+index 0000000000000..7658ef4226935
 --- /dev/null
 +++ b/base/sbxdiff_observable_clock.h
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,87 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1267,15 +1203,6 @@ index 0000000000000..9e9f62d1645c2
 +// Lives in //base because both halves of the answer need it and they are in
 +// different components: Blink's DOMHighResTimeStamp conversion, and gin's
 +// V8Platform, which is where `Date.now()` bottoms out.
-+
-+// Turns the counter clock on and fixes where it starts. A null Time turns it
-+// off, which is the default.
-+BASE_EXPORT void SetObservableTimeOrigin(Time origin);
-+
-+// The next value of the counter clock: origin + step * (reads so far).
-+// Returns `t` unchanged when the counter clock is off.
-+// SBXDIFF_OBSERVABLE_STEP_US sets the step, default 100.
-+BASE_EXPORT Time CapObservableTime(Time t);
 +
 +// The LOGICAL clock: origin + however much timer time has elapsed.
 +//
@@ -3208,7 +3135,7 @@ index 1be5471d94789..aa2b4e2c77066 100644
    // Propagate WebNN-specific switches to the compiler process regardless of
    // sandbox type, since sandbox may be overridden by
 diff --git a/gin/v8_platform.cc b/gin/v8_platform.cc
-index d68dd800adaee..f87a804c765fc 100644
+index d68dd800adaee..acde0f59b8f05 100644
 --- a/gin/v8_platform.cc
 +++ b/gin/v8_platform.cc
 @@ -7,6 +7,7 @@
@@ -3219,7 +3146,7 @@ index d68dd800adaee..f87a804c765fc 100644
  #include "base/check_op.h"
  #include "base/debug/dump_without_crashing.h"
  #include "base/debug/stack_trace.h"
-@@ -341,16 +342,33 @@ double V8Platform::MonotonicallyIncreasingTime() {
+@@ -341,16 +342,30 @@ double V8Platform::MonotonicallyIncreasingTime() {
        static_cast<double>(base::Time::kMicrosecondsPerSecond);
  }
  
@@ -3231,10 +3158,7 @@ index d68dd800adaee..f87a804c765fc 100644
 +// without touching the clock the scheduler runs on. Inert unless Blink set a
 +// ceiling; see base/sbxdiff_observable_clock.h.
 +base::Time SbxObservableNow() {
-+  // The logical clock first: it is the one that gives the two sides the same
-+  // progression. CapObservableTime is the older per-read counter and stays off.
-+  return base::sbxdiff::LogicalNow(
-+      base::sbxdiff::CapObservableTime(base::Time::Now()));
++  return base::sbxdiff::LogicalNow(base::Time::Now());
 +}
 +
 +}  // namespace
@@ -3256,53 +3180,6 @@ index d68dd800adaee..f87a804c765fc 100644
  }
  
  v8::TracingController* V8Platform::GetTracingController() {
-diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index 1788baf80729c..2add220024777 100644
---- a/net/http/http_network_transaction.cc
-+++ b/net/http/http_network_transaction.cc
-@@ -1446,6 +1446,42 @@ int HttpNetworkTransaction::BuildRequestHeaders(
- 
-   response_.did_use_server_http_auth =
-       request_headers_.HasHeader(HttpRequestHeaders::kAuthorization);
-+
-+  // sbxdiff: the headers that actually go on the wire.
-+  //
-+  // Every earlier attempt to compare these sat too high. In the renderer,
-+  // `accept`, `accept-language`, `user-agent` and the `sec-ch-*` family are not
-+  // there yet -- the network service adds them below -- so a proxy that sets
-+  // its own explicitly reads as "only sandbox: user-agent", which is an
-+  // artifact and not a leak (RULES.md #165). This is the last point before the
-+  // bytes are serialised, after `extra_headers` and the modify callbacks, so
-+  // what is printed here is what the server sees.
-+  //
-+  // Off unless SBXDIFF_LOG_WIRE_HEADERS is set. One sorted line per request,
-+  // so two runs' logs diff directly.
-+  {
-+    static const bool sbx_on = [] {
-+      const char* v = ::getenv("SBXDIFF_LOG_WIRE_HEADERS");
-+      return v && *v && *v != '0';
-+    }();
-+    if (sbx_on) {
-+      std::vector<std::string> sbx_pairs;
-+      for (const auto& sbx_header : request_headers_.GetHeaderVector()) {
-+        std::string sbx_name = sbx_header.key;
-+        for (char& c : sbx_name) {
-+          c = base::ToLowerASCII(c);
-+        }
-+        sbx_pairs.push_back(sbx_name + ": " + sbx_header.value);
-+      }
-+      std::sort(sbx_pairs.begin(), sbx_pairs.end());
-+      std::string sbx_joined;
-+      for (const auto& sbx_p : sbx_pairs) {
-+        sbx_joined += sbx_p + " | ";
-+      }
-+      LOG(ERROR) << "sbxdiff: wirehdr " << request_->method << " "
-+                 << request_->url.spec() << " :: " << sbx_joined;
-+    }
-+  }
-   return OK;
- }
- 
 diff --git a/services/network/mdns_responder.cc b/services/network/mdns_responder.cc
 index 327e0bb19d0b6..ad35bb83d133b 100644
 --- a/services/network/mdns_responder.cc
@@ -3368,72 +3245,6 @@ index 2590a4d0fb80f..d36488113a424 100644
    DCHECK((min_port == 0 && max_port == 0) || min_port > 0);
    DCHECK_LE(min_port, max_port);
  
-diff --git a/services/network/sec_header_helpers.cc b/services/network/sec_header_helpers.cc
-index dd92a9e88d53d..adfc8e68c19bd 100644
---- a/services/network/sec_header_helpers.cc
-+++ b/services/network/sec_header_helpers.cc
-@@ -274,6 +274,53 @@ void SetSecFetchFrameAncestorsHeader(
- 
- }  // namespace
- 
-+// sbxdiff: let the sandbox's transport speak for the SITE, not for itself.
-+//
-+// Everything above computes Sec-Fetch-* from what the request literally is. For
-+// the proxy that is always the same answer and always the wrong one: a fetch
-+// from the proxy origin to the site is `site: cross-site`, `mode: cors`,
-+// `dest: empty` -- on every upstream request, including ones that are the
-+// site's own navigation or its own script. Measured against a direct load:
-+//
-+//     sec-fetch-dest   document / script / image   vs   empty
-+//     sec-fetch-mode   navigate / no-cors          vs   cors
-+//     sec-fetch-site   none / same-origin          vs   cross-site
-+//
-+// Scramjet already computes the right values -- `applyFetchMetadataHeaders`
-+// deletes the browser's and recomputes them in the site's URL space -- and
-+// `fetch()` drops them, because the family is forbidden.
-+//
-+// HERE, not in the renderer. The first attempt restored them in
-+// `ResourceFetcher` alongside `Cookie`, and every upstream fetch then failed
-+// with `TypeError: Failed to fetch`: the network service does not accept
-+// Sec-Fetch-* from a renderer, and rightly so. This is the layer that owns
-+// them, and it runs after the computation it is correcting.
-+//
-+// Off unless SBXDIFF_PROXY_HEADERS is set.
-+void SbxdiffApplyProxyFetchMetadata(net::URLRequest& request) {
-+  static const bool on = [] {
-+    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
-+    return v && *v && *v != '0';
-+  }();
-+  if (!on) {
-+    return;
-+  }
-+  static constexpr std::string_view kCarrier = "x-sbxdiff-h-sec-fetch-";
-+  static constexpr std::string_view kNames[] = {
-+      "site", "mode", "dest", "user", "storage-access"};
-+  for (std::string_view name : kNames) {
-+    const std::string carrier = std::string(kCarrier) + std::string(name);
-+    const std::optional<std::string> value =
-+        request.extra_request_headers().GetHeader(carrier);
-+    if (!value.has_value()) {
-+      continue;
-+    }
-+    const std::string real = "Sec-Fetch-" + std::string(name);
-+    request.SetExtraRequestHeaderByName(real, *value, /*overwrite=*/true);
-+    request.RemoveRequestHeaderByName(carrier);
-+  }
-+}
-+
- void SetFetchMetadataHeaders(
-     net::URLRequest& request,
-     network::mojom::RequestMode mode,
-@@ -300,6 +347,7 @@ void SetFetchMetadataHeaders(
-   SetSecFetchStorageAccessHeader(request, credentials_mode);
-   SetSecFetchFrameTop(request, pending_redirect_url);
-   SetSecFetchFrameAncestorsHeader(request, pending_redirect_url);
-+  SbxdiffApplyProxyFetchMetadata(request);
- }
- 
- void MaybeRemoveSecHeaders(net::URLRequest& request,
 diff --git a/third_party/blink/common/switches.cc b/third_party/blink/common/switches.cc
 index 6fb78b355acd5..d9cdd440b771c 100644
 --- a/third_party/blink/common/switches.cc
@@ -3470,7 +3281,7 @@ index 0cedd17639a32..c560c18519eae 100644
  }  // namespace blink
  
 diff --git a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
-index 57c48e2ca9a77..d90adf25acba4 100644
+index 57c48e2ca9a77..d419e3d2d245b 100644
 --- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 +++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 @@ -44,6 +44,15 @@
@@ -3489,7 +3300,7 @@ index 57c48e2ca9a77..d90adf25acba4 100644
  #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
-@@ -464,6 +473,126 @@ void LocalWindowProxy::UpdateDocumentProperty() {
+@@ -464,6 +473,122 @@ void LocalWindowProxy::UpdateDocumentProperty() {
    // Update the cached accessor for window.document.
    CHECK(V8PrivateProperty::GetWindowDocumentCachedAccessor(GetIsolate())
              .Set(context->Global(), document_wrapper));
@@ -3561,9 +3372,6 @@ index 57c48e2ca9a77..d90adf25acba4 100644
 +            if (sbxdiff::VirtualTimeIsDeferred()) {
 +              if (sbxdiff::IsVirtualTimeStartRealm(url) ||
 +                  subframe_only_renderer) {
-+                if (subframe_only_renderer) {
-+                  sbxdiff::MarkSubframeOnlyRenderer();
-+                }
 +                const int policy_id = sbxdiff::VirtualTimePolicyFromSwitch();
 +                auto policy =
 +                    policy_id == 0
@@ -3601,8 +3409,7 @@ index 57c48e2ca9a77..d90adf25acba4 100644
 +              // widget never does its work (6 of 8 request bodies became
 +              // "oracle never sent this"), and a looser one hangs the run
 +              // outright at 60 s, because timers beyond the fence never fire.
-+              // The clock has to keep moving. What gets capped instead is the
-+              // value handed to SCRIPT -- see sbxdiff::CapObservableTicks.
++              // The clock has to keep moving.
 +              vtc->GrantVirtualTimeBudget(
 +                  base::Milliseconds(sbxdiff::VirtualTimeBudgetFromSwitch()),
 +                  base::DoNothing());
@@ -4007,207 +3814,8 @@ index 746f50231784f..917fc810f751c 100644
  };
  
  }  // namespace blink
-diff --git a/third_party/blink/renderer/core/fetch/fetch_response_data.cc b/third_party/blink/renderer/core/fetch/fetch_response_data.cc
-index 1b453222bf3e3..e43ca053e0862 100644
---- a/third_party/blink/renderer/core/fetch/fetch_response_data.cc
-+++ b/third_party/blink/renderer/core/fetch/fetch_response_data.cc
-@@ -59,6 +59,53 @@ FetchResponseData* FetchResponseData::CreateWithBuffer(
-   return response;
- }
- 
-+namespace {
-+
-+// sbxdiff: let the sandbox's transport see `Set-Cookie`.
-+//
-+// It is a forbidden RESPONSE header, so every filtered response drops it and
-+// JavaScript can never read one. Correct for a page, fatal for a proxy:
-+// scramjet's jar is filled from the responses its transport receives, so with
-+// `fetch()` as the transport the jar is never filled, `Cookie` is never sent,
-+// every request arrives as a fresh visitor, and a cookie-based challenge loops
-+// forever. Measured on rateyourmusic -- `cf_clearance` was never issued in any
-+// live run, and of 59 requests that had headers restored on the way out, not
-+// one carried a cookie.
-+//
-+// Exposed under a RENAMED header rather than by unforbidding the real one.
-+// `Set-Cookie` stays invisible under its own name, so nothing a page can
-+// observe about the platform changes: the same reason the request half went
-+// under a prefix instead of widening Blink's forbidden-header check.
-+//
-+// One header per cookie, indexed. `Headers.get()` joins repeats with ", " and
-+// a cookie's `Expires` contains a comma, so a single joined value cannot be
-+// split back apart.
-+//
-+// Off unless SBXDIFF_PROXY_HEADERS is set.
-+bool SbxExposeSetCookieEnabled() {
-+  static const bool on = [] {
-+    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
-+    return v && *v && *v != '0';
-+  }();
-+  return on;
-+}
-+
-+void SbxCopySetCookie(const FetchHeaderList& from, FetchHeaderList* to) {
-+  if (!SbxExposeSetCookieEnabled()) {
-+    return;
-+  }
-+  unsigned index = 0;
-+  for (const auto& header : from.List()) {
-+    if (!EqualIgnoringAsciiCase(header.first, "set-cookie")) {
-+      continue;
-+    }
-+    to->Append("x-sbxdiff-h-set-cookie-" + String::Number(index++),
-+               header.second);
-+  }
-+}
-+
-+}  // namespace
-+
- FetchResponseData* FetchResponseData::CreateBasicFilteredResponse() const {
-   DCHECK_EQ(type_, Type::kDefault);
-   // "A basic filtered response is a filtered response whose type is |basic|,
-@@ -72,6 +119,8 @@ FetchResponseData* FetchResponseData::CreateBasicFilteredResponse() const {
-       continue;
-     response->header_list_->Append(header.first, header.second);
-   }
-+  // sbxdiff: see SbxCopySetCookie.
-+  SbxCopySetCookie(*header_list_, response->header_list_);
-   response->buffer_ = buffer_;
-   response->mime_type_ = mime_type_;
-   response->internal_response_ = const_cast<FetchResponseData*>(this);
-@@ -99,6 +148,8 @@ FetchResponseData* FetchResponseData::CreateCorsFilteredResponse(
-       response->header_list_->Append(name, header.second);
-     }
-   }
-+  // sbxdiff: see SbxCopySetCookie.
-+  SbxCopySetCookie(*header_list_, response->header_list_);
-   response->cors_exposed_header_names_ = exposed_headers;
-   response->buffer_ = buffer_;
-   response->mime_type_ = mime_type_;
-diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
-index 23536986534de..e841ddc3ed8a9 100644
---- a/third_party/blink/renderer/core/frame/local_frame.cc
-+++ b/third_party/blink/renderer/core/frame/local_frame.cc
-@@ -220,6 +220,8 @@
- #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
- #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
- #include "third_party/blink/renderer/core/paint/timing/first_meaningful_paint_detector.h"
-+#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h"
-+#include "base/sbxdiff_net_store.h"
- #include "third_party/blink/renderer/core/probe/core_probes.h"
- #include "third_party/blink/renderer/core/script/classic_script.h"
- #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
-@@ -435,6 +437,21 @@ void LocalFrame::Init(
-     policy_container = PolicyContainer::CreateEmpty();
-   }
- 
-+#if BUILDFLAG(SBXDIFF)
-+  // sbxdiff: create the response-body recorder. This call was missing, so the
-+  // observer was dead code and recording silently fell back to the
-+  // ResourceFetcher buffer path -- which cannot see fetch()/XHR bodies
-+  // (kDoNotBufferData) or the main document (loaded by DocumentLoader).
-+  // Superseded by browser-side recording (chrome/browser/headless/
-+  // sbxdiff_net_replay.cc). Renderer probes cannot see an opaque cross-origin
-+  // response at all -- 20 of 78 URLs on rateyourmusic, every web font and two
-+  // Cloudflare challenge endpoints among them -- and running both recorders
-+  // wrote every response twice, which shifts the ordinals that ARE the
-+  // recorded sequence.
-+  //
-+  // MaybeCreateSbxdiffNetObserver();
-+#endif
-+
-   CoreInitializer::GetInstance().InitLocalFrame(*this);
- 
-   GetInterfaceRegistry()->AddInterface(BindRepeating(
-@@ -538,6 +555,9 @@ void LocalFrame::Trace(Visitor* visitor) const {
-   visitor->Trace(ad_tracker_);
-   visitor->Trace(extension_script_tracker_);
-   visitor->Trace(script_initiation_monitor_);
-+#if BUILDFLAG(SBXDIFF)
-+  visitor->Trace(sbxdiff_net_observer_);
-+#endif
-   visitor->Trace(script_observer_);
-   visitor->Trace(probe_sink_);
-   visitor->Trace(performance_monitor_);
-@@ -825,6 +845,11 @@ bool LocalFrame::DetachImpl(FrameDetachType type) {
-     if (script_initiation_monitor_) {
-       script_initiation_monitor_->Shutdown();
-     }
-+#if BUILDFLAG(SBXDIFF)
-+    if (sbxdiff_net_observer_) {
-+      sbxdiff_net_observer_->Shutdown();
-+    }
-+#endif
-     // Unregister only if this is LocalRoot because the paint_image_generator_
-     // was created on LocalRoot.
-     if (background_color_paint_image_generator_) {
-@@ -2500,6 +2525,22 @@ ScriptInitiationMonitor* LocalFrame::GetScriptInitiationMonitor() const {
-   return LocalFrameRoot().script_initiation_monitor_.Get();
- }
- 
-+#if BUILDFLAG(SBXDIFF)
-+void LocalFrame::MaybeCreateSbxdiffNetObserver() {
-+  // Only on the local root, and only when recording: the observer is pure
-+  // overhead otherwise, and creating it would put probe dispatch on the hot
-+  // loading path of every normal run.
-+  if (!base::sbxdiff::IsRecordingResponses()) {
-+    return;
-+  }
-+  LocalFrame& root = LocalFrameRoot();
-+  if (!root.sbxdiff_net_observer_) {
-+    root.sbxdiff_net_observer_ =
-+        MakeGarbageCollected<SbxdiffNetObserver>(&root);
-+  }
-+}
-+#endif
-+
- ScriptInitiationMonitor* LocalFrame::GetOrCreateScriptInitiationMonitor() {
-   LocalFrame& root = LocalFrameRoot();
-   if (!root.script_initiation_monitor_) {
-diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/blink/renderer/core/frame/local_frame.h
-index c9f63eadd7bda..c578e6508a147 100644
---- a/third_party/blink/renderer/core/frame/local_frame.h
-+++ b/third_party/blink/renderer/core/frame/local_frame.h
-@@ -77,6 +77,7 @@
- #include "third_party/blink/renderer/core/ad_tracker/ad_script_identifier.h"
- #include "third_party/blink/renderer/core/ad_tracker/ad_tracker.h"
- #include "third_party/blink/renderer/core/core_export.h"
-+#include "third_party/blink/renderer/platform/bindings/buildflags.h"
- #include "third_party/blink/renderer/core/dom/weak_identifier_map.h"
- #include "third_party/blink/renderer/core/editing/forward.h"
- #include "third_party/blink/renderer/core/editing/iterators/text_iterator_behavior.h"
-@@ -123,6 +124,7 @@ namespace blink {
- 
- class AdTracker;
- class ScriptInitiationMonitor;
-+class SbxdiffNetObserver;
- class AssociatedInterfaceProvider;
- class AuditsIssue;
- class BackgroundColorPaintImageGenerator;
-@@ -553,6 +555,12 @@ class CORE_EXPORT LocalFrame final
-   ExtensionScriptTracker* GetExtensionScriptTracker();
-   ScriptInitiationMonitor* GetScriptInitiationMonitor() const;
-   ScriptInitiationMonitor* GetOrCreateScriptInitiationMonitor();
-+
-+#if BUILDFLAG(SBXDIFF)
-+  // sbxdiff: creates the response-body recorder on the local root when
-+  // --sbxdiff-net-record is set. See core/sbxdiff/sbxdiff_net_observer.h.
-+  void MaybeCreateSbxdiffNetObserver();
-+#endif
-   void SetAdTrackerForTesting(AdTracker* ad_tracker);
- 
-   // Configures extension script tracking for this frame if it is a local root,
-@@ -1164,6 +1172,9 @@ class CORE_EXPORT LocalFrame final
-   Member<AdTracker> ad_tracker_;
-   Member<ExtensionScriptTracker> extension_script_tracker_;
-   Member<ScriptInitiationMonitor> script_initiation_monitor_;
-+#if BUILDFLAG(SBXDIFF)
-+  Member<SbxdiffNetObserver> sbxdiff_net_observer_;
-+#endif
-   Member<IdlenessDetector> idleness_detector_;
-   base::OnceClosureList network_idle_callbacks_;
-   Member<InspectorIssueReporter> inspector_issue_reporter_;
 diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/renderer/core/page/page.cc
-index d8b7ffcdccf7c..90e5d55f9c4e2 100644
+index d8b7ffcdccf7c..5b3f4053abba0 100644
 --- a/third_party/blink/renderer/core/page/page.cc
 +++ b/third_party/blink/renderer/core/page/page.cc
 @@ -21,6 +21,12 @@
@@ -4234,29 +3842,7 @@ index d8b7ffcdccf7c..90e5d55f9c4e2 100644
  #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
  #include "third_party/blink/renderer/platform/web_test_support.h"
  #include "third_party/skia/include/core/SkColor.h"
-@@ -294,12 +303,79 @@ Page::Page(base::PassKey<Page>,
-   page_scheduler_ = agent_group_scheduler_->CreatePageScheduler(this);
-   // The scheduler should be set before the main frame.
-   DCHECK(!main_frame_);
-+  // sbxdiff: SBXDIFF_LOG_VT=1 says, per renderer process, whether this Page
-+  // took the branch that enables virtual time. An out-of-process iframe reads
-+  // the REAL clock while the main frame reads the pinned one, and everything
-+  // else about that renderer is fine -- crypto.getRandomValues reproduces
-+  // there, so the switch relay is working. This is how to tell "the branch
-+  // never ran" from "it ran and did not stick".
-+  if (::getenv("SBXDIFF_LOG_VT")) {
-+    LOG(WARNING) << "sbxdiff: Page ctor, vtc="
-+                 << (page_scheduler_->GetVirtualTimeController() ? "yes" : "no")
-+                 << " switch="
-+                 << (base::CommandLine::ForCurrentProcess()->HasSwitch(
-+                         ::switches::kSbxdiffInitialTime)
-+                         ? "yes"
-+                         : "no")
-+                 << " deferred=" << (sbxdiff::VirtualTimeIsDeferred() ? 1 : 0);
-+  }
-   if (auto* virtual_time_controller =
-           page_scheduler_->GetVirtualTimeController()) {
-     history_navigation_virtual_time_pauser_ =
+@@ -300,6 +309,57 @@ Page::Page(base::PassKey<Page>,
          virtual_time_controller->CreateWebScopedVirtualTimePauser(
              "HistoryNavigation",
              WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant);
@@ -4314,232 +3900,20 @@ index d8b7ffcdccf7c..90e5d55f9c4e2 100644
    }
    UpdateColorProviders(color_provider_colors &&
                                 !color_provider_colors->IsEmpty()
-diff --git a/third_party/blink/renderer/core/probe/core_probes.json5 b/third_party/blink/renderer/core/probe/core_probes.json5
-index f1c698b3403b4..5d53d0d53d094 100644
---- a/third_party/blink/renderer/core/probe/core_probes.json5
-+++ b/third_party/blink/renderer/core/probe/core_probes.json5
-@@ -193,6 +193,14 @@
-         "PlayerPropertiesChanged",
-       ]
-     },
-+    SbxdiffNetObserver: {
-+      include_path: "third_party/blink/renderer/core/sbxdiff",
-+      probes: [
-+        "DidReceiveResourceResponse",
-+        "DidReceiveData",
-+        "DidFinishLoading",
-+      ]
-+    },
-     InspectorNetworkAgent: {
-       probes: [
-         "DidBlockRequest",
 diff --git a/third_party/blink/renderer/core/sbxdiff/build.gni b/third_party/blink/renderer/core/sbxdiff/build.gni
 new file mode 100644
-index 0000000000000..e30c99190cad8
+index 0000000000000..ccb57b572cce1
 --- /dev/null
 +++ b/third_party/blink/renderer/core/sbxdiff/build.gni
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,8 @@
 +# Copyright 2026 The Chromium Authors
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +blink_core_sources_sbxdiff = [
-+  "sbxdiff_net_observer.cc",
-+  "sbxdiff_net_observer.h",
 +  "sbxdiff_realm_clock.cc",
 +  "sbxdiff_realm_clock.h",
 +]
-diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc
-new file mode 100644
-index 0000000000000..875109577e0a4
---- /dev/null
-+++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.cc
-@@ -0,0 +1,89 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#include "third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h"
-+
-+#include "third_party/blink/renderer/core/frame/local_frame.h"
-+#include "third_party/blink/renderer/core/probe/core_probes.h"
-+#include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
-+#include "base/sbxdiff_net_store.h"
-+
-+namespace blink {
-+
-+SbxdiffNetObserver::SbxdiffNetObserver(LocalFrame* local_root)
-+    : local_root_(local_root) {
-+  local_root_->GetProbeSink()->AddSbxdiffNetObserver(this);
-+}
-+
-+void SbxdiffNetObserver::Shutdown() {
-+  if (!local_root_) {
-+    return;
-+  }
-+  local_root_->GetProbeSink()->RemoveSbxdiffNetObserver(this);
-+  local_root_ = nullptr;
-+}
-+
-+void SbxdiffNetObserver::DidReceiveResourceResponse(
-+    uint64_t identifier,
-+    DocumentLoader*,
-+    const ResourceResponse& response,
-+    const Resource*) {
-+  if (!base::sbxdiff::IsRecordingResponses()) {
-+    return;
-+  }
-+  Pending pending;
-+  pending.url = response.CurrentRequestUrl().GetString();
-+  pending.mime_type = response.MimeType();
-+  pending.encoding = response.TextEncodingName();
-+  pending_.Set(identifier, std::move(pending));
-+}
-+
-+void SbxdiffNetObserver::DidReceiveData(uint64_t identifier,
-+                                        DocumentLoader*,
-+                                        base::SpanOrSize<const char> data) {
-+  if (!base::sbxdiff::IsRecordingResponses()) {
-+    return;
-+  }
-+  auto it = pending_.find(identifier);
-+  if (it == pending_.end()) {
-+    return;
-+  }
-+  // This is the call that makes fetch()/XHR recordable: the bytes arrive here
-+  // even when the Resource itself never buffers them.
-+  if (auto span = data.span(); span) {
-+    // WTF Vector has no AppendSpan; Append(begin, end) is the iterator form.
-+    it->value.body.Append(span->begin(), span->end());
-+  }
-+}
-+
-+void SbxdiffNetObserver::DidFinishLoading(uint64_t identifier,
-+                                         DocumentLoader*,
-+                                         base::TimeTicks,
-+                                         int64_t,
-+                                         int64_t) {
-+  if (!base::sbxdiff::IsRecordingResponses()) {
-+    return;
-+  }
-+  auto it = pending_.find(identifier);
-+  if (it == pending_.end()) {
-+    return;
-+  }
-+  const Pending& pending = it->value;
-+  // No headers: a Blink probe sees a parsed ResourceResponse, not the raw
-+  // header block, and the store wants the bytes verbatim. That, plus opaque
-+  // cross-origin bodies never arriving here at all, is why this recorder is
-+  // superseded by the browser-side one and is no longer installed --
-+  // see LocalFrame's MaybeCreateSbxdiffNetObserver call site.
-+  base::sbxdiff::RecordResponse(pending.url.Utf8(), pending.mime_type.Utf8(),
-+                                pending.encoding.Utf8(), /*raw_headers=*/"",
-+                                /*request_body=*/"", pending.body.data(),
-+                                pending.body.size());
-+  pending_.erase(it);
-+}
-+
-+void SbxdiffNetObserver::Trace(Visitor* visitor) const {
-+  visitor->Trace(local_root_);
-+}
-+
-+}  // namespace blink
-diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h
-new file mode 100644
-index 0000000000000..0259ce9963d70
---- /dev/null
-+++ b/third_party/blink/renderer/core/sbxdiff/sbxdiff_net_observer.h
-@@ -0,0 +1,90 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
-+#define THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
-+
-+#include <stdint.h>
-+
-+#include "base/containers/span_or_size.h"
-+#include "base/time/time.h"
-+#include "third_party/blink/renderer/core/core_export.h"
-+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-+#include "third_party/blink/renderer/platform/heap/member.h"
-+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
-+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
-+#include "third_party/blink/renderer/platform/wtf/vector.h"
-+
-+namespace blink {
-+
-+class DocumentLoader;
-+class LocalFrame;
-+class Resource;
-+class ResourceResponse;
-+
-+// sbxdiff: records response bodies for hermetic replay, via the same probes
-+// DevTools uses.
-+//
-+// Why probes and not the ResourceFetcher hook this replaced. Capturing from
-+// `Resource::ResourceBuffer()` misses exactly the resources that matter most on
-+// a real site:
-+//
-+//   - `fetch()` and XHR are `ResourceType::kRaw` with
-+//     `kDoNotBufferData` -- the body streams straight to the consumer and is
-+//     never buffered on the Resource, so a recorded body came out **empty**.
-+//   - the main document is loaded by DocumentLoader, not ResourceFetcher, so it
-+//     was not recorded at all.
-+//
-+// `probe::DidReceiveData` carries the raw bytes for *every* load, which is how
-+// DevTools can show a fetch() response body; `InspectorNetworkAgent` explicitly
-+// buffers when the policy is `kDoNotBufferData`. The probes are plain Blink
-+// observers (`InspectorTraceEvents`, `LCPScriptObserver` and others use them
-+// with no DevTools session), so this needs no CDP -- which matters because a
-+// DevTools session is page-observable and would invalidate the oracle.
-+//
-+// `NetworkResourcesData::Clear(preserved_loader_id)` is the equivalent
-+// cross-navigation handling on the DevTools side; here each request's buffer is
-+// keyed by identifier and flushed on DidFinishLoading, so a navigation simply
-+// ends the requests belonging to the old loader.
-+class CORE_EXPORT SbxdiffNetObserver
-+    : public GarbageCollected<SbxdiffNetObserver> {
-+ public:
-+  explicit SbxdiffNetObserver(LocalFrame* local_root);
-+  SbxdiffNetObserver(const SbxdiffNetObserver&) = delete;
-+  SbxdiffNetObserver& operator=(const SbxdiffNetObserver&) = delete;
-+
-+  void Shutdown();
-+
-+  // Probe hooks, called by core_probes. Do not call directly.
-+  void DidReceiveResourceResponse(uint64_t identifier,
-+                                  DocumentLoader*,
-+                                  const ResourceResponse&,
-+                                  const Resource*);
-+  void DidReceiveData(uint64_t identifier,
-+                      DocumentLoader*,
-+                      base::SpanOrSize<const char> data);
-+  void DidFinishLoading(uint64_t identifier,
-+                        DocumentLoader*,
-+                        base::TimeTicks finish_time,
-+                        int64_t encoded_data_length,
-+                        int64_t decoded_body_length);
-+
-+  void Trace(Visitor*) const;
-+
-+ private:
-+  struct Pending {
-+    String url;
-+    String mime_type;
-+    String encoding;
-+    Vector<char> body;
-+  };
-+
-+  Member<LocalFrame> local_root_;
-+  // Keyed by probe identifier; entries live only until DidFinishLoading.
-+  HashMap<uint64_t, Pending> pending_;
-+};
-+
-+}  // namespace blink
-+
-+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_NET_OBSERVER_H_
 diff --git a/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.cc b/third_party/blink/renderer/core/sbxdiff/sbxdiff_realm_clock.cc
 new file mode 100644
 index 0000000000000..1c20c85fc9a99
@@ -4633,7 +4007,7 @@ index 0000000000000..40455bb873dae
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_SBXDIFF_SBXDIFF_REALM_CLOCK_H_
 diff --git a/third_party/blink/renderer/core/scheduler/dom_timer.cc b/third_party/blink/renderer/core/scheduler/dom_timer.cc
-index 6b5d77cc149a7..0a65c44874059 100644
+index 6b5d77cc149a7..419195fcc1511 100644
 --- a/third_party/blink/renderer/core/scheduler/dom_timer.cc
 +++ b/third_party/blink/renderer/core/scheduler/dom_timer.cc
 @@ -25,9 +25,18 @@
@@ -4684,7 +4058,7 @@ index 6b5d77cc149a7..0a65c44874059 100644
  // Step 11 of the algorithm at
  // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html requires
  // that a timeout less than 4ms is increased to 4ms when the nesting level is
-@@ -315,6 +339,84 @@ DOMTimer::DOMTimer(ExecutionContext& context,
+@@ -315,6 +339,65 @@ DOMTimer::DOMTimer(ExecutionContext& context,
      timeout = base::TimeDelta();
    }
  
@@ -4743,25 +4117,6 @@ index 6b5d77cc149a7..0a65c44874059 100644
 +  // no function to ask, and the guest did still ask for the timer.
 +  sbx_is_guest_timer_ =
 +      sbx_callback_class >= 0 ? sbx_callback_class == 0 : sbx_guest_depth >= 0;
-+  // SBXDIFF_LOG_TIMER_ATTR: one line per timer, so "which timers is the
-+  // sandbox counting that the oracle is not" is a question with an answer.
-+  // The two sides' logs diff directly, the same way SBXDIFF_LOG_VT's do.
-+  static const bool sbx_log_attr = [] {
-+    const char* v = ::getenv("SBXDIFF_LOG_TIMER_ATTR");
-+    return v && *v && *v != '0';
-+  }();
-+  if (sbx_log_attr) {
-+    const std::string sbx_cb_url = blink::sbxdiff::CallbackScriptUrl(
-+        context.GetIsolate(),
-+        action && action->CallbackFunction()
-+            ? v8::Local<v8::Value>(action->CallbackFunction()->CallbackObject())
-+            : v8::Local<v8::Value>());
-+    LOG(ERROR) << "sbxdiff: timer guest=" << sbx_is_guest_timer_
-+               << " cb=" << sbx_callback_class << " depth=" << sbx_guest_depth
-+               << " ms=" << timeout.InMilliseconds()
-+               << " at=" << base::sbxdiff::LogicalElapsed().InMilliseconds()
-+               << " cburl=" << sbx_cb_url;
-+  }
 +  if (sbx_is_guest_timer_) {
 +    sbx_logical_due_ = SbxCurrentTimerDue() + timeout;
 +  }
@@ -4769,7 +4124,7 @@ index 6b5d77cc149a7..0a65c44874059 100644
    // Steps 12 and 13:
    // Note: The implementation increments the nesting level before using it to
    // adjust timeout, contrary to what the spec requires crbug.com/1108877.
-@@ -405,6 +507,16 @@ void DOMTimer::ContextDestroyed() {
+@@ -405,6 +488,16 @@ void DOMTimer::ContextDestroyed() {
  
  void DOMTimer::Fired() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -5857,10 +5212,10 @@ index 0000000000000..ec6b760ae282d
 +#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SBXDIFF_SBX_SCOPE_H_
 diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
 new file mode 100644
-index 0000000000000..52d7cd49edf95
+index 0000000000000..c1e5f744e0134
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.cc
-@@ -0,0 +1,1310 @@
+@@ -0,0 +1,1241 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -6757,14 +6112,6 @@ index 0000000000000..52d7cd49edf95
 +
 +namespace {
 +
-+// Set once, on the main thread, when a renderer turns out to host only a
-+// cross-origin subframe. Read from every timestamp conversion afterwards.
-+bool g_subframe_only_renderer = false;
-+
-+}  // namespace
-+
-+namespace {
-+
 +// "<origin>,<prefix>" from --sbxdiff-shim-scripts, split once.
 +const std::pair<std::string, std::string>& ShimScriptMarkers() {
 +  static const base::NoDestructor<std::pair<std::string, std::string>> markers(
@@ -6891,10 +6238,6 @@ index 0000000000000..52d7cd49edf95
 +                                    isolate)));
 +  cache.emplace(script_id, is_shim);
 +  return is_shim;
-+}
-+
-+bool StackHasGuestFrame(v8::Isolate* isolate) {
-+  return GuestFrameDepth(isolate) >= 0;
 +}
 +
 +namespace {
@@ -7054,63 +6397,6 @@ index 0000000000000..52d7cd49edf95
 +  return us;
 +}
 +
-+void MarkSubframeOnlyRenderer() {
-+  g_subframe_only_renderer = true;
-+  // The same ceiling for the wall clock, so `Date.now()` is capped too. It
-+  // bottoms out in gin's V8Platform, a different component, which is why the
-+  // ceiling itself lives in //base. Without this the cap would only cover
-+  // performance timestamps -- and the value that first exposed all of this was
-+  // a `Date.now()`, put into a Cloudflare payload 50.6 seconds apart across two
-+  // otherwise identical runs.
-+  //
-+  // `Date.now()` is deliberately NOT counter-driven, and this is the second
-+  // time that call has been removed.
-+  //
-+  // A counter advances per READ, while timers still fire on the virtual clock.
-+  // So a retry loop bounded by wall time -- wait 100 ms, check `Date.now()`,
-+  // try again -- advances 20 us per attempt and never reaches its deadline,
-+  // however many times the timer fires. That hangs the run rather than
-+  // diverging, and it hung it in a way that looked like a sandbox problem: the
-+  // ORACLE was the side that stopped exiting, and the oracle runs no proxy
-+  // code at all, which is what identified this as a Chromium patch.
-+  //
-+  // `performance.now()` is counter-driven and is safe, because it is answered
-+  // per realm from `Performance::now` and nothing schedules against it. That is
-+  // where the benchmark fix came from (5700/6496 digests -> 5000/5000); none of
-+  // it needed `Date.now()`.
-+}
-+
-+base::TimeTicks CapObservableTicks(base::TimeTicks t) {
-+  // Separate what the page READS from what the scheduler RUNS on.
-+  //
-+  // A renderer hosting only a cross-origin subframe has its own virtual clock
-+  // -- the coordinator is per-process -- and nothing paces it, so it
-+  // fast-forwards to whatever far-future timer is pending. Measured in
-+  // Cloudflare's blob worker: `performance.now()` read 10028 times and answered
-+  // 345123 in one oracle run against 602509 in the next.
-+  //
-+  // Fencing the SCHEDULER there does not work. A tight fence parks the clock
-+  // and the widget never does its work (6 of 8 request bodies went to "oracle
-+  // never sent this"); a looser one hangs the run outright at 60 s. Timers have
-+  // to keep firing, so the clock has to keep moving.
-+  //
-+  // So let it move, and cap only the value handed to script. Beyond the cap
-+  // every read is the same number in every run, which is what the payload
-+  // needs, while setTimeout and friends still see the real virtual clock and
-+  // the widget still runs.
-+  if (!g_subframe_only_renderer || g_virtual_time_base.is_null() ||
-+      t.is_null()) {
-+    return t;
-+  }
-+  static std::atomic<int64_t> reads{0};
-+  // Anchored where the clock already was, for the same reason: going backwards
-+  // is worse than diverging.
-+  static const base::TimeTicks anchor = base::TimeTicks::Now();
-+  return anchor +
-+         base::Microseconds(ObservableStepUs() *
-+                            (reads.fetch_add(1, std::memory_order_relaxed) + 1));
-+}
-+
 +base::TimeTicks DeterministicEventTimeStamp(
 +    base::TimeTicks platform_time_stamp) {
 +  const base::TimeTicks base_ticks = g_virtual_time_base;
@@ -7173,10 +6459,10 @@ index 0000000000000..52d7cd49edf95
 +}  // namespace blink::sbxdiff
 diff --git a/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
 new file mode 100644
-index 0000000000000..95c8b1792bd4b
+index 0000000000000..6430e388ea33d
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/bindings/sbxdiff/sbx_tracer.h
-@@ -0,0 +1,479 @@
+@@ -0,0 +1,471 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -7233,13 +6519,19 @@ index 0000000000000..95c8b1792bd4b
 +  kScript = 7,       // V8 script id -> script URL, on first sighting
 +};
 +
-+// Comparison level. The `level` byte IS the cut described in ARCHITECTURE.md:
-+// the differ reads only kCompared, while kInternal records stay in the same
-+// ordered stream for post-mortem attribution.
++// Comparison level, and at present there is only one.
++//
++// The design this came from demoted records nested inside a guest-op bracket to
++// a second level, so the differ could read only the outermost while the rest
++// stayed in the stream for post-mortem attribution. That bracket was never
++// built in C++ -- the recorder ended up in the page, counting depth in JS -- so
++// every record ever written carries kCompared and the byte is a constant.
++//
++// The enumerators are gone because a value nothing can produce is a documented
++// behaviour that does not exist. The byte itself stays until the next wire
++// format bump, which has to land in both readers at once.
 +enum class Level : uint8_t {
 +  kCompared = 0,
-+  kInternal = 1,  // demoted: nested inside a guest-op bracket
-+  kDebug = 2,
 +};
 +
 +// Value type tags. Identity and shape only -- never contents (RULES.md #2).
@@ -7525,8 +6817,6 @@ index 0000000000000..95c8b1792bd4b
 +// virtual time began removes the variable term.
 +PLATFORM_EXPORT void SetVirtualTimeBase(base::TimeTicks base);
 +
-+// Note that this renderer hosts only a cross-origin subframe, so its virtual
-+// clock has nothing pacing it. See CapObservableTicks.
 +// Step, in microseconds, for the counter clock that answers performance.now().
 +// 0 = off. SBXDIFF_OBSERVABLE_STEP_US.
 +//
@@ -7569,17 +6859,10 @@ index 0000000000000..95c8b1792bd4b
 +// sandbox against 0, 3300 and 5000 in the oracle, which is a `Date.now()` that
 +// never moves.
 +//
-+// A frame BELOW the shim's trap is the guest asking, so the guest's timers come
-+// back and the shim's own -- scheduled from its init, with nothing of the
-+// page's underneath -- stay out.
-+//
-+// True when no markers are configured or no JS is on the stack, so the oracle,
-+// which has no shim, sees every timer as the guest's exactly as before.
-+PLATFORM_EXPORT bool StackHasGuestFrame(v8::Isolate* isolate);
 +
 +// How far down the JS stack the nearest GUEST frame is, or -1 for none.
 +//
-+// `StackHasGuestFrame` is this, thresholded. Exposed separately because the
++// Exposed as a depth rather than a boolean because the
 +// threshold is the open question: a proxy's setTimeout trap puts the guest a
 +// couple of frames down, and a timer the proxy schedules for its own reasons
 +// while guest code happens to be running puts it much further, and the two are
@@ -7612,12 +6895,7 @@ index 0000000000000..95c8b1792bd4b
 +
 +PLATFORM_EXPORT int64_t ObservableStepUs();
 +
-+PLATFORM_EXPORT void MarkSubframeOnlyRenderer();
 +
-+// Clamp a tick value on its way to script, WITHOUT clamping the clock the
-+// scheduler runs on. SBXDIFF_OBSERVABLE_CAP_MS, default 10000; inert outside a
-+// subframe-only renderer.
-+PLATFORM_EXPORT base::TimeTicks CapObservableTicks(base::TimeTicks t);
 +
 +// Virtual time switch helpers moved to
 +// platform/scheduler/common/sbxdiff_virtual_time.h -- the scheduler needs them
@@ -7688,7 +6966,7 @@ index dca71c35ad855..f0cc5d496380a 100644
  }
  
 diff --git a/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc b/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
-index 49281bb85eced..1417ab15b3a46 100644
+index 49281bb85eced..d16a8b0c895a3 100644
 --- a/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
 +++ b/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
 @@ -27,6 +27,8 @@
@@ -7709,149 +6987,7 @@ index 49281bb85eced..1417ab15b3a46 100644
  #include "base/auto_reset.h"
  #include "base/feature_list.h"
  #include "base/logging.h"
-@@ -1351,11 +1355,175 @@ ukm::MojoUkmRecorder* ResourceFetcher::UkmRecorder() {
-   return ukm_recorder_.get();
- }
- 
-+#if BUILDFLAG(SBXDIFF)
-+namespace {
-+
-+// sbxdiff: put back the headers `fetch()` forbids a page from setting.
-+//
-+// Production egress for the sandbox is scramjet's own transport, which owns the
-+// wire and sends exactly the headers scramjet computed -- `Cookie` among them,
-+// from scramjet's jar. The Blink transport exists so a live diagnostic's
-+// upstream requests carry a real browser's TLS instead of libcurl's, but
-+// `fetch()` drops a forbidden header SILENTLY: the diagnostic was sending
-+// something production never sends, which is no cookie at all. Measured on
-+// rateyourmusic, the challenge sets a cookie, the next request arrives without
-+// it, the server sees a fresh visitor, and the page loops forever.
-+//
-+// So the transport sends them under a private prefix and this restores them
-+// verbatim, which makes the Blink path carry the same bytes the production
-+// transport would.
-+//
-+// A prefix rather than widening Blink's forbidden-header check, because that
-+// check is WEB-FACING: making `Cookie` settable on any `Headers` object is a
-+// difference a page can read, and a page reading a difference is the one thing
-+// this browser exists to prevent. Nothing here is reachable from script -- the
-+// prefixed names are ordinary custom headers on the way in, and by the time
-+// they are renamed the request has left JavaScript.
-+constexpr char kSbxProxyHeaderPrefix[] = "x-sbxdiff-h-";
-+
-+bool SbxRestoreProxyHeadersEnabled() {
-+  static const bool on = [] {
-+    const char* v = ::getenv("SBXDIFF_PROXY_HEADERS");
-+    return v && *v && *v != '0';
-+  }();
-+  return on;
-+}
-+
-+// sbxdiff: what the two sides actually put on a request.
-+//
-+// The differ compares response BODIES and has no request-header comparison at
-+// all, which left a whole class of divergence unmeasurable -- and the class
-+// anti-bots read most directly. It cost a session: the payload was driven down
-+// to 92% timing and the challenge still would not pass live, with nothing left
-+// to look at because the headers were never in the instrument.
-+//
-+// The renderer is the right layer for a DIFF even though it is not the wire.
-+// Both sides run the same binary with the same flags, so everything the
-+// browser adds below this point is identical by construction; what differs
-+// between oracle and sandbox is exactly what the page and the proxy set, and
-+// that is what is visible here.
-+//
-+// One line per request, sorted, so the two sides' logs diff directly the way
-+// SBXDIFF_LOG_TIMER_ATTR's do. SBXDIFF_LOG_REQ_HEADERS.
-+void SbxLogRequestHeaders(const ResourceRequest& request) {
-+  static const bool on = [] {
-+    const char* v = ::getenv("SBXDIFF_LOG_REQ_HEADERS");
-+    return v && *v && *v != '0';
-+  }();
-+  if (!on) {
-+    return;
-+  }
-+  // std::string throughout: the WTF string helpers move between revisions and
-+  // this is a diagnostic, not a hot path.
-+  std::vector<std::string> pairs;
-+  for (const auto& header : request.HttpHeaderFields()) {
-+    std::string name = header.key.GetString().Utf8();
-+    for (char& c : name) {
-+      c = base::ToLowerASCII(c);
-+    }
-+    pairs.push_back(name + ": " + header.value.GetString().Utf8());
-+  }
-+  std::sort(pairs.begin(), pairs.end());
-+  std::string joined;
-+  for (const auto& p : pairs) {
-+    joined += p + " | ";
-+  }
-+  LOG(ERROR) << "sbxdiff: reqhdr " << request.HttpMethod().Utf8() << " "
-+             << request.Url().GetString().Utf8() << " :: " << joined;
-+}
-+
-+void SbxRestoreProxyHeaders(ResourceRequest& request) {
-+  if (!SbxRestoreProxyHeadersEnabled()) {
-+    return;
-+  }
-+  // Collected before anything is written: mutating a map while iterating it is
-+  // undefined, and a restored header can collide with one already present.
-+  // Parallel vectors rather than pairs -- WTF::Vector does not brace-init one.
-+  Vector<AtomicString> drop;
-+  Vector<AtomicString> restored_names;
-+  Vector<AtomicString> restored_values;
-+  const size_t prefix_length = sizeof(kSbxProxyHeaderPrefix) - 1;
-+  for (const auto& header : request.HttpHeaderFields()) {
-+    // Compared as UTF-8: header names are ASCII, and this avoids depending on
-+    // which case-insensitive helpers WTF::String exposes in a given revision.
-+    std::string name = header.key.GetString().Utf8();
-+    for (char& c : name) {
-+      c = base::ToLowerASCII(c);
-+    }
-+    if (name.rfind(kSbxProxyHeaderPrefix, 0) != 0) {
-+      continue;
-+    }
-+    // The Sec-Fetch family is NOT restored here. The network service owns
-+    // those and refuses them from a renderer -- restoring them here made every
-+    // upstream fetch fail with `TypeError: Failed to fetch`. They are carried
-+    // past this point untouched and applied in
-+    // `services/network/sec_header_helpers.cc`, which is the layer that
-+    // computes them.
-+    if (name.rfind("x-sbxdiff-h-sec-fetch-", 0) == 0) {
-+      continue;
-+    }
-+    drop.push_back(header.key);
-+    const std::string real = name.substr(prefix_length);
-+    if (real.empty()) {
-+      continue;
-+    }
-+    restored_names.push_back(
-+        AtomicString(String::FromUtf8(base::as_byte_span(real))));
-+    restored_values.push_back(header.value);
-+  }
-+  for (const auto& name : drop) {
-+    request.ClearHttpHeaderField(name);
-+  }
-+  for (wtf_size_t i = 0; i < restored_names.size(); ++i) {
-+    request.SetHttpHeaderField(restored_names[i], restored_values[i]);
-+  }
-+  if (!restored_names.empty()) {
-+    // One line per request that carried any, so "did the rename fire" is a
-+    // question with an answer rather than an inference from a cookie count.
-+    std::string names;
-+    for (const auto& n : restored_names) {
-+      names += n.GetString().Utf8() + ",";
-+    }
-+    LOG(ERROR) << "sbxdiff: restored proxy headers [" << names << "] for "
-+               << request.Url().GetString().Utf8().substr(0, 90);
-+  }
-+}
-+
-+}  // namespace
-+#endif  // BUILDFLAG(SBXDIFF)
-+
- Resource* ResourceFetcher::RequestResource(FetchParameters& params,
-                                            const ResourceFactory& factory,
+@@ -1356,6 +1360,28 @@ Resource* ResourceFetcher::RequestResource(FetchParameters& params,
                                             ResourceClient* client) {
    base::AutoReset<bool> r(&is_in_request_resource_, true);
  
@@ -7875,17 +7011,12 @@ index 49281bb85eced..1417ab15b3a46 100644
 +    return ResourceForBlockedRequest(
 +        params, factory, ResourceRequestBlockedReason::kOther, client);
 +  }
-+  // sbxdiff: see SbxRestoreProxyHeaders. After the trace and the replay gate,
-+  // so what is recorded is what the page asked for and what goes on the wire is
-+  // what the production transport would have sent.
-+  SbxRestoreProxyHeaders(params.MutableResourceRequest());
-+  SbxLogRequestHeaders(params.GetResourceRequest());
 +#endif
 +
    // If detached, we do very early return here to skip all processing below.
    if (properties_->IsDetached()) {
      return ResourceForBlockedRequest(
-@@ -2584,6 +2752,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
+@@ -2584,6 +2610,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
                                           uint32_t inflight_keepalive_bytes) {
    DCHECK(resource);
  
@@ -7935,7 +7066,7 @@ index 548256efd8698..2ca0711fed845 100644
      "common/back_forward_cache_disabling_feature_tracker.cc",
      "common/back_forward_cache_disabling_feature_tracker.h",
 diff --git a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
-index 80b40c343f5b6..da41a9b375110 100644
+index 80b40c343f5b6..b163ca3a4cef1 100644
 --- a/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
 +++ b/third_party/blink/renderer/platform/scheduler/common/auto_advancing_virtual_time_domain.cc
 @@ -6,6 +6,10 @@
@@ -7949,24 +7080,21 @@ index 80b40c343f5b6..da41a9b375110 100644
  #include "base/time/time_override.h"
  #include "build/build_config.h"
  #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
-@@ -13,6 +17,57 @@
+@@ -13,6 +17,49 @@
  namespace blink {
  namespace scheduler {
  
 +namespace {
 +
-+// sbxdiff: diagnostics and a tunable grid for virtual-clock advances.
++// sbxdiff: a tunable grid for virtual-clock advances.
 +//
-+// Both are env vars rather than switches so they can be turned on for one run
-+// without threading anything through the renderer switch allowlist. A run with
-+// neither set behaves exactly as upstream.
-+//
-+//   SBXDIFF_LOG_VT=1          log every advance, as microseconds from the
-+//                             instant virtual time was enabled. Two runs'
-+//                             logs diff directly, which is what says WHERE
-+//                             the clocks part rather than merely that they do.
 +//   SBXDIFF_VT_QUANTUM_US=n   snap each advance up to the next multiple of n
-+//                             microseconds from that same instant.
++//                             microseconds from the instant virtual time was
++//                             enabled.
++//
++// An env var rather than a switch so it can be set for one run without
++// threading anything through the renderer switch allowlist. Unset, this file
++// behaves exactly as upstream.
 +//
 +// The grid exists because the clock does not only advance to times the page
 +// asked for. Wake-ups already scheduled when virtual time was enabled carry
@@ -7991,11 +7119,6 @@ index 80b40c343f5b6..da41a9b375110 100644
 +  return parsed;
 +}
 +
-+bool SbxLogVirtualTime() {
-+  static const bool on = SbxEnvInt("SBXDIFF_LOG_VT") != 0;
-+  return on;
-+}
-+
 +base::TimeDelta SbxVirtualTimeQuantum() {
 +  static const base::TimeDelta q =
 +      base::Microseconds(SbxEnvInt("SBXDIFF_VT_QUANTUM_US"));
@@ -8007,7 +7130,7 @@ index 80b40c343f5b6..da41a9b375110 100644
  AutoAdvancingVirtualTimeDomain::AutoAdvancingVirtualTimeDomain(
      base::Time initial_time,
      base::TimeTicks initial_time_ticks,
-@@ -51,11 +106,23 @@ base::TimeTicks AutoAdvancingVirtualTimeDomain::NowTicks() const {
+@@ -51,11 +98,23 @@ base::TimeTicks AutoAdvancingVirtualTimeDomain::NowTicks() const {
  bool AutoAdvancingVirtualTimeDomain::MaybeFastForwardToWakeUp(
      std::optional<base::sequence_manager::WakeUp> wakeup,
      bool quit_when_idle_requested) {
@@ -8033,7 +7156,7 @@ index 80b40c343f5b6..da41a9b375110 100644
  
    if (MaybeAdvanceVirtualTime(wakeup->time)) {
      task_starvation_count_ = 0;
-@@ -88,6 +155,28 @@ void AutoAdvancingVirtualTimeDomain::SetVirtualTimeFence(
+@@ -88,6 +147,22 @@ void AutoAdvancingVirtualTimeDomain::SetVirtualTimeFence(
  
  bool AutoAdvancingVirtualTimeDomain::MaybeAdvanceVirtualTime(
      base::TimeTicks new_virtual_time) {
@@ -8052,12 +7175,6 @@ index 80b40c343f5b6..da41a9b375110 100644
 +        (since.InMicroseconds() + quantum.InMicroseconds() - 1) /
 +        quantum.InMicroseconds();
 +    new_virtual_time = initial_time_ticks_ + quantum * steps;
-+  }
-+  if (SbxLogVirtualTime()) {
-+    LOG(WARNING) << "sbxdiff: VT advance +"
-+                 << (new_virtual_time - initial_time_ticks_).InMicroseconds()
-+                 << "us from +"
-+                 << (NowTicks() - initial_time_ticks_).InMicroseconds() << "us";
 +  }
    // If set, don't advance past the end of |virtual_time_fence_|.
    if (!virtual_time_fence_.is_null() &&
@@ -8208,10 +7325,10 @@ index 9d2f4b74bdc89..4cda73d8195b1 100644
  }  // namespace blink::scheduler
 diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
 new file mode 100644
-index 0000000000000..c36aedcc1786f
+index 0000000000000..61016db579fab
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.cc
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,83 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -8266,41 +7383,6 @@ index 0000000000000..c36aedcc1786f
 +  return budget_ms;
 +}
 +
-+int64_t SubframeVirtualTimeBudgetFromEnv() {
-+  // A renderer that hosts only a cross-origin subframe has nothing pacing its
-+  // clock. Chromium's ProcessTimeOverrideCoordinator is PER-PROCESS, so that
-+  // renderer's virtual time advances entirely on its own, and with no page work
-+  // to hold it back it fast-forwards to whatever far-future timer happens to be
-+  // pending -- which is a different set on every run.
-+  //
-+  // Measured on rateyourmusic, in Cloudflare's blob worker, scoped with
-+  // --realm challenges.cloudflare.com: `performance.now()` is read 10028 times
-+  // and answered 345123 in one oracle run against 602509 in the next. 257
-+  // seconds apart, stamped into the challenge payload ten thousand times, and
-+  // invisible from the page's own realm, which reports zero divergences.
-+  //
-+  // The budget fence is the only thing that stops the fast-forward, so give
-+  // such a renderer a TIGHT one: the clock reaches the fence on its first idle
-+  // moment and then stays there, which makes every subsequent read the same
-+  // value in every run. A large budget does not do this -- it just moves where
-+  // the two runs stop disagreeing.
-+  static const int64_t ms = [] {
-+    const char* v = ::getenv("SBXDIFF_SUBFRAME_VT_BUDGET_MS");
-+    if (!v || !*v) {
-+      return int64_t{5000};
-+    }
-+    int64_t parsed = 0;
-+    for (std::string_view digits(v); char c : digits) {
-+      if (c < '0' || c > '9' || parsed > (1LL << 40)) {
-+        return int64_t{5000};
-+      }
-+      parsed = parsed * 10 + (c - '0');
-+    }
-+    return parsed;
-+  }();
-+  return ms;
-+}
-+
 +bool VirtualTimeIsDeferred() {
 +  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
 +  return cmd && cmd->HasSwitch(::switches::kSbxdiffVirtualTimeAfter);
@@ -8332,10 +7414,10 @@ index 0000000000000..c36aedcc1786f
 +}  // namespace blink::sbxdiff
 diff --git a/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
 new file mode 100644
-index 0000000000000..20f969473514c
+index 0000000000000..c1b6fc45b051c
 --- /dev/null
 +++ b/third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,50 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -8365,11 +7447,6 @@ index 0000000000000..20f969473514c
 +
 +// --sbxdiff-virtual-time-budget, in milliseconds. Defaults to 2000.
 +PLATFORM_EXPORT int64_t VirtualTimeBudgetFromSwitch();
-+
-+// Budget for a renderer that hosts only a cross-origin subframe, which has no
-+// page work pacing its clock and so fast-forwards to a run-dependent place.
-+// SBXDIFF_SUBFRAME_VT_BUDGET_MS, default 5000.
-+PLATFORM_EXPORT int64_t SubframeVirtualTimeBudgetFromEnv();
 +
 +// True when --sbxdiff-virtual-time-after is set: Page's constructor then skips
 +// enabling virtual time and leaves it to the realm that matches.
@@ -8564,47 +7641,6 @@ index 2bf7794e947dc..44b54af6ec0d0 100644
    for (const auto& pair : task_runners_) {
      if (pair.first->CanRunWhenVirtualTimePaused())
        continue;
-diff --git a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-index 2c9546a603612..be9b1b658565c 100644
---- a/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-+++ b/third_party/blink/renderer/platform/scheduler/main_thread/web_scoped_virtual_time_pauser.cc
-@@ -2,6 +2,8 @@
- // Use of this source code is governed by a BSD-style license that can be
- // found in the LICENSE file.
- 
-+#include "base/logging.h"
-+#include "third_party/blink/renderer/platform/scheduler/common/sbxdiff_virtual_time.h"
- #include "third_party/blink/public/platform/scheduler/web_scoped_virtual_time_pauser.h"
- 
- #include "base/trace_event/trace_event.h"
-@@ -70,6 +72,16 @@ void WebScopedVirtualTimePauser::PauseVirtualTime() {
-                       perfetto::Track(trace_id_), "name", debug_name_.Latin1());
-   }
-   virtual_time_when_paused_ = scheduler_->IncrementVirtualTimePauseCount();
-+  // Which pauser is holding the clock is the only way to find a virtual-time
-+  // deadlock: the symptom is just "nothing happens".
-+  // trace_id_ is `this` at construction and is carried across moves, so it
-+  // identifies the logical pauser. Matching +/- by NAME is not enough: names
-+  // repeat (ResponseBody, PendingScript), and a still-held pauser gets masked
-+  // by a later balanced pair of the same name.
-+  if (sbxdiff::VirtualTimeIsDeferred()) {
-+    VLOG(1) << "sbxdiff-pauser: + id=" << trace_id_ << " "
-+            << debug_name_.Latin1();
-+  }
- }
- 
- void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
-@@ -77,6 +89,10 @@ void WebScopedVirtualTimePauser::UnpauseVirtualTime() {
-     return;
- 
-   paused_ = false;
-+  if (sbxdiff::VirtualTimeIsDeferred()) {
-+    VLOG(1) << "sbxdiff-pauser: - id=" << trace_id_ << " "
-+            << debug_name_.Latin1();
-+  }
-   DecrementVirtualTimePauseCount();
- }
- 
 diff --git a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc b/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
 index 5522f1dbb15c3..1894e660c2477 100644
 --- a/third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.cc
