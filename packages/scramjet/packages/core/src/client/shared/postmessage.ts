@@ -1,72 +1,58 @@
 import { iswindow, isworker } from "@client/entry";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { GlobalScope, ScramjetClient } from "@client/index";
-import { Object_defineProperty } from "@/shared/snapshot";
-import { POLLUTANT } from "./realm";
+import {
+	Object_defineProperty,
+	Object_getPrototypeOf,
+} from "@/shared/snapshot";
 import { Arguments } from "@client/webidl";
 import { incumbencyMode, rawCallSites } from "@/shared/incumbency";
 import { realmForFrame } from "./incumbency";
 
 export default function (client: ScramjetClient, self: Self) {
-	const getLegacyPollutant = () => {
-		// so we need to send the real origin here, since the recieving window can't possibly know.
-		// except, remember that this code is being ran in a different realm than the invoker, so if we ask our `client` it may give us the wrong origin
-		// if we were given any object that came from the real realm we can use that to get the real origin
-		// and this works in every case EXCEPT for the fact that all three arguments can be strings which are copied instead of cloned
-		// so we have to use `$setrealm` which will pollute this with an object from the real realm
+	const getLegacyRealm = (args: any[]) => {
+		let pollutant: any;
 
-		let pollutant;
-
-		if (typeof ctx.args[0] === "object" && ctx.args[0] !== null) {
-			pollutant = ctx.args[0]; // try to use the first object we can find because it's more reliable
-		} else if (typeof ctx.args[2] === "object" && ctx.args[2] !== null) {
-			pollutant = ctx.args[2]; // next try to use transfer
-		} else if (
-			ctx.this &&
-			POLLUTANT in ctx.this &&
-			typeof ctx.this[POLLUTANT] === "object" &&
-			ctx.this[POLLUTANT] !== null
-		) {
-			pollutant = ctx.this[POLLUTANT]; // lastly try to use the object from $setrealm
+		if (typeof args[0] === "object" && args[0] !== null) {
+			pollutant = args[0]; // try to use the first object we can find
+		} else if (typeof args[2] === "object" && args[2] !== null) {
+			pollutant = args[2]; // next try to use transfer
 		} else {
 			pollutant = {}; // give up
 		}
 
-		// and now we can steal Function from the caller's realm
-		const {
-			constructor: { constructor: Function },
-		} = pollutant;
-
-		// invoking stolen function will give us the caller's globalThis, remember scramjet has already proxied it!!!
-		const callerGlobalThisProxied: Self = Function("return globalThis")();
-		const callerClient = callerGlobalThisProxied[SCRAMJETCLIENT];
-
-		// this WOULD be enough but the source argument of MessageEvent has to return the caller's window
-		// and if we just call it normally it would be coming from here, which WILL NOT BE THE CALLER'S because the accessor is from the parent
-		// so with the stolen function we wrap postmessage so the source will truly be the caller's window (remember that function is scramjet's!!!)
-		const wrappedPostMessage = Function("...args", "this(...args)");
+		const objectPrototype = Object_getPrototypeOf(pollutant);
+		return client.box.objectPrototypes.get(objectPrototype);
 	};
 
 	if (iswindow) {
 		client.Intercept(class extends GlobalScope {
-			static postMessage(message: any) {
+			static postMessage(
+				message: any,
+				targetOrigin: string | object,
+				transfer?: any
+			) {
 				const mode = incumbencyMode(client.context, client.url);
+				let senderClient: ScramjetClient;
 				if (mode === "pst" || mode === "nonce") {
 					const sites = rawCallSites();
-					for (const site of sites) {
-						console.log(`${site.getFileName()} : ${site.getScriptHash()}`);
-					}
-					const last = sites[sites.length - 1];
-					console.log(last.getScriptHash(), client.box);
+					// there are 4 scramjet frames between a caller and rawCallSites()
+					// 5 if accounting for the extra trampoline frame
+					const index = client.flagEnabled("debugTrampolines") ? 5 : 4;
+					const last = sites[index];
 					const nonce = client.box.scripthashes[last.getScriptHash()];
-
-					super.postMessage({
-						$scramjet$messagetype: "window",
-						$scramjet$origin: client.url.origin,
-						$scramjet$data: message,
-						$scramjet$nonce: nonce,
-					});
+					senderClient = client.box.scriptrealms[nonce].client;
+				} else if (mode === "stamp" || mode === "lazystamp") {
+				} else {
+					senderClient = getLegacyRealm([message, targetOrigin, transfer]);
 				}
+
+				super.postMessage({
+					$scramjet$messagetype: "window",
+					$scramjet$origin: client.url.origin,
+					$scramjet$data: message,
+					$scramjet$clientid: senderClient.id,
+				});
 			}
 		});
 	}

@@ -278,6 +278,8 @@ export class ScramjetClient {
 
 	history: TrackedHistoryState[];
 
+	id = `client-${Math_random().toString(36).substring(4)}`;
+
 	private flagCache = new _Map<keyof ScramjetConfig["flags"], boolean>();
 	private cachedTopUrl: _URL | null = null;
 
@@ -1605,7 +1607,7 @@ return { apply, construct };
 			if (current === null || current === undefined) break;
 
 			const next = Object_getPrototypeOf(current);
-			if (next === null) return this.box.realms.get(current) ?? this;
+			if (next === null) return this.box.objectPrototypes.get(current) ?? this;
 
 			current = next;
 		}
