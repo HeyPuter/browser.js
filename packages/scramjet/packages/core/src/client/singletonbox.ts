@@ -15,15 +15,11 @@ import { FakeWebSocketStreamState } from "./shared/requests/WebSocketStream";
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
+	clientIds: _Map<string, ScramjetClient> = new _Map([]);
 	globals: _Map<Self, ScramjetClient> = new _Map([]);
 	documents: _Map<Document, ScramjetClient> = new _Map([]);
 	histories: _Map<History, ScramjetClient> = new _Map([]);
-	/**
-	 * Keyed on each realm's `Object.prototype`, which every object created in
-	 * that realm reaches at the end of its prototype chain. One entry per realm
-	 * rather than one per interface.
-	 */
-	realms: _Map<object, ScramjetClient> = new _Map([]);
+	objectPrototypes: _Map<object, ScramjetClient> = new _Map([]);
 	locations: _Map<Location, ScramjetClient> = new _Map([]);
 	functions: _Map<typeof Function, ScramjetClient> = new _Map([]);
 	writeRewriters: _WeakMap<Document, IncrementalHtmlRewriter> = new _WeakMap(
@@ -121,7 +117,8 @@ export class SingletonBox {
 		this.locations.set(global.location, client);
 		this.histories.set(global.history, client);
 		this.functions.set(global.Function, client);
-		this.realms.set(global.Object.prototype, client);
+		this.objectPrototypes.set(global.Object.prototype, client);
+		this.clientIds.set(client.id, client);
 
 		const names = Object_getOwnPropertyNames(global);
 		for (let i = 0; i < names.length; i++) {

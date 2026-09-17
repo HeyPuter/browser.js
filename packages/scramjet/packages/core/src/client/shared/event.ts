@@ -39,15 +39,9 @@ export default function (client: ScramjetClient, self: Self) {
 						data !== null &&
 						Object_hasOwn(data, "$scramjet$messagetype")
 					) {
-						console.log(data.$scramjet$nonce, data);
-						const realm = client.box.scriptrealms[data.$scramjet$nonce];
-						console.log("nonce recovered", realm);
-						return realm.client.global;
+						const cl = client.box.clientIds.get(data.$scramjet$clientid);
+						return cl.global;
 					}
-
-					// const scram: ScramjetClient = this.source[SCRAMJETCLIENT];
-
-					// if (scram) return scram.globalProxy;
 
 					return this.source;
 				},
