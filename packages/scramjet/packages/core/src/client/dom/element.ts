@@ -16,6 +16,7 @@ import { rewriteJs } from "@rewriters/js";
 import { unrewriteUrl } from "@rewriters/url";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
+import { recordGuestOps } from "@client/guestop";
 import {
 	getScriptBlockTypeString,
 	isHtmlMimeType,
@@ -112,7 +113,7 @@ export default function (client: ScramjetClient, self: typeof window) {
 				element.prototype,
 				attr
 			);
-			Object_defineProperty(element.prototype, attr, {
+			const attrDescriptor = {
 				get() {
 					if (["src", "data", "href", "action", "formaction"].includes(attr)) {
 						return unrewriteUrl(descriptor.get.call(this), client.context);
@@ -132,7 +133,27 @@ export default function (client: ScramjetClient, self: typeof window) {
 					// }
 					return this.setAttribute(attr, value);
 				},
-			});
+			};
+			// The sixth interception seam, and one of two that define onto a
+			// prototype directly rather than through `installNative` -- so the
+			// hook there does not reach it, and every URL-carrying attribute the
+			// page reads was unrecorded. Measured on rateyourmusic:
+			// `HTMLAnchorElement.href` 15 guest reads against nothing,
+			// `HTMLScriptElement.src` 8. Those are the values a leak would be IN.
+			//
+			// Named from the interface rather than left to the owner fallback,
+			// because the loop already knows which interface it is on: the same
+			// `src` is trapped on seven of them, and they are seven APIs to the
+			// oracle.
+			//
+			// Safe to wrap because the descriptor is one scramjet AUTHORED -- a
+			// scramjet closure around a scramjet closure. It must never be done
+			// to what `installNative` installs, which is a Proxy over the native.
+			recordGuestOps(
+				{ debugname: `${element.name}.${attr}`, key: attr },
+				attrDescriptor
+			);
+			Object_defineProperty(element.prototype, attr, attrDescriptor);
 		}
 	}
 

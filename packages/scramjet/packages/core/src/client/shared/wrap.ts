@@ -1,5 +1,6 @@
 import { iswindow } from "@client/entry";
 import { SCRAMJETCLIENT } from "@/symbols";
+import { guestOpAround } from "@client/guestop";
 import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
 import { Object_defineProperty } from "@/shared/snapshot";
@@ -88,6 +89,16 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		enumerable: false,
 	});
 
+	// The rewriter's own seam, and the other half of the interception surface:
+	// guest code that says `location` is REWRITTEN to read this, so no
+	// interceptor is involved and `installNative` never sees it. Measured on
+	// rateyourmusic, 67 `window.location` reads with no sandbox counterpart.
+	//
+	// The member name is computed per call because one accessor answers for two
+	// APIs the oracle records separately: on the window it is `Window.location`
+	// and on the document it is `HTMLDocument.location`.
+	const locationMember = (that: unknown) =>
+		that === self.document ? "HTMLDocument.location" : "Window.location";
 	Object_defineProperty(
 		self.Object.prototype,
 		client.config.globals.wrappropertybase + "location",
@@ -95,19 +106,23 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			get: function () {
 				// if (this.location.constructor.toString().includes("Location")) {
 
-				if (this === self || this === self.document) {
-					return client.locationProxy;
-				}
+				return guestOpAround(locationMember(this), "get", [], () => {
+					if (this === self || this === self.document) {
+						return client.locationProxy;
+					}
 
-				return this.location;
+					return this.location;
+				});
 			},
 			set(value: any) {
-				if (this === self || this === self.document) {
-					client.url = value;
+				guestOpAround(locationMember(this), "set", [value], () => {
+					if (this === self || this === self.document) {
+						client.url = value;
 
-					return;
-				}
-				this.location = value;
+						return;
+					}
+					this.location = value;
+				});
 			},
 			configurable: false,
 			enumerable: false,
@@ -118,7 +133,9 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		client.config.globals.wrappropertybase + "parent",
 		{
 			get: function () {
-				return client.wrapfn(this.parent);
+				return guestOpAround("Window.parent", "get", [], () =>
+					client.wrapfn(this.parent)
+				);
 			},
 			set(value: any) {
 				// i guess??
@@ -133,7 +150,9 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		client.config.globals.wrappropertybase + "top",
 		{
 			get: function () {
-				return client.wrapfn(this.top);
+				return guestOpAround("Window.top", "get", [], () =>
+					client.wrapfn(this.top)
+				);
 			},
 			set(value: any) {
 				this.top = value;

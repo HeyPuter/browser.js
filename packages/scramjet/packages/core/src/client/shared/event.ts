@@ -1,6 +1,7 @@
 import { iswindow } from "@client/entry";
 import { Arguments, Returns } from "@client/webidl";
 import { ScramjetClient } from "@client/index";
+import { guestOpAround } from "@client/guestop";
 import {
 	readAddEventListenerOptions,
 	readEventListenerOptions,
@@ -129,14 +130,51 @@ export default function (client: ScramjetClient, self: Self) {
 		// object on every read as it is natively
 		const methods = new _WeakMap<object, any>();
 
+		// The interface name the TRACER uses, read once off the native event.
+		//
+		// `realEvent` is the browser's own object -- the proxy around it is
+		// being built here -- so this walks a native prototype chain rather than
+		// anything the page could have replaced with a getter.
+		let iface = "Event";
+		try {
+			iface = realEvent.constructor?.name || "Event";
+		} catch {
+			/* a page that replaced `constructor`; the name is cosmetic */
+		}
+
 		const wrapped = new Proxy(realEvent, {
 			get(target, prop, reciever) {
 				// own only: `props` is an object literal, so an `in` test also
 				// answers to `constructor`, `toString` and every other
 				// `Object.prototype` member, and would call them as rewriters
-				if (Object_hasOwn(props, prop)) return props[prop].call(target);
+				if (Object_hasOwn(props, prop)) {
+					// The seventh interception seam, and the only one that traps
+					// a single OBJECT rather than installing on a prototype --
+					// so neither `installNative`'s hook nor any of the by-hand
+					// ones reach it. It is how `MessageEvent.data`, `.origin`
+					// and `.source` are answered, which is 135 guest reads on
+					// rateyourmusic with nothing on the sandbox side.
+					return guestOpAround(`${iface}.${String(prop)}`, "get", [], () =>
+						props[prop].call(target)
+					);
+				}
 
-				const value = Reflect_get(target, prop);
+				// The wrapper's FALL-THROUGH is a guest op too.
+				//
+				// A property the `props` table does not answer still goes
+				// through this proxy, so the native read underneath carries
+				// scramjet's frame and the differ sees nothing on the sandbox
+				// side -- `MessageEvent.isTrusted` was 31 guest reads on
+				// rateyourmusic against zero. What scramjet did with it
+				// (nothing, here) is not the point: the guest asked the wrapper
+				// and the wrapper answered, and that is the event to compare.
+				//
+				// Recorded around the read alone. The method wrapping below
+				// returns the same value on every read by construction, and
+				// recording it would report a call the page has not made yet.
+				const value = guestOpAround(`${iface}.${String(prop)}`, "get", [], () =>
+					Reflect_get(target, prop)
+				);
 
 				// a bare proxy fails the brand check on every method and getter
 				// ("Illegal invocation"), so anything callable has to be handed

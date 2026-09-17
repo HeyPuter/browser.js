@@ -30,6 +30,7 @@
 
 import { Error, String_split, String_trim } from "@/shared/snapshot";
 import type { AnyFunction } from "@/types";
+import { guestOpThrow } from "@client/guestop";
 
 /** `at name (https://host/path.js:1:2)`, or the same without the name. */
 const FRAME_URL = /\(?((?:https?|blob|data|file):[^\s)]+):\d+:\d+\)?$/;
@@ -208,6 +209,9 @@ export class NativeErrors {
 	 */
 	private stamp<T extends object>(error: T, caller: AnyFunction): T {
 		if (this.captureStackTrace) this.captureStackTrace(error, caller);
+		// Every error scramjet builds passes through here, which is why the
+		// guest-op record is taken here rather than at each throw site.
+		guestOpThrow(error);
 
 		return error;
 	}

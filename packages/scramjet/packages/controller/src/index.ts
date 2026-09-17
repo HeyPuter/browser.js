@@ -43,6 +43,20 @@ export type Config = {
 	wasmPath: string;
 	virtualWasmPath: string;
 	codec: Record<"encode" | "decode", (input: string) => string>;
+	/**
+	 * A script to run at the top of every guest document, before the page's own.
+	 *
+	 * For instrumenting a page that cannot be reached any other way. Anything a
+	 * site caches at parse time -- `document.createElement`, a prototype method
+	 * it is about to call -- is already captured by the time a poll from outside
+	 * installs a hook, so an observer that is not at document start observes a
+	 * page that has already decided.
+	 *
+	 * Empty by default and injected only when set, so a normal run carries
+	 * nothing extra. It goes in with the other injected scripts and is stripped
+	 * from serialization with them.
+	 */
+	probePath?: string;
 };
 
 export const config: Config = {
@@ -686,6 +700,7 @@ function yieldGetInjectScripts(
 			script(config.scramjetPath),
 			script(prefix.href + config.virtualWasmPath),
 			script(config.injectPath),
+			...(config.probePath ? [script(config.probePath)] : []),
 			script(
 				"data:text/javascript;charset=utf-8;base64," +
 					base64Encode(`
@@ -737,6 +752,18 @@ export class Frame {
 
 					str += script(this.controller.config.scramjetPath);
 					str += script(this.prefix + this.controller.config.virtualWasmPath);
+					// Before the client is constructed, exactly as `probePath`
+					// sits before `$scramjetController.load()` for a document.
+					// The recorder has to capture the natives it reports through
+					// while they are still native.
+					//
+					// Workers were the largest realm the guest-op layer could not
+					// see: on rateyourmusic they are eight blob realms and 85% of
+					// the oracle's records, and anti-bot detections run inside
+					// them.
+					if (this.controller.config.probePath) {
+						str += script(this.controller.config.probePath);
+					}
 					str += script(
 						"data:text/javascript;charset=utf-8;base64," +
 							base64Encode(`

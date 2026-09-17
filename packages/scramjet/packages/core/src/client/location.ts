@@ -1,5 +1,6 @@
 import { ScramjetClient } from "@client/index";
 import { Tap } from "@/Tap";
+import { recordGuestOps } from "@client/guestop";
 import { iswindow } from "@client/entry";
 import {
 	Reflect_apply,
@@ -73,6 +74,18 @@ export function createLocationProxy(client: ScramjetClient, self: GlobalThis) {
 				},
 			});
 		}
+		// The guest-op recorder, if the harness installed one.
+		//
+		// `location` does not go through `installNative` -- it cannot be
+		// Proxy()d, so scramjet builds a stand-in object and defines onto that
+		// directly -- so the one hook in `installNative` does not reach it.
+		// It is also the API where the gap matters most: scramjet answers
+		// `hostname`, `search` and `referrer` out of the URL string it already
+		// holds, touching no native at all, so there is no binding record on
+		// either side to compare. Measured on rateyourmusic:
+		// `Location.hostname.get` 35 calls on the oracle against 0 anywhere in
+		// the sandbox.
+		recordGuestOps({ debugname: `Location.${prop}`, key: prop }, desc);
 		Object_defineProperty(fakeLocation, prop, desc);
 	}
 

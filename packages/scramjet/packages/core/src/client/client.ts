@@ -62,6 +62,7 @@ import {
 	type IDLValidator,
 } from "./webidl";
 import { createIndirectEval } from "./shared/eval";
+import { guestOpAround, guestOpMemberName, guestOpNote } from "./guestop";
 import { NativeErrors } from "./nativeerror";
 
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
@@ -161,6 +162,15 @@ type NativeMember = {
 	owner: any;
 	key: string | symbol;
 	descriptor: PropertyDescriptor;
+	/**
+	 * The name the call site used, e.g. `Element.prototype.setAttribute`.
+	 *
+	 * Carried through to `installNative` so the guest-op recorder can name what
+	 * it is recording. Derived from the owner instead, it would have to read a
+	 * constructor off a patched object, and the answer would be whatever the
+	 * previous patch said.
+	 */
+	debugname: string;
 };
 
 export type ScramjetModule = {
@@ -469,7 +479,8 @@ export class ScramjetClient {
 				if (!frame.name) {
 					// the top frame is scramjet-controlled, but it has no name. this is user error
 					dbg.error(
-						"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
+						"topFrameName: the topmost scramjet frame's element has no `name`," +
+							" so `_top` cannot be targeted"
 					);
 
 					return null;
@@ -504,9 +515,10 @@ export class ScramjetClient {
 						}
 
 						if (!frame.name) {
-							// the parent frame is scramjet-controlled, but it has no name. this is user error
+							// the parent frame is scramjet-controlled, but it has no name
 							dbg.error(
-								"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
+								"parentFrameName: the parent's element has no `name`," +
+									" so `_parent` cannot be targeted"
 							);
 
 							return null;
@@ -520,7 +532,8 @@ export class ScramjetClient {
 						if (!frame.name) {
 							// the parent frame is not scramjet-controlled, so we can't get a parent frame name
 							dbg.error(
-								"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
+								"parentFrameName: our own element has no `name` and the parent" +
+									" is not scramjet-controlled, so `_parent` cannot be targeted"
 							);
 
 							return null;
@@ -887,7 +900,7 @@ return { apply, construct };
 					return null;
 				}
 
-				return { owner, key, descriptor };
+				return { owner, key, descriptor, debugname };
 			}
 			owner = Object_getPrototypeOf(owner);
 		}
@@ -911,6 +924,16 @@ return { apply, construct };
 	 *     than a guess at them
 	 */
 	private installNative(native: NativeMember, next: PropertyDescriptor): void {
+		// The guest-op recorder is deliberately NOT hooked here.
+		//
+		// This was the one place that could wrap all three mechanisms at once,
+		// which is exactly why it was the wrong place: what arrives here is a
+		// `Proxy` over the native, and wrapping it in a plain function loses
+		// `[native code]`, loses the target's prototype chain and is not in
+		// `box.unproxy`. Cloudflare's `jsd` census reads that pair out of a
+		// pristine child realm and the sandbox's members came back non-native
+		// (FINDINGS.md #224). Each seam records inside the trap it already
+		// installs -- see `guestop.ts`.
 		next.enumerable = native.descriptor.enumerable;
 		next.configurable = native.descriptor.configurable;
 		if (!("get" in next) && !("set" in next)) {
@@ -934,6 +957,12 @@ return { apply, construct };
 		const native = this.resolveNative(target, prop, debugname ?? prop);
 		if (!native) return;
 
+		// The name the oracle's trace spells this member with. `resolveNative`
+		// has already walked to the object that really owns it, so the
+		// interface name is readable here and only here -- at install time,
+		// before any guest code exists to have replaced `constructor`.
+		const guestOpMember = guestOpMemberName(native);
+
 		// read through the chain rather than off the descriptor: this is also
 		// the path an accessor-backed member takes, and its value is whatever
 		// the getter answers
@@ -947,6 +976,25 @@ return { apply, construct };
 
 		if (handler.construct) {
 			h.construct = function (
+				constructor: any,
+				args: any[],
+				newTarget: AnyFunction
+			) {
+				// Recorded HERE rather than in `recordGuestOps`, which wraps the
+				// installed descriptor. A constructor cannot be wrapped that way
+				// -- a plain function loses `new.target` and `new` through it
+				// throws -- so `installNative`'s hook skips it and this is the
+				// only place a construction is visible. `Window.FormData`,
+				// `HTMLElement`, `IntersectionObserver`, `MutationObserver` and
+				// `URL` all reached the differ as "the sandbox never did this".
+				//
+				// Nesting is handled by depth: when the descriptor wrapper is
+				// also in play, it entered first and this one records nothing.
+				return guestOpAround(debugname ?? prop, "construct", args, () =>
+					constructImpl(constructor, args, newTarget)
+				);
+			};
+			const constructImpl = function (
 				constructor: any,
 				args: any[],
 				newTarget: AnyFunction
@@ -982,7 +1030,12 @@ return { apply, construct };
 		}
 
 		if (handler.apply) {
-			h.apply = (fn: any, that: any, args: any[]) => {
+			// Recorded HERE, around the trap this proxy already has, rather than
+			// around the descriptor `installNative` receives. Same cut, same
+			// depth semantics as `construct` above, and nothing extra installed:
+			// the member the page ends up with is still the Proxy.
+			guestOpNote(guestOpMember, "call");
+			const applyImpl = (fn: any, that: any, args: any[]) => {
 				let returnValue: any = undefined;
 				let earlyreturn = false;
 
@@ -1030,6 +1083,10 @@ return { apply, construct };
 
 				return applyFn(ctx.fn, ctx.this, ctx.args);
 			};
+			h.apply = (fn: any, that: any, args: any[]) =>
+				guestOpAround(guestOpMember, "call", args, () =>
+					applyImpl(fn, that, args)
+				);
 		}
 
 		const proxy = new Proxy(value, h);
@@ -1098,12 +1155,22 @@ return { apply, construct };
 		// declares a setter for a readonly attribute used to get one installed,
 		// which is a shape no browser has. A data property has no halves to
 		// match, so a trap over one may declare whichever it needs
+		// The guest op is recorded INSIDE these closures rather than around the
+		// descriptor they go into. They are scramjet's own functions either
+		// way, so this adds no frame the page can see -- where wrapping the
+		// descriptor after the fact added one, and a `Proxy` is not an option
+		// here because an accessor half is a plain function to begin with.
+		const guestOpMember = guestOpMemberName(native);
+
 		if (descriptor.get && (old.get || !isAccessor)) {
 			replaced = true;
+			guestOpNote(guestOpMember, "get");
 			next.get = function () {
 				ctx.this = this;
 
-				return apply(descriptor.get, descriptor, [ctx]);
+				return guestOpAround(guestOpMember, "get", [], () =>
+					apply(descriptor.get, descriptor, [ctx])
+				);
 			};
 		} else if (old.get) {
 			next.get = old.get;
@@ -1111,10 +1178,13 @@ return { apply, construct };
 
 		if (descriptor.set && (old.set || !isAccessor)) {
 			replaced = true;
+			guestOpNote(guestOpMember, "set");
 			next.set = function (v: any) {
 				ctx.this = this;
 
-				apply(descriptor.set, descriptor, [ctx, v]);
+				guestOpAround(guestOpMember, "set", [v], () =>
+					apply(descriptor.set, descriptor, [ctx, v])
+				);
 			};
 		} else if (old.set) {
 			next.set = old.set;
@@ -1187,7 +1257,10 @@ return { apply, construct };
 			handler: (...args: any[]) => any,
 			old: ((...args: any[]) => any) | undefined,
 			validate: IDLValidator | undefined,
-			member: string
+			member: string,
+			/** The name the oracle spells this member with, without `get `/`set `. */
+			guestOpMember: string,
+			guestOpKind: "get" | "set" | "call"
 		) => {
 			// settled once, at install time, rather than on every call
 			const isAsync =
@@ -1195,16 +1268,29 @@ return { apply, construct };
 			const target = old || missingHalf;
 			const tramp = this.trampoline(member);
 
+			// Every intercepted getter, setter and method comes through this
+			// trap, which makes it the one place that knows both WHO asked and
+			// WHAT they got -- the thing neither `topScript` nor `entryScript`
+			// can answer, because a shimmed read belongs to the shim on one and
+			// drags the rewriter in on the other (RULES.md #209).
+			//
+			// It is also where the record belongs rather than around the
+			// descriptor: what is installed stays this Proxy, so it still reads
+			// as `[native code]`, still satisfies `instanceof` in a child realm,
+			// and is still in `box.unproxy`.
+			guestOpNote(guestOpMember, guestOpKind);
 			const proxy = new Proxy(target, {
 				apply(_, thisArg, args) {
-					return attemptToCallHandler(
-						handler,
-						thisArg,
-						args,
-						(a) => tramp.apply(target, thisArg, a),
-						validate,
-						isAsync,
-						tramp
+					return guestOpAround(guestOpMember, guestOpKind, args, () =>
+						attemptToCallHandler(
+							handler,
+							thisArg,
+							args,
+							(a) => tramp.apply(target, thisArg, a),
+							validate,
+							isAsync,
+							tramp
+						)
 					);
 				},
 			});
@@ -1243,7 +1329,9 @@ return { apply, construct };
 							handlerDescriptor.get,
 							oldDescriptor.get,
 							undefined,
-							`get ${member}`
+							`get ${member}`,
+							member,
+							"get"
 						)
 					: oldDescriptor.get;
 				newDescriptor.set = handlerDescriptor.set
@@ -1251,7 +1339,9 @@ return { apply, construct };
 							handlerDescriptor.set,
 							oldDescriptor.set,
 							memberValidator(this.box, handlerDescriptor.set, true),
-							`set ${member}`
+							`set ${member}`,
+							member,
+							"set"
 						)
 					: oldDescriptor.set;
 			} else {
@@ -1261,7 +1351,9 @@ return { apply, construct };
 								handlerDescriptor.value,
 								oldDescriptor.value,
 								memberValidator(this.box, handlerDescriptor.value),
-								member
+								member,
+								member,
+								"call"
 							)
 						: oldDescriptor.value;
 			}
@@ -1307,17 +1399,23 @@ return { apply, construct };
 				// constructor isn't a field, replace the entire class on the global with a proxy
 				const proxy = new Proxy(baseclass, {
 					construct: (_, args, newTarget) =>
-						attemptToCallHandler(
-							value,
-							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
-							args,
-							// a rejected argument list has to reach the native as a
-							// *construction*, or the page sees "cannot be invoked
-							// without 'new'" where it should see the arity TypeError
-							(a) => tramp.construct(nativeCtor, a, newTarget),
-							validate,
-							false,
-							tramp
+						// The other place a construction is visible. `Intercept`
+						// replaces the whole interface object on the global, so
+						// there is no descriptor for `installNative`'s hook to
+						// wrap and the guest's `new Request(...)` was unrecorded.
+						guestOpAround(`${globalname}.constructor`, "construct", args, () =>
+							attemptToCallHandler(
+								value,
+								nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
+								args,
+								// a rejected argument list has to reach the native as a
+								// *construction*, or the page sees "cannot be invoked
+								// without 'new'" where it should see the arity TypeError
+								(a) => tramp.construct(nativeCtor, a, newTarget),
+								validate,
+								false,
+								tramp
+							)
 						),
 				});
 
