@@ -4,26 +4,262 @@
 		<title>Scramjet Test Harness</title>
 		<script src="/scramjet/scramjet.js"></script>
 		<script src="/controller/controller.api.js"></script>
-		<script src="/libcurl/index.js"></script>
-		<script src="/runway-cleartext-https-transport.js"></script>
-	</head>
+		<script src="/sbxdiff-transport.js"></script>
+		<!--
+			The live transport -- epoxy, or libcurl behind ?sbxdiffLibcurl -- is
+			loaded on demand, from the non-sbxdiff branch of init(), not here.
+
+			Loading libcurl costs 128 crypto.getRandomValues draws at module
+			init, and epoxy's TLS draws far more than that. Under the oracle's
+			deterministic PRNG the keystream counter is shared by every realm on
+			a thread, so those draws shift every value the guest page afterwards
+			sees -- and the guest page is the thing being compared. Neither is
+			loaded at all on the store-backed path, which is the only one the
+			differ runs.
+		--></head>
+	<!--
+		The guest frame fills the viewport exactly, and the harness's own chrome
+		floats over it without taking input.
+
+		In the ORACLE the page under test IS the top-level document: it owns the
+		whole viewport, and a pointer at root (1,1) is a pointer at (1,1) in its
+		own client coordinates. Here it is an iframe, so anything short of
+		`inset: 0` makes the two runs disagree twice over. Root coordinates stop
+		addressing the same place -- measured, a pointer move at (1,1) landed on
+		this page's `<h1>` and the guest document never saw a pointer at all,
+		which is why rateyourmusic's `$("body").on("mousemove", ...)` check ran
+		in the oracle and not in the sandbox. And `height: 80vh` below a heading
+		means `window.innerHeight` and `outerHeight` differ between the runs --
+		values that same check posts to the server verbatim.
+
+		`pointer-events: none` on the chrome, `auto` on the button alone: the
+		status stays readable for a manual `serve.ts --open sandbox` session
+		without intercepting a single event meant for the guest. Bottom-left, so
+		it is nowhere near the corner the pointer sweeps.
+	-->
+	<style>
+		html,
+		body {
+			margin: 0;
+			height: 100%;
+		}
+		#testframe {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			border: 0;
+			z-index: 1;
+		}
+		#chrome {
+			position: fixed;
+			left: 0;
+			bottom: 0;
+			z-index: 2;
+			pointer-events: none;
+			font:
+				12px/1.5 ui-monospace,
+				monospace;
+			background: rgba(255, 255, 255, 0.85);
+			padding: 4px 8px;
+		}
+		#chrome h1 {
+			font-size: 13px;
+			margin: 0;
+		}
+		#reload-btn {
+			pointer-events: auto;
+		}
+	</style>
 	<body>
-		<h1>Scramjet Test Harness</h1>
-		<div id="status">Initializing...</div>
-		<button id="reload-btn" style="display: none; margin: 8px 0">
-			🔄 Reload Test
-		</button>
-		<iframe
-			id="testframe"
-			style="width: 100%; height: 80vh; border: 1px solid #ccc"
-		></iframe>
+		<iframe id="testframe"></iframe>
+		<div id="chrome">
+			<h1>Scramjet Test Harness</h1>
+			<div id="status">Initializing...</div>
+			<button id="reload-btn" style="display: none; margin: 4px 0">
+				🔄 Reload Test
+			</button>
+		</div>
 
 		<script>
 			const statusEl = document.getElementById("status");
 			const testframe = document.getElementById("testframe");
 			const reloadBtn = document.getElementById("reload-btn");
+
+			// The guest frame has to BE the viewport, or the two runs disagree on
+			// every viewport number and on where root-coordinate input lands. Logged
+			// rather than asserted: it is captured in the run's stderr, so a
+			// regression shows up next to whatever it caused.
+			addEventListener("load", () => {
+				const r = testframe.getBoundingClientRect();
+				console.info(
+					`sbxdiff-harness: viewport ${innerWidth}x${innerHeight} frame ` +
+						`${r.width}x${r.height} at ${r.x},${r.y}`
+				);
+			});
+
+			// ?sbxdiffForms=1 reports every form in the guest tree, and every
+			// call to submit one.
+			//
+			// Cloudflare's interstitial redeems a passed challenge by POSTing a
+			// form back to the page it is standing in for; measured against a
+			// direct load, that POST carries a 2606-byte body and is what turns
+			// the clearance into the real page. The proxied run issues no POST
+			// at all -- it re-GETs and is challenged again -- so the question is
+			// whether the form is missing, or present and never submitted.
+			//
+			// The guest frame is same-origin here (it is served from this
+			// origin, rewritten), so this can read it directly. That is only
+			// true of the proxy: nothing about this probe works against the
+			// oracle, which is why it lives in the harness and not in a page.
+			if (new URLSearchParams(location.search).has("sbxdiffForms")) {
+				const log = (msg) => console.info(`sbxdiff-forms: ${msg}`);
+				const seen = new Set();
+				const once = (key) => {
+					if (seen.has(key)) return false;
+					seen.add(key);
+
+					return true;
+				};
+
+				const hook = (win, path) => {
+					if (!win || win.__sbxdiffFormHook) return;
+					win.__sbxdiffFormHook = true;
+					log(`hooked ${path} at ${win.location?.href?.slice(0, 90)}`);
+
+					// Every way out of a page, so the branch the interstitial
+					// takes is visible rather than inferred from what reached
+					// the wire. It reaches the wire as nothing at all, which is
+					// the thing being explained.
+					const proto = win.HTMLFormElement.prototype;
+					const origSubmit = proto.submit;
+					proto.submit = function (...args) {
+						log(
+							`${path} form.submit() id=${JSON.stringify(this.id)} ` +
+								`method=${JSON.stringify(this.getAttribute("method"))} ` +
+								`action=${JSON.stringify(this.getAttribute("action"))}`
+						);
+
+						return origSubmit.apply(this, args);
+					};
+					const origRequestSubmit = proto.requestSubmit;
+					if (origRequestSubmit) {
+						proto.requestSubmit = function (...args) {
+							log(`${path} form.requestSubmit() id=${JSON.stringify(this.id)}`);
+
+							return origRequestSubmit.apply(this, args);
+						};
+					}
+					win.addEventListener(
+						"submit",
+						(e) =>
+							log(
+								`${path} submit event id=${JSON.stringify(e.target?.id)} ` +
+									`defaultPrevented=${e.defaultPrevented}`
+							),
+						true
+					);
+
+					// Cloudflare builds its redemption form in JS and submits it
+					// straight away, so polling for it in the DOM is a race this
+					// probe loses: by the time the next tick walks the tree the
+					// form has been created, submitted and the page replaced.
+					// Catching the creation instead is not a race.
+					const doc = win.document;
+					const origCreate = doc.createElement;
+					doc.createElement = function (tag, ...rest) {
+						const el = origCreate.call(this, tag, ...rest);
+						if (String(tag).toLowerCase() === "form") {
+							log(`${path} createElement("form")`);
+						}
+
+						return el;
+					};
+					for (const name of ["reload", "assign", "replace"]) {
+						const orig = win.location[name];
+						if (typeof orig !== "function") continue;
+						try {
+							win.location[name] = function (...args) {
+								log(
+									`${path} location.${name}(${JSON.stringify(args[0] ?? "")})`
+								);
+
+								return orig.apply(win.location, args);
+							};
+						} catch {
+							/* some realms refuse; the submit hooks still apply */
+						}
+					}
+				};
+
+				const walk = (doc, path) => {
+					let forms;
+					try {
+						forms = doc.querySelectorAll("form");
+					} catch {
+						return; // cross-origin, nothing to say
+					}
+					hook(doc.defaultView, path);
+					for (const f of forms) {
+						if (!once(`${path}|${f.id}|${f.getAttribute("action")}`)) continue;
+						log(
+							`${path} <form id=${JSON.stringify(f.id)} ` +
+								`method=${JSON.stringify(f.getAttribute("method"))} ` +
+								`action=${JSON.stringify(f.getAttribute("action"))} ` +
+								`inputs=${f.querySelectorAll("input").length}>`
+						);
+					}
+					// Cloudflare keeps its decision in here. Which keys exist
+					// says how far the interstitial got.
+					const opt = doc.defaultView?._cf_chl_opt;
+					if (opt && once(`${path}|opt|${Object.keys(opt).join(",")}`)) {
+						log(`${path} _cf_chl_opt keys: ${Object.keys(opt).join(",")}`);
+					}
+					for (const frame of doc.querySelectorAll("iframe")) {
+						try {
+							if (frame.contentDocument) {
+								walk(
+									frame.contentDocument,
+									`${path}/${frame.name || "iframe"}`
+								);
+							}
+						} catch {
+							/* cross-origin */
+						}
+					}
+				};
+
+				let ticks = 0;
+				setInterval(() => {
+					ticks++;
+					try {
+						if (testframe.contentDocument)
+							walk(testframe.contentDocument, "guest");
+						// A heartbeat, so silence from the hooks reads as "the
+						// page did none of these" rather than "the probe never
+						// ran".
+						if (ticks % 40 === 0)
+							log(`alive, tick ${ticks}, ${seen.size} seen`);
+					} catch {
+						/* not ready */
+					}
+					// 250 ms, not a second: the hooks have to be installed on a
+					// document before it does the thing being watched for, and a
+					// freshly navigated page gets on with it immediately. The
+					// createElement hook above is what actually removes the race
+					// -- this only narrows the window before it is installed.
+				}, 250);
+			}
 			const { Controller } = $scramjetController;
-			const LibcurlClient = window.LibcurlTransport.LibcurlClient;
+
+			const loadScript = (src) =>
+				new Promise((resolve, reject) => {
+					const el = document.createElement("script");
+					el.src = src;
+					el.onload = resolve;
+					el.onerror = () => reject(new Error(`failed to load ${src}`));
+					document.head.appendChild(el);
+				});
 
 			let controller;
 			let scramjetFrame;
@@ -62,19 +298,98 @@
 
 				statusEl.textContent = "Initializing controller...";
 
-				const innerTransport = new LibcurlClient({
-					wisp: "ws://localhost:4501/",
-				});
-				const transport = new RunwayCleartextHttpsTransport(innerTransport);
+				// sbxdiff: serve every upstream request from a recorded store
+				// instead of the live internet. Opt-in via ?sbxdiffStore, so the
+				// normal runway path is untouched.
+				//
+				// This also removes the wisp WebSocket, which is what deadlocks
+				// virtual time: kDeterministicLoading pauses the clock while a
+				// load is outstanding, and the wisp transport needs timers to
+				// make progress, so the load waits on the timer and the timer
+				// waits on the clock.
+				let transport;
+				// Port only, for the same reason as the base64 hash: a full
+				// encoded endpoint URL embedded the target origin in this URL.
+				const sbxdiffStore = new URLSearchParams(location.search).get(
+					"sbxdiffStore"
+				);
+				// Two live transports were tried and neither is here.
+				//
+				// One fetched from NODE. It could answer "does scramjet load
+				// this site" and never "does this site's anti-bot accept the
+				// sandbox", because Node's TLS and HTTP/2 are not Chromium's --
+				// the sandbox solved a challenge, was ISSUED a clearance cookie,
+				// and then got 403 on every request that presented it, which is
+				// what a clearance bound to a different client's handshake does.
+				//
+				// The other fetched through BLINK. Chromium recomposes the
+				// request afterwards: it re-derives `Sec-Fetch-*`, silently drops
+				// every forbidden header scramjet set (`Cookie` first among
+				// them) and attaches client hints for the PROXY's origin. Getting
+				// scramjet's bytes through it took a private header carrier and
+				// three patched Chromium call sites, and the wire still differed.
+				// None of that is what production does, so both are gone and the
+				// wisp path below is the only live transport.
+				if (sbxdiffStore) {
+					transport = new SbxdiffTransport({
+						endpoint: `http://localhost:${sbxdiffStore}/__sbxdiff/fetch`,
+					});
+					window.__sbxdiffTransport = transport;
+				} else {
+					await loadScript("/runway-cleartext-https-transport.js");
+					const params = new URLSearchParams(location.search);
+					let live;
+					let label;
+					// libcurl is the fallback, not the default: both do TLS in
+					// the page, but only epoxy's handshake is ours to shape, and
+					// a managed challenge fingerprints the handshake. Kept
+					// reachable because "is epoxy better here" is a question
+					// that has to be answered by running both, on this page,
+					// through the same instrumentation.
+					if (params.has("sbxdiffLibcurl")) {
+						await loadScript("/libcurl/index.js");
+						live = new window.LibcurlTransport.LibcurlClient({
+							wisp: "ws://localhost:4501/",
+						});
+						label = "libcurl";
+					} else {
+						const { SbxdiffEpoxyTransport } = await import(
+							"/sbxdiff-epoxy-transport.js"
+						);
+						live = new SbxdiffEpoxyTransport("ws://localhost:4501/");
+						label = "epoxy";
+					}
+					// Outside the cleartext wrapper, so what it logs is what the
+					// transport is actually asked for after the https->loopback
+					// rewrite, not before it.
+					const { SbxdiffLiveLogTransport } = await import(
+						"/sbxdiff-livelog-transport.js"
+					);
+					const logged = new SbxdiffLiveLogTransport(
+						new RunwayCleartextHttpsTransport(live),
+						label,
+						params.has("sbxdiffHdr"),
+						params.get("sbxdiffRecord")
+					);
+					window.__sbxdiffTransport = logged;
+					transport = logged;
+				}
 
 				const sw = navigator.serviceWorker.controller ?? registration.active;
 				if (!sw) {
 					throw new Error("No service worker available for controller");
 				}
 
+				// ?sbxdiffProbe=<path> runs that script at the top of every guest
+				// document, before the page's own. Cloudflare caches
+				// `document.createElement` and `HTMLFormElement.prototype.submit`
+				// at parse time, so a hook installed by polling from out here is
+				// always too late -- it watches a page that has already decided.
+				const probe = new URLSearchParams(location.search).get("sbxdiffProbe");
 				controller = new Controller({
 					serviceworker: sw,
 					transport,
+					...(probe ? { config: { probePath: probe } } : {}),
 				});
 				window.__runwayController = controller;
 
@@ -87,8 +402,18 @@
 
 				window.__runwayNavigate = (url) => {
 					statusEl.textContent = `Loading test: ${url}`;
-					// Store the URL for reload support
-					sessionStorage.setItem("__runway_last_test", url);
+					// Store the URL for reload support.
+					//
+					// Skipped for a hash-driven (sbxdiff) run: the hash already
+					// carries the target, and a storage write holds a
+					// WebScopedVirtualTimePauser until the browser process acks
+					// it. Under kDeterministicLoading that pauser stops virtual
+					// time, and its ack lands on a queue the pause has fenced --
+					// so the clock never restarts. Same shape as
+					// crbug.com/1455267.
+					if (location.hash.length <= 1) {
+						sessionStorage.setItem("__runway_last_test", url);
+					}
 					reloadBtn.style.display = "inline-block";
 					// injectTestFunctions();
 					console.log("navigating to", url);
@@ -110,6 +435,24 @@
 				};
 
 				reloadBtn.addEventListener("click", window.__runwayReload);
+
+				// sbxdiff: drive from the URL so a run needs no CDP session.
+				// Takes precedence over the sessionStorage reload path, and
+				// suppresses it, so a traced run is not also replaying the
+				// previous test.
+				if (location.hash.length > 1) {
+					// b64: keeps the target out of this page's own URL --
+					// --sbxdiff-virtual-time-after matches a URL substring, and an
+					// embedded copy made THIS page match as the guest realm,
+					// enabling virtual time during bootstrap.
+					const h = location.hash.slice(1);
+					window.__runwayNavigate(
+						h.startsWith("b64:") ? atob(h.slice(4)) : decodeURIComponent(h)
+					);
+					console.log("Harness ready, driven by location.hash");
+
+					return;
+				}
 
 				// Auto-navigate to last test on reload
 				const lastTest = sessionStorage.getItem("__runway_last_test");

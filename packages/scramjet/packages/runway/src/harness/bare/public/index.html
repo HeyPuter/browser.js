@@ -23,6 +23,19 @@
 				testframe.src = url;
 			};
 
+			// sbxdiff: the target may be base64 so it does not appear literally
+			// in this page's URL. --sbxdiff-virtual-time-after matches on a URL
+			// substring, and an embedded copy of the target made THIS page match
+			// as the guest realm -- turning virtual time on during bootstrap,
+			// which is exactly what the deferral exists to avoid.
+			const sbxdiffTarget = (h) =>
+				h.startsWith("b64:") ? atob(h.slice(4)) : decodeURIComponent(h);
+
+			// sbxdiff: drive from the URL so a run needs no CDP session.
+			if (location.hash.length > 1) {
+				window.__runwayNavigate(sbxdiffTarget(location.hash.slice(1)));
+			}
+
 			console.log("Bare harness ready, __runwayNavigate exposed");
 		</script>
 	</body>
