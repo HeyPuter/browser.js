@@ -3,6 +3,7 @@ import { iconAdd, iconOpen, iconLink, iconBrush, iconTrash } from "../icons";
 import { createMenu, createMenuCustom, setContextMenu } from "@components/Menu";
 import { BookmarkPopup } from "@components/BookmarkPopup";
 import { profileService, settingsService, tabsService } from "..";
+import { Favicon } from "./Favicon";
 
 export function BookmarksStrip(
 	this: FC<{
@@ -78,7 +79,7 @@ export function BookmarksStrip(
 						tabsService.activetab.pushNavigate(new URL(b.url));
 					}}
 				>
-					<img src={use(b.favicon)}></img>
+					<Favicon domain={b.url.hostname}></Favicon>
 					<span>{use(b.title)}</span>
 				</button>
 			))}

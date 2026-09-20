@@ -8,7 +8,7 @@ import { profileService } from "..";
 
 export function BookmarkPopup(
 	this: FC<{
-		bookmark: Stateful<BookmarkEntry>;
+		bookmark: BookmarkEntry;
 		new: boolean;
 	}>
 ) {

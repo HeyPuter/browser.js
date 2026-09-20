@@ -14,13 +14,11 @@ export type ProfileServiceState = {
 export type SerializedBookmarkEntry = {
 	url: string;
 	title: string;
-	favicon: string | null;
 };
 
 export class BookmarkEntry extends StatefulClass {
 	url!: URL;
 	title!: string;
-	favicon!: string | null;
 
 	constructor(partial?: Partial<BookmarkEntry>) {
 		super();
@@ -31,14 +29,12 @@ export class BookmarkEntry extends StatefulClass {
 		return {
 			url: this.url.href,
 			title: this.title,
-			favicon: this.favicon,
 		};
 	}
 	static deserialize(data: SerializedBookmarkEntry): BookmarkEntry {
 		return new BookmarkEntry({
 			url: new URL(data.url),
 			title: data.title,
-			favicon: data.favicon,
 		});
 	}
 }
@@ -63,19 +59,16 @@ export class ProfileService extends Service {
 			this.globalhistory = [];
 			this.bookmarks = [
 				new BookmarkEntry({
-					url: new URL("https://www.google.com"),
 					title: "Google",
-					favicon: "https://www.google.com/favicon.ico",
+					url: new URL("https://www.google.com"),
 				}),
 				new BookmarkEntry({
-					url: new URL("https://www.youtube.com"),
 					title: "YouTube",
-					favicon: "https://www.youtube.com/favicon.ico",
+					url: new URL("https://www.youtube.com"),
 				}),
 				new BookmarkEntry({
-					url: new URL("https://developer.puter.com"),
 					title: "Puter Developers",
-					favicon: "https://developer.puter.com/favicons/favicon-16x16.png",
+					url: new URL("https://developer.puter.com"),
 				}),
 			];
 		}

@@ -23,7 +23,6 @@ export function BookmarkButton(this: FC<{ url: URL }>) {
 				if (!bookmark) {
 					bookmark = new BookmarkEntry({
 						url: tabsService.activetab.url,
-						favicon: tabsService.activetab.icon,
 						title:
 							tabsService.activetab.title || tabsService.activetab.url.hostname,
 					});

@@ -24,8 +24,8 @@ export function Favicon(
 			// TODO: does this cause flickering?
 			this.url = defaultFaviconUrl;
 			faviconService.fetchFavicon(domain).then((favicon) => {
-				if (favicon?.iconUrl !== this.url)
-					this.url = favicon?.iconUrl || defaultFaviconUrl;
+				if (favicon?.iconData !== this.url)
+					this.url = favicon?.iconData || defaultFaviconUrl;
 			});
 		} else {
 			if (this.url !== defaultFaviconUrl) this.url = defaultFaviconUrl;
