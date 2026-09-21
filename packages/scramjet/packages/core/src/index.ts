@@ -5,6 +5,7 @@
 import "./global.d";
 import { atob } from "@/shared/snapshot";
 import { setWasm } from "@rewriters/wasm";
+import { pstAvailable } from "@/shared/incumbency";
 import { ScramjetVersionInfo, ScramjetConfig } from "./types";
 
 declare const VERSION: string;
@@ -32,6 +33,7 @@ export const defaultConfig: ScramjetConfig = {
 		selfid: "$scramjet$self",
 		templocid: "$scramjet$temploc",
 		tempreceiverid: "$scramjet$tempreceiver",
+		tempcalleeid: "$scramjet$tempcallee",
 		tempunusedid: "$scramjet$tempunused",
 	},
 	flags: {
@@ -46,7 +48,14 @@ export const defaultConfig: ScramjetConfig = {
 		debugTrampolines: false,
 		encapsulateWorkers: true,
 		debugSourceURL: false,
-		incumbency: "pst",
+		// `pst` is the cheapest mode and the one that shows the page nothing,
+		// but it wants `Error.prepareStackTrace` and `CallSite.getScriptHash`,
+		// which are V8's alone. `lazystamp` needs no stack at all - the call
+		// site hands its realm over as it calls - and is also invisible to the
+		// page, where `nonce` would put the identity in a `//# sourceURL` the
+		// page can read. Chosen here, once, rather than substituted later: an
+		// `incumbency` set by hand is used exactly as given
+		incumbency: pstAvailable ? "pst" : "lazystamp",
 	},
 	siteFlags: {},
 	maskedfiles: [],

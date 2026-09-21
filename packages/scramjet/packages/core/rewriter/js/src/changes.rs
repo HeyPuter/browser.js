@@ -24,6 +24,16 @@ macro_rules! change {
 }
 pub(crate) use change;
 
+/// what a callee that is not an ordinary member access is called with
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CallReceiver {
+	/// a plain callee - `f()` - has no receiver
+	Undefined,
+	/// `super.m()` looks the method up on the home object but calls it with
+	/// the `this` the method already has
+	This,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum JsChangeType<'alloc: 'data, 'data> {
 	/// insert `${cfg.wrapfn}(`
@@ -79,11 +89,25 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	CallFnLeft {
 		computed: bool,
 		optional: bool,
+		optional_call: bool,
 	},
 	CallFnRight {
 		computed: bool,
+		optional_call: bool,
 	},
-	LiteralCallFnLeft,
+	/// replace span with `${cfg.callfn}(${cfg.selfid},${receiver},`
+	LiteralCallFnLeft {
+		receiver: CallReceiver,
+		optional_call: bool,
+	},
+	/// replace span with `,${cfg.tempcalleeid}==null?undefined:${cfg.callfn}(${cfg.selfid},${receiver},${cfg.tempcalleeid},`
+	LiteralCallFnRight {
+		receiver: CallReceiver,
+	},
+	/// replace span with `,${cfg.tempreceiverid}==null?undefined:(${cfg.tempreceiverid}=${cfg.tempreceiverid}.`
+	ChainGuard {
+		computed: bool,
+	},
 	OpeningParen,
 	/// insert `)`
 	ClosingParen {
@@ -268,29 +292,81 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 			Ty::ImportFn => LL::replace(transforms![&cfg.importfn, "(\"", &flags.base, "\","]),
 			Ty::MetaFn => LL::replace(transforms![&cfg.metafn, "(import.meta,\"", &flags.base, "\")"]),
 			Ty::CallFnPrelude => LL::replace(transforms!["(", &cfg.tempreceiverid, "="]),
-			Ty::CallFnLeft { computed, optional } => {
-				if computed {
-					if optional {
-						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"?.["])
-					} else {
-						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"["])
-					}
-				} else {
-					if optional {
-						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"?."])
-					} else {
-						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"."])
-					}
+			Ty::CallFnLeft { computed, optional, optional_call } => {
+				let access: &str = if computed { "[" } else { "." };
+
+				// a `?.` on this link short circuits the call, so the lookup
+				// past the guard is an ordinary one: a method that is not
+				// there still throws, which is what the chain would have done.
+				// A `?.` on the call itself short circuits on the looked up
+				// value instead, so that has to be parked before the arguments
+				// are evaluated - `f?.(x)` never evaluates `x` when `f` is
+				// nullish
+				match (optional, optional_call) {
+					(false, false) => LL::replace(transforms![
+						",", &cfg.callfn, "(", &cfg.selfid, ",", &cfg.tempreceiverid, ",",
+						&cfg.tempreceiverid, access
+					]),
+					(true, false) => LL::replace(transforms![
+						",", &cfg.tempreceiverid, "==null?undefined:", &cfg.callfn, "(",
+						&cfg.selfid, ",", &cfg.tempreceiverid, ",", &cfg.tempreceiverid, access
+					]),
+					(false, true) => LL::replace(transforms![
+						",", &cfg.tempcalleeid, "=", &cfg.tempreceiverid, access
+					]),
+					(true, true) => LL::replace(transforms![
+						",", &cfg.tempreceiverid, "==null?undefined:(", &cfg.tempcalleeid, "=",
+						&cfg.tempreceiverid, access
+					]),
 				}
 			},
-			Ty::CallFnRight { computed } => {
-				if computed {
-					LL::replace(transforms!["],"])
+			Ty::CallFnRight { computed, optional_call } => {
+				let close: &str = if computed { "]," } else { "," };
+
+				if optional_call {
+					LL::replace(transforms![
+						close, &cfg.tempcalleeid, "==null?undefined:", &cfg.callfn, "(",
+						&cfg.selfid, ",", &cfg.tempreceiverid, ",", &cfg.tempcalleeid, ","
+					])
 				} else {
-					LL::replace(transforms![","])
+					LL::replace(transforms![close])
 				}
 			},
-			Ty::LiteralCallFnLeft => LL::replace(transforms![&cfg.callfn, "(null,"]),
+			Ty::ChainGuard { computed } => LL::replace(transforms![
+				",", &cfg.tempreceiverid, "==null?undefined:(", &cfg.tempreceiverid, "=",
+				&cfg.tempreceiverid, if computed { "[" } else { "." }
+			]),
+			Ty::LiteralCallFnLeft { receiver, optional_call } => {
+				// a `?.` on the call short circuits on the callee itself, so
+				// it is parked before the arguments are evaluated
+				if optional_call {
+					LL::replace(transforms!["(", &cfg.tempcalleeid, "="])
+				} else {
+					LL::replace(transforms![
+						&cfg.callfn,
+						"(",
+						&cfg.selfid,
+						match receiver {
+							CallReceiver::Undefined => ",undefined,",
+							CallReceiver::This => ",this,",
+						}
+					])
+				}
+			}
+			Ty::LiteralCallFnRight { receiver } => LL::replace(transforms![
+				",",
+				&cfg.tempcalleeid,
+				"==null?undefined:",
+				&cfg.callfn,
+				"(",
+				&cfg.selfid,
+				match receiver {
+					CallReceiver::Undefined => ",undefined,",
+					CallReceiver::This => ",this,",
+				},
+				&cfg.tempcalleeid,
+				","
+			]),
 			Ty::AssignmentLeft { name, op } => LL::replace(transforms![
 				"((t)=>",
 				&cfg.trysetfn,
@@ -353,7 +429,17 @@ impl Ord for JsChange<'_, '_> {
 				(_, Ty::ScramErrFn { .. }) => Ordering::Greater,
 				(Ty::WrapFnRight { .. }, _) => Ordering::Less,
 				(_, Ty::WrapFnRight { .. }) => Ordering::Greater,
-				_ => Ordering::Equal,
+				// an insert at this position has to land before a replace that
+				// consumes text starting here, or the cursor moves past it and
+				// the insert can no longer be applied. Two rewrites meeting at
+				// one offset is the normal case once calls nest: the inner
+				// call's closing paren sits exactly where the outer call's
+				// member access begins
+				_ => match (self.span.is_empty(), other.span.is_empty()) {
+					(true, false) => Ordering::Less,
+					(false, true) => Ordering::Greater,
+					_ => Ordering::Equal,
+				},
 			},
 			x => x,
 		}

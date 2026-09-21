@@ -20,7 +20,7 @@ use oxc::{
 };
 
 use crate::{
-	cfg::{Config, Flags, IncumbencyMode, UrlRewriter}, changes::JsChanges, rewrite::rewrite,
+	cfg::{Config, Flags, IncumbencyMode, UrlRewriter}, changes::{CallReceiver, JsChanges}, rewrite::rewrite,
 };
 
 // required stub markers
@@ -570,37 +570,81 @@ where
 		};
 
 		if should_stamp {
-			match &it.callee {
+			let args = it.arguments_span();
+			let callee = it.callee.get_inner_expression();
+			let member = match callee {
 				Expression::ComputedMemberExpression(c) => {
-					self.jschanges.add(rewrite!(it.span, MemberCallFn {
-						args: it.arguments_span(),
-						object: c.object.span(),
-						expression: c.expression.span(),
-						optional: c.optional,
-						computed: true,
-					}))
+					Some((&c.object, c.expression.span(), c.optional, true))
 				}
 				Expression::StaticMemberExpression(m) => {
-					self.jschanges.add(rewrite!(it.span, MemberCallFn {
-						args: it.arguments_span(),
-						object: m.object.span(),
-						expression: m.property.span(),
-						optional: m.optional,
-						computed: false,
-					}))
+					Some((&m.object, m.property.span(), m.optional, false))
 				}
-				Expression::PrivateFieldExpression(_)=>{
-					// even if you set `this.#p()` to a native method, it will always throw illegal invocation or a typeerror
-					// if you ever use this for something other than incumbency stamping this must be handled properly
-				}
-				_=>{
+				_ => None,
+			};
+
+			match member {
+				// `super.m()` looks the method up on the home object but calls it with the `this` already in scope,
+				// and `super` is a keyword that cannot be parked in a temp. `super.m` does read as a value though,
+				// so hand the lookup over whole and name the receiver directly
+				Some((object, ..))
+					if matches!(object.get_inner_expression(), Expression::Super(_)) =>
+				{
 					self.jschanges.add(rewrite!(it.span, LiteralCallFn {
-						args: it.arguments_span(),
+						args,
 						inner: it.callee.span(),
+						receiver: CallReceiver::This,
+						optional_call: it.optional,
 					}))
 				}
+				Some((object, expression, optional, computed)) => {
+					// splitting the callee into a receiver and a lookup loses the short circuit a `?.` further up
+					// the chain would have done, so every one of them gets a nullish check of its own
+					let mut guards = 0;
+					let mut link = object.get_inner_expression();
+					loop {
+						let (inner, property, optional, computed) = match link {
+							Expression::ComputedMemberExpression(c) => {
+								(&c.object, c.expression.span(), c.optional, true)
+							}
+							Expression::StaticMemberExpression(m) => {
+								(&m.object, m.property.span(), m.optional, false)
+							}
+							_ => break,
+						};
+						if optional {
+							let gap = Span::new(inner.span().end, property.start);
+							self.jschanges.add(rewrite!(gap, ChainGuard { computed }));
+							guards += 1;
+						}
+						link = inner.get_inner_expression();
+					}
+
+					self.jschanges.add(rewrite!(it.span, MemberCallFn {
+						args,
+						object: object.span(),
+						expression,
+						optional,
+						computed,
+						optional_call: it.optional,
+						guards,
+					}))
+				}
+				// even if you set `this.#p()` to a native method, it will always throw illegal invocation or a typeerror
+				// if you ever use this for something other than incumbency stamping this must be handled properly
+				None if matches!(callee, Expression::PrivateFieldExpression(_)) => {}
+				// `super()` runs the parent constructor rather than calling a function value, and `super` does not
+				// read as one - there is nothing here to hand to `callfn`
+				None if matches!(callee, Expression::Super(_)) => {}
+				// anything else is called with no receiver of its own
+				None => self.jschanges.add(rewrite!(it.span, LiteralCallFn {
+					args,
+					inner: it.callee.span(),
+					receiver: CallReceiver::Undefined,
+					optional_call: it.optional,
+				})),
 			}
 		}
+
 		walk::walk_call_expression(self, it);
 	}
 

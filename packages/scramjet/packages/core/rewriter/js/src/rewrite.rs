@@ -4,7 +4,7 @@ use oxc::{
 };
 use smallvec::{SmallVec, smallvec};
 
-use crate::changes::{JsChange, JsChangeType::{CallFnPrelude, LiteralCallFnLeft}, change};
+use crate::changes::{CallReceiver, JsChange, JsChangeType::{CallFnPrelude, LiteralCallFnLeft, LiteralCallFnRight}, change};
 
 macro_rules! rewrite {
     ($span:expr, $($ty:tt)*) => {
@@ -37,10 +37,22 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 		expression: Span,
 		optional: bool,
 		computed: bool,
+		/// the callee's own `?.`, as in `a.b?.()`
+		optional_call: bool,
+		/// how many `?.` links the object chain still has to short circuit on,
+		/// each of which opens a group this call has to close
+		guards: u32,
 	},
 	LiteralCallFn {
 		args: Option<Span>,
 		inner: Span,
+		receiver: CallReceiver,
+		/// the call's own `?.`, as in `f?.()`
+		optional_call: bool,
+	},
+	/// `,${cfg.tempreceiverid}==null?undefined:(${cfg.tempreceiverid}=${cfg.tempreceiverid}.`
+	ChainGuard {
+		computed: bool,
 	},
 	/// `location` -> `$sj_location`
 	RewriteProperty {
@@ -249,33 +261,61 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 				}
 			)],
 			Self::WrapNew => smallvec![change!(span!(start), OpeningParen), change!(span!(end), ClosingParen { semi: false, replace: false })],
-			Self::MemberCallFn { args, object, expression, optional, computed } => {
+			Self::MemberCallFn { args, object, expression, optional, computed, optional_call, guards } => {
+				// the prelude reaches from the call to the object rather than
+				// sitting at the call's start, so that the parens of a
+				// `(a.b)()` are consumed by it instead of being left behind
+				let mut out: SmallVec<[JsChange; 2]> = smallvec![
+					change!(span!(span object start), CallFnPrelude),
+					change!(span!(object expression between), CallFnLeft { optional, computed, optional_call }),
+				];
+
+				// one group per guard, one for the prelude, and - when there
+				// are no arguments - one for the call whose own parens the
+				// right hand side has just eaten
+				let mut closing = guards + 1;
 				match &args {
-					Some(ar) => smallvec![
-						change!(span!(start), CallFnPrelude),
-						change!(span!(object expression between), CallFnLeft { optional, computed }),
-						change!(span!(expression ar between), CallFnRight { computed }),
-						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
-					],
-					None=>smallvec![
-						change!(span!(start), CallFnPrelude),
-						change!(span!(object expression between), CallFnLeft { optional, computed }),
-						change!(span!(expression span end), CallFnRight { computed }),
-						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
-						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
-					],
+					Some(ar) => out.push(change!(span!(expression ar between), CallFnRight { computed, optional_call })),
+					None => {
+						out.push(change!(span!(expression span end), CallFnRight { computed, optional_call }));
+						closing += 1;
+					}
 				}
+				if optional && optional_call {
+					closing += 1;
+				}
+				for _ in 0..closing {
+					out.push(change!(span!(span span end), ClosingParen { semi: false, replace: false }));
+				}
+
+				out
 			}
-			Self::LiteralCallFn { args, inner } => match &args {
-				Some(ar) => smallvec![
-					change!(span!(start), LiteralCallFnLeft),
-					change!(span!(inner ar between), Replace { text: "," }),
-				],
-				None => smallvec![
-					change!(span!(start), LiteralCallFnLeft),
-					change!(span!(inner span end), ClosingParen { semi: false, replace: true }),
-				],
-			},
+			Self::ChainGuard { computed } => smallvec![change!(span, ChainGuard { computed })],
+			Self::LiteralCallFn { args, inner, receiver, optional_call } => {
+				let mut out: SmallVec<[JsChange; 2]> =
+					smallvec![change!(span!(start), LiteralCallFnLeft { receiver, optional_call })];
+
+				match (&args, optional_call) {
+					(Some(ar), false) => out.push(change!(span!(inner ar between), Replace { text: "," })),
+					(None, false) => out.push(change!(
+						span!(inner span end),
+						ClosingParen { semi: false, replace: true }
+					)),
+					// parking the callee opens a group of its own, and with no
+					// arguments the call's parens have been eaten along with it
+					(Some(ar), true) => {
+						out.push(change!(span!(inner ar between), LiteralCallFnRight { receiver }));
+						out.push(change!(span!(span span end), ClosingParen { semi: false, replace: false }));
+					}
+					(None, true) => {
+						out.push(change!(span!(inner span end), LiteralCallFnRight { receiver }));
+						out.push(change!(span!(span span end), ClosingParen { semi: false, replace: false }));
+						out.push(change!(span!(span span end), ClosingParen { semi: false, replace: false }));
+					}
+				}
+
+				out
+			}
 			Self::ImportFn => smallvec![change!(span, ImportFn)],
 			Self::MetaFn => smallvec![change!(span, MetaFn)],
 			Self::ScramErr { ident } => smallvec![change!(span!(end), ScramErrFn { ident })],

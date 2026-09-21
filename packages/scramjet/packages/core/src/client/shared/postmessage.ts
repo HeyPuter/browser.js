@@ -7,7 +7,7 @@ import {
 } from "@/shared/snapshot";
 import { Arguments } from "@client/webidl";
 import { incumbencyMode, rawCallSites } from "@/shared/incumbency";
-import { realmForFrame } from "./incumbency";
+import { incumbentClient, realmForFrame } from "./incumbency";
 
 export default function (client: ScramjetClient, self: Self) {
 	const getLegacyRealm = (args: any[]) => {
@@ -43,6 +43,12 @@ export default function (client: ScramjetClient, self: Self) {
 					const nonce = client.box.scripthashes[last.getScriptHash()];
 					senderClient = client.box.scriptrealms[nonce].client;
 				} else if (mode === "stamp" || mode === "lazystamp") {
+					// the innermost rewritten call site on the stack is the
+					// script that called in. Nothing there means the host
+					// called this directly, past any script of the page's -
+					// the backup incumbent settings object, which nothing
+					// records yet, so fall back to the realm being called
+					senderClient = incumbentClient(client) ?? client;
 				} else {
 					senderClient = getLegacyRealm([message, targetOrigin, transfer]);
 				}

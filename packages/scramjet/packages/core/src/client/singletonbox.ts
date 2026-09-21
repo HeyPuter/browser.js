@@ -108,6 +108,20 @@ export class SingletonBox {
 	/** `pst` mode's index into {@link scriptrealms}: script source hash -> nonce */
 	scripthashes: Record<string, string> = {};
 
+	/**
+	 * `stamp` and `lazystamp` mode's incumbent: the realm of the innermost
+	 * rewritten call site on the stack.
+	 *
+	 * One slot for the whole client tree rather than one per realm, because a
+	 * call crosses realms and the question it answers - "whose script is
+	 * running" - is about the stack, not about any one global. Only the
+	 * innermost call can be the answer, so `callfn` overwrites this and never
+	 * puts it back: between calls it holds the realm that was last running,
+	 * which is the answer for a callback the host invoked with no script of
+	 * the page's on the stack.
+	 */
+	incumbent: Self | null = null;
+
 	constructor(public ownerclient: ScramjetClient) {}
 
 	registerClient(client: ScramjetClient, global: Self) {

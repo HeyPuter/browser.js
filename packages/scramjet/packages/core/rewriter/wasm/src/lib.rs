@@ -66,6 +66,7 @@ fn get_js_config(config: &Object) -> Result<Config> {
 		selfid: get_str(config, "selfid")?,
 		templocid: get_str(config, "templocid")?,
 		tempreceiverid: get_str(config, "tempreceiverid")?,
+		tempcalleeid: get_str(config, "tempcalleeid")?,
 		tempunusedid: get_str(config, "tempunusedid")?,
 	})
 }
