@@ -1,8 +1,8 @@
 import { defineConfig } from "@rspack/cli";
-import { rspack } from "@rspack/core";
+import { rspack, type Compiler } from "@rspack/core";
 import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
 
-import { readFile } from "node:fs/promises";
+import { readFile, copyFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -21,6 +21,28 @@ if (!process.env.CI) {
 }
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+// The shell and isolation server must serve the worker from this build, not a
+// checked-in snapshot that silently diverges from the controller protocol.
+class PublishControllerWorkerPlugin {
+	apply(compiler: Compiler) {
+		compiler.hooks.afterEmit.tapPromise(
+			"PublishControllerWorkerPlugin",
+			async () => {
+				for (const directory of [
+					"packages/chrome/public",
+					"packages/sandbox",
+				]) {
+					for (const filename of ["controller.sw.js", "controller.sw.js.map"])
+						await copyFile(
+							join(compiler.options.output.path!, filename),
+							join(__dirname, directory, filename)
+						);
+				}
+			}
+		);
+	}
+}
 
 // Project directories
 const cdpdir = join(__dirname, "packages/cdp");
@@ -95,7 +117,19 @@ const injectConfig = defineConfig({
 });
 
 export default [
-	...(process.env.SKIP_CORE ? [] : scramjetConfig),
+	...(process.env.SKIP_CORE
+		? []
+		: scramjetConfig.map((config) =>
+				config.name === "scramjet-controller"
+					? {
+							...config,
+							plugins: [
+								...(config.plugins ?? []),
+								new PublishControllerWorkerPlugin(),
+							],
+						}
+					: config
+			)),
 	cdpConfig,
 	injectConfig,
 ];
