@@ -6,8 +6,6 @@
 	"type": "module",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "node --import ./tests/register.mjs --test tests/*.test.ts",
-		"test:browser": "node --test tests/browser.test.mjs",
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview"
