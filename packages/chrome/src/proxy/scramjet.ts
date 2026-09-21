@@ -1,5 +1,7 @@
 import {
 	defaultConfig,
+	SCRAMJETCLIENT,
+	type ScramjetClient,
 	defaultConfigDev,
 	ScramjetFetchHandler,
 	type ScramjetConfig,
@@ -48,7 +50,7 @@ import type {
 	Framebound,
 	FrameSequence,
 } from "../../../inject/src/types";
-import { bare, transport, wispUrl } from "./wisp";
+import { transport, wispUrl } from "./wisp";
 import { codecDecode, codecEncode } from "./codec";
 import { Controller, controllerForURL, makeId } from "./Controller";
 import type { Tab } from "../Tab/Tab";
@@ -261,7 +263,9 @@ class ProxyFrameContext {
 						this.windowproxy.postMessage(message, "*", transfer);
 					} else {
 						// TODO :(
-						this.windowproxy[Symbol.for("scramjet client global")].natives.call(
+						(this.windowproxy as Window & { [SCRAMJETCLIENT]: ScramjetClient })[
+							SCRAMJETCLIENT
+						].natives.call(
 							"window.postMessage",
 							this.windowproxy,
 							message,
@@ -286,13 +290,6 @@ class ProxyFrameContext {
 }
 
 export let contexts: ProxyFrameContext[] = [];
-window.contexts = contexts;
-function escapeHtml(text: string): string {
-	const div = document.createElement("div");
-	div.textContent = text;
-	return div.innerHTML;
-}
-
 export function renderErrorPage(controller: Controller, error: Error): string {
 	const contextId = "context-" + makeId();
 	let frameContext = new ProxyFrameContext(controller, contextId);

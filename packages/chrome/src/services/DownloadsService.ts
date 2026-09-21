@@ -100,8 +100,8 @@ export class DownloadsService extends StatefulClass {
 		});
 
 		try {
-			await download.body
-				.pipeThrough(pausableProgress)
+			await new Response(download.body)
+				.body!.pipeThrough(pausableProgress)
 				.pipeTo(streamnull, { signal: ac.signal });
 		} catch (err) {
 			if ((err as any)?.name !== "AbortError") throw err;

@@ -3,7 +3,6 @@ import {
 	iconBack,
 	iconForwards,
 	iconRefresh,
-	iconExtension,
 	iconDownload,
 	iconMore,
 	iconExit,

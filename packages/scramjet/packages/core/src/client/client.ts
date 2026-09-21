@@ -467,7 +467,7 @@ export class ScramjetClient {
 						const frame = client.descriptors.get(
 							"window.frameElement",
 							client.global
-						);
+						) as HTMLIFrameElement | HTMLFrameElement | null;
 						if (!frame.name) {
 							// the parent frame is not scramjet-controlled, so we can't get a parent frame name
 							dbg.error(

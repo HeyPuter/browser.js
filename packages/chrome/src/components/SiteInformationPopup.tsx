@@ -2,7 +2,7 @@ import { css, type FC } from "dreamland/core";
 import { type Tab } from "../Tab/Tab";
 import { splitUrl } from "../util";
 
-import { iconClose, iconTrash, iconSettings } from "../icons";
+import { iconClose } from "../icons";
 import { Icon } from "@components/Icon";
 import { Button } from "@components/Button";
 

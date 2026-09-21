@@ -7,7 +7,6 @@ import {
 	iconDesktop,
 	iconAbout,
 	iconLink,
-	iconCloud,
 } from "../../icons";
 import { Icon } from "@components/Icon";
 import { Favicon } from "@components/Favicon";

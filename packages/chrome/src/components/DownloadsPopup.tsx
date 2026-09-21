@@ -1,4 +1,4 @@
-import { css, type FC } from "dreamland/core";
+import { css } from "dreamland/core";
 import { Icon } from "@components/Icon";
 import { closeMenu } from "@components/Menu";
 import { iconClose, iconFolder, iconOpen, iconPause } from "../icons";

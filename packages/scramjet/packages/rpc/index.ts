@@ -1,13 +1,3 @@
-type Serverbound = {
-	method1: [{ paramA: string; paramB: number }, boolean];
-	method2: [string, number];
-};
-
-type Clientbound = {
-	method1: [number];
-	method2: [boolean, string];
-};
-
 export type RpcDescription = {
 	[method: string]: [args: any, returnType: any] | [args: any] | [];
 };

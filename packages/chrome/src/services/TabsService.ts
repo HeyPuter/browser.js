@@ -6,7 +6,6 @@ import { INTERNAL_URL_PROTOCOL } from "../consts.ts";
 import * as tldts from "tldts";
 import { puterBranding, isPuter, openUrl } from "../index.ts";
 import { focusOmnibox } from "@components/Omnibar/Omnibox.tsx";
-import { uuid } from "../util";
 import { mountedPromise } from "../App.tsx";
 
 export const pushTab = createDelegate<Tab>();

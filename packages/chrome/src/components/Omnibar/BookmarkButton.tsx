@@ -10,7 +10,7 @@ import { BookmarkEntry } from "../../services/ProfileService";
 export function BookmarkButton(this: FC<{ url: URL }>) {
 	return (
 		<button
-			on:click={(e) => {
+			on:click={(e: MouseEvent) => {
 				e.stopPropagation();
 				e.preventDefault();
 				const target = e.currentTarget as HTMLElement;
@@ -40,7 +40,7 @@ export function BookmarkButton(this: FC<{ url: URL }>) {
 		>
 			<Icon
 				icon={use(profileService.bookmarks, this.url).map(() =>
-					profileService.bookmarks.some((b) => b.url == this.url.href)
+					profileService.bookmarks.some((b) => b.url.href === this.url.href)
 						? iconStarFilled
 						: iconStar
 				)}

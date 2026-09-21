@@ -1,4 +1,3 @@
-import { createDelegate, createState } from "dreamland/core";
 import { StatefulClass } from "../util/StatefulClass";
 import { History, type SerializedHistory } from "./History";
 import { INTERNAL_URL_PROTOCOL } from "../consts";
@@ -96,13 +95,6 @@ export class Tab extends StatefulClass {
 		});
 
 		const lerp = (a: number, b: number, t: number) => a * (1 - t) + b * t;
-		const finishLoad = () => {
-			this.loadProgress = 1;
-			setTimeout(() => {
-				this.loadProgress = 0;
-				this.loadProgressTarget = 0;
-			}, 250);
-		};
 		setInterval(() => {
 			if (this.loadProgress < this.loadProgressTarget) {
 				this.loadProgress = lerp(

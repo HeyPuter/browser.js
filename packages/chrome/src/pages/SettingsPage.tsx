@@ -18,7 +18,6 @@ import {
 	iconPrivacy,
 	iconAbout,
 	iconBrush,
-	iconError,
 	iconAdd,
 	iconBack,
 	iconClose,
@@ -1197,11 +1196,11 @@ export function SettingsPage(
 													settingsService.settings.defaultSearchEngine
 												)}
 											>
-												{Object.keys(AVAILABLE_SEARCH_ENGINES).map((key) => (
-													<option value={key}>
-														{AVAILABLE_SEARCH_ENGINES[key].name}
-													</option>
-												))}
+												{Object.entries(AVAILABLE_SEARCH_ENGINES).map(
+													([key, engine]) => (
+														<option value={key}>{engine.name}</option>
+													)
+												)}
 											</select>
 										</div>
 									</div>

@@ -71,6 +71,9 @@ importers:
       tsc-alias:
         specifier: ^1.8.16
         version: 1.8.16
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       vite:
         specifier: ^7.3.0
         version: 7.3.0(@types/node@26.0.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1)
