@@ -1,5 +1,5 @@
 import { ScramjetClient } from "@client/index";
-import { Object_defineProperty, _URL } from "@/shared/snapshot";
+import { Object_defineProperty, Reflect_apply, _URL } from "@/shared/snapshot";
 import { CallSite, incumbencyMode, rawCallSites } from "@/shared/incumbency";
 import { isOwnScript } from "@client/nativeerror";
 import { QP } from "@/fetch/parse";
@@ -31,18 +31,42 @@ export type ScriptRealm = {
 };
 
 /**
- * Only the modes that actually register anything. `stamp` and `lazystamp` are
- * inert for now, and a global nothing calls is a surface for nothing - widen
- * this when they land.
+ * Only the modes that install anything. `none` records nothing and gets no
+ * globals - a global nothing calls is a surface for nothing.
  */
 export const enabled = (client: ScramjetClient) => {
 	const mode = incumbencyMode(client.context, client.url);
 
-	return mode === "pst" || mode === "nonce";
+	return (
+		mode === "pst" ||
+		mode === "nonce" ||
+		mode === "stamp" ||
+		mode === "lazystamp"
+	);
 };
+
+/**
+ * The realm whose script is running, as the stamp modes record it: the
+ * innermost rewritten call site on the stack.
+ *
+ * Null when nothing the rewriter touched is on the stack at all - a callback
+ * the host invoked directly, where the answer is the backup incumbent settings
+ * object and nothing has recorded one.
+ */
+export function incumbentClient(client: ScramjetClient): ScramjetClient | null {
+	const realm = client.box.incumbent;
+
+	return (realm && client.box.globals.get(realm)) ?? null;
+}
 
 export default function (client: ScramjetClient, self: Self) {
 	const mode = incumbencyMode(client.context, client.url);
+
+	if (mode === "stamp" || mode === "lazystamp") {
+		installCallFn(client, self);
+
+		return;
+	}
 
 	// every rewritten script registers itself before it runs
 	Object_defineProperty(self, client.config.globals.registerrealmfn, {
@@ -126,4 +150,41 @@ export function realmForFrame(
 		// a bare sourceURL that is not a URL at all, or no accessor
 		return null;
 	}
+}
+
+/**
+ * `callfn`, which every call in a `stamp`-rewritten script goes through.
+ *
+ * `$call(realm, receiver, fn, ...args)` - `realm` is the global of the script
+ * the call is written in, which is what makes it the incumbent for the length
+ * of the call. It arrives as a value rather than being read here, because the
+ * name the rewriter emits for it resolves in the realm the code is *running*
+ * in: code `parent.eval`'d into another realm names that realm's global, which
+ * is the realm the browser would call incumbent too.
+ *
+ * `lazystamp` narrows the rewrite to calls that look like `postMessage` rather
+ * than narrowing anything here - by the time a call reaches this function it
+ * has already been decided to be worth recording.
+ */
+function installCallFn(client: ScramjetClient, self: Self) {
+	const box = client.box;
+
+	Object_defineProperty(self, client.config.globals.callfn, {
+		value: function (realm: Self, receiver: any, fn: any, ...args: any[]) {
+			// only the innermost call can be the incumbent, so there is nothing
+			// to keep a stack of, and nothing to put back afterwards either:
+			// the next rewritten call overwrites this before anything reads
+			// it, and until one does, what is left behind is the realm that
+			// was running when the host was handed whatever it is now calling
+			// - which is what the backup incumbent settings object would have
+			// recorded. Restoring instead would answer a callback the host
+			// invoked with nothing at all
+			box.incumbent = realm;
+
+			return Reflect_apply(fn, receiver, args);
+		},
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
 }

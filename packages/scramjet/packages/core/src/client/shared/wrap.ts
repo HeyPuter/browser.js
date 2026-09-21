@@ -57,9 +57,7 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 
 export const order = 4;
 export default function (client: ScramjetClient, self: GlobalThis) {
-	// the realm's own global, handed to `callfn` as the caller's identity. The
-	// rewriter emits this name rather than `self`, which a page is free to
-	// shadow in any scope a rewritten call might sit in
+	// a duplicate, unforgable reference to the global object, so rewrites do not have to worry about `self` being shadowed
 	Object_defineProperty(self, client.config.globals.selfid, {
 		value: self,
 		writable: false,
@@ -67,14 +65,17 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		enumerable: false,
 	});
 
-	// the slot the call rewrite parks a receiver in between evaluating it and
-	// handing it to `callfn`. Installed here, once per realm, rather than
-	// declared per script: the rewrite only ever assigns to it, and an
-	// assignment to a name that was never declared throws in a module and
-	// under "use strict". A writable global property takes that assignment
-	// from anywhere, and unlike a `let` in a classic script's prelude it
-	// cannot collide with itself on the realm's second script
+	// a temporary slot that $call can use to store the receiver
 	Object_defineProperty(self, client.config.globals.tempreceiverid, {
+		value: undefined,
+		writable: true,
+		configurable: false,
+		enumerable: false,
+	});
+
+	// the same, for the callee of an optional call, which has to be parked
+	// before the arguments are evaluated so that a nullish one can skip them
+	Object_defineProperty(self, client.config.globals.tempcalleeid, {
 		value: undefined,
 		writable: true,
 		configurable: false,

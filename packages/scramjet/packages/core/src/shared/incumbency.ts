@@ -57,7 +57,7 @@ export function rawCallSites(): CallSite[] | null {
  * back empty - reads as unavailable even though the page's own scripts would
  * have had one. That falls back to `nonce`, which is the safe direction.
  */
-const pstAvailable: boolean = (() => {
+export const pstAvailable: boolean = (() => {
 	const frames = rawCallSites();
 	if (!frames || frames.length === 0) return false;
 
@@ -71,15 +71,14 @@ const pstAvailable: boolean = (() => {
 })();
 
 /**
- * The configured mode, downgraded to what this engine can actually do. `pst`
- * asks for two V8-only things and falls back to `nonce`, which works wherever
- * a stack can be read at all, when it cannot have them.
+ * The configured mode, as configured. Nothing is substituted for anything:
+ * which mode an engine can actually do is decided once, where the defaults are
+ * built ({@link pstAvailable}), and a `pst` handed to an engine without the
+ * two V8-only pieces it needs simply does not attribute anything.
  */
 export function incumbencyMode(
 	context: ScramjetContext,
 	url: URL
 ): IncumbencyMode {
-	const mode = flagValue("incumbency", context, url);
-
-	return mode === "pst" && !pstAvailable ? "nonce" : mode;
+	return flagValue("incumbency", context, url);
 }
