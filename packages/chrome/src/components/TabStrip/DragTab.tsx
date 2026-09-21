@@ -232,8 +232,6 @@ export function DragTab(
 		}
 	};
 
-	let hoverTimeout: number;
-
 	return (
 		<div
 			style="z-index: 1;"

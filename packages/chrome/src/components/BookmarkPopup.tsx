@@ -1,5 +1,4 @@
-import { css, type FC, type Stateful } from "dreamland/core";
-import { Icon } from "@components/Icon";
+import { css, type FC } from "dreamland/core";
 import { Input } from "@components/Input";
 import { closeMenu } from "@components/Menu";
 import { Button } from "@components/Button";

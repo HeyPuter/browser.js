@@ -29,8 +29,8 @@ export type RewriteUrlOptions = {
 };
 
 export type URLMeta = {
-	origin: _URL;
-	base: _URL;
+	origin: URL;
+	base: URL;
 	topFrameName?: string;
 	parentFrameName?: string;
 	referrerPolicy?: string;
@@ -89,7 +89,7 @@ function dataToBlob(url: string) {
 	}
 	if (params.length) type += ";" + params.join(";");
 
-	let bytes: Uint8Array;
+	let bytes: Uint8Array<ArrayBuffer>;
 	if (isBase64) {
 		let base64 = data.replace(/\s/g, "");
 		base64 = base64.replace(/-/g, "+").replace(/_/g, "/");

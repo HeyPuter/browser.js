@@ -1,4 +1,4 @@
-import { createDelegate, css, type FC } from "dreamland/core";
+import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
 import { isFirefox } from "../../util";
 

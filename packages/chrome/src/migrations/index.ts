@@ -1,13 +1,6 @@
 import { STORAGE_VERSION } from "..";
 import { KVWrapper } from "../services/KVWrapper";
 
-let migrationsLoaded = false;
-
-async function loadMigrations() {
-	if (migrationsLoaded) return;
-	migrationsLoaded = true;
-}
-
 export type MigrationAction = (kv: KVWrapper) => Promise<void>;
 export type Migration = {
 	version: number;

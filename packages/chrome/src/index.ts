@@ -15,6 +15,7 @@ import { TabsService } from "./services/TabsService.ts";
 import { DownloadsService } from "./services/DownloadsService.ts";
 import { FaviconService } from "./services/FaviconService.ts";
 import { KVWrapper } from "./services/KVWrapper.ts";
+import type { Service } from "./services/Service";
 import { migrate } from "./migrations/index.ts";
 import { mount } from "./App.tsx";
 

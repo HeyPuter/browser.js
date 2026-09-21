@@ -5,6 +5,7 @@
 	"license": "AGPL-3.0-only",
 	"type": "module",
 	"scripts": {
+		"typecheck": "tsc --noEmit",
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview"

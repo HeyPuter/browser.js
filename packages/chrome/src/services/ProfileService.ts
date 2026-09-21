@@ -1,4 +1,3 @@
-import type { Stateful } from "dreamland/core";
 import { Service } from "./Service";
 import { HistoryState } from "../Tab/History";
 import { CookieJar } from "@mercuryworkshop/scramjet/bundled";

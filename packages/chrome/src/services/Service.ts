@@ -1,7 +1,8 @@
 import { StatefulClass } from "../util/StatefulClass";
 
-export class Service extends StatefulClass {
-	private dirty = false;
+export abstract class Service extends StatefulClass {
+	dirty = false;
+	abstract save(): unknown;
 
 	override markDirty() {
 		super.markDirty();

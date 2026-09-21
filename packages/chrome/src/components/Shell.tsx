@@ -1,5 +1,4 @@
 import { createDelegate, css, type FC } from "dreamland/core";
-import { takeScreenshotGDM } from "../Tab/screenshot";
 import { popTab, pushTab } from "../services/TabsService";
 import { tabsService } from "..";
 

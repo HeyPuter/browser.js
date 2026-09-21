@@ -1,5 +1,5 @@
 import type Protocol from "devtools-protocol";
-import { browser } from "./Browser";
+import { tabsService as browser } from ".";
 import type { Tab } from "./Tab/Tab";
 
 export function startCDP(message: (message: string) => void): CDPServer {
@@ -228,7 +228,7 @@ const Scopes = {
 		},
 
 		async closeTarget(params: Protocol.Target.CloseTargetRequest) {
-			let tab = browser.tabs.find((x) => x.id === Number(params.targetId));
+			let tab = browser.tabs.find((x) => x.id === params.targetId);
 			if (!tab) {
 				throw new Error(`Target ${params.targetId} not found`);
 			}

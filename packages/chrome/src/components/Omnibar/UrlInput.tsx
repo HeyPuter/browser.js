@@ -30,7 +30,7 @@ export function UrlInput(
 				{use(this.active)
 					.and(
 						use(this.favicon)
-							.and(<Favicon url={this.favicon}></Favicon>)
+							.and(<Favicon iconUrl={this.favicon}></Favicon>)
 							.or(<Icon icon={iconSearch}></Icon>)
 					)
 					.or(<SiteOptionsButton></SiteOptionsButton>)}

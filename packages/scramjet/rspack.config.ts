@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, chmodSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -152,6 +152,7 @@ class ExternalStubPlugin {
 
 // Custom plugin to generate TypeScript declarations
 class TypeScriptDeclarationsPlugin {
+	private static pending = new Map<string, Promise<void>>();
 	dir: string;
 	tsconfigName: string;
 	useAlias: boolean;
@@ -170,50 +171,47 @@ class TypeScriptDeclarationsPlugin {
 	}
 
 	apply(compiler: WebpackCompiler) {
-		compiler.hooks.afterEmit.tap("TypeScriptDeclarationsPlugin", () => {
-			(async () => {
-				try {
+		compiler.hooks.afterEmit.tapPromise("TypeScriptDeclarationsPlugin", () => {
+			// Multiple bundle formats share the same declarations directory.
+			// Serialize generation and cleanup instead of racing their tsc runs.
+			const previous = TypeScriptDeclarationsPlugin.pending.get(this.dir);
+			const pending = (previous ?? Promise.resolve())
+				.catch(() => {})
+				.then(async () => {
 					console.log(`Generating TypeScript declarations for ${this.dir}...`);
 					try {
-						const { stdout, stderr } = await execAsync(
+						const result = await execAsync(
 							`pnpm exec tsc --project ${this.tsconfigName}`,
 							{ cwd: this.dir }
 						);
-						if (stdout) console.log(stdout);
-						if (stderr && !stderr.includes("TS")) console.error(stderr);
-					} catch (tscError: any) {
-						// tsc exits with error code if there are TS errors, but still generates files
-						// Only log if it's not a TypeScript compilation error
-						if (tscError.code !== 2) {
-							throw tscError;
+						if (result.stdout) console.log(result.stdout);
+						if (result.stderr) console.error(result.stderr);
+						if (this.useAlias) {
+							const alias = await execAsync(
+								`pnpm exec tsc-alias --project ${this.tsconfigName}`,
+								{ cwd: this.dir }
+							);
+							if (alias.stdout) console.log(alias.stdout);
+							if (alias.stderr) console.error(alias.stderr);
 						}
-						// if (tscError.stdout) console.log(tscError.stdout);
-						// if (tscError.stderr) console.warn(tscError.stderr);
-					}
-
-					if (this.useAlias) {
-						const aliasResult = await execAsync(
-							`pnpm exec tsc-alias --project ${this.tsconfigName}`,
-							{ cwd: this.dir }
+						await rm(resolve(this.dir, this.tempDir), {
+							recursive: true,
+							force: true,
+						});
+						console.log(
+							`TypeScript declarations generated successfully for ${this.dir}`
 						);
-						if (aliasResult.stdout) console.log(aliasResult.stdout);
-						if (aliasResult.stderr) console.error(aliasResult.stderr);
+					} catch (error: any) {
+						if (error.stdout) console.error(error.stdout);
+						if (error.stderr) console.error(error.stderr);
+						throw error;
 					}
-
-					try {
-						await execAsync(`rm -rf ${this.tempDir}`, { cwd: this.dir });
-					} catch (e) {}
-
-					console.log(
-						`TypeScript declarations generated successfully for ${this.dir}`
-					);
-				} catch (error: any) {
-					console.error(
-						`Error generating TypeScript declarations for ${this.dir}:`,
-						error.message
-					);
-				}
-			})();
+				});
+			TypeScriptDeclarationsPlugin.pending.set(this.dir, pending);
+			return pending.finally(() => {
+				if (TypeScriptDeclarationsPlugin.pending.get(this.dir) === pending)
+					TypeScriptDeclarationsPlugin.pending.delete(this.dir);
+			});
 		});
 	}
 }
@@ -488,6 +486,7 @@ const moduleBundledConfig = createScramjetConfig({
 
 // Type generation configuration
 const typeGenConfig = defineConfig({
+	name: "scramjet-types",
 	context: scramjetdir,
 	entry: {
 		index: "./src/index.ts",
@@ -528,7 +527,7 @@ const controllerVersionDefines = new rspack.DefinePlugin({
 
 const controllerConfig = createGenericConfig({
 	name: "scramjet-controller",
-	dependencies: ["scramjet-esmodule"],
+	dependencies: ["scramjet-esmodule", "scramjet-types"],
 	entry: {
 		api: join(controllerdir, "src/index.ts"),
 		inject: join(controllerdir, "src/inject.ts"),
@@ -622,6 +621,7 @@ const utilsModuleConfig = createGenericConfig({
 
 const bootstrapConfig = createGenericConfig({
 	name: "scramjet-bootstrap",
+	dependencies: ["scramjet-controller"],
 	entry: {
 		server: join(bootstrapdir, "src/server.ts"),
 		client: join(bootstrapdir, "src/client.ts"),

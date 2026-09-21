@@ -55,7 +55,11 @@ export const URL_revokeObjectURL = globalThis.URL.revokeObjectURL.bind(
 	globalThis.URL
 );
 
-export const Error = globalThis.Error;
+export type V8CallSite = { getFileName(): string | null };
+export const Error = globalThis.Error as ErrorConstructor & {
+	prepareStackTrace?: (error: Error, stack: V8CallSite[]) => unknown;
+	stackTraceLimit?: number;
+};
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;
 
@@ -84,16 +88,16 @@ type InstantiatePrototype<P, Params extends unknown[]> = Params extends [
 	infer A,
 	infer B,
 ]
-	? P extends WeakMap<any, any>
-		? WeakMap<A & WeakKey, B>
-		: P extends Map<any, any>
-			? Map<A, B>
+	? P extends Map<any, any>
+		? Map<A, B>
+		: P extends WeakMap<any, any>
+			? WeakMap<A & WeakKey, B>
 			: P
 	: Params extends [infer A]
-		? P extends WeakSet<any>
-			? WeakSet<A & object>
-			: P extends Set<any>
-				? Set<A>
+		? P extends Set<any>
+			? Set<A>
+			: P extends WeakSet<any>
+				? WeakSet<A & object>
 				: P
 		: P;
 
@@ -128,20 +132,16 @@ type WrappedConstructor<T> =
 						new <K extends WeakKey, V>(...args: Args) => Wrapped<WeakMap<K, V>>
 					>
 				: never
-			: ConstructorPrototype<T> extends WeakSet<any>
-				? T extends { new <U extends object>(...args: infer Args): any }
-					? WrappedCtor<
-							T,
-							[object],
-							new <U extends object>(...args: Args) => Wrapped<WeakSet<U>>
-						>
+			: ConstructorPrototype<T> extends Set<any>
+				? T extends { new <U>(...args: infer Args): any }
+					? WrappedCtor<T, [unknown], new <U>(...args: Args) => Wrapped<Set<U>>>
 					: never
-				: ConstructorPrototype<T> extends Set<any>
-					? T extends { new <U>(...args: infer Args): any }
+				: ConstructorPrototype<T> extends WeakSet<any>
+					? T extends { new <U extends object>(...args: infer Args): any }
 						? WrappedCtor<
 								T,
-								[unknown],
-								new <U>(...args: Args) => Wrapped<Set<U>>
+								[object],
+								new <U extends object>(...args: Args) => Wrapped<WeakSet<U>>
 							>
 						: never
 					: T extends { new <K, V>(...args: infer Args): any }

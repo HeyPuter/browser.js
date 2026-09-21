@@ -3,7 +3,6 @@ import { Checkbox } from "@components/Checkbox";
 import { Icon } from "@components/Icon";
 import type { IconDescription } from "../icons";
 import { emToPx } from "../util";
-import { isPuter } from "..";
 import { requestUnfocusFrames } from "@components/Shell";
 
 export const closeMenu = createDelegate<void>();

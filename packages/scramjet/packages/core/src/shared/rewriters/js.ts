@@ -9,6 +9,7 @@ import {
 	_Uint8Array,
 	Object_keys,
 	Performance_now,
+	Error,
 } from "../snapshot";
 
 // eslint-disable-next-line scramjet-core/no-globals
@@ -120,17 +121,16 @@ export function rewriteJs(
 				pushmap(Array_from(res.map), res.tag);
 			} else {
 				// TODO: how do we check instanceof here?
-				if (typeof newjs !== "string") {
-					newjs = TextDecoder_decode(newjs);
-				}
+				const sourceText: string =
+					typeof newjs === "string" ? newjs : TextDecoder_decode(newjs);
 				const sourcemapfn = `${context.config.globals.pushsourcemapfn}([${res.map.join(",")}], "${res.tag}");`;
 
 				// don't put the sourcemap call before "use strict"
 				const strictMode = new _RegExp(/^\s*(['"])use strict\1;?/);
-				if (strictMode.test(newjs)) {
-					newjs = newjs.replace(strictMode, `$&\n${sourcemapfn}`);
+				if (strictMode.test(sourceText)) {
+					newjs = sourceText.replace(strictMode, `$&\n${sourcemapfn}`);
 				} else {
-					newjs = `${sourcemapfn}\n${newjs}`;
+					newjs = `${sourcemapfn}\n${sourceText}`;
 				}
 			}
 		}

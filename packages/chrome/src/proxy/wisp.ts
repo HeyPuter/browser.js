@@ -40,7 +40,7 @@ export async function setWispUrl(wispurl: string) {
 				socket.addEventListener("open", () => {
 					resolve();
 				});
-				socket.addEventListener("error", (ev) => {
+				socket.addEventListener("error", (ev: ErrorEvent) => {
 					reject(ev.error);
 				});
 			});
@@ -48,7 +48,7 @@ export async function setWispUrl(wispurl: string) {
 			return [
 				new ReadableStream({
 					start(controller) {
-						socket.addEventListener("message", (ev) => {
+						socket.addEventListener("message", (ev: MessageEvent) => {
 							controller.enqueue(new Uint8Array(ev.data));
 						});
 					},

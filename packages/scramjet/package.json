@@ -32,7 +32,8 @@
 		"eslint": "^10.2.0",
 		"vite": "^7.3.0",
 		"ava": "^6.4.1",
-		"glob": "^13.0.6"
+		"glob": "^13.0.6",
+		"typescript": "^5.9.3"
 	},
 	"dependencies": {
 		"prettier": "^3.6.2"

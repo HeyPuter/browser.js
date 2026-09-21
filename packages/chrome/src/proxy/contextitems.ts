@@ -4,7 +4,6 @@ import {
 	iconAdd,
 	iconBack,
 	iconBookmark,
-	iconCode,
 	iconCopy,
 	iconForwards,
 	iconLink,

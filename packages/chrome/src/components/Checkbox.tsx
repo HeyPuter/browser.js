@@ -15,7 +15,9 @@ export function Checkbox(
 				id={use(this.id)}
 				checked={use(this.value)}
 				disabled={use(this.disabled).map((v) => (v ? true : undefined))}
-				onChange={(e) => this["on:change"]?.(e.target.checked)}
+				on:change={(e: Event) =>
+					this["on:change"]?.((e.currentTarget as HTMLInputElement).checked)
+				}
 			></input>
 		</label>
 	);
