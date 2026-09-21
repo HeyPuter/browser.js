@@ -26,7 +26,11 @@ export async function setWispUrl(wispurl: string) {
 	wispUrl = wispurl;
 
 	const isLoopback = (host: string) =>
-		host === "127.0.0.1" || host.endsWith("localhost");
+		host === "127.0.0.1" ||
+		host === "::1" ||
+		host === "[::1]" ||
+		host === "localhost" ||
+		host.endsWith(".localhost");
 
 	if (useEpoxy) {
 		await init();
@@ -64,7 +68,8 @@ export async function setWispUrl(wispurl: string) {
 
 		const wisp = new WispSocketProvider(new WebSocketJsProvider(), wispurl);
 		const backend = new EitherSocketProvider(
-			(host) => (isLoopback(host) ? "left" : "right"),
+			(host) =>
+				typeof puter !== "undefined" && isLoopback(host) ? "left" : "right",
 			custom,
 			wisp
 		);
