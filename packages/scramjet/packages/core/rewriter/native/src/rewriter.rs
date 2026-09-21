@@ -84,6 +84,7 @@ impl NativeRewriter {
 					selfid: cfg.selfid.clone(),
 					templocid: cfg.templocid.clone(),
 					tempreceiverid: cfg.tempreceiverid.clone(),
+					tempcalleeid: cfg.tempcalleeid.clone(),
 					tempunusedid: cfg.tempunusedid.clone(),
 				},
 				Flags {

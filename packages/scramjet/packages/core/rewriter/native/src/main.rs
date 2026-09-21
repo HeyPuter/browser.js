@@ -50,6 +50,8 @@ pub struct RewriterOptions {
 	templocid: String,
 	#[clap(long, default_value = "$tempreceiver")]
 	tempreceiverid: String,
+	#[clap(long, default_value = "$tempcallee")]
+	tempcalleeid: String,
 	#[clap(long, default_value = "$tempunused")]
 	tempunusedid: String,
 

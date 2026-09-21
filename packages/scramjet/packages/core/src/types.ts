@@ -25,13 +25,20 @@ export interface ScramjetVersionInfo {
  *           stack can be read, but the sourceURL *is* what the page reads - in
  *           stack traces, in `onerror`, and in `ErrorEvent.filename` - so
  *           every one of those has to be emulated back.
- * - `stamp` Not implemented yet.
+ * - `stamp` Every call in a rewritten script goes through `callfn`, which
+ *           records the calling script's realm for the length of the call.
+ *           Reads no stack and shows the page nothing, at the cost of a call
+ *           through a function for every call the page makes.
  * - `lazystamp`
- *           Not implemented yet.
+ *           `stamp`, narrowed at rewrite time to the calls that look like they
+ *           need attributing. Cheap enough to be what the default flags pick
+ *           off V8, where `pst` has nothing to read. Misses a call reached
+ *           through a reference the rewriter could not recognise, such as a
+ *           bound one.
  * - `none`  No attribution.
  *
- * The two stamp modes are recognised and carried through everywhere a mode is
- * read, but have no behaviour yet: they currently act as `none`.
+ * Nothing substitutes one mode for another at use time: the default flags
+ * choose one the engine can do, and a mode set by hand is used as given.
  */
 export type IncumbencyMode = "pst" | "nonce" | "stamp" | "lazystamp" | "none";
 
@@ -66,6 +73,7 @@ export interface ScramjetConfig {
 		selfid: string;
 		templocid: string;
 		tempreceiverid: string;
+		tempcalleeid: string;
 		tempunusedid: string;
 	};
 	flags: ScramjetFlags;
