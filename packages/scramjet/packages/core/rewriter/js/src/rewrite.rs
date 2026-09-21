@@ -4,7 +4,7 @@ use oxc::{
 };
 use smallvec::{SmallVec, smallvec};
 
-use crate::changes::{JsChange, change};
+use crate::changes::{JsChange, JsChangeType::{CallFnPrelude, LiteralCallFnLeft}, change};
 
 macro_rules! rewrite {
     ($span:expr, $($ty:tt)*) => {
@@ -28,8 +28,20 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 	/// `cfg.metafn("cfg.base")`
 	MetaFn,
 
-	SetRealmFn,
-
+	/// `object.method(...args)` ->
+	/// `($r = object, cfg.callfn(cfg.selfid, $r, $r.method, ...args))`,
+	/// where `$r` is `cfg.tempreceiverid`
+	MemberCallFn {
+		args: Option<Span>,
+		object: Span,
+		expression: Span,
+		optional: bool,
+		computed: bool,
+	},
+	LiteralCallFn {
+		args: Option<Span>,
+		inner: Span,
+	},
 	/// `location` -> `$sj_location`
 	RewriteProperty {
 		ident: Atom<'data>,
@@ -57,9 +69,6 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 	ScramErr {
 		ident: Atom<'data>,
 	},
-	/// `$scramitize(span)`
-	Scramitize,
-
 	/// `eval(cfg.rewritefn(inner))`
 	Eval {
 		inner: Span,
@@ -240,20 +249,36 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 				}
 			)],
 			Self::WrapNew => smallvec![change!(span!(start), OpeningParen), change!(span!(end), ClosingParen { semi: false, replace: false })],
-			Self::SetRealmFn => smallvec![change!(span, SetRealmFn)],
+			Self::MemberCallFn { args, object, expression, optional, computed } => {
+				match &args {
+					Some(ar) => smallvec![
+						change!(span!(start), CallFnPrelude),
+						change!(span!(object expression between), CallFnLeft { optional, computed }),
+						change!(span!(expression ar between), CallFnRight { computed }),
+						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
+					],
+					None=>smallvec![
+						change!(span!(start), CallFnPrelude),
+						change!(span!(object expression between), CallFnLeft { optional, computed }),
+						change!(span!(expression span end), CallFnRight { computed }),
+						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
+						change!(span!(span span end), ClosingParen { semi: false, replace: false }),
+					],
+				}
+			}
+			Self::LiteralCallFn { args, inner } => match &args {
+				Some(ar) => smallvec![
+					change!(span!(start), LiteralCallFnLeft),
+					change!(span!(inner ar between), Replace { text: "," }),
+				],
+				None => smallvec![
+					change!(span!(start), LiteralCallFnLeft),
+					change!(span!(inner span end), ClosingParen { semi: false, replace: true }),
+				],
+			},
 			Self::ImportFn => smallvec![change!(span, ImportFn)],
 			Self::MetaFn => smallvec![change!(span, MetaFn)],
 			Self::ScramErr { ident } => smallvec![change!(span!(end), ScramErrFn { ident })],
-			Self::Scramitize => smallvec![
-				change!(span!(start), ScramitizeFn),
-				change!(
-					span!(end),
-					ClosingParen {
-						semi: false,
-						replace: false
-					}
-				)
-			],
 			Self::Eval { inner } => smallvec![
 				change!(Span::new(inner.start, inner.start), EvalRewriteFn),
 				change!(

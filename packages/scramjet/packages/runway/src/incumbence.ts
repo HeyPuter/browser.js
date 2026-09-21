@@ -79,11 +79,20 @@ export type Docs = {
 /**
  * A way of getting a call to happen. `call(win)` yields the sink's own code,
  * performed through `win`'s realm, and the pattern decides which realm runs it
- * and how it gets there.
+ * and how it gets there. `fn(win)` is the same operation as a function value
+ * rather than a statement, for a pattern that has to hand the sink itself to
+ * something else - see {@link Pattern.needsfn}.
  */
 export type Pattern = {
 	name: string;
-	build: (call: (win: string) => string) => Docs;
+	build: (call: (win: string) => string, fn: (win: string) => string) => Docs;
+	/**
+	 * The pattern builds out of `fn` and not `call`, so it only exists for a
+	 * sink that can be expressed as a function - see `sinkfn` on
+	 * {@link incumbenceMatrix}. An answer sheet naming one without it is an
+	 * error rather than a skip: the row would otherwise be silently dropped
+	 */
+	needsfn?: boolean;
 };
 
 /** a JS string literal, safe to put inside an inline `<script>` */
@@ -369,6 +378,92 @@ export const PATTERNS: Pattern[] = [
 			}`,
 		}),
 	},
+
+	// the backup incumbent settings object. Every pattern above reaches the sink
+	// with page script on the JS execution context stack, and the incumbent is
+	// read off the topmost script-having context there. A callback that is not
+	// script-having - a bound function whose target is native - puts nothing on
+	// that stack, and the incumbent comes off the *backup incumbent settings
+	// object stack* instead: "prepare to run a callback" pushes the callback's
+	// context, the realm that was incumbent when the callback was **converted**,
+	// and the topmost entry of that stack answers whenever it was pushed more
+	// recently than the topmost script-having context. So it is what an empty
+	// stack falls back to, and it also outranks a script that is still on the
+	// stack under a synchronous dispatch. Not the realm that owns the API, not
+	// the realm that owns the function, not the realm that made the bound object
+	//
+	// These take `fn` instead of `call`, because the sink has to *be* the
+	// function the host invokes: anything wrapped around it is a script on the
+	// stack again, and that wrapped shape is the pattern each one pairs with
+	{
+		// the control. Binding launders nothing, so while script is on the stack
+		// the answer is the caller and the backup stack is never reached
+		name: "backup-control-direct",
+		needsfn: true,
+		build: (_c, fn) => ({ frame: `(${fn("parent")})()` }),
+	},
+	{
+		// pairs with `settimeout-cb`, which wraps the same call in an arrow
+		// function of the frame's
+		name: "backup-settimeout",
+		needsfn: true,
+		build: (_c, fn) => ({ frame: `parent.setTimeout(${fn("parent")})` }),
+	},
+	{
+		name: "backup-queuemicrotask",
+		needsfn: true,
+		build: (_c, fn) => ({ frame: `parent.queueMicrotask(${fn("parent")})` }),
+	},
+	{
+		// pairs with `promise-bound`: the same bound-function shape, where the
+		// bound target is script-having there and native here
+		name: "backup-promise",
+		needsfn: true,
+		build: (_c, fn) => ({ frame: `new Promise(r=>r()).then(${fn("parent")})` }),
+	},
+	{
+		name: "backup-message-event",
+		needsfn: true,
+		build: (_c, fn) => ({
+			top: "onload = () => frames[0].postMessage('go', '*')",
+			frame: `addEventListener('message', ${fn("parent")})`,
+		}),
+	},
+	{
+		// the dispatch is synchronous, so the top's script is still on the stack
+		// under the listener - and loses anyway, because the entry the dispatch
+		// pushed for the listener is the more recent of the two. Pairs with
+		// `event-listener-foreign-cb`, the same dispatch into a callback that
+		// *is* script-having, where the callback's own context is pushed above
+		// the backup entry and the top answers
+		name: "backup-sync-dispatch",
+		needsfn: true,
+		build: (_c, fn) => ({
+			frame: `addEventListener('snarkle', ${fn("parent")})`,
+			top: "onload = () => frames[0].dispatchEvent(new Event('snarkle'))",
+		}),
+	},
+	{
+		// the bound object is made in the top and converted in the frame, so the
+		// realm that built the callback and the realm that handed it over are
+		// different ones. Pairs with `settimeout-foreign-cb`, where the same
+		// split answers with the top because the callback has a script in it
+		name: "backup-foreign-bound",
+		needsfn: true,
+		build: (_c, fn) => ({
+			top: `var bound = ${fn("window")}`,
+			frame: "parent.setTimeout(parent.bound)",
+		}),
+	},
+	{
+		// the sub converts the callback and the top owns the timer, so the
+		// answer is a realm on neither end of the call
+		name: "backup-three-realm",
+		needsfn: true,
+		build: (_c, fn) => ({
+			sub: `parent.parent.setTimeout(${fn("parent.parent")})`,
+		}),
+	},
 ];
 
 /** one test: serve `docs`, expect the first report to name `expect` */
@@ -498,6 +593,14 @@ export function incumbenceMatrix(props: {
 	 * and no `"`
 	 */
 	sink: (win: string) => string;
+	/**
+	 * The same operation as an expression evaluating to a function that performs
+	 * it when called with no arguments, for the patterns that need the host to
+	 * call the sink directly. It has to be a *native* function - bound, not
+	 * wrapped - or the script wrapping it is what the browser attributes the
+	 * call to. Without it, the `needsfn` patterns are unavailable
+	 */
+	sinkfn?: (win: string) => string;
 	/** script prepended to a document, for a sink that needs a receiver */
 	setup?: Docs;
 	expect: Partial<Record<string, Realm>>;
@@ -510,7 +613,13 @@ export function incumbenceMatrix(props: {
 		const expect = props.expect[pattern.name];
 		if (!expect) continue;
 
-		const docs = pattern.build(props.sink);
+		if (pattern.needsfn && !props.sinkfn) {
+			throw new Error(
+				`${props.prefix}: pattern ${pattern.name} needs a \`sinkfn\`, which this sink does not have`
+			);
+		}
+
+		const docs = pattern.build(props.sink, props.sinkfn ?? props.sink);
 		const setup = props.setup;
 		if (setup) {
 			for (const realm of ["top", "frame", "sub"] as const) {
