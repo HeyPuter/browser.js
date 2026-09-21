@@ -57,6 +57,30 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 
 export const order = 4;
 export default function (client: ScramjetClient, self: GlobalThis) {
+	// the realm's own global, handed to `callfn` as the caller's identity. The
+	// rewriter emits this name rather than `self`, which a page is free to
+	// shadow in any scope a rewritten call might sit in
+	Object_defineProperty(self, client.config.globals.selfid, {
+		value: self,
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
+
+	// the slot the call rewrite parks a receiver in between evaluating it and
+	// handing it to `callfn`. Installed here, once per realm, rather than
+	// declared per script: the rewrite only ever assigns to it, and an
+	// assignment to a name that was never declared throws in a module and
+	// under "use strict". A writable global property takes that assignment
+	// from anywhere, and unlike a `let` in a classic script's prelude it
+	// cannot collide with itself on the realm's second script
+	Object_defineProperty(self, client.config.globals.tempreceiverid, {
+		value: undefined,
+		writable: true,
+		configurable: false,
+		enumerable: false,
+	});
+
 	Object_defineProperty(self, client.config.globals.wrapfn, {
 		value: client.wrapfn,
 		writable: false,
@@ -156,23 +180,6 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			enumerable: false,
 		}
 	);
-
-	self.$scramitize = function (v) {
-		const t = typeof v;
-		if (t === "object" && v !== null) {
-			if (v === location) debugger;
-			if (iswindow) {
-				// if (v === self.parent) debugger;
-				if (v === self.top) debugger;
-			}
-		} else if (t === "string") {
-			if (v.includes("scramjet")) debugger;
-			if (v.includes("~/sj")) debugger;
-			if (v.includes(location.origin)) debugger;
-		}
-
-		return v;
-	};
 
 	// location = "..." can't be rewritten as wrapfn(location) = ..., so instead it will actually be rewritten as
 	// ((t)=>$scramjet$tryset(location,"+=",t)||location+=t)(...);

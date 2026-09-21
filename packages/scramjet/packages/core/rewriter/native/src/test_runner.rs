@@ -8,6 +8,7 @@ mod test {
 		object::ObjectInitializer,
 		property::{Attribute, PropertyDescriptorBuilder},
 	};
+	use js::cfg::IncumbencyMode;
 
 	fn create_context() -> Context {
 		let mut context = Context::default();
@@ -69,8 +70,6 @@ function $prop(prop) {
 
 const $gwrap = $wrap;
 
-function $scramitize(val) { return val }
-
 function assert(val) {
 	if (!val) fail();
 }
@@ -110,13 +109,16 @@ function check(val) {
 			wrapfn: String::from("$wrap"),
 			wrappropertybase: String::from("$sj_"),
 			wrappropertyfn: String::from("$prop"),
+			callfn: String::from("$call"),
 			cleanrestfn: String::from("$clean"),
 			importfn: String::from("$import"),
 			rewritefn: String::from("$rewrite"),
 			metafn: String::from("$meta"),
 			pushsourcemapfn: String::from("$pushsourcemap"),
 			trysetfn: String::from("$tryset"),
+			selfid: String::from("$self"),
 			templocid: String::from("$temploc"),
+			tempreceiverid: String::from("$tempreceiver"),
 			tempunusedid: String::from("$tempunused"),
 
 			base: String::from("https://google.com/glorngle/si.js"),
@@ -125,9 +127,9 @@ function check(val) {
 
 			capture_errors: false,
 			do_sourcemaps: false,
-			scramitize: false,
 			disable_computed_wrap: false,
 			destructure_rewrites: true,
+			incumbency: IncumbencyMode::None,
 		};
 
 		let mut rewriter = NativeRewriter::new(&opts);

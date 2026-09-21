@@ -55,8 +55,6 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	ScramErrFn {
 		ident: Atom<'data>,
 	},
-	/// insert `$scramitize(`
-	ScramitizeFn,
 	/// insert `eval(${cfg.rewritefn}(`
 	EvalRewriteFn,
 	/// insert `: ${cfg.wrapfn}(ident)`
@@ -76,7 +74,16 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 		op: AssignmentOperator,
 	},
 
-	SetRealmFn,
+	CallFnPrelude,
+	/// replace span with `,${cfg.callfn}(${cfg.selfid},${cfg.tempreceiverid},${cfg.tempreceiverid}[`
+	CallFnLeft {
+		computed: bool,
+		optional: bool,
+	},
+	CallFnRight {
+		computed: bool,
+	},
+	LiteralCallFnLeft,
 	OpeningParen,
 	/// insert `)`
 	ClosingParen {
@@ -247,7 +254,6 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 				}
 			}
 			Ty::ScramErrFn { ident } => LL::insert(transforms!["$scramerr(", ident, ");"]),
-			Ty::ScramitizeFn => LL::insert(transforms![" $scramitize("]),
 			Ty::EvalRewriteFn => LL::insert(transforms![&cfg.rewritefn, "("]),
 			Ty::ShorthandObj { ident } => {
 				LL::insert(transforms![":", &cfg.wrapfn, "(", ident, ")"])
@@ -261,7 +267,30 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 			]),
 			Ty::ImportFn => LL::replace(transforms![&cfg.importfn, "(\"", &flags.base, "\","]),
 			Ty::MetaFn => LL::replace(transforms![&cfg.metafn, "(import.meta,\"", &flags.base, "\")"]),
-			Ty::SetRealmFn => LL::replace(transforms!["$scramjet$setrealmfn", "({})."]),
+			Ty::CallFnPrelude => LL::replace(transforms!["(", &cfg.tempreceiverid, "="]),
+			Ty::CallFnLeft { computed, optional } => {
+				if computed {
+					if optional {
+						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"?.["])
+					} else {
+						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"["])
+					}
+				} else {
+					if optional {
+						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"?."])
+					} else {
+						LL::replace(transforms![",",&cfg.callfn,"(",&cfg.selfid,",",&cfg.tempreceiverid,",",&cfg.tempreceiverid,"."])
+					}
+				}
+			},
+			Ty::CallFnRight { computed } => {
+				if computed {
+					LL::replace(transforms!["],"])
+				} else {
+					LL::replace(transforms![","])
+				}
+			},
+			Ty::LiteralCallFnLeft => LL::replace(transforms![&cfg.callfn, "(null,"]),
 			Ty::AssignmentLeft { name, op } => LL::replace(transforms![
 				"((t)=>",
 				&cfg.trysetfn,

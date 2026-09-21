@@ -25,6 +25,15 @@ import { incumbenceMatrix } from "../incumbence.ts";
 export default incumbenceMatrix({
 	prefix: "incumbent-postmessage",
 	sink: (win) => `${win}.__top.postMessage('ping', '*')`,
+	// the same call as a bound native function, for the `backup-` patterns:
+	// nothing of the page's goes on the stack when the host calls it, so the
+	// incumbent is whatever the backup incumbent settings object stack says.
+	//
+	// The empty `transfer` is bound too, so that the argument the host hands a
+	// callback - an event, a resolution value - lands past the arguments
+	// `postMessage` declares and is ignored, rather than being taken as one
+	sinkfn: (win) =>
+		`${win}.__top.postMessage.bind(${win}.__top, 'ping', '*', [])`,
 	setup: {
 		top: `addEventListener('message', function (e) {
 			var realm = 'unknown';
@@ -55,5 +64,23 @@ export default incumbenceMatrix({
 		"async-crossrealm-function": "top",
 		"inline-handler": "frame",
 		"message-event": "frame",
+
+		// the backup incumbent settings object: the realm that was incumbent
+		// when the callback was converted, answering for a callback that puts no
+		// script of its own on the stack
+		"backup-control-direct": "frame",
+		"backup-settimeout": "frame",
+		"backup-queuemicrotask": "frame",
+		// chromium, and not the spec: HostMakeJobCallback is supposed to record
+		// the incumbent settings object at the time `then` was called - the
+		// frame's - and HostCallJobCallback to run the reaction under it. What
+		// chromium answers with instead is the handler's own realm, which for a
+		// bound function is its target's. Measured, like every row here, because
+		// a proxy has to reproduce the browser it runs in
+		"backup-promise": "top",
+		"backup-message-event": "frame",
+		"backup-sync-dispatch": "frame",
+		"backup-foreign-bound": "frame",
+		"backup-three-realm": "sub",
 	},
 });

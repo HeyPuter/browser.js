@@ -65,6 +65,9 @@ function rewriteJsWasm(
 	for (const flag of Object_keys(context.config.flags)) {
 		flagsobj[flag] = flagEnabled(flag as any, context, flagsUrl(meta));
 	}
+	// the one flag that is not a boolean, and the rewriter wants the mode this
+	// engine can actually do rather than the one that was configured
+	flagsobj["incumbency"] = incumbencyMode(context, meta.base);
 
 	try {
 		let out: JsRewriterOutput;
