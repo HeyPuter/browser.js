@@ -20,9 +20,7 @@ use oxc::{
 };
 
 use crate::{
-	cfg::{Config, Flags, UrlRewriter},
-	changes::JsChanges,
-	rewrite::rewrite,
+	cfg::{Config, Flags, IncumbencyMode, UrlRewriter}, changes::JsChanges, rewrite::rewrite,
 };
 
 // required stub markers
@@ -474,10 +472,6 @@ where
 		walk::walk_expression(self, &right);
 		walk::walk_statement(self, &body);
 	}
-
-	fn scramitize(&mut self, span: Span) {
-		self.jschanges.add(rewrite!(span, Scramitize));
-	}
 }
 
 impl<'data, E> Visit<'data> for Visitor<'_, 'data, E>
@@ -564,8 +558,48 @@ where
 				return;
 			}
 		}
-		if self.flags.scramitize {
-			self.scramitize(it.span);
+
+		let should_stamp = match &self.flags.incumbency {
+			IncumbencyMode::Stamp => true,
+			IncumbencyMode::LazyStamp => match &it.callee {
+				Expression::Identifier(s) => s.name == "postMessage",
+				Expression::StaticMemberExpression(m) => m.property.name == "postMessage",
+				_ => false
+			}
+			_ => false,
+		};
+
+		if should_stamp {
+			match &it.callee {
+				Expression::ComputedMemberExpression(c) => {
+					self.jschanges.add(rewrite!(it.span, MemberCallFn {
+						args: it.arguments_span(),
+						object: c.object.span(),
+						expression: c.expression.span(),
+						optional: c.optional,
+						computed: true,
+					}))
+				}
+				Expression::StaticMemberExpression(m) => {
+					self.jschanges.add(rewrite!(it.span, MemberCallFn {
+						args: it.arguments_span(),
+						object: m.object.span(),
+						expression: m.property.span(),
+						optional: m.optional,
+						computed: false,
+					}))
+				}
+				Expression::PrivateFieldExpression(_)=>{
+					// even if you set `this.#p()` to a native method, it will always throw illegal invocation or a typeerror
+					// if you ever use this for something other than incumbency stamping this must be handled properly
+				}
+				_=>{
+					self.jschanges.add(rewrite!(it.span, LiteralCallFn {
+						args: it.arguments_span(),
+						inner: it.callee.span(),
+					}))
+				}
+			}
 		}
 		walk::walk_call_expression(self, it);
 	}

@@ -41,7 +41,6 @@ export type ScramjetFlags = {
 	rewriterLogs: boolean;
 	captureErrors: boolean;
 	cleanErrors: boolean;
-	scramitize: boolean;
 	sourcemaps: boolean;
 	destructureRewrites: boolean;
 	allowInvalidJs: boolean;
@@ -56,6 +55,7 @@ export interface ScramjetConfig {
 		wrapfn: string;
 		wrappropertybase: string;
 		wrappropertyfn: string;
+		callfn: string;
 		cleanrestfn: string;
 		importfn: string;
 		rewritefn: string;
@@ -63,7 +63,9 @@ export interface ScramjetConfig {
 		pushsourcemapfn: string;
 		registerrealmfn: string;
 		trysetfn: string;
+		selfid: string;
 		templocid: string;
+		tempreceiverid: string;
 		tempunusedid: string;
 	};
 	flags: ScramjetFlags;
