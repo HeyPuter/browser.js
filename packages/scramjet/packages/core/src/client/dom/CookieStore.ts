@@ -223,19 +223,11 @@ export default function (client: ScramjetClient, self: Self) {
 	});
 
 	client.Intercept(class extends CookieStore {
-		// `get`/`getAll`/`delete` are each two overloads taking one argument,
-		// which the decorator layer spells as the union it resolves to: an
-		// object picks the dictionary, anything else the name.
 		@Returns("Promise<CookieListItem?>")
 		@Arguments("optional (USVString or CookieStoreGetOptions)")
 		async get(
 			nameOrOptions?: string | CookieStoreGetOptions
 		): Promise<CookieListItem | null> {
-			// the whole of this interface is answered out of the cookie jar, so
-			// nothing here would otherwise consult the receiver -
-			// `CookieStore.prototype.get.call({}, ...)` answered where a browser
-			// rejects. `onchange` is the cheapest member that brand-checks, and
-			// reading it has no other effect
 			void new client.native.CookieStore(this).onchange;
 
 			const items = isDictionaryArgument(nameOrOptions)
@@ -250,11 +242,6 @@ export default function (client: ScramjetClient, self: Self) {
 		async getAll(
 			nameOrOptions?: string | CookieStoreGetOptions
 		): Promise<CookieList> {
-			// the whole of this interface is answered out of the cookie jar, so
-			// nothing here would otherwise consult the receiver -
-			// `CookieStore.prototype.getAll.call({}, ...)` answered where a browser
-			// rejects. `onchange` is the cheapest member that brand-checks, and
-			// reading it has no other effect
 			void new client.native.CookieStore(this).onchange;
 
 			return isDictionaryArgument(nameOrOptions)
@@ -272,11 +259,6 @@ export default function (client: ScramjetClient, self: Self) {
 			nameOrOptions: string | CookieInit,
 			value?: string
 		): Promise<void> {
-			// the whole of this interface is answered out of the cookie jar, so
-			// nothing here would otherwise consult the receiver -
-			// `CookieStore.prototype.set.call({}, ...)` answered where a browser
-			// rejects. `onchange` is the cheapest member that brand-checks, and
-			// reading it has no other effect
 			void new client.native.CookieStore(this).onchange;
 
 			if (arguments.length > 1) {
@@ -324,11 +306,6 @@ export default function (client: ScramjetClient, self: Self) {
 		async delete(
 			nameOrOptions: string | CookieStoreDeleteOptions
 		): Promise<void> {
-			// the whole of this interface is answered out of the cookie jar, so
-			// nothing here would otherwise consult the receiver -
-			// `CookieStore.prototype.delete.call({}, ...)` answered where a browser
-			// rejects. `onchange` is the cheapest member that brand-checks, and
-			// reading it has no other effect
 			void new client.native.CookieStore(this).onchange;
 
 			const expired = {
