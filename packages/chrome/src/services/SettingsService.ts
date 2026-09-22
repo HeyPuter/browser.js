@@ -60,7 +60,7 @@ export class SettingsService extends Service {
 
 	constructor(data: SettingsServiceState | null) {
 		super();
-		this.settings = createState(data ? data.settings : __DEFAULT_SETTINGS__);
+		this.settings = createState({ ...__DEFAULT_SETTINGS__, ...data?.settings });
 		let oldvalues: Map<any, any> = new Map();
 		stateListen(this.settings, (newvalue, prop) => {
 			if (oldvalues.get(prop) === newvalue) return;

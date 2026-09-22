@@ -4,7 +4,7 @@ import { Service } from "./Service.ts";
 import { INTERNAL_URL_PROTOCOL } from "../consts.ts";
 // TODO: centralize this to one place somehow
 import * as tldts from "tldts";
-import { puterBranding, isPuter, openUrl } from "../index.ts";
+import { puterBranding, isPuter, openUrl, settingsService } from "../index.ts";
 import { focusOmnibox } from "@components/Omnibar/Omnibox.tsx";
 import { uuid } from "../util";
 import { mountedPromise } from "../App.tsx";
@@ -23,22 +23,30 @@ export class TabsService extends Service {
 
 	constructor(data: TabServiceState | null) {
 		super();
-		if (data) {
-			for (const dt of data.tabs) {
-				let tab = Tab.deserialize(dt);
+		const restoreSession = settingsService.settings.startupPage !== "new-tab";
+		for (const saved of data?.tabs ?? []) {
+			if (!restoreSession && !saved.pinned) continue;
+			try {
+				const tab = Tab.deserialize(saved);
 				this.own(tab);
 				this.tabs.push(tab);
-				mountedPromise.then(() => {
-					pushTab(tab);
-				});
+			} catch (error) {
+				console.warn("Could not restore tab", error);
 			}
-			this.activetab =
-				this.tabs.find((tab) => tab.id === data.activetab) || this.tabs[0];
-		} else {
-			let tab = new Tab({});
+		}
+		if (this.tabs.length === 0 || !restoreSession) {
+			const tab = new Tab({});
 			this.own(tab);
 			this.tabs.push(tab);
-			this.activetab = tab;
+		}
+		this.tabs = [
+			...this.tabs.filter((tab) => tab.pinned),
+			...this.tabs.filter((tab) => !tab.pinned),
+		];
+		this.activetab = restoreSession
+			? (this.tabs.find((tab) => tab.id === data?.activetab) ?? this.tabs[0])
+			: this.tabs[this.tabs.length - 1];
+		for (const tab of this.tabs) {
 			mountedPromise.then(() => {
 				pushTab(tab);
 			});
