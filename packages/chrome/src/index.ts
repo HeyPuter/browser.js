@@ -17,6 +17,7 @@ import { FaviconService } from "./services/FaviconService.ts";
 import { KVWrapper } from "./services/KVWrapper.ts";
 import { migrate } from "./migrations/index.ts";
 import { mount } from "./App.tsx";
+import { registerSave } from "./services/persistence";
 
 export const isPuter =
 	import.meta.env.VITE_PUTER_BRANDING && puter.env == "app";
@@ -61,41 +62,6 @@ export type ProfileMetadata = {
 	name: string;
 	lastModified: number;
 };
-
-function registerSave(service: Service, kv: KVWrapper, key: string) {
-	let saving = false;
-
-	const flush = async () => {
-		if (!service.dirty || saving) return;
-		saving = true;
-		const data = service.save();
-		service.dirty = false;
-		try {
-			console.log("saving", key);
-			await kv.set(key, service.save());
-			service.dirty = false;
-			await kv.set(key, data);
-		} catch (error) {
-			service.dirty = true;
-			// throw error;
-		} finally {
-			saving = false;
-		}
-	};
-
-	setInterval(async () => {
-		await flush();
-	}, 1000);
-
-	window.addEventListener("pagehide", () => {
-		void flush();
-	});
-	document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "hidden") {
-			void flush();
-		}
-	});
-}
 
 async function loadServices() {
 	await navigator.locks.request("write", async () => {
