@@ -36,10 +36,6 @@ export const defaultConfig: ScramjetConfig = {
 		disableComputedWrap: false,
 		rewriterLogs: false,
 		captureErrors: false,
-		// on by default: with it off, every intercepted member leaves
-		// `scramjet.js` frames in `error.stack`, so any page that reads a stack
-		// - out of a `Headers.forEach` callback, say - is handed the proxy's
-		// own file name. That is a one-line detection for the whole client
 		cleanErrors: true,
 		scramitize: false,
 		sourcemaps: true,

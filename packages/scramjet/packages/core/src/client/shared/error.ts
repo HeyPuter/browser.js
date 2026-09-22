@@ -30,13 +30,7 @@ export default function (client: ScramjetClient, _self: Self) {
 	};
 
 	const closure = (error: any, frames: any[]) => {
-		// V8 calls this *to produce* `error.stack`, so reading `error.stack` here
-		// is re-entrant - it comes back already formatted by the default
-		// formatter, which is how this used to work and why the CallSite list was
-		// only ever mined for filenames. Build the string the way the default
-		// formatter does instead: `Error.prototype.toString` for the header,
-		// which is what V8 uses for a DOMException as much as for an Error, then
-		// one "\n    at <frame>" per surviving frame.
+		// stack must be entirely rebuilt by us
 		let stack: string = Error_prototype_toString.call(error);
 
 		for (let i = 0; i < frames.length; i++) {
@@ -53,8 +47,6 @@ export default function (client: ScramjetClient, _self: Self) {
 			let frame = String(frames[i]);
 			if (url) {
 				try {
-					// splitting on the url rather than replaceAll, which a page can
-					// replace on String.prototype
 					frame = String_split(frame, url).join(
 						unrewriteUrl(url, client.context)
 					);
@@ -69,19 +61,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		return stack;
 	};
 
-	// Defined outright rather than through `Trap`.
-	//
-	// `Error.prepareStackTrace` does not exist until something assigns it -
-	// `Object.getOwnPropertyDescriptor(Error, "prepareStackTrace")` is
-	// undefined on a fresh realm, and so is every entry up the chain - so
-	// `resolveNative` finds nothing to replace and skips the member. That is
-	// the right default everywhere else (adding a member an engine does not
-	// have advertises the patch), and it is why this flag silently did nothing:
-	// with `cleanErrors` on, every `error.stack` a page read still named
-	// scramjet.js in the frames beneath the member it called.
-	//
-	// Assigning it is what a page would do anyway, so the shape is one a real
-	// page produces.
+	// TODO: look into making this nonconfigurable?
 	Object_defineProperty(client.global.Error, "prepareStackTrace", {
 		get() {
 			// this is a funny js quirk. the getter is ran every time you type something in console

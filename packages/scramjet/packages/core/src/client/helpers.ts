@@ -46,8 +46,8 @@ export function openWindowSteps(
 	const realwin = nativeOpen(href, target, features);
 	if (!realwin) return realwin;
 
+	// i don't believe it's possible for a just-opened window to already have scramjet loaded but guard just in case
 	if (!(SCRAMJETCLIENT in realwin)) {
-		// i don't believe it's possible for a just-opened window to already have scramjet loaded but just in case
 		client.init.hookSubcontext(realwin as Self);
 	}
 
