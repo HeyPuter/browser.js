@@ -1,6 +1,4 @@
-import { Cookie } from "@/shared";
-const SAME_SITE = ["strict", "lax", "none"] as const;
-
+import type { Cookie } from "@/shared";
 import { Arguments, Returns, idlUSVString } from "@client/webidl";
 import { parse as parseSetCookie } from "@/shared/set-cookie-parser";
 
@@ -8,6 +6,7 @@ import {
 	_Date,
 	_URL,
 	Math_trunc,
+	String_charCodeAt,
 	String_indexOf,
 	String_startsWith,
 	String_substring,
@@ -21,9 +20,9 @@ import {
 	readCookieStoreGetOptions,
 } from "@client/helpers";
 
-export const enabled = (client: ScramjetClient, self: Self) =>
+export const enabled = (_client: ScramjetClient, self: Self) =>
 	"CookieStore" in self;
-export default function (client: ScramjetClient, self: Self) {
+export default function (client: ScramjetClient, _self: Self) {
 	/**
 	 * A stored cookie as the Cookie Store API reports it.
 	 *
@@ -43,9 +42,11 @@ export default function (client: ScramjetClient, self: Self) {
 			secure: !!cookie.secure,
 			// the jar tolerates whatever a Set-Cookie header spelled; this API is
 			// an enum, and its own default matches the jar's
-			sameSite: (SAME_SITE.indexOf(sameSite as CookieSameSite) === -1
-				? "lax"
-				: sameSite) as CookieSameSite,
+			sameSite: sameSite === "strict" || sameSite === "none" ? sameSite : "lax",
+			// reported as stored, which is all it is. the jar has no partition key,
+			// so this isolates nothing: a partitioned and an unpartitioned cookie
+			// with the same name, domain and path are one record, and a `delete`
+			// with `partitioned: true` removes the unpartitioned one
 			partitioned: !!cookie.partitioned,
 		};
 	};
@@ -98,10 +99,26 @@ export default function (client: ScramjetClient, self: Self) {
 		typeof value === "object" ||
 		typeof value === "function";
 
-	const readGetOptions = (value: unknown): [string?, string?] => {
+	/**
+	 * The `(CookieStoreGetOptions)` overload of `get` and `getAll`.
+	 *
+	 * https://cookiestore.spec.whatwg.org/#dom-cookiestore-get-options step 5
+	 * makes an empty dictionary a TypeError — `get()` and `get({})` both reject.
+	 * `getAll` has no such step, because `getAll()` is the documented way to ask
+	 * for every cookie, so the rejection is the caller's to opt into. An empty
+	 * *string* name is a member that is present, and does not trip it.
+	 */
+	const queryOptions = (
+		value: unknown,
+		rejectEmpty: boolean
+	): CookieListItem[] => {
 		const { name, url } = readCookieStoreGetOptions(value);
 
-		return [name, url];
+		if (rejectEmpty && name === undefined && url === undefined) {
+			throw new TypeError("CookieStoreGetOptions must not be empty.");
+		}
+
+		return query(name, url);
 	};
 
 	type WriteInit = {
@@ -120,9 +137,11 @@ export default function (client: ScramjetClient, self: Self) {
 	 * The Set-Cookie text for a write, or null when the write is invalid.
 	 *
 	 * Null means "hand this to the native store", not "throw" — see
-	 * {@link nativeInit}. Every rejection here is one the browser makes too, so
-	 * the page gets the browser's own message instead of our approximation of
-	 * it, which is the same bargain `compileIDLValidator` strikes for arguments.
+	 * {@link nativeInit}. Every rejection that returns null is one the browser
+	 * makes too, so the page gets the browser's own message instead of our
+	 * approximation of it, which is the same bargain `compileIDLValidator`
+	 * strikes for arguments. The two rejections that throw instead are marked
+	 * where they sit: for those, delegating would have the native write for real.
 	 *
 	 * Writes are serialized rather than applied structurally so they go through
 	 * the identical path as the `document.cookie` setter — one jar, mutually
@@ -154,7 +173,17 @@ export default function (client: ScramjetClient, self: Self) {
 			// against the proxy's rather than the site's. handing it over could
 			// mean a domain that happens to match the proxy, which the native
 			// would accept and write for real
-			const host = String_toLowerCase(client.scopeUrl.hostname);
+			//
+			// `client.url`, because that is the URL `commit` keys the jar write on:
+			// a check against any other host would authorize a cookie that then
+			// lands somewhere else. in particular not `scopeUrl`, which is built
+			// from `scopeOrigin` — an opaque document's is a per-client random
+			// `about-opaque://` stand-in with no real host, and its docblock says
+			// outright never to compare against it. a document with no host at all,
+			// an `about:blank` frame, then rejects every `domain` here, which is
+			// the right answer: its jar bucket is keyed on the empty hostname too,
+			// so a domain cookie it wrote is one it could never read back
+			const host = String_toLowerCase(client.url.hostname);
 			const suffix = String_substring(host, host.length - domain.length - 1);
 			if (domain !== host && suffix !== `.${domain}`) {
 				throw new TypeError(
@@ -165,6 +194,18 @@ export default function (client: ScramjetClient, self: Self) {
 
 		let path = init.path;
 		if (!String_startsWith(path, "/")) return null;
+		// the second rejection that cannot be delegated, and for the opposite
+		// reason to the domain one: the spec does not reject a ';' in `path` at
+		// all, so the native would accept it and set it structurally, where we
+		// build header text. `path: "/x;Domain=victim.com;Path=/"` reads back out
+		// of the jar's parser as a *different* cookie scoped to another site's
+		// host, and handing it to the native instead would write a real cookie on
+		// the proxy origin — the same leak from the other end
+		if (hasHeaderMetacharacter(path)) {
+			throw new TypeError(
+				"Cookie path must not contain ';' or a control character."
+			);
+		}
 		// the spec appends the slash, so `path: "/foo"` scopes to "/foo/" and
 		// does not match "/foo" itself
 		if (path[path.length - 1] !== "/") path += "/";
@@ -222,6 +263,11 @@ export default function (client: ScramjetClient, self: Self) {
 		partitioned: init.partitioned,
 	});
 
+	// every member below is answered out of the cookie jar, so nothing in a
+	// body would otherwise consult the receiver, and
+	// `CookieStore.prototype.get.call({}, ...)` would answer where a browser
+	// rejects. `onchange` is the cheapest member that brand-checks, and reading
+	// it has no other effect — hence the discarded read that opens each one
 	client.Intercept(class extends CookieStore {
 		@Returns("Promise<CookieListItem?>")
 		@Arguments("optional (USVString or CookieStoreGetOptions)")
@@ -231,7 +277,7 @@ export default function (client: ScramjetClient, self: Self) {
 			void new client.native.CookieStore(this).onchange;
 
 			const items = isDictionaryArgument(nameOrOptions)
-				? query(...readGetOptions(nameOrOptions))
+				? queryOptions(nameOrOptions, true)
 				: query(idlUSVString(nameOrOptions));
 
 			return items.length ? items[0] : null;
@@ -245,7 +291,7 @@ export default function (client: ScramjetClient, self: Self) {
 			void new client.native.CookieStore(this).onchange;
 
 			return isDictionaryArgument(nameOrOptions)
-				? query(...readGetOptions(nameOrOptions))
+				? queryOptions(nameOrOptions, false)
 				: query(idlUSVString(nameOrOptions));
 		}
 
@@ -346,6 +392,25 @@ export default function (client: ScramjetClient, self: Self) {
 			return cookie === null ? super.delete(nativeInit(init)) : commit(cookie);
 		}
 	});
+}
+
+/**
+ * A character an attribute value cannot carry into Set-Cookie text: ';' opens
+ * the next attribute, and a control character is one the jar's parser drops
+ * off the wire and one a real header could not carry at all. The parser
+ * applies this rule to a cookie's name and value itself, but an attribute we
+ * concatenate the text out of has to be checked before it goes in.
+ */
+function hasHeaderMetacharacter(value: string): boolean {
+	for (let i = 0; i < value.length; i++) {
+		const code = String_charCodeAt(value, i);
+		// ';', DEL, and C0 except TAB — the parser's own rule for a name/value
+		if (code === 0x3b || code === 0x7f || (code <= 0x1f && code !== 0x09)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /**

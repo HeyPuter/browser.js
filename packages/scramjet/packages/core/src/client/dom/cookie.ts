@@ -1,6 +1,4 @@
 import { ScramjetClient } from "@client/index";
-
-import { _Date, _URL } from "@/shared/snapshot";
 import { Type } from "@client/webidl";
 
 export default function (client: ScramjetClient, _self: Self) {
