@@ -17,6 +17,7 @@ import {
 	_URL,
 } from "@/shared/snapshot";
 import { Arguments, Constructor, Type } from "@client/webidl";
+import { EventHandlerSlot } from "@client/eventhandler";
 
 // https://websockets.spec.whatwg.org/#dom-websocket-connecting — named rather
 // than read off `WebSocket.CONNECTING`, which is page-writable
@@ -49,10 +50,7 @@ export type FakeWebSocketState = {
 	 */
 	pendingClose: { code: number; reason: string } | null;
 
-	onopen: ((ev: Event) => any) | null;
-	onmessage: ((ev: MessageEvent) => any) | null;
-	onclose: ((ev: CloseEvent) => any) | null;
-	onerror: ((ev: Event) => any) | null;
+	handlers: Record<"open" | "message" | "close" | "error", EventHandlerSlot>;
 };
 export default function (client: ScramjetClient, self: GlobalThis) {
 	const {
@@ -94,16 +92,6 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			}
 			url = rawurl.href;
 
-			// the platform dispatched these, as far as the page is concerned, so
-			// they have to read back as trusted - through the box rather than a
-			// wrapper, so that the object a listener gets and the object an
-			// `on*` handler gets are one and the same
-			const trust = <T extends Event>(ev: T): T => {
-				client.box.trustedEvents.add(ev);
-
-				return ev;
-			};
-
 			const barews = client.bare.createWebSocket(url, protocols, [
 				["User-Agent", self.navigator.userAgent],
 				["Origin", client.scopeOrigin],
@@ -118,30 +106,22 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				barews,
 				pendingClose: null,
 
-				onopen: null,
-				onmessage: null,
-				onclose: null,
-				onerror: null,
+				// the `on*` handlers are ordinary listeners on the socket, added
+				// when each is first set - see `EventHandlerSlot` - so they see
+				// the same stand-in the page's own listeners do, in the order
+				// they would run natively
+				handlers: {
+					open: new EventHandlerSlot(client, fakeWebSocket, "open"),
+					message: new EventHandlerSlot(client, fakeWebSocket, "message"),
+					close: new EventHandlerSlot(client, fakeWebSocket, "close"),
+					error: new EventHandlerSlot(client, fakeWebSocket, "error"),
+				},
 			};
 
-			function fakeEventSend(fakeev: Event) {
-				// the `on*` handler is not called by hand: it is registered as
-				// an ordinary listener below, so that it sees the same stand-in
-				// the page's own listeners do - with `isTrusted` answering true
-				// and `target` already set, neither of which was true when it
-				// was invoked before the dispatch
-				trust(fakeev);
-				fakeWebSocket.dispatchEvent(fakeev);
-			}
-
-			// registered here, at construction, so it runs ahead of anything
-			// the page adds - which is the order a handler set before any
-			// listener fires in natively
-			for (const type of ["open", "message", "close", "error"]) {
-				fakeWebSocket.addEventListener(type, (ev: Event) => {
-					state["on" + type]?.call(fakeWebSocket, ev);
-				});
-			}
+			// the platform dispatched these, as far as the page is concerned
+			const fakeEventSend = (fakeev: Event) => {
+				client.dispatchEvent(fakeWebSocket, fakeev);
+			};
 
 			barews.addEventListener("open", () => {
 				// a close that arrived while connecting: the handshake is
@@ -269,7 +249,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			const ws = socketmap.get(this);
 			if (!ws) return super.onopen;
 
-			return ws.onopen;
+			return ws.handlers.open.get();
 		}
 
 		@Type("EventHandler")
@@ -281,7 +261,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				return;
 			}
 
-			ws.onopen = v;
+			ws.handlers.open.set(v);
 		}
 
 		@Type("EventHandler")
@@ -289,7 +269,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			const ws = socketmap.get(this);
 			if (!ws) return super.onmessage;
 
-			return ws.onmessage;
+			return ws.handlers.message.get();
 		}
 
 		@Type("EventHandler")
@@ -301,7 +281,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				return;
 			}
 
-			ws.onmessage = v;
+			ws.handlers.message.set(v);
 		}
 
 		@Type("EventHandler")
@@ -309,7 +289,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			const ws = socketmap.get(this);
 			if (!ws) return super.onclose;
 
-			return ws.onclose;
+			return ws.handlers.close.get();
 		}
 
 		@Type("EventHandler")
@@ -321,7 +301,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				return;
 			}
 
-			ws.onclose = v;
+			ws.handlers.close.set(v);
 		}
 
 		@Type("EventHandler")
@@ -329,7 +309,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			const ws = socketmap.get(this);
 			if (!ws) return super.onerror;
 
-			return ws.onerror;
+			return ws.handlers.error.get();
 		}
 
 		@Type("EventHandler")
@@ -341,7 +321,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				return;
 			}
 
-			ws.onerror = v;
+			ws.handlers.error.set(v);
 		}
 
 		@Arguments("(BufferSource or Blob or USVString)")
