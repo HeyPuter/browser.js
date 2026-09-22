@@ -1,4 +1,4 @@
-import type { Stateful } from "dreamland/core";
+import { settingsService } from "..";
 import { Service } from "./Service";
 import { HistoryState } from "../Tab/History";
 import { CookieJar } from "@mercuryworkshop/scramjet/bundled";
@@ -23,6 +23,8 @@ export class BookmarkEntry extends StatefulClass {
 	constructor(partial?: Partial<BookmarkEntry>) {
 		super();
 		Object.assign(this, partial);
+		this.url = new URL(this.url);
+		this.autodirty();
 	}
 
 	serialize(): SerializedBookmarkEntry {
@@ -49,9 +51,9 @@ export class ProfileService extends Service {
 		this.cookieJar = new CookieJar();
 		if (data) {
 			this.cookieJar.load(data.cookies);
-			this.globalhistory = data.globalhistory.map((state) =>
-				HistoryState.deserialize(state)
-			);
+			this.globalhistory = (
+				settingsService.settings.clearHistoryOnExit ? [] : data.globalhistory
+			).map((state) => HistoryState.deserialize(state));
 			this.bookmarks = data.bookmarks.map((bookmark) =>
 				BookmarkEntry.deserialize(bookmark)
 			);
@@ -72,6 +74,42 @@ export class ProfileService extends Service {
 				}),
 			];
 		}
+		for (const entry of [...this.globalhistory, ...this.bookmarks])
+			this.own(entry);
+		// Service listeners need an owner to survive garbage collection.
+		use(this.globalhistory)
+			.constrain(this)
+			.listen(() => this.markDirty());
+		use(this.bookmarks)
+			.constrain(this)
+			.listen(() => this.markDirty());
+		use(settingsService.settings.clearHistoryOnExit)
+			.constrain(this)
+			.listen(() => this.markDirty());
+	}
+
+	saveBookmark(bookmark: BookmarkEntry, title: string, url: URL) {
+		bookmark.title = title.trim() || url.href;
+		bookmark.url = new URL(url);
+		this.own(bookmark);
+		this.bookmarks = this.bookmarks.includes(bookmark)
+			? [...this.bookmarks]
+			: [bookmark, ...this.bookmarks];
+	}
+
+	removeBookmark(bookmark: BookmarkEntry) {
+		this.disown(bookmark);
+		this.bookmarks = this.bookmarks.filter((entry) => entry !== bookmark);
+	}
+
+	removeHistoryEntry(entry: HistoryState) {
+		this.disown(entry);
+		this.globalhistory = this.globalhistory.filter((item) => item !== entry);
+	}
+
+	clearHistory() {
+		for (const entry of this.globalhistory) this.disown(entry);
+		this.globalhistory = [];
 	}
 
 	serialize(): ProfileServiceState {
@@ -83,6 +121,8 @@ export class ProfileService extends Service {
 	}
 
 	save(): ProfileServiceState {
-		return this.serialize();
+		const data = this.serialize();
+		if (settingsService.settings.clearHistoryOnExit) data.globalhistory = [];
+		return data;
 	}
 }

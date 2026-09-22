@@ -3,38 +3,71 @@ import type { Tab } from "../Tab/Tab";
 import { Favicon } from "@components/Favicon";
 import { profileService, tabsService } from "..";
 
-export function HistoryPage(this: FC<{ tab: Tab }>) {
+export function HistoryPage(this: FC<{ tab: Tab }, { query: string }>) {
+	this.query = "";
 	return (
 		<div>
 			<nav>
 				<h1>History</h1>
+				<input
+					aria-label="Search history"
+					placeholder="Search history"
+					value={use(this.query)}
+				/>
+				<button
+					on:click={() => profileService.clearHistory()}
+					disabled={use(profileService.globalhistory).map(
+						(entries) => entries.length === 0
+					)}
+				>
+					Clear browsing history
+				</button>
 			</nav>
 			<ul class="entries">
-				{profileService.globalhistory
-					.sort((a, b) => b.timestamp - a.timestamp)
-					.map((entry) => (
-						<li
-							class="entry"
-							on:click={() => {
-								tabsService.newTab(entry.url);
-							}}
-						>
-							<span
-								class="inner"
-								x={(() => {
-									console.log(entry);
-								})()}
-							>
-								<Favicon iconUrl={entry.favicon} size="small"></Favicon>
-								<span class="title">{entry.title || entry.url.href}</span>
-								<span class="url">{entry.url.hostname}</span>
-							</span>
-						</li>
-					))}
+				{use(profileService.globalhistory, this.query).map(
+					([entries, query]) => {
+						const term = query.trim().toLowerCase();
+						const matches = entries
+							.filter(
+								(entry) =>
+									entry.url.href.toLowerCase().includes(term) ||
+									entry.title?.toLowerCase().includes(term)
+							)
+							.slice()
+							.sort((a, b) => b.timestamp - a.timestamp);
+						return matches.length ? (
+							matches.map((entry) => (
+								<li class="entry">
+									<button
+										class="inner"
+										on:click={() => {
+											tabsService.newTab(new URL(entry.url));
+										}}
+									>
+										<Favicon iconUrl={entry.favicon} size="small" />
+										<span class="title">{entry.title || entry.url.href}</span>
+										<span class="url">{entry.url.hostname}</span>
+									</button>
+									<button
+										aria-label={`Remove ${entry.title || entry.url.href} from history`}
+										on:click={() => profileService.removeHistoryEntry(entry)}
+									>
+										Remove
+									</button>
+								</li>
+							))
+						) : (
+							<li class="empty">
+								{term ? "No matching history" : "No browsing history yet"}
+							</li>
+						);
+					}
+				)}
 			</ul>
 		</div>
 	);
 }
+
 HistoryPage.style = css`
 	:scope {
 		width: 100%;
@@ -45,7 +78,24 @@ HistoryPage.style = css`
 		background: var(--ntp_background);
 		color: var(--ntp_text);
 	}
+	button,
+	input {
+		color: inherit;
+	}
+	input {
+		background: var(--toolbar_field);
+		padding: var(--space-md);
+		border: 1px solid var(--text-20);
+		border-radius: var(--radius-sm);
+	}
+	.empty {
+		padding: var(--space-xxl);
+	}
 	nav {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xl);
+		flex-wrap: wrap;
 		width: 100%;
 		padding: var(--space-xxl);
 		background: var(--toolbar);
@@ -66,10 +116,15 @@ HistoryPage.style = css`
 		flex: 1;
 	}
 	.entry {
+		display: flex;
+		align-items: center;
 		width: 100%;
 		transition: background 0.1s;
 	}
 	.inner {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
 		display: flex;
 		align-items: center;
 		cursor: pointer;

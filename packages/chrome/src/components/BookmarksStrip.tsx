@@ -4,6 +4,7 @@ import { createMenu, createMenuCustom, setContextMenu } from "@components/Menu";
 import { BookmarkPopup } from "@components/BookmarkPopup";
 import { profileService, settingsService, tabsService } from "..";
 import { Favicon } from "./Favicon";
+import { BookmarkEntry } from "../services/ProfileService";
 
 export function BookmarksStrip(
 	this: FC<{
@@ -17,7 +18,25 @@ export function BookmarksStrip(
 			{
 				label: "Add Bookmark",
 				icon: iconAdd,
-				action: () => {},
+				action: () => {
+					const rect = this.root.getBoundingClientRect();
+					requestAnimationFrame(() =>
+						createMenuCustom(
+							{ left: rect.left, top: rect.bottom },
+							<BookmarkPopup
+								new={true}
+								bookmark={
+									new BookmarkEntry({
+										url: tabsService.activetab.url,
+										title:
+											tabsService.activetab.title ||
+											tabsService.activetab.url.href,
+									})
+								}
+							/>
+						)
+					);
+				},
 			},
 			{
 				label: "Pin Bookmarks Strip",
@@ -66,9 +85,7 @@ export function BookmarksStrip(
 								label: "Delete Bookmark",
 								icon: iconTrash,
 								action: () => {
-									profileService.bookmarks = profileService.bookmarks.filter(
-										(br) => br != b
-									);
+									profileService.removeBookmark(b);
 								},
 							},
 						]);
@@ -79,7 +96,7 @@ export function BookmarksStrip(
 						tabsService.activetab.pushNavigate(new URL(b.url));
 					}}
 				>
-					<Favicon domain={b.url.hostname}></Favicon>
+					<Favicon domain={use(b.url).map((url) => url.hostname)}></Favicon>
 					<span>{use(b.title)}</span>
 				</button>
 			))}

@@ -24,7 +24,7 @@ export class HistoryState extends StatefulClass {
 	constructor(partial?: Partial<HistoryState>) {
 		super();
 		Object.assign(this, partial);
-		this.timestamp = Date.now();
+		this.timestamp ??= Date.now();
 		this.autodirty();
 	}
 
@@ -100,8 +100,11 @@ export class History extends StatefulClass {
 		const hstate = new HistoryState({ url, state, title });
 		if (virtual) hstate.virtual = true;
 
-		if (url.href != `${INTERNAL_URL_PROTOCOL}//newtab`)
+		if (url.protocol !== INTERNAL_URL_PROTOCOL) {
 			profileService.globalhistory = [...profileService.globalhistory, hstate];
+			profileService.own(hstate);
+			profileService.markDirty();
+		}
 		this.states.push(hstate);
 		this.own(hstate);
 		this.index++;

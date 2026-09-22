@@ -1,5 +1,4 @@
-import { css, type FC, type Stateful } from "dreamland/core";
-import { Icon } from "@components/Icon";
+import { css, type FC } from "dreamland/core";
 import { Input } from "@components/Input";
 import { closeMenu } from "@components/Menu";
 import { Button } from "@components/Button";
@@ -7,28 +6,30 @@ import type { BookmarkEntry } from "../services/ProfileService";
 import { profileService } from "..";
 
 export function BookmarkPopup(
-	this: FC<{
-		bookmark: BookmarkEntry;
-		new: boolean;
-	}>
+	this: FC<
+		{ bookmark: BookmarkEntry; new: boolean },
+		{ title: string; address: string; error: string }
+	>
 ) {
+	this.title = this.bookmark.title;
+	this.address = this.bookmark.url.href;
+	this.error = "";
 	return (
 		<div>
 			<div class="title">{this.new ? "Add Bookmark" : "Edit Bookmark"}</div>
 
 			<div class="field">
-				<Input label="Title" value={use(this.bookmark.title)} />
+				<Input label="Title" value={use(this.title)} />
 			</div>
 			<div class="field">
-				<Input label="URL" value={use(this.bookmark.url.href)} />
+				<Input label="URL" value={use(this.address)} />
 			</div>
+			<p role="alert">{use(this.error)}</p>
 			<div class="actions">
 				<Button
 					on:click={() => {
 						if (!this.new) {
-							profileService.bookmarks = profileService.bookmarks.filter(
-								(b) => b !== this.bookmark
-							);
+							profileService.removeBookmark(this.bookmark);
 						}
 						closeMenu();
 					}}
@@ -38,12 +39,16 @@ export function BookmarkPopup(
 				<Button
 					variant="primary"
 					on:click={() => {
-						if (this.new) {
-							profileService.bookmarks = [
-								this.bookmark,
-								...profileService.bookmarks,
-							];
+						if (!URL.canParse(this.address.trim())) {
+							this.error =
+								"Enter a valid URL, including its scheme (for example, https://example.com).";
+							return;
 						}
+						profileService.saveBookmark(
+							this.bookmark,
+							this.title,
+							new URL(this.address.trim())
+						);
 
 						closeMenu();
 					}}
