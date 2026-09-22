@@ -53,6 +53,7 @@ import { base64Decode, bytesToBase64 } from "@/shared/util";
 import {
 	JSON_parse,
 	JSON_stringify,
+	Object_hasOwn,
 	Reflect_apply,
 	String,
 	String_substring,
@@ -68,6 +69,7 @@ const ELEMENT_NODE = 1;
 const ATTRIBUTE_NODE = 2;
 const TEXT_NODE = 3;
 const CDATA_SECTION_NODE = 4;
+const DOCUMENT_NODE = 9;
 const DOCUMENT_FRAGMENT_NODE = 11;
 
 /** A script or a style: an element whose children are code rather than text. */
@@ -109,6 +111,35 @@ export type TextAccess = {
 	createText(node: Node, text: string): Text;
 	/** The Text children of `element`, in order. */
 	textChildren(element: Element): CharacterData[];
+	/**
+	 * Record every Text child of a script or style that has no record yet.
+	 *
+	 * Run before anything changes the element's children. A script straight
+	 * out of the HTML rewriter has one Text child holding the rewritten
+	 * program and its source only in {@link SCRIPT_SOURCE_ATTRIBUTE}, which
+	 * answers for that child only while it is the only one - so the record has
+	 * to be taken while it still is.
+	 */
+	adopt(element: Element): void;
+	/** Whether `value` is really a Node - a brand check, not a prototype walk. */
+	isNode(value: unknown): boolean;
+	/**
+	 * Run `insert`, a native insertion of `nodes` into `parent`, with every
+	 * Text node it moves into or out of a script or a style handled around it.
+	 * See {@link insertion}.
+	 */
+	around<T>(parent: Node | null, nodes: readonly unknown[], insert: () => T): T;
+	/**
+	 * Insert a new Text node carrying `value` into `parent` before
+	 * `reference`, as the page's text: rewritten whole when `parent` is a
+	 * script or a style. Throws what the native `insertBefore` throws.
+	 */
+	insertText(parent: Node, reference: Node | null, value: string): Text;
+	/**
+	 * `splitText` over the page's text rather than the rewritten text the
+	 * document holds. Only for a node inside a script or a style.
+	 */
+	split(node: Text, offset: number): Text;
 };
 
 const layers = new _WeakMap<ScramjetClient, TextAccess>([]);
@@ -147,10 +178,17 @@ export function textAccess(client: ScramjetClient): TextAccess {
 	const nFragmentChildElementCount = fragment.childElementCount.get;
 	const nFragmentQuerySelector = fragment.querySelector.value;
 	const nCreateTextNode = document.createTextNode.value;
+	const nInsertBefore = node.insertBefore.value;
+	const nAppendChild = node.appendChild.value;
+	const nRemoveChild = node.removeChild.value;
+	const nIsConnected = node.isConnected.get;
+	const nGetTextContent = node.textContent.get;
+	const nAfter = characterData.after.value;
 
 	const type = (node: Node): number => Reflect_apply(nNodeType, node, []);
 	const parent = (node: Node): Element | null =>
 		Reflect_apply(nParentElement, node, []);
+	const parent_ = parent;
 	const firstChild = (node: Node): Node | null =>
 		Reflect_apply(nFirstChild, node, []);
 	const nextSibling = (node: Node): Node | null =>
@@ -340,6 +378,11 @@ export function textAccess(client: ScramjetClient): TextAccess {
 
 		const rewritten = rewrite(text);
 
+		// recorded before any of the writes below, each of which can run the
+		// script - and code that reads `document.currentScript.text` from inside
+		// it has to get the page's source back, not the rewritten one
+		recordSource(element, text);
+
 		// the later nodes are emptied *first*. every one of these writes is a
 		// children-changed, and a connected script that has not run yet is
 		// prepared on each of them - so the last state the element passes through
@@ -351,20 +394,21 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		if (children.length > 0 && rawData(children[0]) !== rewritten) {
 			writeData(children[0], rewritten);
 		}
-
-		recordSource(element, text);
 	};
 
 	const setSource = (element: Element, text: string) => {
 		const rewrite = rewriterFor(element);
+
+		// first, for the reason `sync` gives: the write can run the script, and
+		// until the new child has a record of its own the attribute is what
+		// answers for it
+		recordSource(element, text);
 
 		Reflect_apply(nSetTextContent, element, [rewrite ? rewrite(text) : text]);
 
 		const child = firstChild(element);
 		if (child)
 			client.box.characterDataSources.set(child as CharacterData, text);
-
-		recordSource(element, text);
 	};
 
 	const setData = (node: CharacterData, text: string) => {
@@ -380,6 +424,7 @@ export function textAccess(client: ScramjetClient): TextAccess {
 			return;
 		}
 
+		adopt(owner);
 		client.box.characterDataSources.set(node, text);
 		sync(owner);
 	};
@@ -399,6 +444,12 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		return !!Reflect_apply(query, node, ["script,style"]);
 	};
 
+	/**
+	 * Only the branches that lead to a script or a style are walked here; a
+	 * subtree with neither under it is answered by the native `textContent`
+	 * in one call, which is what keeps `document.body.textContent` from being
+	 * a JS walk over the whole document.
+	 */
 	const descendantText = (node: Node): string => {
 		let out = "";
 
@@ -407,10 +458,9 @@ export function textAccess(client: ScramjetClient): TextAccess {
 			if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
 				out += data(child as CharacterData);
 			} else if (what === ELEMENT_NODE) {
-				out +=
-					kind(child as Element) !== null
-						? source(child as Element)
-						: descendantText(child);
+				if (kind(child as Element) !== null) out += source(child as Element);
+				else if (containsRawText(child)) out += descendantText(child);
+				else out += Reflect_apply(nGetTextContent, child, []);
 			}
 		}
 
@@ -435,7 +485,223 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		writeData(node, text);
 	};
 
+	const adopt = (element: Element) => {
+		if (kind(element) === null) return;
+
+		const children = textChildren(element);
+		for (let i = 0; i < children.length; i++) {
+			if (!client.box.characterDataSources.has(children[i])) {
+				client.box.characterDataSources.set(children[i], data(children[i]));
+			}
+		}
+	};
+
+	const isNode = (value: unknown): boolean => {
+		if (typeof value !== "object" || value === null) return false;
+
+		// the native getter's own brand check. `instanceof` walks a prototype
+		// chain the page can rebuild, and consults a `Symbol.hasInstance` the
+		// page can define - either one decides whether the text is blanked
+		try {
+			Reflect_apply(nNodeType, value, []);
+
+			return true;
+		} catch {
+			return false;
+		}
+	};
+
+	const asElement = (node: Node | null): Element | null =>
+		node && type(node) === ELEMENT_NODE ? (node as Element) : null;
+
+	/** The Text nodes an argument contributes to its new parent's text content. */
+	const textNodesOf = (inserted: Node): CharacterData[] => {
+		const what = type(inserted);
+		if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
+			return [inserted as CharacterData];
+		}
+		// a fragment is flattened into the parent, so its own Text children
+		// become the parent's. anything deeper belongs to an element and never
+		// counts as the parent's child text content
+		if (what === DOCUMENT_FRAGMENT_NODE) {
+			return textChildren(inserted as unknown as Element);
+		}
+
+		return [];
+	};
+
+	/**
+	 * Give a connected script the node insertion its children just had.
+	 *
+	 * An insertion into a connected script that has not started prepares it,
+	 * and that is when it runs. The insertion here landed blanked text - so the
+	 * script was prepared with an empty source, which leaves it unstarted - and
+	 * the rewritten program only arrived afterwards as a data write, which
+	 * Blink does not prepare a script on. Inserting and removing an empty Text
+	 * node is an insertion with the program already in place: the script runs
+	 * then, still inside the page's call, where the native would have run it.
+	 * A script that has already started ignores both.
+	 */
+	const reprepare = (element: Element) => {
+		if (kind(element) !== "script" || !rewriterFor(element)) return;
+		if (!Reflect_apply(nIsConnected, element, [])) return;
+
+		const probe = createText(element, "");
+		Reflect_apply(nAppendChild, element, [probe]);
+		Reflect_apply(nRemoveChild, element, [probe]);
+	};
+
+	/**
+	 * Everything an insertion has to do around the native call, or null when
+	 * there is nothing to do.
+	 *
+	 * Text going *into* a script is recorded and blanked, so that the insertion
+	 * itself - which is a children-changed, and can execute the element - lands
+	 * nothing the rewriter has not seen. `done` then writes the rewritten
+	 * whole; `undo` puts every blanked node back the way it was, for an
+	 * insertion the native refused - a node that stays where it was must not
+	 * come out of a failed call emptied.
+	 *
+	 * Text coming *out of* one is handed back its own data, because outside a
+	 * script it is text like any other and the document should hold what it
+	 * reads as.
+	 */
+	const insertion = (parent: Node | null, nodes: readonly unknown[]) => {
+		const target = asElement(parent);
+		const into = target ? kind(target) : null;
+		const resync: Element[] = [];
+		const restoring: CharacterData[] = [];
+		const blanked: {
+			node: CharacterData;
+			raw: string;
+			had: boolean;
+			record: string | undefined;
+		}[] = [];
+
+		if (into && target) adopt(target);
+
+		for (let i = 0; i < nodes.length; i++) {
+			const inserted = nodes[i];
+			// a string, or an object that is not a node at all - the IDL union
+			// already turned one of those into a string, and reading `nodeType`
+			// off it would throw where the native would have stringified it
+			if (!isNode(inserted)) continue;
+
+			const moving = textNodesOf(inserted as Node);
+			for (let j = 0; j < moving.length; j++) {
+				const node = moving[j];
+				const from = parent_(node);
+				if (from && kind(from) !== null) {
+					// its siblings are about to lose it, and the record is the only
+					// thing that remembers what they say
+					adopt(from);
+					resync[resync.length] = from;
+				}
+
+				if (into) {
+					blanked[blanked.length] = {
+						node,
+						raw: rawData(node),
+						had: client.box.characterDataSources.has(node),
+						record: client.box.characterDataSources.get(node),
+					};
+					blank(node);
+				} else if (client.box.characterDataSources.has(node)) {
+					// restored on the way out rather than here: writing a script's
+					// own source back into a node that is still inside it would be
+					// the one unrewritten children-changed this all exists to avoid
+					restoring[restoring.length] = node;
+				}
+			}
+		}
+
+		if (!into && resync.length === 0 && restoring.length === 0) return null;
+
+		return {
+			done: () => {
+				for (let i = 0; i < restoring.length; i++) restore(restoring[i]);
+				for (let i = 0; i < resync.length; i++) {
+					if (resync[i] !== target) sync(resync[i]);
+				}
+				// only a script or a style has anything to re-derive; a plain
+				// parent holds what the page wrote, which is what the restores
+				// above put back
+				if (into && target) {
+					sync(target);
+					if (blanked.length > 0) reprepare(target);
+				}
+			},
+			undo: () => {
+				for (let i = 0; i < blanked.length; i++) {
+					const { node, raw, had, record } = blanked[i];
+					if (had) client.box.characterDataSources.set(node, record!);
+					else client.box.characterDataSources.delete(node);
+					writeData(node, raw);
+				}
+			},
+		};
+	};
+
+	const around = <T>(
+		parent: Node | null,
+		nodes: readonly unknown[],
+		insert: () => T
+	): T => {
+		const commit = insertion(parent, nodes);
+		if (!commit) return insert();
+
+		let result: T;
+		try {
+			result = insert();
+		} catch (err) {
+			commit.undo();
+			throw err;
+		}
+		commit.done();
+
+		return result;
+	};
+
+	const insertText = (
+		parent: Node,
+		reference: Node | null,
+		value: string
+	): Text => {
+		const node = createText(parent, value);
+
+		return around(
+			parent,
+			[node],
+			(): Text => Reflect_apply(nInsertBefore, parent, [node, reference])
+		);
+	};
+
+	const split = (node: Text, offset: number): Text => {
+		const owner = parent_(node)!;
+		adopt(owner);
+
+		const value = data(node);
+		// the live data is the rewritten whole, so a native split at this
+		// offset would cut the rewritten program, not the page's text
+		const tail = createText(node, "");
+		client.box.characterDataSources.set(tail, String_substring(value, offset));
+		client.box.characterDataSources.set(
+			node,
+			String_substring(value, 0, offset)
+		);
+
+		Reflect_apply(nAfter, node, [tail]);
+		sync(owner);
+
+		return tail;
+	};
+
 	const access: TextAccess = {
+		adopt,
+		isNode,
+		around,
+		insertText,
+		split,
 		kind,
 		source,
 		setSource,
@@ -461,85 +727,6 @@ export default function (client: ScramjetClient, _self: Self) {
 	const text = textAccess(client);
 
 	/**
-	 * Everything an insertion has to do around the native call, or null when
-	 * there is nothing to do.
-	 *
-	 * Text going *into* a script is recorded and blanked, so that the insertion
-	 * itself - which is a children-changed, and can execute the element - lands
-	 * nothing the rewriter has not seen. The returned callback then writes the
-	 * rewritten whole.
-	 *
-	 * Text coming *out of* one is handed back its own data, because outside a
-	 * script it is text like any other and the document should hold what it
-	 * reads as.
-	 */
-	const insertion = (parent: Node | null, nodes: readonly unknown[]) => {
-		const target =
-			parent && text.type(parent) === ELEMENT_NODE ? (parent as Element) : null;
-		const into = target ? text.kind(target) : null;
-		const resync: Element[] = [];
-		const restore: CharacterData[] = [];
-
-		for (let i = 0; i < nodes.length; i++) {
-			const inserted = nodes[i];
-			// a string, or an object that is not a node at all - the IDL union
-			// already turned one of those into a string, and reading `nodeType`
-			// off it would throw where the native would have stringified it
-			if (!isNode(inserted)) continue;
-
-			const moving = textNodesOf(inserted as Node);
-			for (let j = 0; j < moving.length; j++) {
-				const node = moving[j];
-				const from = text.parent(node);
-				if (from && text.kind(from) !== null) resync[resync.length] = from;
-
-				if (into) {
-					text.blank(node);
-				} else if (client.box.characterDataSources.has(node)) {
-					// restored on the way out rather than here: writing a script's
-					// own source back into a node that is still inside it would be
-					// the one unrewritten children-changed this all exists to avoid
-					restore[restore.length] = node;
-				}
-			}
-		}
-
-		if (!into && resync.length === 0 && restore.length === 0) return null;
-
-		return () => {
-			for (let i = 0; i < restore.length; i++) text.restore(restore[i]);
-			for (let i = 0; i < resync.length; i++) {
-				if (resync[i] !== target) text.sync(resync[i]);
-			}
-			// only a script or a style has anything to re-derive; a plain parent
-			// holds what the page wrote, which is what the restores above put
-			// back
-			if (into && target) text.sync(target);
-		};
-	};
-
-	const isNode = (value: unknown): boolean =>
-		typeof value === "object" &&
-		value !== null &&
-		client.box.instanceof(value, "Node");
-
-	/** The Text nodes an argument contributes to its new parent's text content. */
-	const textNodesOf = (inserted: Node): CharacterData[] => {
-		const what = text.type(inserted);
-		if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
-			return [inserted as CharacterData];
-		}
-		// a fragment is flattened into the parent, so its own Text children
-		// become the parent's. anything deeper belongs to an element and never
-		// counts as the parent's child text content
-		if (what === DOCUMENT_FRAGMENT_NODE) {
-			return text.textChildren(inserted as unknown as Element);
-		}
-
-		return [];
-	};
-
-	/**
 	 * The arguments of an insertion that takes `(Node or DOMString)`, with every
 	 * string turned into a Text node when the target is a script or a style.
 	 *
@@ -547,6 +734,61 @@ export default function (client: ScramjetClient, _self: Self) {
 	 * (https://dom.spec.whatwg.org/#converting-nodes-into-a-node); doing it here
 	 * means the text is a node we can blank before it lands.
 	 */
+	/**
+	 * A node that has just left a script or a style is plain text again, and
+	 * the document should hold what it reads as. It is detached, so writing its
+	 * data runs nothing.
+	 */
+	const leftRawText = (node: Node) => {
+		const what = text.type(node);
+		if (what !== TEXT_NODE && what !== CDATA_SECTION_NODE) return;
+		if (!client.box.characterDataSources.has(node as CharacterData)) return;
+
+		text.restore(node as CharacterData);
+	};
+
+	const nDocumentQuerySelectorAll =
+		client.nativeStore.get("Document")!.querySelectorAll.value;
+	const nElementQuerySelectorAll =
+		client.nativeStore.get("Element")!.querySelectorAll.value;
+	const nFragmentQuerySelectorAll =
+		client.nativeStore.get("DocumentFragment")!.querySelectorAll.value;
+
+	/**
+	 * `node`, if it is a script or a style, and every one under it - the ones
+	 * `normalize` will actually merge, which is those with more than one Text
+	 * child. The rest are left alone: re-deriving one means rewriting its whole
+	 * program again, for nothing.
+	 */
+	const rawTextInclusiveDescendants = (node: Node): Element[] => {
+		const what = text.type(node);
+		const out: Element[] = [];
+		const merges = (element: Element) =>
+			text.kind(element) !== null && text.textChildren(element).length > 1;
+		if (what === ELEMENT_NODE && merges(node as Element)) {
+			out[out.length] = node as Element;
+		}
+
+		const query =
+			what === ELEMENT_NODE
+				? nElementQuerySelectorAll
+				: what === DOCUMENT_FRAGMENT_NODE
+					? nFragmentQuerySelectorAll
+					: what === DOCUMENT_NODE
+						? nDocumentQuerySelectorAll
+						: null;
+		if (!query) return out;
+
+		const found: NodeListOf<Element> = Reflect_apply(query, node, [
+			"script,style",
+		]);
+		for (let i = 0; i < found.length; i++) {
+			if (merges(found[i])) out[out.length] = found[i];
+		}
+
+		return out;
+	};
+
 	const asNodes = (parent: Node | null, args: unknown[]): unknown[] => {
 		if (!parent || text.type(parent) !== ELEMENT_NODE) return args;
 		if (text.kind(parent as Element) === null) return args;
@@ -554,7 +796,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		const out: unknown[] = [];
 		for (let i = 0; i < args.length; i++) {
 			const arg = args[i];
-			out[i] = isNode(arg) ? arg : text.createText(parent, String(arg));
+			out[i] = text.isNode(arg) ? arg : text.createText(parent, String(arg));
 		}
 
 		return out;
@@ -647,29 +889,38 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Node")
 		@Returns("Node")
 		appendChild<T extends Node>(node: T): T {
-			const commit = insertion(this as Node, [node]);
-			const inserted = super.appendChild(node);
-			if (commit) commit();
+			void super.nodeType;
 
-			return inserted;
+			return text.around(this as Node, [node], () => super.appendChild(node));
 		}
 
 		@Arguments("Node", "Node?")
 		@Returns("Node")
 		insertBefore<T extends Node>(node: T, child: Node | null): T {
-			const commit = insertion(this as Node, [node]);
-			const inserted = super.insertBefore(node, child);
-			if (commit) commit();
+			void super.nodeType;
 
-			return inserted;
+			return text.around(this as Node, [node], () =>
+				super.insertBefore(node, child)
+			);
 		}
 
 		@Arguments("Node", "Node")
 		@Returns("Node")
 		replaceChild<T extends Node>(node: Node, child: T): T {
-			const commit = insertion(this as Node, [node]);
-			const replaced = super.replaceChild(node, child);
-			if (commit) commit();
+			void super.nodeType;
+
+			const self = this as Node;
+			const owner =
+				text.type(self) === ELEMENT_NODE && text.kind(self as Element) !== null
+					? (self as Element)
+					: null;
+			if (owner) text.adopt(owner);
+
+			const replaced = text.around(self, [node], () =>
+				super.replaceChild(node, child)
+			);
+			// the child that left a script is plain text again
+			if (owner) leftRawText(replaced);
 
 			return replaced;
 		}
@@ -677,13 +928,17 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Node")
 		@Returns("Node")
 		removeChild<T extends Node>(child: T): T {
-			const removed = super.removeChild(child);
 			const self = this as Node;
-			if (
-				text.type(self) === ELEMENT_NODE &&
-				text.kind(self as Element) !== null
-			) {
-				text.sync(self as Element);
+			const owner =
+				text.type(self) === ELEMENT_NODE && text.kind(self as Element) !== null
+					? (self as Element)
+					: null;
+			if (owner) text.adopt(owner);
+
+			const removed = super.removeChild(child);
+			if (owner) {
+				leftRawText(removed);
+				text.sync(owner);
 			}
 
 			return removed;
@@ -693,22 +948,26 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("undefined")
 		normalize(): void {
 			// the merge concatenates the *live* data, which is already the
-			// rewritten whole, so only the per-node record has to be rebuilt
-			const merged =
-				super.nodeType === ELEMENT_NODE &&
-				text.kind(this as unknown as Element) !== null
-					? text.source(this as any)
-					: null;
+			// rewritten whole, so only the per-node records have to be rebuilt -
+			// for this node if it is a script or a style, and for every one
+			// under it, whose later Text children the native merges away along
+			// with their records
+			const self = this as Node;
+			const affected = rawTextInclusiveDescendants(self);
+			const sources: string[] = [];
+			for (let i = 0; i < affected.length; i++) {
+				sources[i] = text.source(affected[i]);
+			}
 
 			super.normalize();
 
-			if (merged === null) return;
-
-			const children = text.textChildren(this as any);
-			if (children.length > 0) {
-				client.box.characterDataSources.set(children[0], merged);
+			for (let i = 0; i < affected.length; i++) {
+				const children = text.textChildren(affected[i]);
+				if (children.length > 0) {
+					client.box.characterDataSources.set(children[0], sources[i]);
+				}
+				text.sync(affected[i]);
 			}
-			text.sync(this as any);
 		}
 	});
 
@@ -718,28 +977,28 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("(Node or DOMString)...")
 		@Returns("undefined")
 		append(...nodes: (Node | string)[]): void {
+			void super.hasAttributes();
+
 			const args = asNodes(this, nodes) as (Node | string)[];
-			const commit = insertion(this, args);
-			super.append(...args);
-			if (commit) commit();
+			text.around(this, args, () => super.append(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
 		@Returns("undefined")
 		prepend(...nodes: (Node | string)[]): void {
+			void super.hasAttributes();
+
 			const args = asNodes(this, nodes) as (Node | string)[];
-			const commit = insertion(this, args);
-			super.prepend(...args);
-			if (commit) commit();
+			text.around(this, args, () => super.prepend(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
 		@Returns("undefined")
 		replaceChildren(...nodes: (Node | string)[]): void {
+			void super.hasAttributes();
+
 			const args = asNodes(this, nodes) as (Node | string)[];
-			const commit = insertion(this, args);
-			super.replaceChildren(...args);
-			if (commit) commit();
+			text.around(this, args, () => super.replaceChildren(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -747,9 +1006,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		after(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.after(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.after(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -757,9 +1014,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		before(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.before(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.before(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -767,9 +1022,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		replaceWith(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.replaceWith(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.replaceWith(...args));
 		}
 
 		@Arguments("DOMString", "DOMString")
@@ -781,9 +1034,14 @@ export default function (client: ScramjetClient, _self: Self) {
 
 			const position = String_toLowerCase(String(where));
 			const outside = position === "beforebegin" || position === "afterend";
+			const inside = position === "afterbegin" || position === "beforeend";
 			const parent = outside ? super.parentNode : (this as Node);
 
+			// an unknown position is the native's SyntaxError to throw, and a
+			// parent that is not a script or a style is the native's to insert
+			// into
 			if (
+				(!outside && !inside) ||
 				!parent ||
 				text.type(parent) !== ELEMENT_NODE ||
 				text.kind(parent as Element) === null
@@ -791,19 +1049,28 @@ export default function (client: ScramjetClient, _self: Self) {
 				return super.insertAdjacentText(where as InsertPosition, data);
 			}
 
-			// as a node rather than as a string, so that the insertion path can
-			// blank it before it reaches the element and prepares the script. the
-			// insertion itself goes back through `Node.prototype`, which is where
-			// that handling lives
-			const node = text.createText(parent, String(data));
-			if (position === "beforebegin") parent.insertBefore(node, this);
-			else if (position === "afterend") {
-				parent.insertBefore(node, super.nextSibling);
-			} else if (position === "afterbegin") {
-				parent.insertBefore(node, super.firstChild);
-			} else {
-				parent.appendChild(node);
-			}
+			// as a node rather than as a string, so that it can be blanked
+			// before it reaches the element and prepares the script
+			const reference =
+				position === "beforebegin"
+					? (this as Node)
+					: position === "afterend"
+						? super.nextSibling
+						: position === "afterbegin"
+							? super.firstChild
+							: null;
+			text.insertText(parent, reference, String(data));
+		}
+
+		// https://dom.spec.whatwg.org/#dom-parentnode-movebefore - an atomic
+		// move, which is an insertion like any other as far as a script's text
+		// is concerned. absent before Chrome 133, which `Intercept` skips
+		@Arguments("Node", "Node?")
+		@Returns("undefined")
+		moveBefore(node: Node, child: Node | null): void {
+			void super.hasAttributes();
+
+			text.around(this, [node], () => super.moveBefore(node, child));
 		}
 	});
 
@@ -866,7 +1133,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 			void super.length;
 
-			this.replaceData(offset, 0, data);
+			replaceData(this, offset, 0, data, "insertData");
 		}
 
 		@Arguments("unsigned long", "unsigned long")
@@ -878,7 +1145,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 			void super.length;
 
-			this.replaceData(offset, count, "");
+			replaceData(this, offset, count, "", "deleteData");
 		}
 
 		// https://dom.spec.whatwg.org/#concept-cd-replace, over the text the page
@@ -894,21 +1161,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 			void super.length;
 
-			// 1. Let length be node's length
-			const value = text.data(this);
-			// 2. If offset is greater than length, throw an "IndexSizeError"
-			if (offset > value.length) throw indexSize("replaceData");
-			// 3. If offset plus count is greater than length, set count to length
-			//    minus offset
-			const end = offset + count > value.length ? value.length : offset + count;
-
-			// 4-6. splice the data
-			text.setData(
-				this,
-				String_substring(value, 0, offset) +
-					String(data) +
-					String_substring(value, end)
-			);
+			replaceData(this, offset, count, data, "replaceData");
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -916,9 +1169,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		after(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.after(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.after(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -926,9 +1177,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		before(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.before(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.before(...args));
 		}
 
 		@Arguments("(Node or DOMString)...")
@@ -936,26 +1185,61 @@ export default function (client: ScramjetClient, _self: Self) {
 		replaceWith(...nodes: (Node | string)[]): void {
 			const parent = super.parentNode;
 			const args = asNodes(parent, nodes) as (Node | string)[];
-			const commit = insertion(parent, args);
-			super.replaceWith(...args);
-			if (commit) commit();
+			text.around(parent, args, () => super.replaceWith(...args));
 		}
 
 		@Arguments()
 		@Returns("undefined")
 		remove(): void {
 			const parent = super.parentNode;
-			super.remove();
-
-			if (
+			const owner =
 				parent &&
 				text.type(parent) === ELEMENT_NODE &&
 				text.kind(parent as Element) !== null
-			) {
-				text.sync(parent as Element);
+					? (parent as Element)
+					: null;
+			if (owner) text.adopt(owner);
+
+			super.remove();
+
+			if (owner) {
+				leftRawText(this);
+				text.sync(owner);
 			}
 		}
 	});
+
+	/**
+	 * https://dom.spec.whatwg.org/#concept-cd-replace, over the text the page
+	 * wrote rather than over the rewritten text the document holds - the two
+	 * have nothing to do with one another, and an offset into the second is
+	 * meaningless. `insertData` and `deleteData` are this with a zero count or
+	 * an empty string; they call it here rather than through `this`, which is
+	 * the page's to redefine.
+	 */
+	const replaceData = (
+		node: CharacterData,
+		offset: number,
+		count: number,
+		data: string,
+		member: string
+	) => {
+		// 1. Let length be node's length
+		const value = text.data(node);
+		// 2. If offset is greater than length, throw an "IndexSizeError"
+		if (offset > value.length) throw indexSize(member);
+		// 3. If offset plus count is greater than length, set count to length
+		//    minus offset
+		const end = offset + count > value.length ? value.length : offset + count;
+
+		// 4-6. splice the data
+		text.setData(
+			node,
+			String_substring(value, 0, offset) +
+				String(data) +
+				String_substring(value, end)
+		);
+	};
 
 	const indexSize = (member: string) =>
 		client.errors.domException("IndexSizeError", {
@@ -989,25 +1273,9 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (!owner || text.kind(owner) === null) return super.splitText(offset);
 			void super.wholeText;
 
-			const value = text.data(this);
-			if (offset > value.length) throw indexSize("splitText");
+			if (offset > text.data(this).length) throw indexSize("splitText");
 
-			// the live data is the rewritten whole, so a native split at this
-			// offset would cut the rewritten program, not the page's text
-			const tail = text.createText(this, "");
-			client.box.characterDataSources.set(
-				tail,
-				String_substring(value, offset)
-			);
-			client.box.characterDataSources.set(
-				this,
-				String_substring(value, 0, offset)
-			);
-
-			super.after(tail);
-			text.sync(owner);
-
-			return tail;
+			return text.split(this, offset);
 		}
 	});
 
@@ -1071,11 +1339,53 @@ export default function (client: ScramjetClient, _self: Self) {
 
 			// inside a script or a style nothing is rendered, so the line breaks
 			// the spec's own steps turn into `br` elements have nothing to do
-			// here, and this is a plain replacement. the insertion path rewrites
-			// it on the way in
-			this.replaceWith(text.createText(this, String(value)));
+			// here, and this is a plain replacement
+			const node = text.createText(this, String(value));
+			text.around(owner, [node], () => super.replaceWith(node));
 		}
 	});
+
+	// Blink defines `textContent` and `innerText` over again on
+	// HTMLScriptElement.prototype - they are Trusted Types sinks there - and
+	// those shadow the `Node` and `HTMLElement` interceptors above, so a
+	// script's own copies need intercepting in their own right. Only where they
+	// are own: elsewhere the inherited interceptors already answer, and naming
+	// them here would patch those a second time
+	const scriptPrototype = client.global.HTMLScriptElement.prototype;
+	if (
+		Object_hasOwn(scriptPrototype, "textContent") &&
+		Object_hasOwn(scriptPrototype, "innerText")
+	) {
+		client.Intercept(class extends HTMLScriptElement {
+			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)?")
+			get textContent(): string | null {
+				void super.type;
+
+				return text.source(this);
+			}
+
+			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)?")
+			set textContent(value: string | null) {
+				void super.type;
+
+				text.setSource(this, value === null ? "" : String(value));
+			}
+
+			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)")
+			get innerText(): string {
+				void super.type;
+
+				return text.source(this);
+			}
+
+			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)")
+			set innerText(value: string) {
+				void super.type;
+
+				text.setSource(this, String(value));
+			}
+		});
+	}
 
 	// https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
 	client.Intercept(class extends HTMLScriptElement {

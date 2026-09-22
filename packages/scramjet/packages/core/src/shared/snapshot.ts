@@ -81,6 +81,15 @@ export const BigInt_asUintN = globalThis.BigInt.asUintN;
 export const encodeURIComponent = globalThis.encodeURIComponent;
 
 export const Symbol_iterator = globalThis.Symbol.iterator;
+/**
+ * `OrdinaryHasInstance`, as `Function.prototype[Symbol.hasInstance]` exposes
+ * it. Called directly rather than through `instanceof`, which consults the
+ * right-hand side's own `Symbol.hasInstance` first - and a page can define one
+ * on any interface object it likes.
+ */
+export const Function_hasInstance = Function_prototype_call.bind(
+	globalThis.Function.prototype[globalThis.Symbol.hasInstance]
+) as (ctor: object, value: unknown) => boolean;
 
 export const Object_keys = globalThis.Object.keys;
 export const Object_values = globalThis.Object.values;

@@ -23,7 +23,7 @@
  */
 
 import { ScramjetClient } from "@client/index";
-import { Type, idlUSVString } from "@client/webidl";
+import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
 import { attributeAccess } from "@client/dom/element";
 import { unrewriteUrl } from "@rewriters/url";
 import {
@@ -42,6 +42,11 @@ export default function (client: ScramjetClient, self: Self) {
 	const nOwnerDocument = node.ownerDocument.get;
 	const nDocumentURL = document.URL.get;
 	const nDocumentQuerySelector = document.querySelector.value;
+	const nDefaultView = document.defaultView.get;
+	const nCreateElement = document.createElement.value;
+	const nFrameElement = client.nativeStore.get("window")?.frameElement?.get;
+	const iframe = client.nativeStore.get("HTMLIFrameElement")!;
+	const nSandbox = iframe.sandbox.get;
 
 	const DOCUMENT_NODE = 9;
 
@@ -69,38 +74,92 @@ export default function (client: ScramjetClient, self: Self) {
 		return siteUrl(Reflect_apply(nDocumentURL, owner, []));
 	};
 
+	const ownerDocumentOf = (node: Node): Document | null =>
+		Reflect_apply(nNodeType, node, []) === DOCUMENT_NODE
+			? (node as Document)
+			: Reflect_apply(nOwnerDocument, node, []);
+
+	/**
+	 * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fallback-base-url -
+	 * what a document's relative URLs resolve against when it has no base
+	 * element, and what a base element's own href is resolved against.
+	 *
+	 * An `about:srcdoc` document has no URL of its own to resolve against, and
+	 * takes its container's document base URL; so does an `about:blank` one,
+	 * whose creator is (for the frames a page can reach) the document holding
+	 * the frame.
+	 */
+	const fallbackBaseURL = (node: Node): string => {
+		const url = documentURL(node);
+		if (url !== "about:srcdoc" && url !== "about:blank") return url;
+		if (!nFrameElement) return url;
+
+		const owner = ownerDocumentOf(node);
+		if (!owner) return url;
+
+		try {
+			const view = Reflect_apply(nDefaultView, owner, []);
+			const container: Element | null = view
+				? Reflect_apply(nFrameElement, view, [])
+				: null;
+			if (container) return baseURL(container);
+		} catch {
+			// a cross-origin container: the frame has nothing to inherit
+		}
+
+		return url;
+	};
+
+	/** Whether `url` parses on its own, with no base to lean on. */
+	const isAbsolute = (url: string): boolean => {
+		try {
+			new _URL(url);
+
+			return true;
+		} catch {
+			return false;
+		}
+	};
+
 	/**
 	 * The document base URL of `node`'s document, as the site's.
 	 *
 	 * The browser has already resolved the whole chain, so `baseURI` answers
-	 * this for free in the two cases that matter: no `base` element at all,
-	 * where it is the document's own URL, and a `base` element with an absolute
-	 * href, which scramjet leaves alone and which is therefore already the
-	 * site's.
+	 * this for free in the two cases that are not scramjet's business: a
+	 * `base` element with an absolute href, which scramjet leaves alone and
+	 * which is therefore already the site's, and anything off the proxy's
+	 * origin altogether. And when the native base *is* the document's own URL,
+	 * no base element is in effect and un-rewriting it is the whole answer -
+	 * the common case, and the one every `img.src` read takes.
 	 *
-	 * A *relative* base href is the case it cannot answer. The browser resolves
-	 * it against the document's real URL, which is the proxy's, and the result
-	 * is a URL on the proxy's origin that is not a rewritten one - which is
-	 * exactly the shape tested for here, and the only time the base element has
-	 * to be found and resolved by hand.
+	 * Anything else on the proxy's origin means a *relative* base href. The
+	 * browser resolved it against the document's real URL, the proxy's, and the
+	 * result may well still start with the prefix - `static/` resolved against
+	 * `/~/sj/<encoded url>` is `/~/sj/static/` - while un-rewriting to nothing
+	 * the site ever had. That is the case resolved by hand, from the base
+	 * element and the site's own URL.
 	 */
 	const baseURL = (node: Node): string => {
 		const native: string = Reflect_apply(nBaseURI, node, []);
-		if (String_startsWith(native, client.context.prefix.href)) {
-			return unrewriteUrl(native, client.context);
-		}
 		if (!String_startsWith(native, client.context.prefix.origin)) return native;
+
+		const owner = ownerDocumentOf(node);
+		if (
+			owner &&
+			String_startsWith(native, client.context.prefix.href) &&
+			native === Reflect_apply(nDocumentURL, owner, [])
+		) {
+			const site = unrewriteUrl(native, client.context);
+			if (isAbsolute(site)) return site;
+		}
 
 		return resolveBaseElement(node);
 	};
 
 	/** https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url */
 	const resolveBaseElement = (node: Node): string => {
-		const fallback = documentURL(node);
-		const owner =
-			Reflect_apply(nNodeType, node, []) === DOCUMENT_NODE
-				? (node as Document)
-				: Reflect_apply(nOwnerDocument, node, []);
+		const fallback = fallbackBaseURL(node);
+		const owner = ownerDocumentOf(node);
 		if (!owner) return fallback;
 
 		// the first base element with an href, in tree order
@@ -402,6 +461,98 @@ export default function (client: ScramjetClient, self: Self) {
 
 			set(this, "longdesc", value);
 		}
+
+		// [PutForwards=value], which the native setter implements as a script-
+		// level Get of this attribute and a Set of `value` on what it returns -
+		// so `iframe.sandbox = "..."` lands on the stand-in's list too, and on
+		// the `value` interceptor below
+		@Type("DOMTokenList")
+		get sandbox(): DOMTokenList {
+			void super.name;
+
+			return sandboxList(this);
+		}
+	});
+
+	// --- iframe.sandbox, over a stand-in -------------------------------------
+
+	/** The token list handed out as `iframe.sandbox`: the stand-in's own. */
+	const sandboxList = (element: Element): DOMTokenList => {
+		let standIn = client.box.sandboxStandIns.get(element);
+		if (!standIn) {
+			const owner = ownerDocumentOf(element) ?? client.global.document;
+			standIn = Reflect_apply(nCreateElement, owner, ["iframe"]) as Element;
+			const value = attrs.get(element, "sandbox");
+			if (value !== null) attrs.raw.set(standIn, "sandbox", value);
+
+			client.box.sandboxStandIns.set(element, standIn);
+			client.box.sandboxLists.set(
+				Reflect_apply(nSandbox, standIn, []),
+				element
+			);
+		}
+
+		return Reflect_apply(nSandbox, standIn, []);
+	};
+
+	/**
+	 * After a write through the stand-in's list, carry its value over to the
+	 * iframe it stands in for - through the ordinary write path, so the rule
+	 * strips it from the live frame and the mirror records it.
+	 */
+	const syncSandbox = (list: DOMTokenList) => {
+		const element = client.box.sandboxLists.get(list);
+		if (!element) return;
+
+		const standIn = client.box.sandboxStandIns.get(element)!;
+		const value = attrs.raw.get(standIn, "sandbox");
+		if (value === null) attrs.remove(element, "sandbox");
+		else attrs.set(element, "sandbox", value);
+	};
+
+	// https://dom.spec.whatwg.org/#interface-domtokenlist - only the members
+	// that write, and only to notice a write to a stand-in's list. every
+	// other list in the document passes straight through
+	client.Intercept(class extends DOMTokenList {
+		@Arguments("DOMString...")
+		@Returns("undefined")
+		add(...tokens: string[]): void {
+			super.add(...tokens);
+			syncSandbox(this);
+		}
+
+		@Arguments("DOMString...")
+		@Returns("undefined")
+		remove(...tokens: string[]): void {
+			super.remove(...tokens);
+			syncSandbox(this);
+		}
+
+		@Arguments("DOMString", "optional boolean")
+		@Returns("boolean")
+		toggle(token: string, force?: boolean): boolean {
+			const result =
+				force === undefined ? super.toggle(token) : super.toggle(token, force);
+			syncSandbox(this);
+
+			return result;
+		}
+
+		@Arguments("DOMString", "DOMString")
+		@Returns("boolean")
+		replace(token: string, newToken: string): boolean {
+			const result = super.replace(token, newToken);
+			syncSandbox(this);
+
+			return result;
+		}
+
+		@Type("DOMString")
+		set value(value: string) {
+			void super.length;
+			super.value = value;
+			syncSandbox(this);
+		}
 	});
 
 	// a frameset's frame. still shipped by every engine
@@ -677,22 +828,34 @@ export default function (client: ScramjetClient, self: Self) {
 
 	// --- the nonce, which is not in the document at all ---------------------
 
-	// stripped by the rewriter, because the proxy's CSP is not the site's. the
-	// mirror is what the page gets back, so a framework that reads its own nonce
-	// off an element and copies it onto a new one still works
+	// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#dom-noncedelement-nonce -
+	// the IDL attribute is the element's [[CryptographicNonce]] slot, not the
+	// content attribute: setting it leaves `getAttribute("nonce")` alone. The
+	// slot follows the content attribute through `dom/element.ts`'s change
+	// steps; an element that never had either written by script (a parsed
+	// one) falls back to the mirror, which is what the parser saw. The content
+	// attribute itself is stripped by the rewriter, because the proxy's CSP is
+	// not the site's.
+	const nonceOf = (element: Element): string => {
+		const slot = client.box.nonces.get(element);
+		if (slot !== undefined) return slot;
+
+		return reflect(element, "nonce");
+	};
+
 	client.Intercept(class extends HTMLElement {
 		@Type("DOMString")
 		get nonce(): string {
 			void super.title;
 
-			return reflect(this, "nonce");
+			return nonceOf(this);
 		}
 
 		@Type("DOMString")
 		set nonce(value: string) {
 			void super.title;
 
-			set(this, "nonce", value);
+			client.box.nonces.set(this, String(value));
 		}
 	});
 
@@ -701,16 +864,36 @@ export default function (client: ScramjetClient, self: Self) {
 		get nonce(): string {
 			void super.ownerSVGElement;
 
-			return reflect(this, "nonce");
+			return nonceOf(this);
 		}
 
 		@Type("DOMString")
 		set nonce(value: string) {
 			void super.ownerSVGElement;
 
-			set(this, "nonce", value);
+			client.box.nonces.set(this, String(value));
 		}
 	});
+
+	// MathML mixes in HTMLOrSVGElement too, and its nonce is stripped by the
+	// same `"*"` rule
+	if ("MathMLElement" in self && "nonce" in self.MathMLElement.prototype) {
+		client.Intercept(class extends MathMLElement {
+			@Type("DOMString")
+			get nonce(): string {
+				void super.tabIndex;
+
+				return nonceOf(this);
+			}
+
+			@Type("DOMString")
+			set nonce(value: string) {
+				void super.tabIndex;
+
+				client.box.nonces.set(this, String(value));
+			}
+		});
+	}
 
 	// --- hyperlinks ---------------------------------------------------------
 
@@ -1133,14 +1316,20 @@ export default function (client: ScramjetClient, self: Self) {
 	// resolved against - and which the base element does not take part in, by
 	// its own algorithm
 	client.Intercept(class extends HTMLBaseElement {
+		// https://html.spec.whatwg.org/multipage/semantics.html#dom-base-href -
+		// the attribute parsed against the fallback base URL. With no attribute
+		// Blink answers the fallback base URL as it is, fragment and all, where
+		// parsing "" against it would drop the fragment - and matching the
+		// engine is the point
 		@Type("USVString")
 		get href(): string {
 			void super.target;
 
 			const value = attrs.get(this, "href");
-			if (value === null) return documentURL(this);
+			const fallback = fallbackBaseURL(this);
+			if (value === null) return fallback;
 
-			return resolve(this, value, documentURL(this));
+			return resolve(this, value, fallback);
 		}
 
 		@Type("USVString")
@@ -1183,9 +1372,9 @@ export default function (client: ScramjetClient, self: Self) {
 		"SVGAElement",
 		"SVGTextPathElement",
 		"SVGPatternElement",
+		// the linear and radial gradients inherit this one's href rather than
+		// having their own, so naming them too would patch it three times
 		"SVGGradientElement",
-		"SVGLinearGradientElement",
-		"SVGRadialGradientElement",
 		"SVGFEImageElement",
 		"SVGMPathElement",
 		"SVGFilterElement",

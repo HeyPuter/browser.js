@@ -10,8 +10,9 @@
  * The map is the one place a Proxy is unavoidable. Its indices and named
  * properties are exotic - the browser generates them from the attribute list,
  * which contains our mirrors - so they cannot be intercepted as members. Its
- * *methods* can, and are, so a borrowed `NamedNodeMap.prototype.getNamedItem`
- * answers the same as the one the wrapper hands out.
+ * *methods* can, and are, and they accept the wrapper as their receiver - so
+ * `el.attributes.getNamedItem` is `NamedNodeMap.prototype.getNamedItem`, the
+ * way it is natively, rather than a per-wrapper copy.
  *
  * https://dom.spec.whatwg.org/#interface-namednodemap
  * https://dom.spec.whatwg.org/#interface-attr
@@ -21,6 +22,7 @@ import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type } from "@client/webidl";
 import {
 	attributeAccess,
+	insertAttributeNode,
 	isInternalAttribute,
 	mirrorAttributeName,
 	mirroredAttributeName,
@@ -98,6 +100,21 @@ export default function (client: ScramjetClient, _self: Self) {
 	const attrs = attributeAccess(client);
 	const namedNodeMap = client.nativeStore.get("NamedNodeMap")!;
 	const nItem = namedNodeMap.item.value;
+	const nLength = namedNodeMap.length.get;
+	const nGetNamedItem = namedNodeMap.getNamedItem.value;
+	const nGetNamedItemNS = namedNodeMap.getNamedItemNS.value;
+	const nSetNamedItem = namedNodeMap.setNamedItem.value;
+	const nSetNamedItemNS = namedNodeMap.setNamedItemNS.value;
+	const nRemoveNamedItem = namedNodeMap.removeNamedItem.value;
+	const nRemoveNamedItemNS = namedNodeMap.removeNamedItemNS.value;
+
+	/**
+	 * The real map behind `map`, which is the wrapper whenever the page called
+	 * a method off `el.attributes`. Every native below is applied to this: a
+	 * Proxy carries none of the internal slots the natives brand check for.
+	 */
+	const real = (map: NamedNodeMap): NamedNodeMap =>
+		client.box.attributeMapTargets.get(map) ?? map;
 
 	/**
 	 * The element a map belongs to.
@@ -109,6 +126,7 @@ export default function (client: ScramjetClient, _self: Self) {
 	 * nothing for the mirror layer to say about it either.
 	 */
 	const ownerOf = (map: NamedNodeMap): Element | null => {
+		map = real(map);
 		const known = client.box.attributeOwners.get(map);
 		if (known) return known;
 
@@ -120,7 +138,7 @@ export default function (client: ScramjetClient, _self: Self) {
 	/** The attribute at `index` of what the page can see. */
 	const itemAt = (map: NamedNodeMap, index: number): Attr | null => {
 		const element = ownerOf(map);
-		if (!element) return Reflect_apply(nItem, map, [index]);
+		if (!element) return Reflect_apply(nItem, real(map), [index]);
 
 		const names = attrs.names(element);
 		if (index >= names.length) return null;
@@ -132,28 +150,11 @@ export default function (client: ScramjetClient, _self: Self) {
 	 * The wrapper the page is handed for `element.attributes`.
 	 *
 	 * Only the exotic half is implemented here. Every method and `length` falls
-	 * through to the prototype, where the interceptors below already answer in
-	 * terms of the visible list - bound to the real map, because a Proxy carries
-	 * none of the internal slots the natives brand check for.
+	 * through to the prototype, where the interceptors below answer in terms of
+	 * the visible list and unwrap their receiver to the real map.
 	 */
 	const wrap = (element: Element, map: NamedNodeMap): NamedNodeMap => {
 		const prototype = Object_getPrototypeOf(map);
-		const bound = new _Map<string | symbol, any>([]);
-
-		const rebind = (prop: string | symbol, value: any) => {
-			if (typeof value !== "function") return value;
-
-			const existing = bound.get(prop);
-			if (existing) return existing;
-
-			const fn = new Proxy(value, {
-				apply: (target, _that, args) => Reflect_apply(target, map, args),
-			});
-			client.box.unproxy.set(fn, value);
-			bound.set(prop, fn);
-
-			return fn;
-		};
 
 		/** The `Attr` for a named property, or null when `prop` is not one. */
 		const named = (prop: string | symbol): Attr | null => {
@@ -168,7 +169,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			return attrs.node(element, prop);
 		};
 
-		return new Proxy(map, {
+		const wrapper = new Proxy(map, {
 			// deliberately not forwarding the receiver: it is this proxy, and a
 			// native accessor called with a proxy as its receiver fails its own
 			// brand check. `length` is an accessor
@@ -184,7 +185,9 @@ export default function (client: ScramjetClient, _self: Self) {
 					return undefined;
 				}
 
-				return rebind(prop, Reflect_get(target, prop));
+				// the receiver is the target, not this proxy: `length` is an
+				// accessor, and the interceptor behind it unwraps either way
+				return Reflect_get(target, prop);
 			},
 
 			has(target, prop) {
@@ -265,6 +268,9 @@ export default function (client: ScramjetClient, _self: Self) {
 				return Object_getOwnPropertyDescriptor(target, prop);
 			},
 		});
+		client.box.attributeMapTargets.set(wrapper, map);
+
+		return wrapper;
 	};
 
 	client.Intercept(class extends Element {
@@ -283,13 +289,27 @@ export default function (client: ScramjetClient, _self: Self) {
 		}
 	});
 
+	/** The brand check every map member owes, run on the real map. */
+	const brand = (map: NamedNodeMap): NamedNodeMap => {
+		const target = real(map);
+		void Reflect_apply(nLength, target, []);
+
+		return target;
+	};
+
 	// https://dom.spec.whatwg.org/#interface-namednodemap
+	//
+	/* eslint-disable scramjet-core/intercept-brand-check --
+	   none of these can call `super`: `this` is the wrapper whenever the method
+	   was reached through `el.attributes`, and a Proxy fails every native's
+	   brand check. `brand(this)` runs the native `length` getter on the map
+	   behind it first thing on every path, which is the same check. */
 	client.Intercept(class extends NamedNodeMap {
 		@Type("unsigned long")
 		get length(): number {
-			const native = super.length;
-			const element = ownerOf(this);
-			if (!element) return native;
+			const map = brand(this);
+			const element = ownerOf(map);
+			if (!element) return Reflect_apply(nLength, map, []);
 
 			return attrs.names(element).length;
 		}
@@ -297,18 +317,15 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("unsigned long")
 		@Returns("Attr?")
 		item(index: number): Attr | null {
-			void super.length;
-
-			return itemAt(this, index);
+			return itemAt(brand(this), index);
 		}
 
 		@Arguments("DOMString")
 		@Returns("Attr?")
 		getNamedItem(qualifiedName: string): Attr | null {
-			void super.length;
-
-			const element = ownerOf(this);
-			if (!element) return super.getNamedItem(qualifiedName);
+			const map = brand(this);
+			const element = ownerOf(map);
+			if (!element) return Reflect_apply(nGetNamedItem, map, [qualifiedName]);
 
 			return attrs.node(element, attrs.qualify(element, qualifiedName));
 		}
@@ -316,10 +333,14 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("Attr?")
 		getNamedItemNS(namespace: string | null, localName: string): Attr | null {
-			const node = super.getNamedItemNS(namespace, localName);
+			const map = brand(this);
+			const node: Attr | null = Reflect_apply(nGetNamedItemNS, map, [
+				namespace,
+				localName,
+			]);
 			if (node) return isInternalAttribute(attrs.attrName(node)) ? null : node;
 
-			const element = ownerOf(this);
+			const element = ownerOf(map);
 			if (!element || namespace) return null;
 
 			return attrs.node(element, localName);
@@ -328,43 +349,44 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Attr")
 		@Returns("Attr?")
 		setNamedItem(attr: Attr): Attr | null {
-			void super.length;
-
-			const element = ownerOf(this);
-			if (!element) return super.setNamedItem(attr);
+			const map = brand(this);
+			const element = ownerOf(map);
+			if (!element) return Reflect_apply(nSetNamedItem, map, [attr]);
 
 			// the same operation as `Element.setAttributeNode`, under another
-			// name, so it goes through the same element
-			return element.setAttributeNode(attr);
+			// name, so it goes through the same rewrite
+			return insertAttributeNode(client, element, attr, false);
 		}
 
 		@Arguments("Attr")
 		@Returns("Attr?")
 		setNamedItemNS(attr: Attr): Attr | null {
-			void super.length;
+			const map = brand(this);
+			const element = ownerOf(map);
+			if (!element) return Reflect_apply(nSetNamedItemNS, map, [attr]);
 
-			const element = ownerOf(this);
-			if (!element) return super.setNamedItemNS(attr);
-
-			return element.setAttributeNodeNS(attr);
+			return insertAttributeNode(client, element, attr, true);
 		}
 
 		@Arguments("DOMString")
 		@Returns("Attr")
 		removeNamedItem(qualifiedName: string): Attr {
-			void super.length;
-
-			const element = ownerOf(this);
-			if (!element) return super.removeNamedItem(qualifiedName);
+			const map = brand(this);
+			const element = ownerOf(map);
+			if (!element)
+				return Reflect_apply(nRemoveNamedItem, map, [qualifiedName]);
 
 			const name = attrs.qualify(element, qualifiedName);
 			const node = attrs.node(element, name);
 			// nothing visible under that name: hand it to the native, which
 			// throws the spec's NotFoundError
-			if (!node) return super.removeNamedItem(name);
+			if (!node) return Reflect_apply(nRemoveNamedItem, map, [name]);
 
-			const removed = super.removeNamedItem(attrs.attrName(node));
+			const removed: Attr = Reflect_apply(nRemoveNamedItem, map, [
+				attrs.attrName(node),
+			]);
 			attrs.raw.remove(element, mirrorAttributeName(name));
+			attrs.changed(element, name, null);
 
 			return removed;
 		}
@@ -372,16 +394,50 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("Attr")
 		removeNamedItemNS(namespace: string | null, localName: string): Attr {
-			const node = super.getNamedItemNS(namespace, localName);
-			const element = ownerOf(this);
+			const map = brand(this);
+			const element = ownerOf(map);
+			const node: Attr | null = Reflect_apply(nGetNamedItemNS, map, [
+				namespace,
+				localName,
+			]);
 
-			if (node && element) {
-				attrs.raw.remove(element, mirrorAttributeName(attrs.attrName(node)));
+			if (element && node) {
+				const name = attrs.attrName(node);
+				if (!isInternalAttribute(name)) {
+					attrs.raw.remove(element, mirrorAttributeName(name));
+					const removed: Attr = Reflect_apply(nRemoveNamedItemNS, map, [
+						namespace,
+						localName,
+					]);
+					if (namespace === null) attrs.changed(element, name, null);
+
+					return removed;
+				}
 			}
 
-			return super.removeNamedItemNS(namespace, localName);
+			// a stripped attribute is represented by its mirror alone, which has
+			// no namespace and a name the native would never match
+			if (element && !node && namespace === null) {
+				const mirror = attrs.node(element, localName);
+				if (mirror && isInternalAttribute(attrs.attrName(mirror))) {
+					const removed: Attr = Reflect_apply(nRemoveNamedItem, map, [
+						attrs.attrName(mirror),
+					]);
+					attrs.changed(element, localName, null);
+
+					return removed;
+				}
+			}
+
+			// an internal attribute, or nothing at all: either way the page is
+			// owed the NotFoundError for a name it cannot see
+			return Reflect_apply(nRemoveNamedItemNS, map, [
+				namespace,
+				isInternalAttribute(localName) ? "" : localName,
+			]);
 		}
 	});
+	/* eslint-enable scramjet-core/intercept-brand-check */
 
 	// https://dom.spec.whatwg.org/#interface-attr
 	client.Intercept(class extends Attr {

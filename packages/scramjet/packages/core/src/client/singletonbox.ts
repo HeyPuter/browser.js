@@ -8,6 +8,7 @@ import {
 	_Map,
 	_WeakSet,
 	Object_create,
+	Function_hasInstance,
 } from "@/shared/snapshot";
 import { FakeWebSocketState } from "./shared/requests/WebSocket";
 import { FakeWebSocketStreamState } from "./shared/requests/WebSocketStream";
@@ -57,6 +58,40 @@ export class SingletonBox {
 	 */
 	attributeMaps: _WeakMap<NamedNodeMap, NamedNodeMap> = new _WeakMap();
 	attributeOwners: _WeakMap<NamedNodeMap, Element> = new _WeakMap();
+	/** The reverse of `attributeMaps`: the real map behind each wrapper. */
+	attributeMapTargets: _WeakMap<NamedNodeMap, NamedNodeMap> = new _WeakMap();
+
+	/**
+	 * Each element's [[CryptographicNonce]] - what the `nonce` IDL attribute
+	 * answers with. Kept apart from the content attribute because the spec
+	 * does: writing `el.nonce` changes only the slot, and a page reading
+	 * `getAttribute("nonce")` afterwards sees the attribute it last wrote.
+	 * An element with no entry has never had either written by script, and
+	 * falls back to its (mirrored) content attribute.
+	 */
+	nonces: _WeakMap<Element, string> = new _WeakMap();
+
+	/**
+	 * A detached iframe per live one, carrying the page's `sandbox` value.
+	 *
+	 * The rewrite rule strips the real attribute - a sandboxed frame cannot
+	 * run the proxy - so `iframe.sandbox`, a token list over that attribute,
+	 * would read an empty list and write the live frame's sandbox. The
+	 * stand-in's own list is handed out instead: a real `DOMTokenList`, with
+	 * the engine's own `supports()`, indexing and serialization.
+	 */
+	sandboxStandIns: _WeakMap<Element, Element> = new _WeakMap();
+	/** The iframe each stand-in's token list belongs to. */
+	sandboxLists: _WeakMap<DOMTokenList, Element> = new _WeakMap();
+
+	/**
+	 * The element each inline style declaration (and typed OM map) belongs to,
+	 * so that a write through CSSOM can bring the element's `style` mirror up
+	 * to date. Without it `el.style.color = "blue"` changes the attribute the
+	 * document holds and leaves `getAttribute("style")` answering with the
+	 * value before it.
+	 */
+	inlineStyleOwners: _WeakMap<object, Element> = new _WeakMap();
 
 	/**
 	 * The original text of every script and style element whose source scramjet
@@ -139,9 +174,11 @@ export class SingletonBox {
 			dbg.error(`No constructors for ${name} found`);
 			return false;
 		}
+		// not `instanceof`, which would run a page-defined
+		// `Symbol.hasInstance` - and callers use the answer to decide whether a
+		// value gets rewritten
 		for (const ctor of ctors) {
-			// eslint-disable-next-line scramjet-core/no-instanceof
-			if (obj instanceof ctor) return true;
+			if (Function_hasInstance(ctor, obj)) return true;
 		}
 		return false;
 	}

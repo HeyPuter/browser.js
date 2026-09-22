@@ -31,6 +31,7 @@ import {
 	Reflect_apply,
 	String,
 	String_charCodeAt,
+	String_indexOf,
 	String_startsWith,
 	String_substring,
 	String_toLowerCase,
@@ -59,6 +60,37 @@ export const SCRIPT_SOURCE_ATTRIBUTE = "scramjet-attr-script-source-src";
 
 /** The HTML namespace, for the spec's "is in the HTML namespace" tests. */
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+/** The XLink namespace, which the legacy `xlink:href` lives in. */
+export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
+
+/** The part of a qualified name after its prefix, if it has one. */
+function localPart(qualifiedName: string): string {
+	const colon = String_indexOf(qualifiedName, ":");
+
+	return colon === -1
+		? qualifiedName
+		: String_substring(qualifiedName, colon + 1);
+}
+
+/**
+ * The name the rule table knows a namespaced attribute by.
+ *
+ * The rules key on `xlink:href`, which is the spelling the HTML parser gives
+ * the attribute. Through `setAttributeNS` the prefix is the page's to choose,
+ * and `setAttributeNS(XLINK, "x:href", url)` is the same attribute - one the
+ * browser fetches from - under a name no rule would otherwise match.
+ */
+export function ruleAttributeName(
+	namespace: string | null,
+	qualifiedName: string
+): string {
+	if (namespace === XLINK_NAMESPACE && localPart(qualifiedName) === "href") {
+		return "xlink:href";
+	}
+
+	return qualifiedName;
+}
 
 /** Whether `qualifiedName` names an attribute of scramjet's own. */
 export function isInternalAttribute(qualifiedName: string): boolean {
@@ -155,6 +187,13 @@ export type AttributeAccess = {
 	names(element: Element): string[];
 	/** The rule for this attribute on this element, or null if it isn't rewritten. */
 	rewriter(element: Element, qualifiedName: string): AttributeRewriter | null;
+	/**
+	 * The attribute change steps scramjet keeps for itself, run after every
+	 * write or removal that did not go through {@link set} or {@link remove}
+	 * (both of which run it themselves). `value` is the page's value, or null
+	 * for a removal.
+	 */
+	changed(element: Element, qualifiedName: string, value: string | null): void;
 	/** The `Attr` node the page should see for `qualifiedName`, or null. */
 	node(element: Element, qualifiedName: string): Attr | null;
 	/** The element an `Attr` node belongs to, or null when it is detached. */
@@ -163,6 +202,8 @@ export type AttributeAccess = {
 	attrName(attr: Attr): string;
 	/** An `Attr`'s value, as the document holds it. */
 	attrValue(attr: Attr): string;
+	/** An `Attr`'s namespace. */
+	attrNamespace(attr: Attr): string | null;
 	/** Write an `Attr`'s value without going through its element. */
 	setAttrValue(attr: Attr, value: string): void;
 	/** Whether `element` is an HTML element in an HTML document. */
@@ -210,6 +251,7 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 	const nAttrName = attr.name.get;
 	const nAttrValue = attr.value.get;
 	const nSetAttrValue = attr.value.set;
+	const nAttrNamespaceURI = attr.namespaceURI.get;
 	const nOwnerElement = attr.ownerElement.get;
 
 	const raw = {
@@ -300,12 +342,47 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 		return null;
 	};
 
+	const changed = (
+		element: Element,
+		qualifiedName: string,
+		value: string | null
+	) => {
+		// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#attr-nonce -
+		// the nonce content attribute's change steps copy it into the
+		// element's [[CryptographicNonce]], which is what the `nonce` IDL
+		// attribute answers with. Writing the IDL attribute touches only the
+		// slot, never the content attribute
+		if (qualifiedName === "nonce") {
+			client.box.nonces.set(element, value === null ? "" : value);
+		}
+
+		// `iframe.sandbox` is handed out from a stand-in element, because the
+		// rule strips the real attribute and a token list over it would edit
+		// the live iframe. the stand-in has to follow every other write
+		if (qualifiedName === "sandbox") {
+			const standIn = client.box.sandboxStandIns.get(element);
+			if (standIn) {
+				if (value === null) raw.remove(standIn, "sandbox");
+				else raw.set(standIn, "sandbox", value);
+			}
+		}
+
+		// a refresh's content is only a URL once `http-equiv` says so, and the
+		// page may well set the two in the other order - so the content is
+		// re-rewritten, from the page's own value, whenever that changes
+		if (qualifiedName === "http-equiv" && localName(element) === "meta") {
+			const content = get(element, "content");
+			if (content !== null) set(element, "content", content);
+		}
+	};
+
 	const set = (element: Element, qualifiedName: string, value: string) => {
 		if (isInternalAttribute(qualifiedName)) return;
 
 		const rewrite = rewriter(element, qualifiedName);
 		if (!rewrite) {
 			raw.set(element, qualifiedName, value);
+			changed(element, qualifiedName, value);
 
 			return;
 		}
@@ -319,6 +396,8 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 
 		if (rewritten === null) raw.remove(element, qualifiedName);
 		else raw.set(element, qualifiedName, rewritten);
+
+		changed(element, qualifiedName, value);
 	};
 
 	const remove = (element: Element, qualifiedName: string) => {
@@ -330,6 +409,8 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 		// to answer `getAttribute` forever
 		raw.remove(element, mirrorAttributeName(qualifiedName));
 		raw.remove(element, qualifiedName);
+
+		changed(element, qualifiedName, null);
 	};
 
 	const names = (element: Element): string[] => {
@@ -390,10 +471,12 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 		remove,
 		names,
 		rewriter,
+		changed,
 		node,
 		owner: (attr) => Reflect_apply(nOwnerElement, attr, []),
 		attrName: (attr) => Reflect_apply(nAttrName, attr, []),
 		attrValue: (attr) => Reflect_apply(nAttrValue, attr, []),
+		attrNamespace: (attr) => Reflect_apply(nAttrNamespaceURI, attr, []),
 		setAttrValue: (attr, value) => {
 			Reflect_apply(nSetAttrValue, attr, [value]);
 		},
@@ -407,6 +490,88 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 	return access;
 }
 
+/**
+ * `setAttributeNode` and `setAttributeNodeNS`, which `NamedNodeMap`'s
+ * `setNamedItem` and `setNamedItemNS` are the same operation as.
+ *
+ * The rewriting happens *before* the node is inserted: for `src` on a
+ * connected element the browser starts fetching the moment the attribute
+ * lands, so fixing the value up afterwards would be one request to the real
+ * origin every time.
+ */
+export function insertAttributeNode(
+	client: ScramjetClient,
+	element: Element,
+	attr: Attr,
+	namespaced: boolean
+): Attr | null {
+	const attrs = attributeAccess(client);
+	const natives = client.nativeStore.get("Element")!;
+	const insert = namespaced
+		? natives.setAttributeNodeNS.value
+		: natives.setAttributeNode.value;
+
+	// an attribute that already belongs to an element is either this
+	// element's - a no-op the native answers with the node itself - or
+	// another's, which is an InUseAttributeError. neither may be rewritten
+	// first: the value is already the rewritten one, and rewriting it again
+	// would land a proxy URL in the mirror
+	if (attrs.owner(attr) !== null) return Reflect_apply(insert, element, [attr]);
+
+	const name = attrs.attrName(attr);
+	// a page-built attribute under our own prefix would poison a mirror, so it
+	// is dropped the same way `setAttribute` drops one
+	if (isInternalAttribute(name)) {
+		void Reflect_apply(natives.hasAttributes.value, element, []);
+
+		return null;
+	}
+
+	const value = attrs.attrValue(attr);
+	const rewrite = attrs.rewriter(
+		element,
+		ruleAttributeName(attrs.attrNamespace(attr), name)
+	);
+
+	if (!rewrite) {
+		const replaced: Attr | null = Reflect_apply(insert, element, [attr]);
+		// a stale mirror from an earlier rewritten value under this name would
+		// otherwise go on answering for the one just inserted
+		attrs.raw.remove(element, mirrorAttributeName(name));
+		attrs.changed(element, name, value);
+
+		return replaced;
+	}
+
+	const rewritten = rewrite(value);
+	attrs.setAttrValue(attr, rewritten === null ? "" : rewritten);
+
+	let replaced: Attr | null;
+	try {
+		replaced = Reflect_apply(insert, element, [attr]);
+	} catch (err) {
+		// a namespace clash, or an element that is not one - the node the page
+		// still holds must not come back carrying the rewritten value
+		attrs.setAttrValue(attr, value);
+		throw err;
+	}
+
+	attrs.raw.set(element, mirrorAttributeName(name), value);
+	attrs.changed(element, name, value);
+
+	if (rewritten !== null) return replaced;
+
+	// the rule wants the attribute gone. it had to be inserted all the same -
+	// that is what makes this a *replacement* of whatever was there, which is
+	// the node the page is handed back
+	attrs.raw.remove(element, name);
+	// and the node the page still holds gets its own value back, now that it
+	// is detached and writing it has no effect on the document
+	attrs.setAttrValue(attr, value);
+
+	return replaced;
+}
+
 export default function (client: ScramjetClient, _self: Self) {
 	const attrs = attributeAccess(client);
 
@@ -416,50 +581,6 @@ export default function (client: ScramjetClient, _self: Self) {
 			on: "Element",
 			detail: `'${name}' is not a valid attribute name.`,
 		});
-
-	/**
-	 * What `setAttributeNode` has to do before the node is inserted, which is
-	 * where the rewriting happens: for `src` on a connected element the browser
-	 * starts fetching the moment the attribute lands, so fixing the value up
-	 * afterwards would be one request to the real origin every time.
-	 *
-	 * Returns the page's own value to be mirrored once the insertion has been
-	 * accepted, or null when there is nothing to do.
-	 */
-	const prepareNode = (element: Element, attr: Attr) => {
-		const name = attrs.attrName(attr);
-		// a page-built attribute under our own prefix would poison a mirror, so
-		// it is dropped the same way `setAttribute` drops one
-		if (isInternalAttribute(name)) return null;
-
-		const rewrite = attrs.rewriter(element, name);
-		if (!rewrite) return null;
-
-		const value = attrs.attrValue(attr);
-		const rewritten = rewrite(value);
-		attrs.setAttrValue(attr, rewritten === null ? "" : rewritten);
-
-		return { name, value, removed: rewritten === null };
-	};
-
-	/** The other half of {@link prepareNode}, run once the node is in place. */
-	const finishNode = (
-		element: Element,
-		attr: Attr,
-		pending: { name: string; value: string; removed: boolean }
-	) => {
-		attrs.raw.set(element, mirrorAttributeName(pending.name), pending.value);
-
-		if (!pending.removed) return;
-
-		// the rule wants the attribute gone. it had to be inserted all the same -
-		// that is what makes this a *replacement* of whatever was there, which is
-		// the node the page is handed back
-		attrs.raw.remove(element, pending.name);
-		// and the node the page still holds gets its own value back, now that it
-		// is detached and writing it has no effect on the document
-		attrs.setAttrValue(attr, pending.value);
-	};
 
 	// https://dom.spec.whatwg.org/#interface-element
 	client.Intercept(class extends Element {
@@ -544,11 +665,17 @@ export default function (client: ScramjetClient, _self: Self) {
 			value: string
 		): void {
 			const text = String(value);
-			const rewrite = isInternalAttribute(qualifiedName)
+			const internal = isInternalAttribute(qualifiedName);
+			const rewrite = internal
 				? null
-				: attrs.rewriter(this, qualifiedName);
+				: attrs.rewriter(this, ruleAttributeName(namespace, qualifiedName));
 			if (!rewrite) {
-				return super.setAttributeNS(namespace, qualifiedName, text);
+				super.setAttributeNS(namespace, qualifiedName, text);
+				if (!internal && namespace === null) {
+					attrs.changed(this, qualifiedName, text);
+				}
+
+				return;
 			}
 
 			const rewritten = rewrite(text);
@@ -562,11 +689,17 @@ export default function (client: ScramjetClient, _self: Self) {
 				qualifiedName,
 				rewritten === null ? "" : rewritten
 			);
-			if (rewritten === null) super.removeAttributeNS(namespace, qualifiedName);
+			// `removeAttributeNS` takes the *local* name, and a prefixed qualified
+			// name handed to it matches nothing - leaving the empty attribute in
+			// place of the one the rule wanted gone
+			if (rewritten === null) {
+				super.removeAttributeNS(namespace, localPart(qualifiedName));
+			}
 
 			// keyed on the qualified name, which is what the document holds and
 			// what a namespace-less read asks for
-			super.setAttribute(mirrorAttributeName(qualifiedName), text);
+			attrs.raw.set(this, mirrorAttributeName(qualifiedName), text);
+			if (namespace === null) attrs.changed(this, qualifiedName, text);
 		}
 
 		@Arguments("DOMString")
@@ -582,10 +715,25 @@ export default function (client: ScramjetClient, _self: Self) {
 		removeAttributeNS(namespace: string | null, localName: string): void {
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (node) {
-				super.removeAttribute(mirrorAttributeName(attrs.attrName(node)));
+				const name = attrs.attrName(node);
+				if (isInternalAttribute(name)) return;
+				attrs.raw.remove(this, mirrorAttributeName(name));
+				super.removeAttributeNS(namespace, localName);
+				if (namespace === null) attrs.changed(this, name, null);
+
+				return;
 			}
 
-			super.removeAttributeNS(namespace, localName);
+			// a rule that strips the attribute outright (`nonce`, `sandbox`)
+			// leaves only the mirror, which carries no namespace - so a
+			// namespace-less removal has to find it by name
+			if (namespace === null && !isInternalAttribute(localName)) {
+				const mirror = mirrorAttributeName(localName);
+				if (attrs.raw.has(this, mirror)) {
+					attrs.raw.remove(this, mirror);
+					attrs.changed(this, localName, null);
+				}
+			}
 		}
 
 		// `force` is `optional boolean`, not a nullable required one. declaring
@@ -665,41 +813,17 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Attr")
 		@Returns("Attr?")
 		setAttributeNode(attr: Attr): Attr | null {
-			const pending = prepareNode(this, attr);
-			if (!pending) {
-				if (isInternalAttribute(attrs.attrName(attr))) {
-					void super.hasAttributes();
+			void super.hasAttributes();
 
-					return null;
-				}
-
-				return super.setAttributeNode(attr);
-			}
-
-			const replaced = super.setAttributeNode(attr);
-			finishNode(this, attr, pending);
-
-			return replaced;
+			return insertAttributeNode(client, this, attr, false);
 		}
 
 		@Arguments("Attr")
 		@Returns("Attr?")
 		setAttributeNodeNS(attr: Attr): Attr | null {
-			const pending = prepareNode(this, attr);
-			if (!pending) {
-				if (isInternalAttribute(attrs.attrName(attr))) {
-					void super.hasAttributes();
+			void super.hasAttributes();
 
-					return null;
-				}
-
-				return super.setAttributeNodeNS(attr);
-			}
-
-			const replaced = super.setAttributeNodeNS(attr);
-			finishNode(this, attr, pending);
-
-			return replaced;
+			return insertAttributeNode(client, this, attr, true);
 		}
 
 		@Arguments("Attr")
@@ -711,7 +835,14 @@ export default function (client: ScramjetClient, _self: Self) {
 			const removed = super.removeAttributeNode(attr);
 
 			if (!isInternalAttribute(name)) {
-				super.removeAttribute(mirrorAttributeName(name));
+				attrs.raw.remove(this, mirrorAttributeName(name));
+				attrs.changed(this, name, null);
+			} else {
+				// the mirror node standing in for a stripped attribute is what
+				// `getAttributeNode("nonce")` hands out, and removing it is
+				// removing that attribute
+				const mirrored = mirroredAttributeName(name);
+				if (mirrored) attrs.changed(this, mirrored, null);
 			}
 
 			return removed;

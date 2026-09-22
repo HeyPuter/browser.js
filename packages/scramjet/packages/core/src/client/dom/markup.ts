@@ -19,41 +19,86 @@ import { textAccess } from "@client/dom/node";
 import { rewriteHtml, unrewriteHtml } from "@rewriters/html";
 import { ForeignContext } from "@/shared/rewriters/html";
 import { isHtmlMimeType } from "@/shared/mime";
-import { String, String_toLowerCase } from "@/shared/snapshot";
+import {
+	Array_indexOf,
+	Reflect_apply,
+	String,
+	String_toLowerCase,
+} from "@/shared/snapshot";
 
-/** The tokenizer context *inside* `element`. */
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
+
+/** MathML's text integration points, whose children are parsed as HTML. */
+const MATHML_TEXT_INTEGRATION_POINTS = ["mi", "mo", "mn", "ms", "mtext"];
+/** SVG's HTML integration points. */
+const SVG_HTML_INTEGRATION_POINTS = ["foreignObject", "desc", "title"];
+
+/**
+ * The tokenizer context *inside* `element` - what the fragment parsing
+ * algorithm uses when `element` is the context element.
+ *
+ * Decided from the namespace and local name the element really has, read
+ * through the natives. Not `instanceof`: that walks a prototype chain and a
+ * `Symbol.hasInstance` the page controls, and a context the rewriter gets
+ * wrong is markup it parses differently from the browser - `<style>` is raw
+ * text in HTML and a container in SVG, which is the whole of an escape.
+ *
+ * https://html.spec.whatwg.org/multipage/parsing.html#html-integration-point
+ * https://html.spec.whatwg.org/multipage/parsing.html#mathml-text-integration-point
+ */
 export function foreignContextForElement(
 	client: ScramjetClient,
 	element: Element
 ): ForeignContext {
-	if (client.box.instanceof(element, "SVGElement")) return "svg";
-	if (client.box.instanceof(element, "MathMLElement")) return "math";
+	const natives = client.nativeStore.get("Element")!;
+	const namespace = Reflect_apply(natives.namespaceURI.get, element, []);
+	const local: string = Reflect_apply(natives.localName.get, element, []);
+
+	if (namespace === SVG_NAMESPACE) {
+		return Array_indexOf(SVG_HTML_INTEGRATION_POINTS, local) !== -1
+			? "html"
+			: "svg";
+	}
+
+	if (namespace === MATHML_NAMESPACE) {
+		if (Array_indexOf(MATHML_TEXT_INTEGRATION_POINTS, local) !== -1) {
+			return "html";
+		}
+		if (local === "annotation-xml") {
+			const encoding = Reflect_apply(natives.getAttribute.value, element, [
+				"encoding",
+			]);
+			const lowered = encoding === null ? "" : String_toLowerCase(encoding);
+			if (lowered === "text/html" || lowered === "application/xhtml+xml") {
+				return "html";
+			}
+		}
+
+		return "math";
+	}
 
 	return "html";
 }
 
 /**
- * The tokenizer context `element` itself sits in - what its parent supplies.
- *
- * NOT inclusive of the element: a `<foreignObject>`'s own context is svg, and
- * an HTML element inside one is html.
+ * The tokenizer context `element` itself sits in - what its parent supplies,
+ * which is what a fragment replacing or sitting beside it is parsed in.
  */
 export function insideForeignContext(
 	client: ScramjetClient,
 	element: Element | null
 ): ForeignContext {
-	let current: Element | null = element && element.parentElement;
+	if (!element) return "html";
 
-	while (current) {
-		const context = foreignContextForElement(client, current);
-		if (context !== "html") return context;
-		// EXPLICITLY an html context, don't go up further
-		if (client.box.instanceof(current, "SVGForeignObjectElement"))
-			return "html";
-		current = current.parentElement;
-	}
+	const node = client.nativeStore.get("Node")!;
+	const parent: Element | null = Reflect_apply(
+		node.parentElement.get,
+		element,
+		[]
+	);
 
-	return "html";
+	return parent ? foreignContextForElement(client, parent) : "html";
 }
 
 export default function (client: ScramjetClient, _self: Self) {
@@ -74,6 +119,12 @@ export default function (client: ScramjetClient, _self: Self) {
 
 	const serialize = (html: string, foreignContext: ForeignContext) =>
 		unrewriteHtml(html, foreignContext, client.context);
+
+	/** Whether `node` is a script or a style, whose markup is its text. */
+	const rawTextElement = (node: Node | null): boolean =>
+		node !== null &&
+		text.type(node) === 1 &&
+		text.kind(node as Element) !== null;
 
 	// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-innerhtml
 	client.Intercept(class extends Element {
@@ -118,6 +169,17 @@ export default function (client: ScramjetClient, _self: Self) {
 
 		@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
 		set outerHTML(value: string) {
+			// replacing a child of a script or a style: the fragment is parsed
+			// in that element's raw text context, which makes it one Text node
+			// holding the string as written - that is, more of the program
+			const parent = super.parentNode;
+			if (rawTextElement(parent)) {
+				text.insertText(parent!, this, String(value));
+				super.remove();
+
+				return;
+			}
+
 			super.outerHTML = parse(
 				String(value),
 				"set Element.prototype.outerHTML",
@@ -137,6 +199,14 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("(TrustedHTML or DOMString)", "optional SetHTMLUnsafeOptions")
 		@Returns("undefined")
 		setHTMLUnsafe(html: string, options?: SetHTMLUnsafeOptions): void {
+			// the same raw text context as `innerHTML`'s: the markup is the source
+			if (text.kind(this) !== null) {
+				void super.tagName;
+				text.setSource(this, String(html));
+
+				return;
+			}
+
 			super.setHTMLUnsafe(
 				parse(
 					String(html),
@@ -152,6 +222,18 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString", "optional SetHTMLOptions")
 		@Returns("undefined")
 		setHTML(html: string, options?: SetHTMLOptions): void {
+			// https://wicg.github.io/sanitizer-api/#set-and-filter-html - a
+			// script context is refused outright, and a style's text survives the
+			// sanitizer as text. the native still runs first on an empty string,
+			// for the options' validation and the script case's no-op
+			const what = text.kind(this);
+			if (what !== null) {
+				super.setHTML("", options);
+				if (what === "style") text.setSource(this, String(html));
+
+				return;
+			}
+
 			super.setHTML(
 				parse(
 					String(html),
@@ -165,6 +247,14 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("optional GetHTMLOptions")
 		@Returns("DOMString")
 		getHTML(options?: GetHTMLOptions): string {
+			// a raw text element serializes its children unescaped, so its markup
+			// is its source - which the rewritten text in the document is not
+			if (text.kind(this) !== null) {
+				void super.getHTML(options);
+
+				return text.source(this);
+			}
+
 			return serialize(
 				super.getHTML(options),
 				foreignContextForElement(client, this)
@@ -174,7 +264,29 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString", "(TrustedHTML or DOMString)")
 		@Returns("undefined")
 		insertAdjacentHTML(position: string, string: string): void {
+			void super.tagName;
+
 			const where = String_toLowerCase(String(position));
+
+			// a fragment parsed in a script's or a style's context is a single
+			// Text node, so inserting one there is `insertAdjacentText`
+			const outside = where === "beforebegin" || where === "afterend";
+			const inside = where === "afterbegin" || where === "beforeend";
+			const target = outside ? super.parentNode : inside ? this : null;
+			if (rawTextElement(target)) {
+				const reference =
+					where === "beforebegin"
+						? (this as Node)
+						: where === "afterend"
+							? super.nextSibling
+							: where === "afterbegin"
+								? super.firstChild
+								: null;
+				text.insertText(target!, reference, String(string));
+
+				return;
+			}
+
 			// beforebegin and afterend parse against this element's parent, the
 			// other two against this element
 			const context =
