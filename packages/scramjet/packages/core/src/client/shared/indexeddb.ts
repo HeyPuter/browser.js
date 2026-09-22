@@ -6,6 +6,9 @@ import {
 	String_substring,
 } from "@/shared/snapshot";
 
+export const enabled = (_client: ScramjetClient, self: Self) =>
+	"indexedDB" in self && "IDBFactory" in self && "IDBDatabase" in self;
+
 export default function (client: ScramjetClient) {
 	// `scopeOrigin`, not `url.origin`: an about:blank frame's databases are its
 	// creator's, and its own URL has no origin to key on

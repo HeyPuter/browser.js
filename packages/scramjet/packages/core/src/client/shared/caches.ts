@@ -10,9 +10,13 @@ import {
 	_URL,
 } from "@/shared/snapshot";
 
+export const enabled = (_client: ScramjetClient, self: Self) =>
+	"caches" in self && "Cache" in self && "CacheStorage" in self;
+
 export default function (client: ScramjetClient, self: Self) {
 	const nGlobal = new client.native.window(self);
-	const scopedName = (name: string) => `${client.scopeOrigin}@${name}`;
+	const scopePrefix = () => `${client.scopeOrigin}@`;
+	const scopedName = (name: string) => scopePrefix() + name;
 	const rewriteRequest = (request: RequestInfo): RequestInfo =>
 		typeof request === "string"
 			? client.rewriteUrl(request, { mode: "cors" })
@@ -70,11 +74,22 @@ export default function (client: ScramjetClient, self: Self) {
 		});
 	};
 
+	/**
+	 * Mark a Response as having come off the network.
+	 *
+	 * `shared/requests/fetch.ts` gates `Response.url`, `Response.headers` and
+	 * `clone()`'s tag propagation on this: a tagged Response unrewrites its URL
+	 * and gets its stripped headers put back, an untagged one reads the wire's
+	 * own. A cache entry is a fresh Response object every `match()`, so the tag
+	 * cannot ride along from the `fetch()` that produced it and has to be
+	 * reapplied here.
+	 *
+	 * `Response.url` is the proof, because a page cannot forge it: an entry the
+	 * page built with `new Response()` has an empty url and stays untagged.
+	 */
 	const tag = <T>(response: T): T => {
 		if (!response) return response;
 
-		// are we getting a cache entry that came off a fetch(), or was it created by the user?
-		// Response.url can't be faked, so this proves it
 		const networkProvenance = String_startsWith(
 			new client.native.Response(response).url,
 			client.context.prefix.href
@@ -84,6 +99,24 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 
 		return response;
+	};
+
+	/**
+	 * A stored key as the page is allowed to see it.
+	 *
+	 * The cache stores keys under the site's own URL, which is the whole point
+	 * of `cacheKey` - but handing those Requests back to the page is a way out
+	 * of the proxy, because `fetch(key)` short-circuits on a Request and would
+	 * go straight to the origin. Rebuilt on the rewritten URL instead: the
+	 * `url` getter unrewrites it back to the site's, and a re-fetch is proxied.
+	 */
+	const pageKey = (request: Request): Request => {
+		const nRequest = new client.native.Request(request);
+
+		return new nGlobal.Request(
+			client.rewriteUrl(nRequest.url, { mode: "cors" }),
+			{ method: nRequest.method, headers: nRequest.headers }
+		);
 	};
 
 	/**
@@ -183,6 +216,15 @@ export default function (client: ScramjetClient, self: Self) {
 		await Promise_all(writes);
 	};
 
+	// `add` and `addAll` are the two members that never reach the native on
+	// their own: every check they make is about the request, and the writes go
+	// through a `put` closure that an empty list never calls. So
+	// `Cache.prototype.addAll.call({}, [])` resolved where a browser rejects,
+	// and a non-empty list fetched on the caller's behalf before the receiver
+	// was ever questioned. Both open with a lookup that cannot match, the
+	// cheapest member that brand-checks - inline rather than through a helper,
+	// because `scramjet-core/intercept-brand-check` only recognises a literal
+	// `this`.
 	client.Intercept(class extends Cache {
 		@Returns("Promise<(Response or undefined)>")
 		@Arguments("(Request or USVString)", "optional CacheQueryOptions")
@@ -211,13 +253,6 @@ export default function (client: ScramjetClient, self: Self) {
 		@Returns("Promise<undefined>")
 		@Arguments("(Request or USVString)")
 		async add(request: RequestInfo): Promise<void> {
-			// `add` and `addAll` are the two members that never reach the
-			// native on their own: every check they make is about the request,
-			// and the writes go through a `put` closure an empty list never
-			// calls. So `Cache.prototype.addAll.call({}, [])` resolved where a
-			// browser rejects, and a non-empty list fetched on the caller's
-			// behalf before the receiver was ever questioned. A lookup that
-			// cannot match is the cheapest member that brand-checks
 			await new client.native.Cache(this).match("about:blank");
 
 			return runAddAll([request], "add", (key, response) =>
@@ -228,13 +263,6 @@ export default function (client: ScramjetClient, self: Self) {
 		@Returns("Promise<undefined>")
 		@Arguments("sequence<(Request or USVString)>")
 		async addAll(requests: RequestInfo[]): Promise<void> {
-			// `add` and `addAll` are the two members that never reach the
-			// native on their own: every check they make is about the request,
-			// and the writes go through a `put` closure an empty list never
-			// calls. So `Cache.prototype.addAll.call({}, [])` resolved where a
-			// browser rejects, and a non-empty list fetched on the caller's
-			// behalf before the receiver was ever questioned. A lookup that
-			// cannot match is the cheapest member that brand-checks
 			await new client.native.Cache(this).match("about:blank");
 
 			return runAddAll(requests, "addAll", (key, response) =>
@@ -259,12 +287,20 @@ export default function (client: ScramjetClient, self: Self) {
 
 		@Returns("Promise<sequence<Request>>")
 		@Arguments("optional (Request or USVString)", "optional CacheQueryOptions")
-		keys(
+		async keys(
 			request?: RequestInfo,
 			options: CacheQueryOptions = {}
 		): Promise<readonly Request[]> {
-			if (request === undefined) return super.keys(undefined, options);
-			return super.keys(cacheKey(request), options);
+			const stored = await (request === undefined
+				? super.keys(undefined, options)
+				: super.keys(cacheKey(request), options));
+			const visible: Request[] = [];
+
+			for (let i = 0; i < stored.length; i++) {
+				visible[visible.length] = pageKey(stored[i]);
+			}
+
+			return visible;
 		}
 	});
 
@@ -287,10 +323,32 @@ export default function (client: ScramjetClient, self: Self) {
 			request: RequestInfo,
 			options: MultiCacheQueryOptions = {}
 		): Promise<Response | undefined> {
+			// https://webidl.spec.whatwg.org/#es-dictionary - a dictionary
+			// converts from undefined, null or an Object and throws for
+			// anything else. This member reads the options itself rather than
+			// handing them to the native, so the rejection is owed here too:
+			// without it `caches.match(req, 5)` resolved undefined whenever
+			// this origin happened to have no caches to walk
+			if (
+				options !== undefined &&
+				options !== null &&
+				typeof options !== "object" &&
+				typeof options !== "function"
+			) {
+				throw client.errors.typeError({
+					execute: "match",
+					on: "CacheStorage",
+					// verbatim, trailing stop included: the message is
+					// observable and `cachekey-caches-match-options-not-a-
+					// dictionary` compares it against the browser's
+					detail: "The provided value is not of type 'MultiCacheQueryOptions'.",
+				});
+			}
+
 			const key = cacheKey(request);
 			let cacheName: string | undefined;
 
-			if (options !== null && typeof options === "object") {
+			if (options !== undefined && options !== null) {
 				const ignoreMethod = options.ignoreMethod;
 				const ignoreSearch = options.ignoreSearch;
 				const ignoreVary = options.ignoreVary;
@@ -323,7 +381,7 @@ export default function (client: ScramjetClient, self: Self) {
 			// So walk ours, in the same order: `keys()` answers in insertion
 			// order, and the prefix filter is the whole of the fix.
 			const names = await super.keys();
-			const prefix = `${client.scopeOrigin}@`;
+			const prefix = scopePrefix();
 
 			for (let i = 0; i < names.length; i++) {
 				if (!String_startsWith(names[i], prefix)) continue;
@@ -356,7 +414,7 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments()
 		async keys(): Promise<string[]> {
 			const names = await super.keys();
-			const prefix = `${client.scopeOrigin}@`;
+			const prefix = scopePrefix();
 			const visible: string[] = [];
 
 			for (let i = 0; i < names.length; i++) {

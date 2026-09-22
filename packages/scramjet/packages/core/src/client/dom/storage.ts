@@ -19,23 +19,21 @@ export const enabled = (_client: ScramjetClient, self: Self) =>
 	"Storage" in self && "localStorage" in self;
 
 export default function (client: ScramjetClient, self: Self) {
-	// `scopeUrl.host` rather than `url.host`: an about:blank frame's storage area is
-	// its creator's, and its own URL has no host to key on - so every one of
-	// them on every site would otherwise share the single "" namespace, which is
-	// a cross-site read and write of both storage areas.
+	// `scopeOrigin` rather than `url.origin`: an about:blank frame's storage
+	// area is its creator's, and its own URL has no origin to key on - so every
+	// one of them on every site would otherwise share the single "" namespace,
+	// which is a cross-site read and write of both areas. The whole origin and
+	// not the host, so that `http://x` and `https://x` get one area each the
+	// way a browser gives them one, and so that this keys the same way
+	// `caches.ts`, `indexeddb.ts` and `opfs.ts` do.
 	//
-	// TODO: this is a host, so `http://x` and `https://x` still share an area
-	// where a browser gives them one each. Keying on the whole origin is the
-	// fix and it invalidates everything already stored, so it wants doing
-	// deliberately rather than as a side effect of this.
-	//
-	// The full separator, never the bare host. `startsWith(host)` also matches
-	// another site's keys whenever one host is a prefix of the other -
-	// "a.com" against "a.com.evil@secret" - and every one of them then had
-	// `host.length + 1` characters chopped off and was handed over as this
-	// site's own. The "@" is what makes the boundary unambiguous, because a
-	// host cannot contain one.
-	const prefix = () => client.scopeUrl.host + "@";
+	// The separator is always included, never the bare origin.
+	// `startsWith(origin)` would also match another site's keys whenever one
+	// origin is a prefix of another - "https://a.com" against
+	// "https://a.com.evil@secret" - and each of those was then chopped at
+	// `origin.length + 1` and handed over as this site's own. "@" makes the
+	// boundary unambiguous, because an origin cannot contain one.
+	const prefix = () => `${client.scopeOrigin}@`;
 
 	/**
 	 * The real storage area behind a receiver.
@@ -47,31 +45,41 @@ export default function (client: ScramjetClient, self: Self) {
 	 */
 	const areaOf = (that: any): any => client.box.unproxy.get(that) ?? that;
 
-	/** This site's keys, as they are stored - namespace included. */
+	/**
+	 * This site's keys, as they are stored - namespace included.
+	 *
+	 * An indexed loop rather than `Array.prototype.filter`, which is
+	 * page-writable: replacing it hands `length`, `key()` and `clear()` a list
+	 * of some other site's keys, and `clear()` acts on whatever it is given.
+	 */
 	const scopedKeys = (area: Storage) => {
 		const scope = prefix();
+		const all = Object_keys(area);
+		const mine: string[] = [];
 
-		return Object_keys(area).filter((key) => String_startsWith(key, scope));
+		for (let i = 0; i < all.length; i++) {
+			if (String_startsWith(all[i], scope)) mine[mine.length] = all[i];
+		}
+
+		return mine;
 	};
 
 	// https://html.spec.whatwg.org/multipage/webstorage.html#the-storage-interface
 	//
 	// The members live on `Storage.prototype` because that is where a browser
-	// keeps them. They used to be minted by the wrapper's `get` trap instead,
-	// one fresh arrow per read, which is three separate tells at once:
-	// `localStorage.getItem !== localStorage.getItem`, a `name` of "", and a
-	// `Function.prototype.toString` that renders scramjet's own source - naming
-	// `scopeUrl` in it. Installed here they are ordinary intercepted members,
-	// indistinguishable from every other one.
-	/* eslint-disable scramjet-core/intercept-brand-check --
-	   Every member reaches the native through `new client.native.Storage(
-	   areaOf(this))`. `areaOf` maps the wrapper the page holds back to the real
-	   area and passes anything else straight through, so a receiver that is not
-	   a Storage still reaches the native and still gets its "Illegal
-	   invocation" - the rule just cannot see a receiver that went through a
-	   helper, because it only recognises a literal `this` as the argument. */
+	// keeps them, so they are ordinary intercepted members - not arrows minted
+	// per read by the wrapper's `get` trap, which would differ from a native
+	// one in identity, `name` and `Function.prototype.toString`.
+	//
+	// Every member below reaches the native through `new client.native.Storage(
+	// areaOf(this))`. `areaOf` maps the wrapper the page holds back to the real
+	// area and passes anything else through untouched, so a receiver that is
+	// not a Storage still reaches the native and still gets its "Illegal
+	// invocation". The lint rule only recognises a literal `this`, so it cannot
+	// see a receiver that went through a helper - hence a disable per member.
 	client.Intercept(class extends Storage {
 		@Type("unsigned long")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		get length(): number {
 			const area = areaOf(this);
 			// reached on every path, so a receiver that is not a Storage gets
@@ -83,58 +91,59 @@ export default function (client: ScramjetClient, self: Self) {
 
 		@Arguments("unsigned long")
 		@Returns("DOMString?")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		key(index: number): string | null {
 			const area = areaOf(this);
+			// before the range test rather than inside it: a receiver that is
+			// not a Storage owes the native's "Illegal invocation" whatever the
+			// index is. Gated on the out-of-range branch,
+			// `key.call({ "https://a.example@x": 1 }, 0)` answered "x"
+			void new client.native.Storage(area).length;
+
 			// the *name*, not the value, and with the namespace taken off -
 			// this is what a page iterating `localStorage.key(i)` and feeding
 			// the result back to `getItem` needs. Out of range is null
 			const keys = scopedKeys(area);
-			if (index < 0 || index >= keys.length) {
-				// reached on every path, so a receiver that is not a Storage
-				// gets the native's own error rather than a null
-				void new client.native.Storage(area).length;
-
-				return null;
-			}
+			if (index < 0 || index >= keys.length) return null;
 
 			return String_substring(keys[index], prefix().length);
 		}
 
 		@Arguments("DOMString")
 		@Returns("DOMString?")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		getItem(key: string): string | null {
 			return new client.native.Storage(areaOf(this)).getItem(prefix() + key);
 		}
 
 		@Arguments("DOMString", "DOMString")
 		@Returns("undefined")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		setItem(key: string, value: string): void {
 			new client.native.Storage(areaOf(this)).setItem(prefix() + key, value);
 		}
 
 		@Arguments("DOMString")
 		@Returns("undefined")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		removeItem(key: string): void {
 			new client.native.Storage(areaOf(this)).removeItem(prefix() + key);
 		}
 
 		@Arguments()
 		@Returns("undefined")
+		// eslint-disable-next-line scramjet-core/intercept-brand-check -- reaches the native through `areaOf(this)`
 		clear(): void {
 			const area = areaOf(this);
 			const nArea = new client.native.Storage(area);
 
-			// `for...in` over `Object_keys(area)` walked the *indices* of the
-			// returned array - "0", "1", ... - none of which start with the
-			// namespace, so `clear()` removed nothing and silently left every
-			// entry in place. `Object_keys` snapshots, so removing while
-			// iterating is safe
+			// this site's entries only, never the whole area. `Object_keys`
+			// snapshots, so removing while iterating is safe
 			for (const key of scopedKeys(area)) {
 				nArea.removeItem(key);
 			}
 		}
 	});
-	/* eslint-enable scramjet-core/intercept-brand-check */
 
 	/**
 	 * Whether `prop` is a member of the interface rather than a stored item.
@@ -170,7 +179,13 @@ export default function (client: ScramjetClient, self: Self) {
 		get(target, prop) {
 			if (isMember(prop)) return Reflect_get(target, prop);
 
-			return item(target, prop as string);
+			// undefined, not null: a named property that is not there is
+			// absent, and `getItem`'s null is `getItem`'s alone.
+			// `localStorage.nope` answered null where a browser answers
+			// undefined, so `?? fallback` and `=== undefined` both misread it
+			const value = item(target, prop as string);
+
+			return value === null ? undefined : value;
 		},
 
 		set(target, prop, value) {
@@ -232,9 +247,19 @@ export default function (client: ScramjetClient, self: Self) {
 		},
 
 		defineProperty(target, property, attributes) {
-			if (!("value" in attributes)) {
+			// a member name (or a symbol) is not a named property, so it takes
+			// the ordinary definition
+			if (isMember(property)) {
 				return Reflect_defineProperty(target, property, attributes);
 			}
+
+			// https://webidl.spec.whatwg.org/#legacy-platform-object-defineownproperty
+			// - a named property setter takes data descriptors only and
+			// refuses an accessor, which is a false here and so a TypeError
+			// out of `Object.defineProperty`. Falling through to
+			// `Reflect_defineProperty` installed a real getter on the area
+			// every proxied site shares
+			if (!("value" in attributes)) return false;
 
 			new client.native.Storage(target).setItem(
 				prefix() + (property as string),
@@ -264,13 +289,11 @@ export default function (client: ScramjetClient, self: Self) {
 		return proxy;
 	};
 
-	// Through `Trap`, not `delete self.localStorage` followed by an
-	// assignment. That turned a readonly attribute into a data property - so
-	// `Object.getOwnPropertyDescriptor(window, "localStorage").get` was
-	// undefined where a browser has a getter - and the `delete` moved the key
-	// to the end of the window's own key order, which is observable through
-	// `Object.getOwnPropertyNames`. `ctx.get()` also keeps the native's brand
-	// check and its SecurityError for a document that may not use storage.
+	// Through `Trap`, not `delete self.localStorage` followed by an assignment:
+	// the attribute stays a readonly accessor rather than becoming a data
+	// property, and keeps its place in the window's own key order. `ctx.get()`
+	// also keeps the native's brand check and its SecurityError for a document
+	// that may not use storage.
 	client.Trap(["localStorage", "sessionStorage"], {
 		get(ctx) {
 			return wrap(ctx.get() as Storage);

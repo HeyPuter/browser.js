@@ -84,6 +84,119 @@ export default [
 		`,
 	}),
 
+	// https://html.spec.whatwg.org/multipage/webstorage.html#the-storage-interface
+	//
+	// Every proxied site shares one real storage area, so `localStorage` is
+	// scoped by a key prefix. Nothing else in this file covers Web Storage,
+	// which is the one surface where losing the scoping means a site reads and
+	// writes another's data directly rather than only enumerating it.
+	multiFrameTest({
+		name: "storagescope-localstorage-crosses-origins",
+		root: {
+			js: () => `
+				(async () => {
+					await new Promise((r) => setTimeout(r, 700));
+
+					// an own property written over a member name in the other
+					// frame must not reach this one either
+					if (typeof localStorage.getItem !== "function") {
+						fail(
+							"another origin's shadow of a Storage member is visible here: " +
+								String(localStorage.getItem)
+						);
+
+						return;
+					}
+
+					const leaked = localStorage.getItem("storagescope-secret-item");
+					if (leaked !== null) {
+						fail("localStorage read another origin's item: " + leaked);
+
+						return;
+					}
+
+					// the enumerating half: the raw keys carry the other
+					// origin's name, so a bare key list is a site list
+					const keys = Object.keys(localStorage);
+					const foreign = keys.filter(
+						(key) => key !== "storagescope-own-item"
+					);
+					if (foreign.length > 0) {
+						fail(
+							"localStorage enumerated keys this origin never wrote: " +
+								JSON.stringify(foreign)
+						);
+
+						return;
+					}
+
+					pass();
+				})().catch((error) => fail(error && error.message));
+			`,
+			subframes: [
+				{
+					originid: "cross",
+					id: "storagewriter",
+					js: () =>
+						`localStorage.setItem("storagescope-secret-item", "CROSS-ORIGIN-SECRET");
+						 localStorage.getItem = "CROSS-ORIGIN-SHADOW";`,
+				},
+			],
+		},
+	}),
+
+	// The named-property half of `Storage`, which the wrapper has to emulate
+	// rather than intercept. Differential against bare throughout - the
+	// interesting answers here are the ones a `getItem` shim gets wrong.
+	basicTest({
+		name: "storagescope-localstorage-named-properties",
+		js: `
+			localStorage.clear();
+
+			// absent is undefined, not getItem's null
+			assertConsistent("missing", localStorage.nosuchkey);
+			assertConsistent("missing typeof", typeof localStorage.nosuchkey);
+
+			localStorage.setItem("present", "");
+			assertConsistent("empty string item", localStorage.present);
+			assertConsistent("in operator", "present" in localStorage);
+			assertConsistent("absent in operator", "nosuchkey" in localStorage);
+
+			// a named property takes a data descriptor and refuses an accessor
+			let accessor = "no-throw";
+			try {
+				Object.defineProperty(localStorage, "acc", { get: () => "1" });
+			} catch (error) {
+				accessor = error.name;
+			}
+			assertConsistent("accessor define", accessor);
+
+			let data = "no-throw";
+			try {
+				Object.defineProperty(localStorage, "dat", {
+					value: "5",
+					writable: true,
+					enumerable: true,
+					configurable: true,
+				});
+			} catch (error) {
+				data = error.name;
+			}
+			assertConsistent("data define", data);
+			assertConsistent("data define stored", localStorage.getItem("dat"));
+
+			// a member name is shadowed as an own property, and does not become
+			// a stored item
+			localStorage.setItem("before", "1");
+			localStorage.getItem = "shadowed";
+			assertConsistent("shadowed typeof", typeof localStorage.getItem);
+			assertConsistent("shadow is not an item", localStorage.length);
+
+			localStorage.clear();
+			assertConsistent("cleared", localStorage.length);
+		`,
+	}),
+
 	// https://w3c.github.io/IndexedDB/#dom-idbfactory-databases
 	//
 	// `databases()` answers with every database in the storage key. The names
@@ -169,6 +282,59 @@ export default [
 	// of the native store, a site chooses which directory it is given, and the
 	// real root is one of the choices: from there every other proxied site's
 	// OPFS tree is a `for await` away.
+	// The negative above only says the page's own `getDirectoryHandle` was not
+	// used, which is also true when nothing is scoped at all. This is the
+	// positive half: two origins write into what each calls the root, and
+	// neither may see the other's file.
+	multiFrameTest({
+		name: "storagescope-opfs-roots-do-not-cross-origins",
+		scramjetOnly: true,
+		root: {
+			js: () => `
+				(async () => {
+					if (!navigator.storage || !navigator.storage.getDirectory) {
+						pass();
+
+						return;
+					}
+
+					const root = await navigator.storage.getDirectory();
+					await root.getFileHandle("own.txt", { create: true });
+
+					await new Promise((r) => setTimeout(r, 700));
+
+					const names = [];
+					for await (const name of root.keys()) names.push(name);
+
+					const foreign = names.filter((name) => name !== "own.txt");
+					if (foreign.length > 0) {
+						fail(
+							"the OPFS root listed entries this origin never wrote: " +
+								JSON.stringify(foreign)
+						);
+
+						return;
+					}
+
+					pass();
+				})().catch((error) => fail(error && error.message));
+			`,
+			subframes: [
+				{
+					originid: "cross",
+					id: "opfswriter",
+					js: () => `
+						(async () => {
+							if (!navigator.storage || !navigator.storage.getDirectory) return;
+							const root = await navigator.storage.getDirectory();
+							await root.getFileHandle("cross-origin.txt", { create: true });
+						})().catch(() => {});
+					`,
+				},
+			],
+		},
+	}),
+
 	basicTest({
 		name: "storagescope-opfs-root-not-page-reachable",
 		scramjetOnly: true,
