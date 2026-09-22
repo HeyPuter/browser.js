@@ -578,3 +578,100 @@ test("Intercept warns about added native accessor halves and still installs them
 		}
 	);
 });
+
+test("record conversion preserves __proto__ headers and object-valued entries", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			const box = fixture.makeClient().box;
+			const input = JSON.parse('{"__proto__":"x"}');
+			const args = [input];
+			fixture.idl.compileIDLValidator(box, ["record<ByteString, ByteString>"])(
+				args
+			);
+			const value = { marker: true };
+			const objects = [{ ["__proto__"]: value }];
+			fixture.idl.compileIDLValidator(box, ["record<DOMString, any>"])(objects);
+			return {
+				nativeHeader: new Headers(input).get("__proto__"),
+				convertedHeader: new Headers(args[0]).get("__proto__"),
+				descriptor: Object.getOwnPropertyDescriptor(args[0], "__proto__"),
+				ordinaryPrototype:
+					Object.getPrototypeOf(objects[0]) === Object.prototype,
+				ownValue:
+					Object.hasOwn(objects[0], "__proto__") &&
+					objects[0].__proto__ === value,
+			};
+		}),
+		{
+			nativeHeader: "x",
+			convertedHeader: "x",
+			descriptor: {
+				value: "x",
+				writable: true,
+				enumerable: true,
+				configurable: true,
+			},
+			ordinaryPrototype: true,
+			ownValue: true,
+		}
+	);
+});
+
+test("record output bypasses inherited setters, readonly properties, and descriptor getters", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			const validate = fixture.idl.compileIDLValidator(
+				fixture.makeClient().box,
+				["record<DOMString, DOMString>"]
+			);
+			const input = { "x-demo": "hello", locked: "own" };
+			let setterCalls = 0;
+			Object.defineProperty(Object.prototype, "x-demo", {
+				configurable: true,
+				set() {
+					setterCalls++;
+				},
+			});
+			Object.defineProperty(Object.prototype, "locked", {
+				configurable: true,
+				value: "inherited",
+				writable: false,
+			});
+			Object.defineProperty(Object.prototype, "get", {
+				configurable: true,
+				get() {
+					throw new Error("inherited descriptor getter");
+				},
+			});
+			const args = [input];
+			try {
+				validate(args);
+			} finally {
+				delete Object.prototype["x-demo"];
+				delete Object.prototype.locked;
+				delete Object.prototype.get;
+			}
+			return { setterCalls, entries: Object.entries(args[0]) };
+		}),
+		{
+			setterCalls: 0,
+			entries: [
+				["x-demo", "hello"],
+				["locked", "own"],
+			],
+		}
+	);
+});
+
+test("record keys that normalize to the same USVString retain the last value", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			const args = [{ "\ud800": "first", "\ud801": "last" }];
+			fixture.idl.compileIDLValidator(fixture.makeClient().box, [
+				"record<USVString, DOMString>",
+			])(args);
+			return Object.entries(args[0]);
+		}),
+		[["\ufffd", "last"]]
+	);
+});

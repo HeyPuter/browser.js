@@ -43,6 +43,7 @@ import {
 	Number_isNaN,
 	Object_keys,
 	Object_getOwnPropertyDescriptor,
+	Object_defineProperty,
 	Reflect_ownKeys,
 	Reflect_apply,
 	String,
@@ -1512,7 +1513,16 @@ function coerceIDLRecord(
 			if (!desc?.enumerable) continue;
 			// Convert the key before reading and converting its value.
 			const typedKey = key(keys[i]) as string;
-			out[typedKey] = item((value as any)[keys[i]]);
+			// CreateDataProperty preserves __proto__ and bypasses inherited setters.
+			// https://webidl.spec.whatwg.org/#es-record
+			const descriptor = {
+				__proto__: null,
+				value: item((value as any)[keys[i]]),
+				writable: true,
+				enumerable: true,
+				configurable: true,
+			};
+			Object_defineProperty(out, typedKey, descriptor);
 		}
 
 		return out;
