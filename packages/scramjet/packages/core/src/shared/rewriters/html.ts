@@ -2,18 +2,17 @@ import { ElementType, Parser } from "htmlparser2";
 import { ChildNode, DomHandler, Element, Comment } from "domhandler";
 import render from "dom-serializer";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
-import { rewriteCss } from "@rewriters/css";
+import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
 import { ScramjetContext } from "@/shared";
 import { htmlRules } from "@/shared/htmlRules";
 import { parseDeclarativeRefresh } from "@/shared/refresh";
-import { bytesToBase64 } from "@/shared/util";
+import { base64Decode, bytesToBase64 } from "@/shared/util";
 import { Tap } from "@/Tap";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { TrackedHistoryState } from "@/fetch";
 import {
 	Performance_now,
-	atob,
 	Object_entries,
 	JSON_parse,
 	JSON_stringify,
@@ -302,7 +301,18 @@ export function rewriteHtml(
 // 	origin?: URL;
 // };
 
-export function unrewriteHtml(html: string, foreignContext?: ForeignContext) {
+/**
+ * Undo {@link rewriteHtml} over a serialization.
+ *
+ * `context` is what lets a style element's text be un-rewritten; without it the
+ * markup comes back with the rewritten stylesheet still in it, which is a
+ * difference the page can see in `innerHTML`. Every client call passes one.
+ */
+export function unrewriteHtml(
+	html: string,
+	foreignContext?: ForeignContext,
+	context?: ScramjetContext
+) {
 	const handler = new DomHandler((err, dom) => dom);
 	const parser = new Parser(handler, {
 		startingForeignContext: foreignContext,
@@ -316,7 +326,7 @@ export function unrewriteHtml(html: string, foreignContext?: ForeignContext) {
 			for (const key in node.attribs) {
 				if (key == "scramjet-attr-script-source-src") {
 					if (node.children[0] && "data" in node.children[0])
-						node.children[0].data = atob(node.attribs[key]);
+						node.children[0].data = base64Decode(node.attribs[key]);
 					continue;
 				}
 
@@ -325,6 +335,17 @@ export function unrewriteHtml(html: string, foreignContext?: ForeignContext) {
 					delete node.attribs[key];
 				}
 			}
+		}
+
+		// a style element has no mirror to restore from - the stylesheet is
+		// recovered by running the rewrite backwards
+		if (
+			context &&
+			node.type === ElementType.Style &&
+			node.children[0] !== undefined &&
+			"data" in node.children[0]
+		) {
+			node.children[0].data = unrewriteCss(node.children[0].data, context);
 		}
 
 		if ("childNodes" in node) {
@@ -498,13 +519,13 @@ export function rewriteSrcset(
 	return rewrittenSources.join(", ");
 }
 
-// function base64ToBytes(base64) {
-// 	const binString = atob(base64);
-
-// 	return Uint8Array.from(binString, (m) => m.codePointAt(0));
-// }
-
-const eventAttributes = [
+/**
+ * The event handler content attributes, which carry javascript rather than a
+ * value. Exported because the client's attribute layer has to rewrite the same
+ * set when a page writes one through `setAttribute` - a name that is rewritten
+ * at parse time and not at run time is a hole, not an optimisation.
+ */
+export const eventAttributes = [
 	"onbeforexrselect",
 	"onabort",
 	"onbeforeinput",

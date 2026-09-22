@@ -152,6 +152,9 @@ export const Array_sort = Function_prototype_call.bind(
 export const Array_join = Function_prototype_call.bind(
 	globalThis.Array.prototype.join
 ) as (array: unknown[], separator?: string) => string;
+export const Array_indexOf = Function_prototype_call.bind(
+	globalThis.Array.prototype.indexOf
+) as <T>(array: readonly T[], search: unknown, from?: number) => number;
 
 export const JSON_parse = globalThis.JSON.parse;
 export const JSON_stringify = globalThis.JSON.stringify;
