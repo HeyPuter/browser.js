@@ -100,10 +100,13 @@ export default function (client: ScramjetClient, self: Self) {
 				// doing and cannot be attributed to this site
 				if (this.key === null) return false;
 
-				// scoped to match how `dom/storage.ts` namespaces its *writes* -
-				// on `scopeUrl`, which for an about:blank or srcdoc document is
-				// its creator's origin rather than its own empty one
-				return String_startsWith(this.key, client.scopeUrl.host + "@");
+				// the same prefix `dom/storage.ts` namespaces every read and
+				// write with - the whole `scopeOrigin`, which for an about:blank
+				// or srcdoc document is its creator's - so the events a document
+				// sees are for exactly the keys it can read. Any other prefix
+				// hands some documents keys they cannot read and drops ones
+				// they can
+				return String_startsWith(this.key, client.scopeOrigin + "@");
 			},
 			props: {
 				key(this: StorageEvent) {
@@ -188,6 +191,7 @@ export default function (client: ScramjetClient, self: Self) {
 		});
 
 		client.box.wrappedEvents.set(realEvent, wrapped);
+		client.box.standIns.set(wrapped, realEvent);
 
 		return wrapped;
 	};
@@ -225,6 +229,31 @@ export default function (client: ScramjetClient, self: Self) {
 		});
 	}
 
+	/**
+	 * https://webidl.spec.whatwg.org/#call-a-user-objects-operation
+	 *
+	 * An `EventListener` that is an object rather than a function, as a
+	 * function `wraplistener` can take. `handleEvent` is looked up on every
+	 * dispatch rather than once here: the spec gets it fresh each time, so a
+	 * page that reassigns it after registering is calling the new one.
+	 *
+	 * `this` is the object, never `currentTarget` - that is the callable
+	 * branch of the same algorithm, which `addEventListener` hands over as-is.
+	 * A missing or non-callable `handleEvent` throws out of the listener, which
+	 * the dispatch reports the same way it reports the native's own TypeError.
+	 */
+	const objectListener = (listener: EventListenerObject) =>
+		function (event: Event) {
+			const handleEvent = Reflect_get(listener, "handleEvent");
+			if (typeof handleEvent !== "function") {
+				throw client.errors.typeError({
+					detail: "The listener's handleEvent is not a function.",
+				});
+			}
+
+			return Reflect_apply(handleEvent, listener, [event]);
+		};
+
 	/** The (type, capture) half of the DOM's listener identity, as one key. */
 	const listenerKey = (event: string, capture: boolean) =>
 		(capture ? "1" : "0") + event;
@@ -260,7 +289,7 @@ export default function (client: ScramjetClient, self: Self) {
 	const listenerFor = (
 		target: EventTarget,
 		event: string,
-		callback: (...args: any) => any,
+		callback: EventListenerOrEventListenerObject,
 		capture: boolean
 	) => {
 		const wrappers = wrappersFor(target, listenerKey(event, capture), true)!;
@@ -268,11 +297,29 @@ export default function (client: ScramjetClient, self: Self) {
 		const existing = wrappers.get(callback);
 		if (existing) return existing;
 
-		const proxiedCallback = wraplistener(callback);
+		const proxiedCallback = wraplistener(
+			typeof callback === "function"
+				? (callback as (...args: any) => any)
+				: objectListener(callback)
+		);
 		wrappers.set(callback, proxiedCallback);
 
 		return proxiedCallback;
 	};
+
+	/**
+	 * Whether `callback` is a listener we stand in for.
+	 *
+	 * https://webidl.spec.whatwg.org/#es-callback-interface - any object is an
+	 * `EventListener`, callable or not. null and undefined are the nullable
+	 * type's null, which the native ignores, and every other primitive is a
+	 * TypeError the native raises itself, so neither is ours to wrap.
+	 */
+	const isListener = (
+		callback: unknown
+	): callback is EventListenerOrEventListenerObject =>
+		typeof callback === "function" ||
+		(typeof callback === "object" && callback !== null);
 
 	/**
 	 * Whether `options` takes the dictionary branch of
@@ -306,14 +353,9 @@ export default function (client: ScramjetClient, self: Self) {
 			callback: EventListenerOrEventListenerObject | null,
 			options?: AddEventListenerOptions | boolean
 		): void {
-			// an EventListener *object* is passed through unwrapped, as before.
-			// the cast is because narrowing `EventListenerOrEventListenerObject`
-			// on `typeof` leaves the bare `Function` type, which has no call
-			// signature
-			if (typeof callback !== "function") {
+			if (!isListener(callback)) {
 				return super.addEventListener(type, callback, options);
 			}
-			const fn = callback as (...args: any) => any;
 
 			// `(AddEventListenerOptions or boolean)`, where the boolean is just
 			// `capture`. The dictionary form is read once, by the shared reader
@@ -325,7 +367,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 			return super.addEventListener(
 				type,
-				listenerFor(this, type, fn, init.capture),
+				listenerFor(this, type, callback, init.capture),
 				init
 			);
 		}
@@ -341,21 +383,20 @@ export default function (client: ScramjetClient, self: Self) {
 			callback: EventListenerOrEventListenerObject | null,
 			options?: EventListenerOptions | boolean
 		): void {
-			if (typeof callback !== "function") {
+			if (!isListener(callback)) {
 				return super.removeEventListener(type, callback, options);
 			}
-			const fn = callback as (...args: any) => any;
 
 			const capture = takesDictionary(options)
 				? readEventListenerOptions(options).capture
 				: !!options;
 			const wrappers = wrappersFor(this, listenerKey(type, capture), false);
-			const proxiedCallback = wrappers && wrappers.get(fn);
+			const proxiedCallback = wrappers && wrappers.get(callback);
 
 			if (proxiedCallback) {
 				// dropped rather than kept, so that a later re-add mints a fresh
 				// wrapper - the same thing the native does with the registration
-				wrappers.delete(fn);
+				wrappers.delete(callback);
 
 				return super.removeEventListener(type, proxiedCallback, { capture });
 			}
@@ -397,10 +438,22 @@ export default function (client: ScramjetClient, self: Self) {
 	}
 
 	// every object carrying an `on<type>` for a type we rewrite.
+	//
+	// less the interfaces scramjet fakes outright. A fake WebSocket is an
+	// EventTarget wearing `WebSocket.prototype`, so its `onmessage` is not a
+	// native slot to wrap - `requests/WebSocket.ts` owns the member, and its
+	// events already reach us as synthetic ones through `client.dispatchEvent`.
+	// Trapping it here first (this module loads ahead of that one) took the
+	// member out from under it, and every `ws.onmessage = fn` then hit the
+	// native setter on a non-WebSocket and threw "Illegal invocation".
+	const synthetic = ["WebSocket"];
+
 	const ontargets = (): object[] => {
 		const found: object[] = [self.self];
 
 		for (const name of Object_getOwnPropertyNames(self)) {
+			if (synthetic.indexOf(name) !== -1) continue;
+
 			const descriptor = Object_getOwnPropertyDescriptor(self, name);
 			if (!descriptor || typeof descriptor.value !== "function") continue;
 
@@ -422,30 +475,28 @@ export default function (client: ScramjetClient, self: Self) {
 			if (!descriptor.configurable) continue;
 
 			// these are the `onmessage`, `onhashchange`, etc. properties
+			//
+			// the native slot stays the one source of truth, holding our
+			// wrapper, and a read translates it back. Nothing is remembered per
+			// receiver: `document.body.onmessage` *is* `window.onmessage` - both
+			// name the Window's handler - and a copy kept per object went stale
+			// the moment the other one, or a content attribute, changed it
 			client.RawTrap(target, key, {
 				get(ctx) {
-					// keyed on the receiver: these traps live on *prototypes*, so
-					// anything remembered per-property is shared by every instance
-					// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
-					const stored = client.box.eventhandlers.get(ctx.this);
-					const original = stored && stored.get(key);
-					if (original) return original;
+					const current = ctx.get() as object | null;
+					if (current === null) return current;
 
-					return ctx.get();
+					return client.box.eventhandlers.get(current) ?? current;
 				},
 				set(ctx, value: any) {
-					// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
-					let stored = client.box.eventhandlers.get(ctx.this);
-					if (!stored) {
-						stored = new _Map();
-						// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
-						client.box.eventhandlers.set(ctx.this, stored);
-					}
-					stored.set(key, value);
-
+					// anything else - null, a primitive, a non-callable object -
+					// goes to the native as-is, which converts it
+					// ([LegacyTreatNonObjectAsNull]) and never calls it
 					if (typeof value !== "function") return ctx.set(value);
 
-					ctx.set(wraplistener(value));
+					const wrapped = wraplistener(value);
+					client.box.eventhandlers.set(wrapped, value);
+					ctx.set(wrapped);
 				},
 			});
 		}

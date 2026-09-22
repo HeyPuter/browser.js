@@ -73,6 +73,96 @@ export default [
 		})()`
 	),
 
+	// --- an EventListener object is a listener like any other ---------------
+
+	// the same rewriting a function listener gets: the data unwrapped, the
+	// sender's origin, and `this` the object rather than the target
+	differential(
+		"handleevent-object-is-rewritten",
+		`(async () => { ${GRAB}
+			return await grab((done) => {
+				const listener = {
+					handleEvent(e) {
+						if (e.data !== "obj") return;
+						window.removeEventListener("message", listener);
+						done({
+							data: e.data,
+							origin: e.origin === location.origin ? "site-origin" : "other",
+							thisIsObject: this === listener,
+							eventIsWindowEvent: window.event === e,
+						});
+					},
+				};
+				window.addEventListener("message", listener);
+				window.postMessage("obj", "*");
+			});
+		})()`
+	),
+
+	// handleEvent is looked up per dispatch, not captured at registration
+	differential(
+		"handleevent-looked-up-per-dispatch",
+		`(async () => { ${GRAB}
+			return await grab((done) => {
+				const calls = [];
+				const listener = { handleEvent() { calls.push("first"); } };
+				window.addEventListener("message", listener);
+				listener.handleEvent = (e) => {
+					if (e.data !== "swap") return;
+					calls.push("second");
+					window.removeEventListener("message", listener);
+					done(calls);
+				};
+				window.postMessage("swap", "*");
+			});
+		})()`
+	),
+
+	// added twice is registered once, and removing it removes it
+	differential(
+		"handleevent-dedupe-and-remove",
+		`(async () => { ${GRAB}
+			return await grab((done) => {
+				let count = 0;
+				const listener = { handleEvent(e) { if (e.data === "dedupe") count++; } };
+				window.addEventListener("message", listener);
+				window.addEventListener("message", listener);
+				window.addEventListener("message", function h(e) {
+					if (e.data === "dedupe") {
+						window.removeEventListener("message", listener);
+						window.postMessage("after-remove", "*");
+					} else if (e.data === "after-remove") {
+						window.removeEventListener("message", h);
+						done(count);
+					}
+				});
+				window.postMessage("dedupe", "*");
+			});
+		})()`
+	),
+
+	// a non-callable handleEvent is reported, and does not stop dispatch
+	differential(
+		"handleevent-not-callable-is-reported",
+		`(async () => { ${GRAB}
+			return await grab((done) => {
+				let reported = null;
+				const onerror = (e) => { reported = e.error && e.error.constructor.name; e.preventDefault(); };
+				window.addEventListener("error", onerror);
+				const bad = { handleEvent: 42 };
+				window.addEventListener("message", bad);
+				window.addEventListener("message", function h(e) {
+					if (e.data !== "bad") return;
+					window.removeEventListener("message", h);
+					window.removeEventListener("message", bad);
+					window.removeEventListener("error", onerror);
+					done({ reported, laterListenerRan: true });
+				});
+				window.postMessage("bad", "*");
+			});
+		})()`
+	),
+
 	// --- the stand-in must be one object, and must not invent members -------
 
 	basicTest({
@@ -182,6 +272,28 @@ export default [
 	}),
 
 	// --- document.body's handlers ARE the window's --------------------------
+
+	// one slot, two names: whichever is written, both read the same value
+	differential(
+		"body-and-window-share-handlers",
+		`(async () => {
+			const f = function f() {}, g = function g() {};
+			const out = {};
+			window.onmessage = f;
+			out.bodySeesWindow = document.body.onmessage === f;
+			document.body.onmessage = null;
+			out.windowClearedByBody = window.onmessage;
+			document.body.onhashchange = g;
+			out.windowSeesBody = window.onhashchange === g;
+			document.body.setAttribute("onstorage", "void 0");
+			out.attributeReplaces = typeof window.onstorage === "function" && window.onstorage !== f && window.onstorage !== g;
+			window.onmessage = 5;
+			out.primitiveIsNull = window.onmessage;
+			window.onhashchange = null;
+			document.body.removeAttribute("onstorage");
+			return out;
+		})()`
+	),
 
 	basicTest({
 		name: "events-body-onmessage-is-covered",
