@@ -197,6 +197,9 @@ export const Promise_allSettled = globalThis.Promise.allSettled.bind(
 	globalThis.Promise
 );
 export const Promise_any = globalThis.Promise.any.bind(globalThis.Promise);
+export const Promise_then = Function_prototype_call.bind(
+	globalThis.Promise.prototype.then
+);
 
 export const Symbol_for = globalThis.Symbol.for;
 

@@ -42,6 +42,8 @@ import {
 	Number_isFinite,
 	Number_isNaN,
 	Object_keys,
+	Object_getOwnPropertyDescriptor,
+	Reflect_ownKeys,
 	Reflect_apply,
 	String,
 	String_charCodeAt,
@@ -848,11 +850,9 @@ export function Type<const S extends string>(
 /**
  * Coerces `args` in place and returns whether they satisfy the declared IDL.
  *
- * `false` means the call is invalid and `args` has been left exactly as it was
- * found, so the caller can hand it to the native and let *that* throw. We
- * deliberately don't raise our own TypeError: every rejection here is one the
- * native also rejects, and letting it do so means the page sees the authentic
- * message rather than our approximation of it.
+ * `false` delegates a rejection to the native, retaining any converted
+ * arguments. Composite conversions throw instead: retrying the original
+ * iterable or record would run page code again and could succeed on retry.
  */
 export type IDLValidator = (args: unknown[]) => boolean;
 
@@ -913,13 +913,16 @@ function idlRejectPartial(converted: unknown): never {
 }
 
 /**
- * Re-throw a rejection raised while converting something *inside* the
- * argument - a sequence item, a record value - with any partial conversion
- * dropped. The intermediate belongs to the inner value, and writing it over
- * the whole argument would replace an array with one of its elements.
+ * A composite conversion cannot safely fall back to native conversion of its
+ * original input. Preserve page exceptions, but turn our rejection sentinel
+ * into a TypeError before it can reach the argument validator's fallback.
  */
 function idlRejectInner(err: unknown): never {
-	if (err === IDL_REJECTED) idlReject();
+	if (err === IDL_REJECTED) {
+		IDL_REJECTED.partial = false;
+		IDL_REJECTED.converted = undefined;
+		throw new TypeError("Invalid value in Web IDL sequence or record.");
+	}
 
 	throw err;
 }
@@ -1433,8 +1436,11 @@ function toIDLScalarValueString(s: string): string {
  * https://webidl.spec.whatwg.org/#js-long-long — 32 bits and under fall out of
  * the bitwise operators, but 64 needs real modular arithmetic.
  */
+// Unary + implements ToNumber, including rejecting BigInt primitives produced
+// by objects. Number(value) would accept them.
+// https://tc39.es/ecma262/#sec-tonumber
 function toIDLInt64(value: unknown, signed: boolean): number {
-	let x = Number(value);
+	let x = +(value as number);
 	// covers NaN and both infinities
 	if (!Number_isFinite(x)) return 0;
 
@@ -1454,39 +1460,39 @@ function idlIsObject(value: unknown): boolean {
 }
 
 function coerceIDLSequence(value: unknown, item: IDLCoerce): unknown[] {
-	if (!idlIsObject(value)) idlReject();
+	try {
+		if (!idlIsObject(value)) idlReject();
 
-	const method = (value as any)[Symbol_iterator];
-	if (typeof method !== "function") idlReject();
+		const method = (value as any)[Symbol_iterator];
+		if (typeof method !== "function") idlReject();
 
-	const iterator = Reflect_apply(method, value, []) as any;
-	if (!idlIsObject(iterator)) idlReject();
+		const iterator = Reflect_apply(method, value, []) as any;
+		if (!idlIsObject(iterator)) idlReject();
 
-	// GetIterator reads `next` once, when it builds the iterator record, and
-	// calls that same function for every step. Looking it up per step instead
-	// is observable on a page-controlled iterator with an accessor `next`
-	const next = iterator.next;
-	if (typeof next !== "function") idlReject();
+		// GetIterator reads `next` once, when it builds the iterator record, and
+		// calls that same function for every step. Looking it up per step instead
+		// is observable on a page-controlled iterator with an accessor `next`
+		const next = iterator.next;
+		if (typeof next !== "function") idlReject();
 
-	const out: unknown[] = [];
+		const out: unknown[] = [];
 
-	for (;;) {
-		const step = Reflect_apply(next, iterator, []) as any;
-		// IteratorNext: a result that is not an Object is a TypeError, not the
-		// end of the iteration. Reading `done` off a primitive answers
-		// undefined, which left this spinning forever on `{ next: () => 0 }`
-		if (!idlIsObject(step)) idlReject();
-		if (step.done) break;
+		for (;;) {
+			const step = Reflect_apply(next, iterator, []) as any;
+			// IteratorNext: a result that is not an Object is a TypeError, not the
+			// end of the iteration. Reading `done` off a primitive answers
+			// undefined, which left this spinning forever on `{ next: () => 0 }`
+			if (!idlIsObject(step)) idlReject();
+			if (step.done) break;
 
-		try {
 			// not out.push — Array.prototype is page-reachable
 			out[out.length] = item(step.value);
-		} catch (err) {
-			idlRejectInner(err);
 		}
-	}
 
-	return out;
+		return out;
+	} catch (err) {
+		idlRejectInner(err);
+	}
 }
 
 function coerceIDLRecord(
@@ -1494,25 +1500,25 @@ function coerceIDLRecord(
 	key: IDLCoerce,
 	item: IDLCoerce
 ): Record<string, unknown> {
-	if (!idlIsObject(value)) idlReject();
+	try {
+		if (!idlIsObject(value)) idlReject();
 
-	const keys = Object_keys(value as object);
-	const out: Record<string, unknown> = {};
+		const keys = Reflect_ownKeys(value as object);
+		const out: Record<string, unknown> = {};
 
-	for (let i = 0; i < keys.length; i++) {
-		try {
-			// key first, then value, which is the order the spec's record
-			// conversion runs them in. A `record<USVString, ...>` replaces lone
-			// surrogates in its keys and a `record<ByteString, ...>` rejects one
-			// outside latin1, so the key is a conversion and not just a label
+		for (let i = 0; i < keys.length; i++) {
+			// https://webidl.spec.whatwg.org/#es-record
+			const desc = Object_getOwnPropertyDescriptor(value, keys[i]);
+			if (!desc?.enumerable) continue;
+			// Convert the key before reading and converting its value.
 			const typedKey = key(keys[i]) as string;
 			out[typedKey] = item((value as any)[keys[i]]);
-		} catch (err) {
-			idlRejectInner(err);
 		}
-	}
 
-	return out;
+		return out;
+	} catch (err) {
+		idlRejectInner(err);
+	}
 }
 
 /**
@@ -1542,7 +1548,7 @@ const IDL_CLAMP_BOUNDS: Record<string, [number, number]> = {
  * what `Math.round` does.
  */
 function clampToIDLInteger(value: unknown, bounds: [number, number]): number {
-	let x = Number(value);
+	let x = +(value as number);
 	if (Number_isNaN(x)) return 0;
 
 	if (x < bounds[0]) x = bounds[0];
@@ -1558,7 +1564,7 @@ function clampToIDLInteger(value: unknown, bounds: [number, number]): number {
 }
 
 const idlRestrictedDouble: IDLCoerce = (value) => {
-	const x = Number(value);
+	const x = +(value as number);
 	// the number, not the original: ToNumber has already run the page's
 	// `valueOf` and the native is about to convert this same argument
 	if (!Number_isFinite(x)) idlRejectPartial(x);
@@ -1597,7 +1603,7 @@ const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
 	"unsigned long long": (value) => toIDLInt64(value, false),
 
 	float: (value) => {
-		const x = Number(value);
+		const x = +(value as number);
 		if (!Number_isFinite(x)) idlRejectPartial(x);
 
 		const rounded = Math_fround(x);
@@ -1606,9 +1612,9 @@ const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
 
 		return rounded;
 	},
-	"unrestricted float": (value) => Math_fround(Number(value)),
+	"unrestricted float": (value) => Math_fround(+(value as number)),
 	double: idlRestrictedDouble,
-	"unrestricted double": (value) => Number(value),
+	"unrestricted double": (value) => +(value as number),
 	// hr-time's typedef for `double`, and restricted like it
 	DOMHighResTimeStamp: idlRestrictedDouble,
 
@@ -1713,7 +1719,7 @@ export function idlBoolean(value: unknown): boolean {
  * a typedef for it.
  */
 export function idlDouble(value: unknown): number {
-	const x = Number(value);
+	const x = +(value as number);
 	if (!Number_isFinite(x)) {
 		throw new TypeError("The provided double value is non-finite.");
 	}

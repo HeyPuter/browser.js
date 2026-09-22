@@ -56,9 +56,13 @@ import {
 	Object_setPrototypeOf,
 	Function_call,
 	Object_assign,
+	Promise_then,
+	String_startsWith,
+	String_trim,
 } from "@/shared/snapshot";
 import {
 	isConstructorMember,
+	idlSignature,
 	memberValidator,
 	type IDLValidator,
 } from "./webidl";
@@ -1162,7 +1166,15 @@ return { apply, construct };
 		this.installNative(native, next);
 	}
 
-	Intercept(handler: any): void {
+	/**
+	 * `checkReceiver` must synchronously invoke a side-effect-free native getter
+	 * or method on the receiver, throwing for an invalid receiver. It is required
+	 * for instance members with IDL arguments: Web IDL checks the receiver before
+	 * converting arguments. For example, Headers can use the saved `has` method
+	 * with a fixed valid name; Blob can use its saved `size` getter. Merely
+	 * constructing a `client.native` wrapper does not check anything.
+	 */
+	Intercept(handler: any, checkReceiver?: (receiver: any) => void): void {
 		const foreignbaseclass = Object_getPrototypeOf(handler);
 		const globalname = foreignbaseclass.name;
 		// matched by identity, not by name: `GlobalScope` is the one heritage
@@ -1172,6 +1184,30 @@ return { apply, construct };
 		const classname = isglobal ? "window" : globalname;
 		const baseclass = isglobal ? this.global : this.global[classname];
 		if (!baseclass) return;
+
+		const prototypeDescs: Record<string | symbol, PropertyDescriptor> =
+			Object_getOwnPropertyDescriptors(handler.prototype);
+		const staticDescs: Record<string | symbol, PropertyDescriptor> =
+			Object_getOwnPropertyDescriptors(handler);
+		// Refuse an unsafe declaration before installing any of its members.
+		if (!checkReceiver) {
+			for (const descs of isglobal
+				? [prototypeDescs, staticDescs]
+				: [prototypeDescs]) {
+				for (const key of Reflect_ownKeys(descs)) {
+					const desc = descs[key];
+					if (isConstructorMember(desc.value)) continue;
+					if (
+						memberValidator(this.box, desc.value) ||
+						memberValidator(this.box, desc.set, true)
+					) {
+						throw new Error(
+							`Intercept(${classname}.${String(key)}) requires a native receiver check before IDL conversion`
+						);
+					}
+				}
+			}
+		}
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
 		const fakePrototype = {};
@@ -1192,23 +1228,19 @@ return { apply, construct };
 			fallback: (args: any[]) => any,
 			validate: IDLValidator | undefined,
 			isAsync: boolean,
-			tramp: Trampoline
+			tramp: Trampoline,
+			check?: (receiver: any) => void
 		) => {
-			// coerce the arguments per the member's declared IDL before the
-			// interceptor body can look at them, so a hostile toString/valueOf
-			// runs exactly once. a rejection means the call is invalid, so skip
-			// our body entirely and let the native throw the real TypeError
-			if (validate && !validate(args)) {
-				return fallback(args);
-			}
+			const invoke = () => {
+				// https://webidl.spec.whatwg.org/#dfn-create-operation-function
+				check?.(that);
+				if (validate && !validate(args)) return fallback(args);
 
-			if (isAsync) {
-				return this.relevantPromise(that, () =>
-					tramp.apply(handler, that, args)
-				);
-			}
-
-			return tramp.apply(handler, that, args);
+				return tramp.apply(handler, that, args);
+			};
+			// Promise-returning operations reject for *all* binding exceptions,
+			// including receiver checks, conversion, and the native fallback.
+			return isAsync ? this.relevantPromise(that, invoke) : invoke();
 		};
 
 		// a getter-only native attribute the interceptor writes to, or the
@@ -1220,11 +1252,16 @@ return { apply, construct };
 			handler: (...args: any[]) => any,
 			old: ((...args: any[]) => any) | undefined,
 			validate: IDLValidator | undefined,
-			member: string
+			member: string,
+			check: ((receiver: any) => void) | undefined
 		) => {
 			// settled once, at install time, rather than on every call
 			const isAsync =
-				Object_getPrototypeOf(handler) === AsyncFunction_prototype;
+				Object_getPrototypeOf(handler) === AsyncFunction_prototype ||
+				String_startsWith(
+					String_trim(idlSignature(handler)?.returns ?? ""),
+					"Promise<"
+				);
 			const target = old || missingHalf;
 			const tramp = this.trampoline(member);
 
@@ -1260,7 +1297,8 @@ return { apply, construct };
 						(a) => tramp.apply(target, that, a),
 						validate,
 						isAsync,
-						tramp
+						tramp,
+						check
 					);
 				},
 			});
@@ -1279,7 +1317,8 @@ return { apply, construct };
 		const writePrototypeField = (
 			key: string | symbol,
 			prototype: any,
-			handlerDescriptor: PropertyDescriptor
+			handlerDescriptor: PropertyDescriptor,
+			instance: boolean
 		) => {
 			const native = this.resolveNative(
 				prototype,
@@ -1291,6 +1330,7 @@ return { apply, construct };
 			const oldDescriptor = native.descriptor;
 			const newDescriptor: PropertyDescriptor = {};
 			const member = `${classname}.${String(key)}`;
+			const check = instance ? checkReceiver : undefined;
 
 			if (oldDescriptor.get || oldDescriptor.set) {
 				// a getter takes no arguments, so there is nothing to validate on one
@@ -1299,7 +1339,8 @@ return { apply, construct };
 							handlerDescriptor.get,
 							oldDescriptor.get,
 							undefined,
-							`get ${member}`
+							`get ${member}`,
+							check
 						)
 					: oldDescriptor.get;
 				newDescriptor.set = handlerDescriptor.set
@@ -1307,7 +1348,8 @@ return { apply, construct };
 							handlerDescriptor.set,
 							oldDescriptor.set,
 							memberValidator(this.box, handlerDescriptor.set, true),
-							`set ${member}`
+							`set ${member}`,
+							check
 						)
 					: oldDescriptor.set;
 			} else {
@@ -1317,7 +1359,8 @@ return { apply, construct };
 								handlerDescriptor.value,
 								oldDescriptor.value,
 								memberValidator(this.box, handlerDescriptor.value),
-								member
+								member,
+								check
 							)
 						: oldDescriptor.value;
 			}
@@ -1342,16 +1385,12 @@ return { apply, construct };
 			return "value" in desc && desc.writable === false;
 		};
 
-		const prototypeDescs: Record<string | symbol, PropertyDescriptor> =
-			Object_getOwnPropertyDescriptors(handler.prototype);
 		for (const prop of Reflect_ownKeys(prototypeDescs)) {
 			const classDesc = prototypeDescs[prop];
 			if (isClassMetadata(prop, classDesc, false)) continue;
 			if (isConstructorMember(classDesc.value)) continue;
-			writePrototypeField(prop, baseclass.prototype, classDesc);
+			writePrototypeField(prop, baseclass.prototype, classDesc, true);
 		}
-		const staticDescs: Record<string | symbol, PropertyDescriptor> =
-			Object_getOwnPropertyDescriptors(handler);
 		for (const prop of Reflect_ownKeys(staticDescs)) {
 			const handlerDesc = staticDescs[prop];
 			if (isClassMetadata(prop, handlerDesc, true)) continue;
@@ -1462,7 +1501,7 @@ return { apply, construct };
 				}
 			} else {
 				// normal static method
-				writePrototypeField(prop, baseclass, handlerDesc);
+				writePrototypeField(prop, baseclass, handlerDesc, isglobal);
 			}
 		}
 	}
@@ -1516,7 +1555,7 @@ return { apply, construct };
 		)!.Promise.value as PromiseConstructor;
 
 		return new RelevantPromise<T>((resolve, reject) => {
-			callback().then(resolve, reject);
+			Promise_then(callback(), resolve, reject);
 		});
 	}
 }

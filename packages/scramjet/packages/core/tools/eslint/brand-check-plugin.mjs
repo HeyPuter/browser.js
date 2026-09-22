@@ -4,8 +4,8 @@
  * A member installed by `client.Intercept` replaces a native one, and the
  * native brand-checks its receiver: `Object.getOwnPropertyDescriptor(
  * Document.prototype, "domain").get.call({})` is a TypeError, not an answer.
- * A member whose body reaches the native - through `super.x`, or by handing
- * `this` to `client.native.Iface` - inherits that check for free, because it is
+ * A member whose body invokes a native method or reads a native getter
+ * through `super` or `client.native.Iface(this)` inherits that check, because it is
  * Blink doing the checking. A member that answers purely out of client state
  * never consults the receiver, so it happily answers any object at all.
  *
@@ -27,14 +27,66 @@
  * receiver, but flagging that as well buries the case this rule is for.
  */
 
-/** `<anything>.Intercept(class …)`, the sole-argument form `Intercept` takes. */
+import ts from "typescript";
+import path from "node:path";
+
+// lib.dom distinguishes attributes from operations. A property read alone
+// only invokes a native for an attribute; constants are data properties too.
+// Unknown interfaces/members are conservatively left unmarked.
+const interfaces = new Map();
+const lib = path.join(
+	path.dirname(ts.getDefaultLibFilePath({})),
+	"lib.dom.d.ts"
+);
+const dom = ts.createSourceFile(
+	lib,
+	ts.sys.readFile(lib),
+	ts.ScriptTarget.Latest
+);
+for (const node of dom.statements) {
+	if (!ts.isInterfaceDeclaration(node)) continue;
+	const declarations = interfaces.get(node.name.text) ?? [];
+	declarations.push(node);
+	interfaces.set(node.name.text, declarations);
+}
+
+function nativeMember(iface, property, seen = new Set()) {
+	if (seen.has(iface)) return undefined;
+	seen.add(iface);
+	for (const declaration of interfaces.get(iface) ?? []) {
+		for (const member of declaration.members) {
+			if (member.name?.getText(dom) !== property) continue;
+			if (ts.isMethodSignature(member)) return "method";
+			if (
+				ts.isPropertySignature(member) &&
+				member.type &&
+				!ts.isLiteralTypeNode(member.type)
+			)
+				return "getter";
+			return undefined;
+		}
+		for (const heritage of declaration.heritageClauses ?? []) {
+			for (const parent of heritage.types) {
+				const kind = nativeMember(
+					parent.expression.getText(dom),
+					property,
+					seen
+				);
+				if (kind) return kind;
+			}
+		}
+	}
+	return undefined;
+}
+
+/** `<anything>.Intercept(class …, optionalReceiverCheck)`. */
 function isInterceptHandler(node) {
 	const call = node.parent;
 
 	return (
 		!!call &&
 		call.type === "CallExpression" &&
-		call.arguments.length === 1 &&
+		call.arguments.length >= 1 &&
 		call.arguments[0] === node &&
 		call.callee.type === "MemberExpression" &&
 		!call.callee.computed &&
@@ -76,7 +128,7 @@ function memberName(member) {
 	return "<computed>";
 }
 
-/** `new client.native.Iface(this)` — a native call on the receiver. */
+/** `new client.native.Iface(this)` creates a wrapper, without calling native. */
 function isNativeReceiverCall(node) {
 	if (node.arguments.length === 0) return false;
 	if (node.arguments[0].type !== "ThisExpression") return false;
@@ -160,7 +212,7 @@ const brandCheckPlugin = {
 				schema: [],
 				messages: {
 					missingBrandCheck:
-						"'{{name}}' can return without touching the receiver, so it answers objects that are not {{iface}}s where the browser throws 'Illegal invocation'. Reach the native on every path — `super.{{name}}` is enough, even discarded — or disable this rule with a reason.",
+						"'{{name}}' can return without checking the receiver, so it answers objects that are not {{iface}}s where the browser throws 'Illegal invocation'. Invoke a native method or read a native getter on every path; a method reference or native wrapper alone does not check the receiver. Otherwise disable this rule with a reason.",
 				},
 			},
 			create(context) {
@@ -203,10 +255,56 @@ const brandCheckPlugin = {
 						if (frame) frame.current.delete(segment);
 					},
 
-					"MemberExpression[object.type='Super']": mark,
+					"MemberExpression:exit"(node) {
+						const frame = frames[frames.length - 1];
+						if (!frame?.member || node.computed) return;
+						const object = node.object;
+						let iface;
+						if (object.type === "Super") {
+							iface = frame.member.parent.parent.superClass?.name;
+						} else if (
+							object.type === "NewExpression" &&
+							isNativeReceiverCall(object)
+						) {
+							iface = object.callee.property.name;
+						} else return;
+						// A direct call retains the receiver; `void super.method`
+						// and `(0, super.method)()` do not invoke it on `this`.
+						if (
+							node.parent.type === "CallExpression" &&
+							node.parent.callee === node
+						)
+							return;
+						if (
+							node.parent.type === "AssignmentExpression" &&
+							node.parent.left === node &&
+							node.parent.operator === "="
+						)
+							return;
+						if (nativeMember(iface, node.property.name) === "getter") mark();
+					},
 
-					NewExpression(node) {
-						if (isNativeReceiverCall(node)) mark();
+					"CallExpression:exit"(node) {
+						const frame = frames[frames.length - 1];
+						if (!frame?.member) return;
+						const callee = node.callee;
+						if (
+							node.optional ||
+							callee.type !== "MemberExpression" ||
+							callee.optional ||
+							callee.computed
+						)
+							return;
+						let iface;
+						if (callee.object.type === "Super")
+							iface = frame.member.parent.parent.superClass?.name;
+						else if (
+							callee.object.type === "NewExpression" &&
+							isNativeReceiverCall(callee.object)
+						)
+							iface = callee.object.callee.property.name;
+						else return;
+						if (nativeMember(iface, callee.property.name)) mark();
 					},
 
 					onCodePathEnd(codePath) {
