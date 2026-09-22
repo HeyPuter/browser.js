@@ -7,102 +7,456 @@
    would throw the very error the fallback exists to raise for everything else.
    A receiver that is not ours misses the table and takes `super`, which
    brand-checks natively. */
-import { Object_setPrototypeOf } from "@/shared/snapshot";
+import {
+	Array_from,
+	Math_trunc,
+	Number_isFinite,
+	Object_getOwnPropertyDescriptor,
+	Object_setPrototypeOf,
+	Promise_then,
+	Reflect_apply,
+} from "@/shared/snapshot";
 import { ScramjetClient } from "@client/client";
-import { Arguments, Constructor, Type } from "@client/webidl";
+import {
+	Arguments,
+	Constructor,
+	Type,
+	idlDictionary,
+	idlUSVString,
+} from "@client/webidl";
 import { type BareCompatibleWebSocket } from "@mercuryworkshop/proxy-transports";
+import {
+	CLOSE_ABNORMAL,
+	OrderedSteps,
+	WEBSOCKET_CLOSED,
+	WEBSOCKET_CLOSING,
+	WEBSOCKET_CONNECTING,
+	WEBSOCKET_OPEN,
+	parseWebSocketUrl,
+	reportedClose,
+	validateClose,
+	webSocketHeaders,
+} from "./WebSocket";
 
 export type FakeWebSocketStreamState = {
-	protocol: string;
-	extensions: string;
 	url: string;
 	barews: BareCompatibleWebSocket;
+	/** The same states a `WebSocket` has, tracked here for the same reason. */
+	readyState: number;
 
 	opened: Promise<WebSocketOpenInfo>;
 	closed: Promise<WebSocketCloseInfo>;
-	readable: ReadableStream;
-	writable: WritableStream;
+	/** https://websockets.spec.whatwg.org/#close-using-a-websocketcloseinfo */
+	close: (code: number | null, reason: string) => void;
 };
+
+/**
+ * https://websockets.spec.whatwg.org/#dictdef-websocketcloseinfo, read by hand:
+ * `closeCode` is `[EnforceRange]`, which `dictionaryReader` does not carry
+ * through, and wrapping 70000 to 4464 would close with a code nobody named.
+ */
+function readWebSocketCloseInfo(
+	client: ScramjetClient,
+	value: unknown
+): {
+	closeCode?: number;
+	reason: string;
+} {
+	const dict = idlDictionary(value, "WebSocketCloseInfo");
+	const out: { closeCode?: number; reason: string } = { reason: "" };
+
+	// read once each, in WebIDL's (lexicographic) order
+	const closeCode = dict.closeCode;
+	if (closeCode !== undefined) {
+		// https://webidl.spec.whatwg.org/#abstract-opdef-converttoint
+		const x = +(closeCode as number);
+		if (!Number_isFinite(x) || Math_trunc(x) < 0 || Math_trunc(x) > 65535) {
+			throw client.errors.typeError({
+				read: "closeCode",
+				on: "WebSocketCloseInfo",
+				detail: "Value is outside the 'unsigned short' value range.",
+			});
+		}
+		out.closeCode = Math_trunc(x) + 0;
+	}
+
+	const reason = dict.reason;
+	if (reason !== undefined) out.reason = idlUSVString(reason);
+
+	return out;
+}
 
 export const enabled = (client: ScramjetClient, self: Self) =>
 	"WebSocketStream" in self;
 export default function (client: ScramjetClient, self: Self) {
-	const { ArrayBuffer, Promise, ReadableStream, WritableStream } = self;
+	const {
+		ArrayBuffer,
+		Blob,
+		Promise,
+		ReadableStream,
+		WritableStream,
+		WebSocketStream,
+		WebSocketError,
+		DOMException,
+		AbortSignal,
+		EventTarget,
+	} = self;
+	// read now, while the page cannot have replaced them. The getters are the
+	// natives, so calling one on something that is not what it belongs to is a
+	// brand check the page cannot fake
+	const Blob_arrayBuffer = Blob.prototype.arrayBuffer;
+	const AbortSignal_aborted = Object_getOwnPropertyDescriptor(
+		AbortSignal.prototype,
+		"aborted"
+	)!.get!;
+	const AbortSignal_reason = Object_getOwnPropertyDescriptor(
+		AbortSignal.prototype,
+		"reason"
+	)!.get!;
+	const EventTarget_addEventListener = EventTarget.prototype.addEventListener;
+	const WebSocketError_closeCode =
+		WebSocketError &&
+		Object_getOwnPropertyDescriptor(WebSocketError.prototype, "closeCode")!
+			.get!;
+	const WebSocketError_reason =
+		WebSocketError &&
+		Object_getOwnPropertyDescriptor(WebSocketError.prototype, "reason")!.get!;
+
+	/**
+	 * What a failed connection rejects with, and errors the streams with. No
+	 * `closeCode`: the constructor only takes the codes a page may send, and
+	 * 1006 is not one of them.
+	 */
+	const connectionError = (): Error =>
+		WebSocketError
+			? new WebSocketError("")
+			: new DOMException("", "NetworkError");
+
+	/**
+	 * https://websockets.spec.whatwg.org/#websocketstream-cancel - a
+	 * WebSocketError says how to close, anything else closes without a code.
+	 */
+	const closeInfoFromReason = (
+		reason: unknown
+	): { code: number | null; reason: string } => {
+		if (WebSocketError_closeCode && typeof reason === "object" && reason) {
+			try {
+				return {
+					code: Reflect_apply(WebSocketError_closeCode, reason, []),
+					reason: Reflect_apply(WebSocketError_reason, reason, []),
+				};
+			} catch {
+				// not a WebSocketError
+			}
+		}
+
+		return { code: null, reason: "" };
+	};
+
 	const map = client.box.socketstreammap;
 	client.Intercept(class extends WebSocketStream {
 		@Constructor("USVString", "optional WebSocketStreamOptions")
-		static konstructor(url: string, options?: WebSocketStreamOptions) {
-			const fakeWebSocketStream = {};
-			Object_setPrototypeOf(fakeWebSocketStream, this.prototype);
-			fakeWebSocketStream.constructor = this;
+		static konstructor(url: string, rawOptions?: WebSocketStreamOptions) {
+			// https://websockets.spec.whatwg.org/#dom-websocketstream-websocketstream
+			// - the dictionary first, then the URL, as the binding converts
+			// arguments before the constructor's own steps run
+			const dict = idlDictionary(rawOptions, "WebSocketStreamOptions");
+			const rawProtocols = dict.protocols;
+			let protocols: string[] = [];
+			if (rawProtocols !== undefined) {
+				if (typeof rawProtocols !== "object" || rawProtocols === null) {
+					throw client.errors.typeError({
+						read: "protocols",
+						on: "WebSocketStreamOptions",
+						detail: "The provided value cannot be converted to a sequence.",
+					});
+				}
+				protocols = Array_from(rawProtocols as Iterable<unknown>, idlUSVString);
+			}
+			const rawSignal = dict.signal;
+			let signal: AbortSignal | undefined;
+			if (rawSignal !== undefined) {
+				try {
+					Reflect_apply(AbortSignal_aborted, rawSignal, []);
+				} catch {
+					throw client.errors.typeError({
+						read: "signal",
+						on: "WebSocketStreamOptions",
+						detail: "Failed to convert value to 'AbortSignal'.",
+					});
+				}
+				signal = rawSignal as AbortSignal;
+			}
 
-			const barews = client.bare.createWebSocket(url, options?.protocols, [
-				["User-Agent", self.navigator.userAgent],
-				["Origin", client.scopeOrigin],
-			]);
-			options?.signal?.addEventListener("abort", () => {
-				barews.close(1000, "");
+			const parsed = parseWebSocketUrl(client, "WebSocketStream", url);
+
+			// no own `constructor`, for the reason `WebSocket` has none - and
+			// the prototype read off the interface object captured at install,
+			// whose `prototype` is non-writable, rather than off `this`
+			const fakeWebSocketStream = {};
+			Object_setPrototypeOf(fakeWebSocketStream, WebSocketStream.prototype);
+
+			let resolveOpened!: (info: WebSocketOpenInfo) => void;
+			let rejectOpened!: (error: unknown) => void;
+			let resolveClosed!: (info: WebSocketCloseInfo) => void;
+			let rejectClosed!: (error: unknown) => void;
+			const opened = new Promise<WebSocketOpenInfo>((resolve, reject) => {
+				resolveOpened = resolve;
+				rejectOpened = reject;
+			});
+			const closed = new Promise<WebSocketCloseInfo>((resolve, reject) => {
+				resolveClosed = resolve;
+				rejectClosed = reject;
+			});
+			// the spec marks both as handled, so a page that never looks at
+			// one does not get an unhandled rejection for it
+			Promise_then(opened, undefined, () => {});
+			Promise_then(closed, undefined, () => {});
+
+			// an already-aborted signal: nothing is connected at all
+			if (signal && Reflect_apply(AbortSignal_aborted, signal, [])) {
+				const reason = Reflect_apply(AbortSignal_reason, signal, []);
+				rejectOpened(reason);
+				rejectClosed(reason);
+				map.set(fakeWebSocketStream as WebSocketStream, {
+					url: parsed.href,
+					barews: null!,
+					readyState: WEBSOCKET_CLOSED,
+					opened,
+					closed,
+					close: () => {},
+				});
+
+				return fakeWebSocketStream;
+			}
+
+			const barews = client.bare.createWebSocket(
+				parsed.href,
+				protocols,
+				webSocketHeaders(client, self, parsed)
+			);
+
+			const steps = new OrderedSteps();
+			let readableController: ReadableStreamDefaultController | null = null;
+			let writableController: WritableStreamDefaultController | null = null;
+			let readableDone = false;
+			// the handshake was abandoned: the transport is closed the moment
+			// it opens, and nothing it says after that reaches the page
+			let failed = false;
+			// the close frame the page sent, if it started the closing handshake
+			let sentClose: { code: number; reason: string } | null = null;
+
+			const readable = new ReadableStream({
+				start(controller) {
+					readableController = controller;
+				},
+				cancel(reason) {
+					readableDone = true;
+					const info = closeInfoFromReason(reason);
+					state.close(info.code, info.reason);
+				},
+			});
+			const writable = new WritableStream({
+				start(controller) {
+					writableController = controller;
+				},
+				write(chunk) {
+					// https://websockets.spec.whatwg.org/#websocketstream-write -
+					// a BufferSource goes as binary, anything else as text
+					const data =
+						typeof chunk === "object" && chunk !== null && "byteLength" in chunk
+							? chunk
+							: idlUSVString(chunk);
+
+					return barews.send(data);
+				},
+				close() {
+					state.close(null, "");
+				},
+				abort(reason) {
+					const info = closeInfoFromReason(reason);
+					state.close(info.code, info.reason);
+				},
 			});
 
-			const state: FakeWebSocketStreamState = {
-				protocol: "",
-				extensions: "",
-				url,
-				barews,
-
-				opened: new Promise((resolve, reject) => {
-					barews.addEventListener("open", () => {
-						resolve({
-							readable: state.readable,
-							writable: state.writable,
-							protocol: state.protocol,
-							extensions: state.extensions,
-						});
-					});
-					barews.addEventListener("error", (ev: Event) => {
-						reject(ev);
-					});
-				}),
-				closed: new Promise((resolve) => {
-					barews.addEventListener("close", (ev: CloseEvent) => {
-						resolve({ closeCode: ev.code, reason: ev.reason });
-					});
-				}),
-				readable: new ReadableStream({
-					start(controller) {
-						barews.addEventListener("message", async (ev: MessageEvent) => {
-							let payload = ev.data;
-							// TODO: this needs to be changed to uint8array later
-							// chrome isnt following spec though so we are just going to do this
-							if (typeof payload === "string") {
-								// DO NOTHING
-							} else if ("byteLength" in payload) {
-								// arraybuffer, set the realms prototype so its recognized
-								Object_setPrototypeOf(payload, ArrayBuffer.prototype);
-							} else if ("arrayBuffer" in payload) {
-								// blob, convert to arraybuffer
-								payload = await payload.arrayBuffer();
-								Object_setPrototypeOf(payload, ArrayBuffer.prototype);
-							}
-							controller.enqueue(payload);
-						});
-					},
-					cancel(info) {
-						barews.close(info?.closeCode ?? 1000, info?.reason ?? "");
-					},
-				}),
-				writable: new WritableStream({
-					write(chunk) {
-						barews.send(chunk);
-					},
-					abort() {
-						barews.close(1000, "");
-					},
-					close() {
-						barews.close(1000, "");
-					},
-				}),
+			const closeReadable = () => {
+				if (readableDone) return;
+				readableDone = true;
+				try {
+					readableController!.close();
+				} catch {}
 			};
+			const errorStreams = (error: unknown) => {
+				if (!readableDone) {
+					readableDone = true;
+					try {
+						readableController!.error(error);
+					} catch {}
+				}
+				try {
+					writableController!.error(error);
+				} catch {}
+			};
+
+			// https://websockets.spec.whatwg.org/#websocketstream-feedback-from-the-protocol
+			// - "the WebSocket connection is closed"
+			const connectionClosed = (
+				code: number,
+				reason: string,
+				wasClean: boolean
+			) => {
+				const wasOpen = state.readyState !== WEBSOCKET_CONNECTING;
+				state.readyState = WEBSOCKET_CLOSED;
+
+				if (wasClean) {
+					resolveClosed({ closeCode: code, reason });
+					closeReadable();
+					try {
+						writableController!.error(connectionError());
+					} catch {}
+
+					return;
+				}
+
+				const error = connectionError();
+				if (!wasOpen) rejectOpened(error);
+				rejectClosed(error);
+				errorStreams(error);
+			};
+
+			// the page has been told the stream is closed, so nothing more
+			const finished = () => failed || state.readyState === WEBSOCKET_CLOSED;
+
+			/** Fail the connection with `error` - an abort or an early close. */
+			const failConnection = (error: unknown) => {
+				failed = true;
+				state.readyState = WEBSOCKET_CLOSED;
+				rejectOpened(error);
+				rejectClosed(error);
+				errorStreams(error);
+			};
+
+			const state: FakeWebSocketStreamState = {
+				url: parsed.href,
+				barews,
+				readyState: WEBSOCKET_CONNECTING,
+				opened,
+				closed,
+				close: (code, reason) => {
+					if (
+						state.readyState === WEBSOCKET_CLOSING ||
+						state.readyState === WEBSOCKET_CLOSED
+					) {
+						return;
+					}
+					// closing during the handshake fails the connection. The
+					// transport has no socket to close until it opens - calling
+					// through threw `this._close is not a function` at the page
+					if (state.readyState === WEBSOCKET_CONNECTING) {
+						failConnection(connectionError());
+
+						return;
+					}
+
+					state.readyState = WEBSOCKET_CLOSING;
+					// a close with a reason but no code carries 1000
+					sentClose = { code: code ?? 1000, reason };
+					try {
+						barews.close(sentClose.code, sentClose.reason);
+					} catch {}
+				},
+			};
+
+			// the signal only governs the handshake: once open, aborting it
+			// does nothing
+			if (signal) {
+				Reflect_apply(EventTarget_addEventListener, signal, [
+					"abort",
+					() => {
+						if (state.readyState !== WEBSOCKET_CONNECTING) return;
+						failConnection(Reflect_apply(AbortSignal_reason, signal, []));
+					},
+				]);
+			}
+
+			barews.addEventListener("open", () => {
+				if (failed) {
+					try {
+						barews.close(1000, "");
+					} catch {}
+
+					return;
+				}
+				if (finished()) return;
+
+				steps.push(() => {
+					state.readyState = WEBSOCKET_OPEN;
+					resolveOpened({
+						readable,
+						writable,
+						protocol: barews.protocol,
+						extensions: barews.extensions,
+					});
+				});
+			});
+			barews.addEventListener("close", (ev: CloseEvent) => {
+				if (finished()) return;
+				const { code, reason } = ev;
+
+				steps.push(() => {
+					if (state.readyState === WEBSOCKET_CLOSED) return;
+					if (state.readyState === WEBSOCKET_CONNECTING) {
+						connectionClosed(CLOSE_ABNORMAL, "", false);
+					} else {
+						const reported = reportedClose(code, reason, sentClose);
+						connectionClosed(
+							reported.code,
+							reported.reason,
+							reported.code !== CLOSE_ABNORMAL
+						);
+					}
+				});
+			});
+			barews.addEventListener("error", () => {
+				if (finished()) return;
+
+				steps.push(() => {
+					if (state.readyState === WEBSOCKET_CLOSED) return;
+					connectionClosed(CLOSE_ABNORMAL, "", false);
+				});
+			});
+			barews.addEventListener("message", (ev: MessageEvent) => {
+				if (finished()) return;
+				const data = ev.data;
+
+				const deliver = (payload: unknown) => {
+					// after a cancel, or once closed, there is nowhere to put it
+					if (readableDone || state.readyState === WEBSOCKET_CLOSED) return;
+					readableController!.enqueue(payload);
+				};
+
+				// TODO: this needs to be changed to uint8array later
+				// chrome isnt following spec though so we are just going to do this
+				if (typeof data === "string") {
+					steps.push(() => deliver(data));
+				} else if ("byteLength" in data) {
+					// arraybuffer, set the realms prototype so its recognized
+					Object_setPrototypeOf(data, ArrayBuffer.prototype);
+					steps.push(() => deliver(data));
+				} else if ("arrayBuffer" in data) {
+					// blob, convert to arraybuffer - which takes a turn, so it
+					// holds its place in the queue while it does
+					const ready = steps.reserve();
+					Promise_then(
+						Reflect_apply(Blob_arrayBuffer, data, []),
+						(buffer: ArrayBuffer) => {
+							Object_setPrototypeOf(buffer, ArrayBuffer.prototype);
+							ready(() => deliver(buffer));
+						},
+						() => ready(() => {})
+					);
+				}
+			});
 
 			map.set(fakeWebSocketStream as WebSocketStream, state);
 
@@ -133,15 +487,17 @@ export default function (client: ScramjetClient, self: Self) {
 			return ws.closed;
 		}
 
+		// https://websockets.spec.whatwg.org/#dom-websocketstream-close
 		@Arguments("optional WebSocketCloseInfo")
 		close(closeInfo?: WebSocketCloseInfo) {
 			const ws = map.get(this);
 			if (!ws) return super.close(closeInfo);
 
-			return ws.barews.close(
-				closeInfo?.closeCode ?? 1000,
-				closeInfo?.reason ?? ""
-			);
+			const info = readWebSocketCloseInfo(client, closeInfo);
+			// the reason is checked whether or not a code came with it
+			validateClose(client, "WebSocketStream", info.closeCode, info.reason);
+
+			ws.close(info.closeCode ?? null, info.reason);
 		}
 	});
 }
