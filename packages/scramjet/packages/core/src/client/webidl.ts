@@ -164,6 +164,13 @@ export interface IDLNamedTypes {
 	VoidFunction: () => void;
 	QueuingStrategySize: (chunk: any) => number;
 
+	/**
+	 * html's sanitizer options, the second argument to `parseHTMLUnsafe` and
+	 * `setHTMLUnsafe`. A dictionary, so no interface object, and lib.dom does
+	 * not model it yet - it is only ever forwarded to the native.
+	 */
+	SetHTMLUnsafeOptions: object;
+
 	// --- typedefs --------------------------------------------------------
 	XMLHttpRequestBodyInit:
 		| Blob
@@ -865,11 +872,53 @@ type IDLParameter = {
  * Thrown by a coercer to unwind out of a conversion. Deliberately not an Error
  * — it must be distinguishable from a genuine throw out of page code, which
  * has to propagate rather than being turned into a fall-through.
+ *
+ * `converted` carries how far the conversion got before it gave up, for the
+ * coercers that have to run page code to find out that the value is invalid.
+ * See {@link idlRejectPartial}.
  */
-const IDL_REJECTED = { scramjet: "idl-rejected" };
+const IDL_REJECTED = {
+	scramjet: "idl-rejected",
+	/** whether {@link converted} was set by the throw being unwound */
+	partial: false,
+	converted: undefined as unknown,
+};
 
 function idlReject(): never {
+	IDL_REJECTED.partial = false;
+	IDL_REJECTED.converted = undefined;
+
 	throw IDL_REJECTED;
+}
+
+/**
+ * Reject, but hand back the intermediate the conversion had already produced.
+ *
+ * `ByteString`, `float` and `double` all have to finish an ES conversion -
+ * `ToString`, `ToNumber` - before they can tell that the result is out of
+ * range, and those run page code. The validator writes this value back over
+ * the argument so that the native, which is about to convert the same list
+ * again, rejects the *primitive* rather than re-entering the page's
+ * `toString`. Converting a primitive runs nothing, and the error the native
+ * raises is the same one either way.
+ */
+function idlRejectPartial(converted: unknown): never {
+	IDL_REJECTED.partial = true;
+	IDL_REJECTED.converted = converted;
+
+	throw IDL_REJECTED;
+}
+
+/**
+ * Re-throw a rejection raised while converting something *inside* the
+ * argument - a sequence item, a record value - with any partial conversion
+ * dropped. The intermediate belongs to the inner value, and writing it over
+ * the whole argument would replace an array with one of its elements.
+ */
+function idlRejectInner(err: unknown): never {
+	if (err === IDL_REJECTED) idlReject();
+
+	throw err;
 }
 
 /** The primitives whose own spelling contains a space. */
@@ -917,10 +966,15 @@ export function compileIDLValidator(
 	return (args: unknown[]) => {
 		if (args.length < required) return false;
 
-		// a rejected conversion must leave nothing behind — the native is about
-		// to be handed this same array and has to see the original values
-		const original: unknown[] = [];
-		for (let i = 0; i < args.length; i++) original[i] = args[i];
+		// Nothing is restored on the way out. A coercion that throws never
+		// assigns, so the rejected argument and everything after it are still
+		// exactly as the page wrote them, and the ones before it hold converted
+		// *primitives*. Handing those to the native is what keeps a hostile
+		// `valueOf` to one call: re-converting an already-converted value runs
+		// no page code, where restoring the original would run it a second time.
+		// That double call is observable, and the second answer need not match
+		// the first, which is the whole reason this front-runs the conversion.
+		let rejected = -1;
 
 		try {
 			for (let i = 0; i < params.length; i++) {
@@ -928,6 +982,7 @@ export function compileIDLValidator(
 
 				if (param.variadic) {
 					for (let j = i; j < args.length; j++) {
+						rejected = j;
 						args[j] = param.coerce(args[j]);
 					}
 
@@ -940,6 +995,7 @@ export function compileIDLValidator(
 				// coercing would turn that into a real value and lose the default
 				if (param.optional && args[i] === undefined) continue;
 
+				rejected = i;
 				args[i] = param.coerce(args[i]);
 			}
 
@@ -949,7 +1005,14 @@ export function compileIDLValidator(
 			// it's the call's real outcome and has to keep going up
 			if (err !== IDL_REJECTED) throw err;
 
-			for (let i = 0; i < args.length; i++) args[i] = original[i];
+			// the coercer got as far as a primitive before it gave up. leave that
+			// behind rather than the original, so the native rejects it without
+			// re-running the conversion that produced it
+			if (IDL_REJECTED.partial && rejected !== -1) {
+				args[rejected] = IDL_REJECTED.converted;
+			}
+			IDL_REJECTED.partial = false;
+			IDL_REJECTED.converted = undefined;
 
 			return false;
 		}
@@ -1037,6 +1100,29 @@ function hasIDLExtendedAttribute(s: string, name: string): boolean {
 	return end !== -1 && s.slice(1, end).indexOf(name) !== -1;
 }
 
+/**
+ * Interfaces a union member may name that an engine is allowed not to have.
+ *
+ * `box.ctors` is built from every function-valued global, so a name missing
+ * from it is a name this realm does not have. But a name can also be missing
+ * because it is a dictionary or an enum - which have no interface object, and
+ * whose disambiguation needs type information the declaration does not carry -
+ * and dropping one of *those* would send an object down the string member and
+ * stringify it. So only the names listed here are dropped on sight.
+ *
+ * Trusted types is the whole list today, and it is the one that matters:
+ * `(TrustedHTML or [LegacyNullToEmptyString] DOMString)` is the type of
+ * `innerHTML`, `outerHTML`, `srcdoc` and `document.write`, and abandoning the
+ * union took `[LegacyNullToEmptyString]` down with the brand check - so
+ * `el.innerHTML = null` wrote the text "null" on every engine without trusted
+ * types where it should have cleared the element.
+ */
+const IDL_OPTIONAL_INTERFACES = [
+	"TrustedHTML",
+	"TrustedScript",
+	"TrustedScriptURL",
+];
+
 /** The string types, the only ones a union can fall back to unambiguously. */
 const IDL_STRING_TYPES = [
 	"DOMString",
@@ -1100,6 +1186,11 @@ function compileIDLUnion(box: IDLBrandChecker, inner: string): IDLCoerce {
 			interfaces[interfaces.length] = name;
 			continue;
 		}
+
+		// an interface this realm does not have at all: nothing can be an
+		// instance of it, so the member is dropped and the rest of the union
+		// still gets converted
+		if (IDL_OPTIONAL_INTERFACES.indexOf(name) !== -1) continue;
 
 		// a dictionary, enum, sequence, numeric or unknown member — the spec's
 		// disambiguation rules for those need more type information than we have
@@ -1236,9 +1327,10 @@ function compileIDLType(
 			// the key is always a string type, so the first comma is the split
 			const comma = parameters.indexOf(",");
 			if (comma !== -1) {
+				const key = compileIDLType(box, parameters.slice(0, comma));
 				const item = compileIDLType(box, parameters.slice(comma + 1));
 
-				return (value) => coerceIDLRecord(value, item);
+				return (value) => coerceIDLRecord(value, key, item);
 			}
 		}
 
@@ -1334,29 +1426,44 @@ function toIDLInt64(value: unknown, signed: boolean): number {
 	return Number(signed ? BigInt_asIntN(64, big) : BigInt_asUintN(64, big));
 }
 
+/** Whether `value` is an Object in the ES sense, which a callable also is. */
+function idlIsObject(value: unknown): boolean {
+	return (
+		value !== null && (typeof value === "object" || typeof value === "function")
+	);
+}
+
 function coerceIDLSequence(value: unknown, item: IDLCoerce): unknown[] {
-	if (
-		value === null ||
-		(typeof value !== "object" && typeof value !== "function")
-	) {
-		idlReject();
-	}
+	if (!idlIsObject(value)) idlReject();
 
 	const method = (value as any)[Symbol_iterator];
 	if (typeof method !== "function") idlReject();
 
-	// the iterator is page-controlled; `next` is looked up on it per step,
-	// which is what the spec's iterable-to-sequence algorithm does too
-	const iterator = Reflect_apply(method, value, []) as {
-		next(): { done?: boolean; value: unknown };
-	};
+	const iterator = Reflect_apply(method, value, []) as any;
+	if (!idlIsObject(iterator)) idlReject();
+
+	// GetIterator reads `next` once, when it builds the iterator record, and
+	// calls that same function for every step. Looking it up per step instead
+	// is observable on a page-controlled iterator with an accessor `next`
+	const next = iterator.next;
+	if (typeof next !== "function") idlReject();
+
 	const out: unknown[] = [];
 
 	for (;;) {
-		const step = iterator.next();
+		const step = Reflect_apply(next, iterator, []) as any;
+		// IteratorNext: a result that is not an Object is a TypeError, not the
+		// end of the iteration. Reading `done` off a primitive answers
+		// undefined, which left this spinning forever on `{ next: () => 0 }`
+		if (!idlIsObject(step)) idlReject();
 		if (step.done) break;
-		// not out.push — Array.prototype is page-reachable
-		out[out.length] = item(step.value);
+
+		try {
+			// not out.push — Array.prototype is page-reachable
+			out[out.length] = item(step.value);
+		} catch (err) {
+			idlRejectInner(err);
+		}
 	}
 
 	return out;
@@ -1364,20 +1471,25 @@ function coerceIDLSequence(value: unknown, item: IDLCoerce): unknown[] {
 
 function coerceIDLRecord(
 	value: unknown,
+	key: IDLCoerce,
 	item: IDLCoerce
 ): Record<string, unknown> {
-	if (
-		value === null ||
-		(typeof value !== "object" && typeof value !== "function")
-	) {
-		idlReject();
-	}
+	if (!idlIsObject(value)) idlReject();
 
 	const keys = Object_keys(value as object);
 	const out: Record<string, unknown> = {};
 
 	for (let i = 0; i < keys.length; i++) {
-		out[keys[i]] = item((value as any)[keys[i]]);
+		try {
+			// key first, then value, which is the order the spec's record
+			// conversion runs them in. A `record<USVString, ...>` replaces lone
+			// surrogates in its keys and a `record<ByteString, ...>` rejects one
+			// outside latin1, so the key is a conversion and not just a label
+			const typedKey = key(keys[i]) as string;
+			out[typedKey] = item((value as any)[keys[i]]);
+		} catch (err) {
+			idlRejectInner(err);
+		}
 	}
 
 	return out;
@@ -1385,7 +1497,9 @@ function coerceIDLRecord(
 
 const idlRestrictedDouble: IDLCoerce = (value) => {
 	const x = Number(value);
-	if (!Number_isFinite(x)) idlReject();
+	// the number, not the original: ToNumber has already run the page's
+	// `valueOf` and the native is about to convert this same argument
+	if (!Number_isFinite(x)) idlRejectPartial(x);
 
 	return x;
 };
@@ -1422,11 +1536,11 @@ const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
 
 	float: (value) => {
 		const x = Number(value);
-		if (!Number_isFinite(x)) idlReject();
+		if (!Number_isFinite(x)) idlRejectPartial(x);
 
 		const rounded = Math_fround(x);
 		// a finite double can still round out of single-precision range
-		if (!Number_isFinite(rounded)) idlReject();
+		if (!Number_isFinite(rounded)) idlRejectPartial(x);
 
 		return rounded;
 	},
@@ -1437,6 +1551,13 @@ const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
 	DOMHighResTimeStamp: idlRestrictedDouble,
 
 	bigint: (value) => {
+		// ToBigInt, which the `BigInt` constructor is not. They agree on every
+		// primitive and part company on an object: ToBigInt runs ToPrimitive
+		// and throws a TypeError for a Number result, where `BigInt(object)`
+		// reaches NumberToBigInt and throws a RangeError for a non-integer one.
+		// ToPrimitive cannot be run here without running the page's code, so an
+		// object goes to the native, which performs the authentic conversion
+		if (idlIsObject(value)) idlReject();
 		// ToBigInt rejects Numbers, unlike the BigInt constructor
 		if (typeof value === "number") idlReject();
 
@@ -1449,7 +1570,9 @@ const IDL_PRIMITIVE_COERCERS: Record<keyof IDLPrimitives, IDLCoerce> &
 	ByteString: (value) => {
 		const s = toIDLDOMString(value);
 		for (let i = 0; i < s.length; i++) {
-			if (String_charCodeAt(s, i) > 0xff) idlReject();
+			// the string, not the original: `toIDLDOMString` has already run the
+			// page's `toString` and the native would otherwise run it again
+			if (String_charCodeAt(s, i) > 0xff) idlRejectPartial(s);
 		}
 
 		return s;

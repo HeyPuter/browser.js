@@ -90,6 +90,12 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("any", "DOMString", "optional USVString? url = null")
 		@Returns("undefined")
 		pushState(data: any, unused: string, url: string | null = null): void {
+			// before `resolveStateUrl`, which reads client state and would
+			// otherwise raise scramjet's own TypeError out of scramjet's own
+			// frame for a receiver that is not a History at all. `length` is
+			// the cheapest member that brand-checks
+			void super.length;
+
 			super.pushState(data, unused, resolveStateUrl(this, url, "pushState"));
 			dispatchNavigate(this);
 		}
@@ -97,6 +103,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("any", "DOMString", "optional USVString? url = null")
 		@Returns("undefined")
 		replaceState(data: any, unused: string, url: string | null = null): void {
+			void super.length;
+
 			super.replaceState(
 				data,
 				unused,

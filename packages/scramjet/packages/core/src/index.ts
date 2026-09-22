@@ -25,7 +25,6 @@ export const defaultConfig: ScramjetConfig = {
 		importfn: "$scramjet$import",
 		rewritefn: "$scramjet$rewrite",
 		metafn: "$scramjet$meta",
-		wrappostmessagefn: "$scramjet$wrappostmessage",
 		pushsourcemapfn: "$scramjet$pushsourcemap",
 		trysetfn: "$scramjet$tryset",
 		templocid: "$scramjet$temploc",

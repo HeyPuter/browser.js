@@ -1,4 +1,5 @@
 import { IncrementalHtmlRewriter, rewriteHtml } from "@rewriters/html";
+import { rewriteBlob } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
 import {
 	Array_join,
@@ -87,17 +88,24 @@ export default function (client: ScramjetClient, self: Self) {
 			return super.close();
 		}
 
-		@Arguments("(TrustedHTML or DOMString)")
+		@Arguments("(TrustedHTML or DOMString)", "optional SetHTMLUnsafeOptions")
 		@Returns("Document")
-		static parseHTMLUnsafe(html: string): Document {
-			return super.parseHTMLUnsafe(
-				rewriteHtml(String(html), client.context, client.meta, {
-					loadScripts: false,
-					inline: true,
-					source: client.url.href,
-					apisource: "Document.parseHTMLUnsafe",
-				})
-			);
+		static parseHTMLUnsafe(html: string, options?: object): Document {
+			const rewritten = rewriteHtml(String(html), client.context, client.meta, {
+				loadScripts: false,
+				inline: true,
+				source: client.url.href,
+				apisource: "Document.parseHTMLUnsafe",
+			});
+
+			// forwarded rather than dropped: the declaration named one argument
+			// and the body passed one, so a page handing over a sanitizer got
+			// an unsanitized document back and no error to say so. lib.dom
+			// still types this as single-argument, hence the cast - `super.f`
+			// is read and then `.call`ed so the receiver survives it
+			return (
+				super.parseHTMLUnsafe as (h: string, o?: object) => Document
+			).call(this, rewritten, options);
 		}
 	});
 
@@ -106,15 +114,40 @@ export default function (client: ScramjetClient, self: Self) {
 	 * the proxy's gets replaced - anything else the native reports (about:blank
 	 * for a document with no browsing context) is already correct.
 	 */
-	const siteUrlFor = (url: string) =>
-		String_startsWith(url, client.context.prefix.href) ? client.url.href : url;
+	const siteUrlFor = (url: string) => {
+		if (String_startsWith(url, client.context.prefix.href)) {
+			return client.url.href;
+		}
+
+		// a blob URL never carries the prefix, so the check above cannot see
+		// one, and the origin in it is the *proxy's*. `rewriteBlob` is the same
+		// mapping `URL.createObjectURL` already applies before handing a blob
+		// URL to the page, so this answers with the one the site was given
+		if (String_startsWith(url, `blob:${client.context.prefix.origin}/`)) {
+			return rewriteBlob(url, client.context, client.meta);
+		}
+
+		return url;
+	};
 
 	client.Intercept(class extends Document {
+		/**
+		 * https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain
+		 *
+		 * `siteOrigin`, not `scopeOrigin`: an opaque origin has no effective
+		 * domain and the getter answers the empty string. `scopeOrigin` would
+		 * have handed over part of the storage bucket key it makes up for such
+		 * a document - `about-opaque://<random>` - which is neither a host nor
+		 * stable across a reload.
+		 */
 		@Type("USVString")
 		get domain(): string {
 			void super.domain;
 
-			return client.scopeUrl.hostname;
+			const origin = client.siteOrigin;
+			if (origin === null || origin === "null") return "";
+
+			return new _URL(origin).hostname;
 		}
 
 		@Type("USVString")
@@ -122,14 +155,28 @@ export default function (client: ScramjetClient, self: Self) {
 			void super.domain;
 
 			// https://html.spec.whatwg.org/multipage/browsers.html#relaxing-the-same-origin-restriction
+			const origin = client.siteOrigin;
+
+			// step 3: a document on an opaque origin cannot relax it at all,
+			// whatever it was handed. Falling through to the suffix test below
+			// would have compared against the opaque bucket key and put it in
+			// the error message
+			if (origin === null || origin === "null") {
+				throw client.errors.domException("SecurityError", {
+					set: "domain",
+					on: "Document",
+					detail: "Assignment is forbidden for sandboxed iframes.",
+				});
+			}
+
 			// step 6, checked against the site's host rather than the proxy's
-			const host = String_toLowerCase(client.scopeUrl.hostname);
+			const host = String_toLowerCase(new _URL(origin).hostname);
 			const domain = String_toLowerCase(value);
 			if (domain !== host && !String_endsWith(host, `.${domain}`)) {
 				throw client.errors.domException("SecurityError", {
 					set: "domain",
 					on: "Document",
-					detail: `'${value}' is not a suffix of '${client.scopeUrl.hostname}'.`,
+					detail: `'${value}' is not a suffix of '${host}'.`,
 				});
 			}
 

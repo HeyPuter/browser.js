@@ -2,8 +2,10 @@ import { ScramjetClient } from "@client/index";
 import { Arguments, Returns } from "@client/webidl";
 import {
 	Promise_all,
+	String_split,
 	String_startsWith,
 	String_substring,
+	String_trim,
 	_Set,
 	_URL,
 } from "@/shared/snapshot";
@@ -15,6 +17,32 @@ export default function (client: ScramjetClient, self: Self) {
 		typeof request === "string"
 			? client.rewriteUrl(request, { mode: "cors" })
 			: request;
+
+	/** The request's method, without going near a page-visible accessor. */
+	const methodOf = (request: RequestInfo): string =>
+		typeof request === "string"
+			? "GET"
+			: new client.native.Request(request).method;
+
+	/**
+	 * Whether a response's `Vary` names `*`, which makes it uncacheable.
+	 *
+	 * `Vary` is neither stripped nor rewritten on the way through, so the value
+	 * on the wire is the origin's own and there is no carried copy to prefer.
+	 */
+	const variesOnEverything = (response: Response): boolean => {
+		const vary = new client.native.Headers(
+			new client.native.Response(response).headers
+		).get("vary") as string | null;
+		if (vary === null) return false;
+
+		const parts = String_split(vary, ",");
+		for (let i = 0; i < parts.length; i++) {
+			if (String_trim(parts[i]) === "*") return true;
+		}
+
+		return false;
+	};
 
 	const realUrl = (request: RequestInfo): string =>
 		typeof request === "string"
@@ -86,6 +114,16 @@ export default function (client: ScramjetClient, self: Self) {
 					detail: "Request scheme must be http or https",
 				});
 			}
+
+			// a cache key is always a GET, and the spec refuses the batch here
+			// rather than letting `put` reject it one entry in
+			if (methodOf(requests[i]) !== "GET") {
+				throw client.errors.typeError({
+					execute: method,
+					on: "Cache",
+					detail: "Request method must be GET",
+				});
+			}
 		}
 
 		// every fetch has to land before anything is written, so a failure part
@@ -95,11 +133,26 @@ export default function (client: ScramjetClient, self: Self) {
 		);
 
 		for (let i = 0; i < responses.length; i++) {
-			if (!responses[i].ok) {
+			const status = new client.native.Response(responses[i]).status;
+
+			// `status` through the native rather than `ok`, which is a
+			// page-replaceable accessor on `Response.prototype`. 206 is inside
+			// the ok range either way, so `ok` alone let a partial response
+			// through - and a cache entry holding one answers a later full
+			// request with half a body
+			if (status < 200 || status > 299 || status === 206) {
 				throw client.errors.typeError({
 					execute: method,
 					on: "Cache",
 					detail: "Request failed",
+				});
+			}
+
+			if (variesOnEverything(responses[i])) {
+				throw client.errors.typeError({
+					execute: method,
+					on: "Cache",
+					detail: "Vary header contains *",
 				});
 			}
 		}

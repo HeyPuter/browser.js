@@ -29,10 +29,14 @@ export default function (client: ScramjetClient) {
 			// class does declare a static `origin`.
 			void new client.native.window(this).origin;
 
-			// TODO: an opaque origin should be "null" rather than the URL's
-			// serialization. `client.url` is never opaque today, so this only
-			// diverges for a sandboxed document, which scramjet cannot host yet
-			return client.scopeOrigin;
+			// `siteOrigin`, not `scopeOrigin`. This is a *serialization* of the
+			// document's origin, and an opaque one serializes as "null".
+			// `scopeOrigin` answers a storage bucket key instead - a string
+			// unique to this document, deliberately equal to nothing - and
+			// handing that to the page would both invent an origin no browser
+			// produces and hand out a value that changes on every load.
+			// https://html.spec.whatwg.org/multipage/webappapis.html#dom-origin
+			return client.siteOrigin ?? "null";
 		}
 	});
 }

@@ -2,9 +2,7 @@ import { GlobalScope, ScramjetClient } from "@client/index";
 import { openWindowSteps } from "@client/helpers";
 import { Arguments, Returns, Type } from "@client/webidl";
 
-export default function (client: ScramjetClient, self: Self) {
-	const nativeGlobal = new client.native.window(self);
-
+export default function (client: ScramjetClient, _self: Self) {
 	client.Intercept(class extends GlobalScope {
 		// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-open
 		// the steps themselves are shared with the three-argument
@@ -16,7 +14,16 @@ export default function (client: ScramjetClient, self: Self) {
 			target?: string,
 			features?: string
 		): Window | null {
-			return openWindowSteps(client, nativeGlobal.open, url, target, features);
+			// through the receiver rather than a captured `self`: the steps run
+			// against the window the call named, so `other.open(...)` opens
+			// relative to `other` the way it does natively
+			return openWindowSteps(
+				client,
+				new client.native.window(this).open,
+				url,
+				target,
+				features
+			);
 		}
 
 		/**

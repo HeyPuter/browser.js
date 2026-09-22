@@ -49,6 +49,7 @@ import {
 	_Map,
 	_Set,
 	_WeakMap,
+	Object_create,
 	Object_getOwnPropertyDescriptors,
 	Object_getOwnPropertyNames,
 	Object_getPrototypeOf,
@@ -334,11 +335,25 @@ export class ScramjetClient {
 		}
 	);
 	nativeStore: Map<string, Record<string, PropertyDescriptor>> = new _Map();
+
+	/**
+	 * Both tables below are null-prototype, and not for tidiness. Each walk
+	 * ends at `Object.prototype`, whose descriptor map carries an enumerable
+	 * `__proto__` entry, and `Object_assign` copies with [[Set]] - so on an
+	 * ordinary object that last step ran `Object.prototype.__proto__`'s
+	 * *setter* and reparented the table to the descriptor object instead of
+	 * storing a key on it. Two things followed: every entry silently lost its
+	 * `__proto__` descriptor, and the table then inherited `get`, `set`,
+	 * `enumerable` and `configurable` from that descriptor object - so a
+	 * `client.native.X(o).get` for an interface with no own `get` answered
+	 * `undefined` where it owes a "No native method" throw. With no prototype
+	 * there is no setter to find and the key is defined outright.
+	 */
 	saveNatives() {
 		for (const key of Object_getOwnPropertyNames(this.global)) {
 			const value = this.global[key];
 			if (typeof value === "function" && "prototype" in value) {
-				const natives = {};
+				const natives = Object_create(null);
 				const walk = (proto: any) => {
 					const prototype = Object_getPrototypeOf(proto);
 					if (prototype) walk(prototype);
@@ -350,7 +365,7 @@ export class ScramjetClient {
 		}
 
 		// handle both globals bound to the scope's prototype, and globals bound to the scope itself (e.g. window)
-		const globals = {};
+		const globals = Object_create(null);
 		const walkGlobal = (object: any) => {
 			const prototype = Object_getPrototypeOf(object);
 			if (prototype) walkGlobal(prototype);
@@ -1306,10 +1321,28 @@ return { apply, construct };
 				const tramp = this.trampoline(`new ${globalname}`);
 				// constructor isn't a field, replace the entire class on the global with a proxy
 				const proxy = new Proxy(baseclass, {
-					construct: (_, args, newTarget) =>
-						attemptToCallHandler(
+					construct: (_, args, newTarget) => {
+						// `new this(...)` in a `@Constructor` body has to reach the
+						// native with the *page's* newTarget. Handing the body the
+						// bare native constructor threw it away, so
+						// `class Sub extends Request {}` produced an instance
+						// carrying `Request.prototype` and `new Sub() instanceof
+						// Sub` was false - while the rejection path below, which
+						// does pass it on, got it right. A plain
+						// `new Request(...)` names this proxy as its newTarget and
+						// wants the native constructor itself, which is both the
+						// common case and the one that allocates nothing
+						const construct =
+							newTarget === proxy
+								? nativeCtor
+								: new Proxy(nativeCtor, {
+										construct: (_target, inner) =>
+											tramp.construct(nativeCtor, inner, newTarget),
+									});
+
+						const constructed = attemptToCallHandler(
 							value,
-							nativeCtor, // use the native constructor as `this` in order to make the `new this()` syntax work properly
+							construct, // used as `this` in order to make the `new this()` syntax work properly
 							args,
 							// a rejected argument list has to reach the native as a
 							// *construction*, or the page sees "cannot be invoked
@@ -1318,7 +1351,22 @@ return { apply, construct };
 							validate,
 							false,
 							tramp
-						),
+						);
+
+						// a `@Constructor` body that returns nothing means
+						// "construct normally with the arguments as coerced",
+						// which is what `webidl.ts` documents it as. It cannot be
+						// left to fall out of the trap: `undefined` out of
+						// [[Construct]] is a hard "proxy [[Construct]] must return
+						// an object" TypeError rather than a pass-through. The
+						// rejection path above always hands back an object, so
+						// this only ever catches a body that declined to build one
+						if (constructed === undefined) {
+							return tramp.construct(nativeCtor, args, newTarget);
+						}
+
+						return constructed;
+					},
 				});
 
 				// registered the way `RawProxy` and `createProxy` register

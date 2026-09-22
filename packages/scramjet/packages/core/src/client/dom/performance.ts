@@ -144,11 +144,17 @@ export default function (client: ScramjetClient) {
 			return visible(super.getEntriesByType(type));
 		}
 
-		@Arguments("DOMString", "optional DOMString")
+		// `optional DOMString?`, exactly as on `Performance` above. Declared
+		// non-nullable, an explicit null was converted to the string "null" and
+		// filtered against a type nothing has, so `getEntriesByName(n, null)`
+		// always answered empty where it means "any type"
+		@Arguments("DOMString", "optional DOMString?")
 		@Returns("sequence<PerformanceEntry>")
-		getEntriesByName(name: string, type?: string): PerformanceEntry[] {
+		getEntriesByName(name: string, type?: string | null): PerformanceEntry[] {
 			return byName(
-				type === undefined ? super.getEntries() : super.getEntriesByType(type),
+				type === undefined || type === null
+					? super.getEntries()
+					: super.getEntriesByType(type),
 				name
 			);
 		}

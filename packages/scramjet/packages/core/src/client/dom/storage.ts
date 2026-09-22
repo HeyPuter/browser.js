@@ -1,5 +1,11 @@
 import { ScramjetClient } from "@client/index";
-import { Object_keys, Reflect_get, Reflect_ownKeys } from "@/shared/snapshot";
+import {
+	Object_keys,
+	Reflect_get,
+	Reflect_ownKeys,
+	String_startsWith,
+	String_substring,
+} from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
 	// `scopeUrl.host` rather than `url.host`: an about:blank frame's storage area is
@@ -11,93 +17,103 @@ export default function (client: ScramjetClient, self: Self) {
 	// where a browser gives them one each. Keying on the whole origin is the
 	// fix and it invalidates everything already stored, so it wants doing
 	// deliberately rather than as a side effect of this.
+	//
+	// The full separator, never the bare host. `startsWith(host)` also matches
+	// another site's keys whenever one host is a prefix of the other -
+	// "a.com" against "a.com.evil@secret" - and every one of them then had
+	// `host.length + 1` characters chopped off and was handed over as this
+	// site's own. The "@" is what makes the boundary unambiguous, because a
+	// host cannot contain one.
+	const prefix = () => client.scopeUrl.host + "@";
+
+	/** This site's keys, as they are stored - namespace included. */
+	const scopedKeys = (target: Storage) => {
+		const scope = prefix();
+
+		return Object_keys(target).filter((key) => String_startsWith(key, scope));
+	};
+
 	const handler: ProxyHandler<Storage> = {
 		get(target, prop) {
 			switch (prop) {
 				case "getItem":
 					return (key: string) => {
-						return target.getItem(client.scopeUrl.host + "@" + key);
+						return target.getItem(prefix() + key);
 					};
 
 				case "setItem":
 					return (key: string, value: string) => {
-						return target.setItem(client.scopeUrl.host + "@" + key, value);
+						return target.setItem(prefix() + key, value);
 					};
 
 				case "removeItem":
 					return (key: string) => {
-						return target.removeItem(client.scopeUrl.host + "@" + key);
+						return target.removeItem(prefix() + key);
 					};
 
 				case "clear":
 					return () => {
-						for (const key in Object_keys(target)) {
-							if (key.startsWith(client.scopeUrl.host)) {
-								target.removeItem(key);
-							}
+						// `for...in` over `Object_keys(target)` walked the *indices*
+						// of the returned array - "0", "1", ... - none of which
+						// start with the namespace, so `clear()` removed nothing
+						// and silently left every entry in place.
+						// `Object_keys` snapshots, so removing while iterating is
+						// safe
+						for (const key of scopedKeys(target)) {
+							target.removeItem(key);
 						}
 					};
 
 				case "key":
 					return (index: number) => {
-						const keys = Object_keys(target).filter((key) =>
-							key.startsWith(client.scopeUrl.host)
-						);
+						// the *name*, not the value, and with the namespace taken
+						// off - this is what a page iterating
+						// `localStorage.key(i)` and feeding the result back to
+						// `getItem` needs. Out of range is null, not undefined
+						const keys = scopedKeys(target);
+						if (index < 0 || index >= keys.length) return null;
 
-						return target.getItem(keys[index]);
+						return String_substring(keys[index], prefix().length);
 					};
 
 				case "length":
-					return Object_keys(target).filter((key) =>
-						key.startsWith(client.scopeUrl.host)
-					).length;
+					return scopedKeys(target).length;
 
 				default:
 					if (prop in Object.prototype || typeof prop === "symbol") {
 						return Reflect_get(target, prop);
 					}
 
-					return target.getItem(client.scopeUrl.host + "@" + (prop as string));
+					return target.getItem(prefix() + (prop as string));
 			}
 		},
 
 		set(target, prop, value) {
-			target.setItem(client.scopeUrl.host + "@" + (prop as string), value);
+			target.setItem(prefix() + (prop as string), value);
 
 			return true;
 		},
 
 		has(target, prop) {
-			return (
-				target.getItem(client.scopeUrl.host + "@" + (prop as string)) !== null
-			);
+			return target.getItem(prefix() + (prop as string)) !== null;
 		},
 
 		ownKeys(target) {
+			const scope = prefix();
+
 			return Reflect_ownKeys(target)
-				.filter(
-					(f) => typeof f === "string" && f.startsWith(client.scopeUrl.host)
-				)
-				.map((f) =>
-					typeof f === "string"
-						? f.substring(client.scopeUrl.host.length + 1)
-						: f
-				);
+				.filter((f) => typeof f === "string" && String_startsWith(f, scope))
+				.map((f) => String_substring(f as string, scope.length));
 		},
 
 		getOwnPropertyDescriptor(target, property) {
 			// TODO: probably not right
-			if (
-				target.getItem(client.scopeUrl.host + "@" + (property as string)) ===
-				null
-			) {
+			if (target.getItem(prefix() + (property as string)) === null) {
 				return undefined;
 			}
 
 			return {
-				value: target.getItem(
-					client.scopeUrl.host + "@" + (property as string)
-				),
+				value: target.getItem(prefix() + (property as string)),
 				enumerable: true,
 				configurable: true,
 				writable: true,
@@ -105,10 +121,7 @@ export default function (client: ScramjetClient, self: Self) {
 		},
 
 		defineProperty(target, property, attributes) {
-			target.setItem(
-				client.scopeUrl.host + "@" + (property as string),
-				attributes.value
-			);
+			target.setItem(prefix() + (property as string), attributes.value);
 
 			return true;
 		},

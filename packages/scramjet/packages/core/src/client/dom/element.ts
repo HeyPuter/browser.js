@@ -601,28 +601,32 @@ export default function (client: ScramjetClient, self: typeof window) {
 	// 	},
 	// });
 
-	client.Proxy("Audio", {
-		construct(ctx) {
-			if (ctx.args[0]) ctx.args[0] = client.rewriteUrl(ctx.args[0]);
-		},
-	});
-
 	client.Intercept(class extends Text {
+		@Type("DOMString")
 		get wholeText(): string {
 			return getTextForElement(super.parentElement, super.wholeText);
 		}
 	});
+	// the declarations are not decoration: without them there is no arity
+	// check, so `node.appendData()` rewrote and appended the string
+	// "undefined" where the native owes the page a TypeError
 	client.Intercept(class extends CharacterData {
+		@Arguments("DOMString")
+		@Returns("undefined")
 		appendData(data: string): void {
 			super.appendData(rewriteTextForElement(super.parentElement, data));
 		}
 		// TODO: this is completely broken if done partially
+		@Arguments("unsigned long", "DOMString")
+		@Returns("undefined")
 		insertData(offset: number, data: string): void {
 			super.insertData(
 				offset,
 				rewriteTextForElement(super.parentElement, data)
 			);
 		}
+		@Arguments("unsigned long", "unsigned long", "DOMString")
+		@Returns("undefined")
 		replaceData(offset: number, count: number, data: string): void {
 			super.replaceData(
 				offset,

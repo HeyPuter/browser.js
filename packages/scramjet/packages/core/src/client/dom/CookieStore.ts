@@ -86,9 +86,10 @@ export default function (client: ScramjetClient, self: Self) {
 
 	/**
 	 * WebIDL overload resolution between a `(USVString)` and a `(dictionary)`
-	 * overload of the same arity: an object — a function counts, null does not —
-	 * picks the dictionary, and so does an absent or undefined argument.
-	 * Everything else, a number included, is converted as a string.
+	 * overload of the same arity: an object — a function counts — picks the
+	 * dictionary, and so do null and undefined, because step 12 sends both to
+	 * a dictionary-typed entry when there is one. Everything else, a number
+	 * included, is converted as a string.
 	 * https://webidl.spec.whatwg.org/#es-overloads
 	 */
 	const isDictionaryArgument = (value: unknown): boolean =>
