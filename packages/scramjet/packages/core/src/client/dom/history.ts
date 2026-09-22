@@ -4,19 +4,6 @@ import { Arguments, Returns } from "@client/webidl";
 import { _URL } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, _self: Self) {
-	/**
-	 * The SecurityError Chrome throws for a state URL it will not accept.
-	 *
-	 * Built rather than delegated. Handing the call to the native would produce
-	 * a message naming the *proxy's* origin and document URL, which is the leak
-	 * the old TODO was about. Every field a detector can read - the message
-	 * text, the name, the code, and the presence and descriptor of `stack` -
-	 * was measured against Chrome and matches.
-	 *
-	 * `url` is the *resolved* URL, not the argument: Chrome reports
-	 * "//evil.example/x" as "http://evil.example/x", and `documentUrl` carries
-	 * its query and fragment.
-	 */
 	const stateUrlRejected = (
 		method: string,
 		url: string,
@@ -63,12 +50,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			throw stateUrlRejected(method, url, relevantclient.url);
 		}
 
-		// `siteOrigin`, and a security check rather than a scope key - so a null
-		// is "no answer" and has to reject. An about:blank document's origin is
-		// its creator's, so comparing against `url.origin` refused every URL a
-		// browser accepts; a document that really has no origin to inherit has
-		// an opaque one, which nothing is same-origin with, so refusing is also
-		// what a browser does there
+		// make sure a null origin is rejected
 		const origin = relevantclient.siteOrigin;
 		if (origin === null || parsed.origin !== origin) {
 			throw stateUrlRejected(method, parsed.href, relevantclient.url);
@@ -90,10 +72,6 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("any", "DOMString", "optional USVString? url = null")
 		@Returns("undefined")
 		pushState(data: any, unused: string, url: string | null = null): void {
-			// before `resolveStateUrl`, which reads client state and would
-			// otherwise raise scramjet's own TypeError out of scramjet's own
-			// frame for a receiver that is not a History at all. `length` is
-			// the cheapest member that brand-checks
 			void super.length;
 
 			super.pushState(data, unused, resolveStateUrl(this, url, "pushState"));
