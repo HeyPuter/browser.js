@@ -300,8 +300,6 @@ export default function (client: ScramjetClient, self: Self) {
 	// be redirected later either - but nothing below has to rely on that
 	const WebSocket_prototype = WebSocket.prototype;
 	const ArrayBuffer_prototype = ArrayBuffer.prototype;
-	// and this one while the page cannot have replaced it
-	const Blob_arrayBuffer = Blob.prototype.arrayBuffer;
 
 	const socketmap = client.box.socketmap;
 
@@ -359,11 +357,6 @@ export default function (client: ScramjetClient, self: Self) {
 				},
 			};
 
-			// the platform dispatched these, as far as the page is concerned
-			const fakeEventSend = (fakeev: Event) => {
-				client.dispatchEvent(fakeWebSocket, fakeev);
-			};
-
 			// https://websockets.spec.whatwg.org/#feedback-from-the-protocol -
 			// "the WebSocket connection is closed". CLOSED first, then `error`
 			// if the connection failed, then `close`.
@@ -373,8 +366,9 @@ export default function (client: ScramjetClient, self: Self) {
 				failed: boolean
 			) => {
 				state.readyState = WEBSOCKET_CLOSED;
-				if (failed) fakeEventSend(new Event("error"));
-				fakeEventSend(
+				if (failed) client.dispatchEvent(fakeWebSocket, new Event("error"));
+				client.dispatchEvent(
+					fakeWebSocket,
 					new CloseEvent("close", {
 						code,
 						reason,
@@ -407,7 +401,7 @@ export default function (client: ScramjetClient, self: Self) {
 					state.readyState = WEBSOCKET_OPEN;
 					state.protocol = barews.protocol;
 					state.extensions = barews.extensions;
-					fakeEventSend(new Event("open"));
+					client.dispatchEvent(fakeWebSocket, new Event("open"));
 				});
 			});
 			barews.addEventListener("close", (ev: CloseEvent) => {
@@ -446,7 +440,8 @@ export default function (client: ScramjetClient, self: Self) {
 				const deliver = (payload: unknown) => {
 					// messages still arrive while CLOSING, but not once closed
 					if (state.readyState === WEBSOCKET_CLOSED) return;
-					fakeEventSend(
+					client.dispatchEvent(
+						fakeWebSocket,
 						new MessageEvent("message", {
 							data: payload,
 							// https://websockets.spec.whatwg.org/#feedback-from-the-protocol
@@ -475,7 +470,7 @@ export default function (client: ScramjetClient, self: Self) {
 					if (state.binaryType === "arraybuffer") {
 						const ready = state.steps.reserve();
 						Promise_then(
-							Reflect_apply(Blob_arrayBuffer, data, []),
+							new client.native.Blob(data).arrayBuffer(),
 							(buffer: ArrayBuffer) => {
 								Object_setPrototypeOf(buffer, ArrayBuffer_prototype);
 								ready(() => deliver(buffer));

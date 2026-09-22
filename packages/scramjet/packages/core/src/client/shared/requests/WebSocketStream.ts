@@ -11,10 +11,8 @@ import {
 	Array_from,
 	Math_trunc,
 	Number_isFinite,
-	Object_getOwnPropertyDescriptor,
 	Object_setPrototypeOf,
 	Promise_then,
-	Reflect_apply,
 } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/client";
 import {
@@ -91,39 +89,16 @@ export const enabled = (client: ScramjetClient, self: Self) =>
 export default function (client: ScramjetClient, self: Self) {
 	const {
 		ArrayBuffer,
-		Blob,
 		Promise,
 		ReadableStream,
 		WritableStream,
 		WebSocketStream,
 		WebSocketError,
 		DOMException,
-		AbortSignal,
-		EventTarget,
 	} = self;
 	// read once, here, rather than per stream - see `WebSocket.ts`
 	const WebSocketStream_prototype = WebSocketStream.prototype;
 	const ArrayBuffer_prototype = ArrayBuffer.prototype;
-	// read now, while the page cannot have replaced them. The getters are the
-	// natives, so calling one on something that is not what it belongs to is a
-	// brand check the page cannot fake
-	const Blob_arrayBuffer = Blob.prototype.arrayBuffer;
-	const AbortSignal_aborted = Object_getOwnPropertyDescriptor(
-		AbortSignal.prototype,
-		"aborted"
-	)!.get!;
-	const AbortSignal_reason = Object_getOwnPropertyDescriptor(
-		AbortSignal.prototype,
-		"reason"
-	)!.get!;
-	const EventTarget_addEventListener = EventTarget.prototype.addEventListener;
-	const WebSocketError_closeCode =
-		WebSocketError &&
-		Object_getOwnPropertyDescriptor(WebSocketError.prototype, "closeCode")!
-			.get!;
-	const WebSocketError_reason =
-		WebSocketError &&
-		Object_getOwnPropertyDescriptor(WebSocketError.prototype, "reason")!.get!;
 
 	/**
 	 * What a failed connection rejects with, and errors the streams with. No
@@ -142,12 +117,13 @@ export default function (client: ScramjetClient, self: Self) {
 	const closeInfoFromReason = (
 		reason: unknown
 	): { code: number | null; reason: string } => {
-		if (WebSocketError_closeCode && typeof reason === "object" && reason) {
+		if (WebSocketError && typeof reason === "object" && reason) {
+			// the native getters brand-check, so this throws for anything that
+			// is not a real WebSocketError, whatever its prototype says
 			try {
-				return {
-					code: Reflect_apply(WebSocketError_closeCode, reason, []),
-					reason: Reflect_apply(WebSocketError_reason, reason, []),
-				};
+				const error = new client.native.WebSocketError(reason);
+
+				return { code: error.closeCode, reason: error.reason };
 			} catch {
 				// not a WebSocketError
 			}
@@ -180,7 +156,8 @@ export default function (client: ScramjetClient, self: Self) {
 			let signal: AbortSignal | undefined;
 			if (rawSignal !== undefined) {
 				try {
-					Reflect_apply(AbortSignal_aborted, rawSignal, []);
+					// a brand check: the native getter throws for anything else
+					void new client.native.AbortSignal(rawSignal).aborted;
 				} catch {
 					throw client.errors.typeError({
 						read: "signal",
@@ -216,8 +193,8 @@ export default function (client: ScramjetClient, self: Self) {
 			Promise_then(closed, undefined, () => {});
 
 			// an already-aborted signal: nothing is connected at all
-			if (signal && Reflect_apply(AbortSignal_aborted, signal, [])) {
-				const reason = Reflect_apply(AbortSignal_reason, signal, []);
+			if (signal && new client.native.AbortSignal(signal).aborted) {
+				const reason = new client.native.AbortSignal(signal).reason;
 				rejectOpened(reason);
 				rejectClosed(reason);
 				map.set(fakeWebSocketStream as WebSocketStream, {
@@ -372,13 +349,10 @@ export default function (client: ScramjetClient, self: Self) {
 			// the signal only governs the handshake: once open, aborting it
 			// does nothing
 			if (signal) {
-				Reflect_apply(EventTarget_addEventListener, signal, [
-					"abort",
-					() => {
-						if (state.readyState !== WEBSOCKET_CONNECTING) return;
-						failConnection(Reflect_apply(AbortSignal_reason, signal, []));
-					},
-				]);
+				new client.native.EventTarget(signal).addEventListener("abort", () => {
+					if (state.readyState !== WEBSOCKET_CONNECTING) return;
+					failConnection(new client.native.AbortSignal(signal).reason);
+				});
 			}
 
 			barews.addEventListener("open", () => {
@@ -450,7 +424,7 @@ export default function (client: ScramjetClient, self: Self) {
 					// holds its place in the queue while it does
 					const ready = steps.reserve();
 					Promise_then(
-						Reflect_apply(Blob_arrayBuffer, data, []),
+						new client.native.Blob(data).arrayBuffer(),
 						(buffer: ArrayBuffer) => {
 							Object_setPrototypeOf(buffer, ArrayBuffer_prototype);
 							ready(() => deliver(buffer));
