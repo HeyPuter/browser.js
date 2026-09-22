@@ -6,6 +6,8 @@ import {
 	Object_defineProperty,
 	Object_getOwnPropertyDescriptor,
 	atob,
+	String_startsWith,
+	String_toLowerCase,
 } from "@/shared/snapshot";
 import { bytesToBase64 } from "@/shared/util";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
@@ -21,6 +23,9 @@ import {
 	isScriptType,
 } from "@/shared/mime";
 import { ForeignContext } from "@/shared/rewriters/html";
+import { Arguments, Returns, Type } from "@client/webidl";
+
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 export function foreignContextForElement(
 	client: ScramjetClient,
@@ -267,9 +272,73 @@ export default function (client: ScramjetClient, self: typeof window) {
 		},
 	});
 
-	// i actually need to do something with this
+	/**
+	 * https://dom.spec.whatwg.org/#dom-element-setattributenode
+	 *
+	 * The other way to attach a URL-bearing attribute, and it used to be
+	 * intercepted with an empty body - so
+	 *
+	 *   const attr = document.createAttribute("src");
+	 *   attr.value = "https://origin.example/x.js";
+	 *   script.setAttributeNode(attr);
+	 *
+	 * reached no rewriter at all. `dom/attr.ts` only routes `Attr.value` back
+	 * through `setAttribute` for an Attr that already has an `ownerElement`,
+	 * and a freshly created one does not, so neither half of that pair covered
+	 * it. Whether the resulting load stayed inside the proxy then came down to
+	 * whether the service worker happened to be controlling the document.
+	 *
+	 * Rewritten in place on the node rather than replayed through
+	 * `setAttribute`: the Attr the page handed over is the one that has to end
+	 * up attached, or `el.getAttributeNode(name) === attr` and
+	 * `attr.ownerElement` both stop holding.
+	 */
+	const setAttributeNodeSteps = (ctx: any) => {
+		const attr = ctx.args[0];
+		if (!client.box.instanceof(attr, "Attr")) return;
+
+		// through the native, and once: `Attr.prototype.value` is trapped, and
+		// `name` is what the rule list is keyed on
+		const nAttr = new client.native.Attr(attr);
+		const name = nAttr.name;
+		const value = nAttr.value;
+
+		const nElement = new client.native.Element(ctx.this);
+		const tagName = String(nElement.tagName).toLowerCase();
+
+		const ruleList = htmlRules.find((rule) => {
+			const r = rule[name.toLowerCase()];
+			if (!r) return false;
+			if (r === "*") return true;
+			if (typeof r === "function") return false; // this can't happen but ts
+
+			return r.includes(tagName);
+		});
+		if (!ruleList) return;
+
+		const rewritten = ruleList.fn(value, client.context, client.meta, (a) =>
+			ctx.this.getAttribute(a)
+		);
+
+		// the rule dropped the attribute. The node still has to be attached -
+		// the spec answers with the *old* node and makes this one the
+		// element's - so it is attached carrying nothing, with the page's own
+		// string stashed where `getAttribute` reads it back from
+		nAttr.value = rewritten == null ? "" : rewritten;
+
+		const old = ctx.call();
+		nElement.setAttribute(`scramjet-attr-${name}`, value);
+
+		ctx.return(old);
+	};
+
 	client.Proxy("Element.prototype.setAttributeNode", {
-		apply(_ctx) {},
+		apply: setAttributeNodeSteps,
+	});
+
+	// the namespaced spelling reaches the same steps
+	client.Proxy("Element.prototype.setAttributeNodeNS", {
+		apply: setAttributeNodeSteps,
 	});
 
 	client.Proxy("Element.prototype.setAttributeNS", {
@@ -320,75 +389,117 @@ export default function (client: ScramjetClient, self: typeof window) {
 		},
 		// it has no setter
 	});
+	const isInternal = (name: string) => {
+		return String_startsWith(name, "scramjet-attr-");
+	};
+	/**
+	 * Step 2 of https://dom.spec.whatwg.org/#dom-element-toggleattribute — the
+	 * lowercasing is conditional. An SVG or MathML element keeps `viewBox` as
+	 * `viewBox`, and folding it writes a different, meaningless attribute.
+	 */
+	const qualifiedAttributeName = (element: Element, name: string) => {
+		const nElement = new client.native.Element(element);
 
-	client.Proxy("Element.prototype.removeAttribute", {
-		apply(ctx) {
-			const name = String(ctx.args[0]);
-			if (name.startsWith("scramjet-attr")) return ctx.return(undefined);
-			if (new client.native.Element(ctx.this).hasAttribute(name)) {
-				ctx.fn.call(ctx.this, `scramjet-attr-${ctx.args[0]}`);
+		return nElement.namespaceURI === HTML_NAMESPACE &&
+			client.box.instanceof(nElement.ownerDocument, "HTMLDocument")
+			? String_toLowerCase(name)
+			: name;
+	};
+
+	client.Intercept(class extends Element {
+		@Arguments("DOMString")
+		@Returns("undefined")
+		removeAttribute(qualifiedName: string): void {
+			// read before the early return, so a receiver that is not an
+			// Element gets the native's own "Illegal invocation" rather than a
+			// silent no-op for a `scramjet-attr-` name
+			const present = super.hasAttribute(qualifiedName);
+			if (isInternal(qualifiedName)) return;
+			if (!present) return;
+			super.removeAttribute(`scramjet-attr-${qualifiedName}`);
+			super.removeAttribute(qualifiedName);
+		}
+
+		// `force` is `optional boolean`, not a nullable required one. declaring
+		// it required made every one-argument call fail validation and fall
+		// through to the native, which toggled the real attribute and left the
+		// `scramjet-attr-` mirror behind to answer getAttribute() forever
+		@Arguments("DOMString", "optional boolean")
+		@Returns("boolean")
+		toggleAttribute(qualifiedName: string, force?: boolean): boolean {
+			// as in `removeAttribute`: reached before the early return so the
+			// brand check happens whatever the name is
+			void super.hasAttribute(qualifiedName);
+			if (isInternal(qualifiedName)) return false;
+			// 1. If qualifiedName is not a valid attribute local name, then throw an "InvalidCharacterError" DOMException.
+			// no op here?
+			// 2. If this is in the HTML namespace and its node document is an HTML document, then set qualifiedName to qualifiedName in ASCII lowercase.
+			qualifiedName = qualifiedAttributeName(this, qualifiedName);
+			// 3. Let attribute be the first attribute in this’s attribute list whose qualified name is qualifiedName, and null otherwise.
+			const hasAttribute = super.hasAttribute(qualifiedName);
+			// 4. If attribute is null:
+			if (hasAttribute === false) {
+				if (force === false) return false;
+				// If force is not given or true
+				super.toggleAttribute(`scramjet-attr-${qualifiedName}`, true);
+				super.toggleAttribute(qualifiedName, true);
+				return true;
 			}
-		},
-	});
+			if (force === true) return true;
+			// If force is not given or false
+			super.toggleAttribute(`scramjet-attr-${qualifiedName}`, false);
+			super.toggleAttribute(qualifiedName, false);
+			return false;
+		}
 
-	client.Proxy("Element.prototype.toggleAttribute", {
-		apply(ctx) {
-			const name = String(ctx.args[0]);
-			if (name.startsWith("scramjet-attr")) return ctx.return(false);
-			if (new client.native.Element(ctx.this).hasAttribute(name)) {
-				ctx.fn.call(ctx.this, `scramjet-attr-${ctx.args[0]}`);
-			}
-		},
-	});
-
-	client.Trap("Element.prototype.innerHTML", {
-		set(ctx, value: string) {
-			// null specifically becomes "" and not "null". undefined does not
-			if (value === null) return;
-			const html = String(value);
+		@Type("(TrustedHTML or [LegacyNullToEmptyString] DOMString)")
+		set innerHTML(value: string) {
+			// the IDL union hands a TrustedHTML through as the object it is -
+			// that is what the brand check is for - and on an engine with no
+			// TrustedHTML at all the whole union degrades to a passthrough. the
+			// rewriters take a string either way
+			value = String(value);
 			let newval;
-			const scriptBlockType = client.box.instanceof(
-				ctx.this,
-				"HTMLScriptElement"
-			)
-				? scriptBlockTypeForElement(client, ctx.this)
+			const scriptBlockType = client.box.instanceof(this, "HTMLScriptElement")
+				? scriptBlockTypeForElement(client, this)
 				: null;
 			if (
-				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
+				client.box.instanceof(this, "HTMLScriptElement") &&
 				isScriptType(scriptBlockType)
 			) {
 				newval = rewriteJs(
-					html,
+					value,
 					"(anonymous script element)",
 					client.context,
 					client.meta,
 					isModuleScriptType(scriptBlockType)
 				);
-				new client.native.Element(ctx.this).setAttribute(
+				new client.native.Element(this).setAttribute(
 					"scramjet-attr-script-source-src",
 					bytesToBase64(TextEncoder_encode(newval))
 				);
-			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				newval = rewriteCss(html, client.context, client.meta);
+			} else if (client.box.instanceof(this, "HTMLStyleElement")) {
+				newval = rewriteCss(value, client.context, client.meta);
 			} else {
 				try {
-					newval = rewriteHtml(html, client.context, client.meta, {
+					newval = rewriteHtml(value, client.context, client.meta, {
 						loadScripts: false,
 						inline: true,
 						source: client.url.href,
 						apisource: "set Element.prototype.innerHTML",
-						foreignContext: foreignContextForElement(client, ctx.this),
+						foreignContext: foreignContextForElement(client, this),
 					});
 				} catch {
-					newval = html;
+					newval = value;
 				}
 			}
 
-			ctx.set(newval);
-		},
-		get(ctx) {
-			if (client.box.instanceof(ctx.this, "HTMLScriptElement")) {
-				const scriptSource = new client.native.Element(ctx.this).getAttribute(
+			super.innerHTML = newval;
+		}
+
+		get innerHTML(): string {
+			if (client.box.instanceof(this, "HTMLScriptElement")) {
+				const scriptSource = super.getAttribute(
 					"scramjet-attr-script-source-src"
 				);
 
@@ -396,19 +507,18 @@ export default function (client: ScramjetClient, self: typeof window) {
 					return atob(scriptSource);
 				}
 
-				return ctx.get();
+				return super.innerHTML;
 			}
-			if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
-				return ctx.get();
+			if (client.box.instanceof(this, "HTMLStyleElement")) {
+				return super.innerHTML;
 			}
 
 			return unrewriteHtml(
-				ctx.get(),
-				foreignContextForElement(client, ctx.this)
+				super.innerHTML,
+				foreignContextForElement(client, this)
 			);
-		},
+		}
 	});
-
 	const rewriteTextForElement = (element: Element, value: string) => {
 		const scriptBlockType = client.box.instanceof(element, "HTMLScriptElement")
 			? scriptBlockTypeForElement(client, element)
@@ -562,45 +672,39 @@ export default function (client: ScramjetClient, self: typeof window) {
 	// 	},
 	// });
 
-	client.Proxy("Audio", {
-		construct(ctx) {
-			if (ctx.args[0]) ctx.args[0] = client.rewriteUrl(ctx.args[0]);
-		},
+	client.Intercept(class extends Text {
+		@Type("DOMString")
+		get wholeText(): string {
+			return getTextForElement(super.parentElement, super.wholeText);
+		}
 	});
-	client.Proxy("Text.prototype.appendData", {
-		apply(ctx) {
-			const text = String(ctx.args[0]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[0] = rewriteTextForElement(parent, text);
-		},
-	});
-
-	client.Proxy("Text.prototype.insertData", {
-		apply(ctx) {
-			const text = String(ctx.args[1]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[1] = rewriteTextForElement(parent, text);
-		},
-	});
-
-	client.Proxy("Text.prototype.replaceData", {
-		apply(ctx) {
-			const text = String(ctx.args[2]);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			ctx.args[2] = rewriteTextForElement(parent, text);
-		},
-	});
-
-	client.Trap("Text.prototype.wholeText", {
-		get(ctx) {
-			const parent = new client.native.Node(ctx.this).parentElement;
-			return getTextForElement(parent, ctx.get());
-		},
-		set(ctx, v) {
-			const text = String(v);
-			const parent = new client.native.Node(ctx.this).parentElement;
-			return ctx.set(rewriteTextForElement(parent, text));
-		},
+	// the declarations are not decoration: without them there is no arity
+	// check, so `node.appendData()` rewrote and appended the string
+	// "undefined" where the native owes the page a TypeError
+	client.Intercept(class extends CharacterData {
+		@Arguments("DOMString")
+		@Returns("undefined")
+		appendData(data: string): void {
+			super.appendData(rewriteTextForElement(super.parentElement, data));
+		}
+		// TODO: this is completely broken if done partially
+		@Arguments("unsigned long", "DOMString")
+		@Returns("undefined")
+		insertData(offset: number, data: string): void {
+			super.insertData(
+				offset,
+				rewriteTextForElement(super.parentElement, data)
+			);
+		}
+		@Arguments("unsigned long", "unsigned long", "DOMString")
+		@Returns("undefined")
+		replaceData(offset: number, count: number, data: string): void {
+			super.replaceData(
+				offset,
+				count,
+				rewriteTextForElement(super.parentElement, data)
+			);
+		}
 	});
 
 	client.Proxy("HTMLAnchorElement.prototype.toString", {
@@ -638,17 +742,20 @@ export default function (client: ScramjetClient, self: typeof window) {
 		}
 	);
 
-	client.Trap(
-		[
-			"HTMLIFrameElement.prototype.contentDocument",
-			"HTMLFrameElement.prototype.contentDocument",
-			"HTMLObjectElement.prototype.contentDocument",
-			"HTMLEmbedElement.prototype.contentDocument",
-		],
-		{
+	// registered one interface at a time so the native lookup is keyed on the
+	// interface the trap was installed for. reading it off `this.constructor
+	// .name` instead takes the name from the page - a shadowed `constructor`, or
+	// just a subclass, names an interface the native store has never heard of,
+	// and `client.native[...]` throws that straight out of the getter
+	for (const iface of [
+		"HTMLIFrameElement",
+		"HTMLFrameElement",
+		"HTMLObjectElement",
+		"HTMLEmbedElement",
+	]) {
+		client.Trap(`${iface}.prototype.contentDocument`, {
 			get(ctx) {
-				const realwin = new client.native[ctx.this.constructor.name](ctx.this)
-					.contentWindow;
+				const realwin = new client.native[iface](ctx.this).contentWindow;
 				if (!realwin) return realwin;
 
 				if (!(SCRAMJETCLIENT in realwin)) {
@@ -657,8 +764,8 @@ export default function (client: ScramjetClient, self: typeof window) {
 
 				return realwin.document;
 			},
-		}
-	);
+		});
+	}
 
 	client.Proxy(
 		[
