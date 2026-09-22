@@ -309,6 +309,59 @@ export default [
 		`,
 	}),
 
+	// A Response is a valid ResponseInit: `status` and `statusText` are read off
+	// `Response.prototype`, so an own-property copy of the init loses both.
+	serverTest({
+		name: "reqresp-response-init-from-fetched-response",
+		autoPass: true,
+		js: `
+			const r = await fetch("/teapot");
+			const copy = new Response("x", r);
+			assertEqual(copy.status, 418, "status carried over from the Response init");
+			// against the fetched one rather than a literal: what reaches it is
+			// the proxy's business, only that the copy carries it over is this's
+			assertEqual(copy.statusText, r.statusText, "statusText too");
+			assertEqual(copy.headers.get("x-teapot"), "short and stout", "and its headers");
+		`,
+		start: async (server) => {
+			server.on("request", (req, res) => {
+				if (res.headersSent) return;
+				const path = (req.url || "/").split("?")[0];
+				if (path === "/" || path === "/script.js") return;
+				if (path === "/teapot") {
+					res.writeHead(418, "I'm a Teapot", { "X-Teapot": "short and stout" });
+					res.end();
+					return;
+				}
+				res.writeHead(404);
+				res.end();
+			});
+		},
+	}),
+
+	// Every init member is a page getter the browser runs exactly once.
+	differential(
+		"init-getters-run-once",
+		`(async () => {
+			const reads = [];
+			const init = (extra) => ({
+				get credentials() { reads.push("credentials"); return "same-origin"; },
+				get headers() { reads.push("headers"); return { "x-a": "1" }; },
+				get mode() { reads.push("mode"); return { toString() { reads.push("mode.toString"); return "cors"; } }; },
+				...extra,
+			});
+			new Request("/x", init());
+			await fetch("/script.js", init());
+			new Response("x", { get headers() { reads.push("response.headers"); return {}; } });
+			return reads.slice().sort();
+		})()`
+	),
+
+	differential(
+		"fetch-brand-checks-its-receiver",
+		`fetch.call({}, "/script.js").then(() => "resolved", (e) => e.name)`
+	),
+
 	// --- redirects, where request.url and response.url diverge --------------
 
 	serverTest({

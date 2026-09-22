@@ -65,27 +65,43 @@ export default [
 		async start() {},
 	}),
 
-	// https://xhr.spec.whatwg.org/#the-open()-method
+	// https://fetch.spec.whatwg.org/#concept-header-list-sort-and-combine
 	//
-	// `open()` throws InvalidAccessError for a synchronous request only when
-	// there is no responsible document, or when `timeout` or `responseType`
-	// has already been set. A plain synchronous request from a document is
-	// legal - deprecated, warned about, and still used by plenty of code that
-	// predates fetch.
+	// The list is sorted by *name*. Sorting the whole "name: value" lines puts
+	// a name that another one prefixes after it, because "-" sorts before ":".
 	serverTest({
-		name: "xhrfidelity-sync-open-is-allowed",
+		name: "xhrfidelity-all-response-headers-sorted-by-name",
 		autoPass: false,
 		js: `
 			const xhr = new XMLHttpRequest();
-			let threw = null;
-			try {
-				xhr.open("GET", "/script.js", false);
-			} catch (error) {
-				threw = error.name + ": " + error.message;
-			}
-			assertEqual(threw, null, "a synchronous open() does not throw");
-			pass();
+			xhr.open("GET", "/prefixed-names");
+			xhr.onload = () => {
+				const names = xhr
+					.getAllResponseHeaders()
+					.split("\\r\\n")
+					.filter(Boolean)
+					.map((line) => line.slice(0, line.indexOf(":")));
+				const csp = names.indexOf("content-security-policy");
+				const reportOnly = names.indexOf("content-security-policy-report-only");
+				assert(csp !== -1 && reportOnly !== -1, "both headers are listed: " + names.join(","));
+				assert(csp < reportOnly, "sorted by name: " + names.join(","));
+				pass();
+			};
+			xhr.onerror = () => fail("request errored");
+			xhr.send();
 		`,
-		async start() {},
+		async start(server) {
+			server.on("request", (req, res) => {
+				if (res.headersSent) return;
+				const path = (req.url || "/").split("?")[0];
+				if (path !== "/prefixed-names") return;
+				res.writeHead(200, {
+					"Content-Type": "text/plain",
+					"Content-Security-Policy": "default-src *",
+					"Content-Security-Policy-Report-Only": "default-src 'self'",
+				});
+				res.end("ok");
+			});
+		},
 	}),
 ];

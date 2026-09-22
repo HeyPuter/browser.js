@@ -1,7 +1,23 @@
 import { GlobalScope, ScramjetClient } from "@client/index";
-import { Arguments, Constructor, Returns, Type } from "@client/webidl";
+import {
+	Arguments,
+	Constructor,
+	idlDOMString,
+	Returns,
+	Type,
+} from "@client/webidl";
 import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
-import { Object_assign, String_startsWith } from "@/shared/snapshot";
+import {
+	Object_create,
+	Reflect_apply,
+	Reflect_get,
+	String_startsWith,
+} from "@/shared/snapshot";
+
+/** The init members a string-input `fetch()` / `new Request()` reads, sorted. */
+const URL_INIT_MEMBERS = ["credentials", "headers", "mode"] as const;
+/** The only one anything else has to look at. */
+const HEADERS_INIT_MEMBER = ["headers"] as const;
 
 /**
  * Capture the page's intended `init.mode` / `init.credentials` and forward
@@ -10,12 +26,14 @@ import { Object_assign, String_startsWith } from "@/shared/snapshot";
  * Sec-Fetch-Mode / Sec-Fetch-Storage-Access, since `event.request.mode` and
  * `event.request.credentials` from the SW are derived against the rewritten
  * same-origin URL and don't reflect the page's actual intent.
+ *
+ * Takes the members as {@link readInit} read them, not the page's object.
  */
-function rewriteUrlOptionsForFetch(init: RequestInit | undefined) {
+function rewriteUrlOptionsForFetch(members: Record<string, unknown>) {
 	return {
 		// `fetch()` and `new Request()` both default mode to "cors" per spec.
-		mode: init?.mode ?? "cors",
-		credentials: init?.credentials === "include" ? "include" : undefined,
+		mode: (members.mode as string | undefined) ?? "cors",
+		credentials: members.credentials === "include" ? "include" : undefined,
 	};
 }
 
@@ -47,16 +65,61 @@ export default function (client: ScramjetClient, self: Self) {
 			? toNativeHeaders(init as Headers)
 			: init;
 
-	/** The same, for the `headers` member of a Request/Response init. */
-	const withRestoredHeaders = <T>(init: T): T => {
-		if (init === null || typeof init !== "object") return init;
+	/**
+	 * A `RequestInit` / `ResponseInit` with the members named by `keys` read
+	 * exactly once, and a tagged `headers` swapped for the corrected view.
+	 *
+	 * The native converts the whole dictionary itself, so reading a member here
+	 * and then handing the page's object on runs that member's getter twice.
+	 * Nor can the object be copied: a member may be inherited, including off a
+	 * platform object - `new Response(body, response)` reads `status` and
+	 * `statusText` from `Response.prototype`, which an own-property copy drops,
+	 * leaving a 200 OK.
+	 *
+	 * So the native is handed a view that answers the members read here from
+	 * what they read as, and sends every other `[[Get]]` to the page's object
+	 * with the page's object as the receiver, which is what keeps a platform
+	 * getter's brand check passing. `mode` and `credentials` go through
+	 * `ToString` here too, so the native converts a primitive and runs no page
+	 * code a second time. What this cannot keep is WebIDL's lexicographic
+	 * order: these members are read before the native reads the rest.
+	 */
+	const readInit = <T>(
+		init: T,
+		keys: readonly string[]
+	): { init: T; members: Record<string, unknown> } => {
+		const members: Record<string, unknown> = Object_create(null);
 
-		const headers = (init as { headers?: unknown }).headers;
-		if (!client.box.taggedHeaders.has(headers as Headers)) return init;
+		// undefined and null are the empty dictionary and anything else that is
+		// not an object is the native's TypeError to raise, so neither has a
+		// member to read
+		if (
+			init === null ||
+			(typeof init !== "object" && typeof init !== "function")
+		) {
+			return { init, members };
+		}
 
-		return Object_assign({}, init, {
-			headers: toNativeHeaders(headers as Headers),
+		for (let i = 0; i < keys.length; i++) {
+			members[keys[i]] = (init as Record<string, unknown>)[keys[i]];
+		}
+
+		if (members.mode !== undefined) members.mode = idlDOMString(members.mode);
+		if (members.credentials !== undefined) {
+			members.credentials = idlDOMString(members.credentials);
+		}
+		if (client.box.taggedHeaders.has(members.headers as Headers)) {
+			members.headers = toNativeHeaders(members.headers as Headers);
+		}
+
+		const view = new Proxy(init as object, {
+			get: (target, key) =>
+				key in members
+					? members[key as string]
+					: Reflect_get(target, key, target),
 		});
+
+		return { init: view as T, members };
 	};
 
 	/**
@@ -68,7 +131,7 @@ export default function (client: ScramjetClient, self: Self) {
 	 * URL by design, and one handed over from another realm never passed through
 	 * us at all. Fetching either as-is goes straight at the origin and fails.
 	 */
-	const rewriteRequestObject = (request: Request): Request => {
+	const rewriteRequestObject = async (request: Request): Promise<Request> => {
 		const n = new client.native.Request(request);
 		const url: string = n.url;
 
@@ -76,8 +139,10 @@ export default function (client: ScramjetClient, self: Self) {
 		if (!String_startsWith(url, "http:") && !String_startsWith(url, "https:")) {
 			return request;
 		}
+		// a disturbed body is the native's to refuse, with its own TypeError
+		if (n.bodyUsed) return request;
 
-		const init: RequestInit & { duplex?: string } = {
+		const init: RequestInit = {
 			method: n.method,
 			headers: n.headers,
 			// "navigate" cannot be reconstructed through the constructor, and a
@@ -92,10 +157,10 @@ export default function (client: ScramjetClient, self: Self) {
 			keepalive: n.keepalive,
 			signal: n.signal,
 		};
-		if (n.body) {
-			init.body = n.body;
-			init.duplex = "half";
-		}
+		// buffered rather than handed over as a stream: a stream body needs
+		// `duplex: "half"`, which a keepalive request refuses outright and which
+		// Firefox does not support at all
+		if (n.body !== null) init.body = await n.blob();
 
 		return new nativeGlobal.Request(
 			client.rewriteUrl(url, {
@@ -111,16 +176,19 @@ export default function (client: ScramjetClient, self: Self) {
 		// https://fetch.spec.whatwg.org/#requestinfo
 		@Arguments("(Request or USVString)", "optional RequestInit")
 		@Returns("Promise<Response>")
-		static async fetch(input: RequestInfo, requestInit: RequestInit = {}) {
+		static async fetch(input: RequestInfo, requestInit?: RequestInit) {
+			const { init, members } = readInit(
+				requestInit,
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+			);
 			input =
 				typeof input === "string"
-					? client.rewriteUrl(input, rewriteUrlOptionsForFetch(requestInit))
-					: rewriteRequestObject(input);
+					? client.rewriteUrl(input, rewriteUrlOptionsForFetch(members))
+					: await rewriteRequestObject(input);
 
-			const response = await nativeGlobal.fetch(
-				input,
-				withRestoredHeaders(requestInit)
-			);
+			// through `this` rather than a saved global, so the native's own
+			// receiver check still sees what the page called it on
+			const response = await new client.native.window(this).fetch(input, init);
 			client.box.taggedResponses.add(response);
 
 			return response;
@@ -129,15 +197,16 @@ export default function (client: ScramjetClient, self: Self) {
 
 	client.Intercept(class extends Request {
 		@Constructor("(Request or USVString)", "optional RequestInit")
-		static konstructor(input: RequestInfo, requestInit: RequestInit = {}) {
+		static konstructor(input: RequestInfo, requestInit?: RequestInit) {
+			const { init, members } = readInit(
+				requestInit,
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+			);
 			if (typeof input === "string") {
-				input = client.rewriteUrl(
-					input,
-					rewriteUrlOptionsForFetch(requestInit)
-				);
+				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
 			}
 
-			return new this(input, withRestoredHeaders(requestInit));
+			return new this(input, init);
 		}
 
 		@Type("USVString")
@@ -155,7 +224,7 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends Response {
 		@Constructor("optional BodyInit?", "optional ResponseInit")
 		static konstructor(body?: BodyInit | null, responseInit?: ResponseInit) {
-			return new this(body, withRestoredHeaders(responseInit));
+			return new this(body, readInit(responseInit, HEADERS_INIT_MEMBER).init);
 		}
 
 		@Type("USVString")
@@ -253,10 +322,19 @@ export default function (client: ScramjetClient, self: Self) {
 			return super.entries();
 		}
 		forEach(callbackfn: any, thisArg?: any): void {
-			if (client.box.taggedHeaders.has(this)) {
-				return toNativeHeaders(this).forEach(callbackfn, thisArg);
+			// a non-callable is the native's TypeError to raise, before any pair
+			if (
+				!client.box.taggedHeaders.has(this) ||
+				typeof callbackfn !== "function"
+			) {
+				return super.forEach(callbackfn, thisArg);
 			}
-			return super.forEach(callbackfn, thisArg);
+
+			// the callback's third argument is the Headers being iterated, so it
+			// has to be the page's object and not the corrected copy
+			toNativeHeaders(this).forEach((value, key) => {
+				Reflect_apply(callbackfn, thisArg, [value, key, this]);
+			});
 		}
 	});
 	self.Headers.prototype[self.Symbol.iterator] = self.Headers.prototype.entries;

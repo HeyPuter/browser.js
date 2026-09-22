@@ -247,6 +247,25 @@ export default [
 		},
 	}),
 
+	basicTest({
+		name: "hdrview-foreach-passes-the-headers-itself",
+		js: `
+			const h = (await fetch("/script.js")).headers;
+			const thisArg = {};
+			let calls = 0;
+			h.forEach(function (value, key, object) {
+				calls++;
+				assert(object === h, "forEach's third argument is the Headers being iterated");
+				assert(this === thisArg, "and thisArg is honoured");
+			}, thisArg);
+			assert(calls > 0, "forEach visited the headers");
+		`,
+	}),
+	differential(
+		"foreach-non-callable-throws",
+		`(async () => { (await fetch("/script.js")).headers.forEach(5); return "no throw"; })()`
+	),
+
 	// --- the guard, which reconstruction silently downgrades ----------------
 
 	differential(
