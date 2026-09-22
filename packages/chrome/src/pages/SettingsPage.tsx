@@ -28,7 +28,12 @@ import {
 	type IconDescription,
 } from "../icons";
 import { settingsService } from "..";
-import { INTERNAL_URL_PROTOCOL } from "../consts";
+import {
+	INTERNAL_URL_PROTOCOL,
+	COMPANY_FULLNAME,
+	SOURCE_LOCATION,
+	PRODUCT_FULLNAME,
+} from "../consts";
 
 function ThemePreview(this: FC<{ theme: (typeof THEMES)[number] }>) {
 	const theme = this.theme;
@@ -1368,15 +1373,17 @@ export function SettingsPage(
 											<img
 												class="browser-logo"
 												src="/icon.png"
-												alt="Browser.js Logo"
+												alt={`${PRODUCT_FULLNAME} Logo`}
 											/>
 											<div class="browser-info">
-												<h3>Browser.js</h3>
+												<h3>{PRODUCT_FULLNAME}</h3>
 												<p>
 													Scramjet Version: {versionInfo.version} (
 													{versionInfo.build})
 												</p>
-												<p>© {__COPYRIGHT_YEAR__} Puter Technologies</p>
+												<p>
+													© {__COPYRIGHT_YEAR__} {COMPANY_FULLNAME}
+												</p>
 											</div>
 										</div>
 									</div>
@@ -1388,13 +1395,10 @@ export function SettingsPage(
 									</div>
 									<div class="section-content">
 										<p>
-											Browser.js is open source software. View the source code
-											on GitHub.
+											{PRODUCT_FULLNAME} is open source software. View the
+											source code on GitHub.
 										</p>
-										<a
-											href="https://github.com/HeyPuter/browser.js"
-											class="link"
-										>
+										<a href={SOURCE_LOCATION} class="link">
 											GitHub Repository
 										</a>
 									</div>

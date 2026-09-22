@@ -1,3 +1,4 @@
+import { PRODUCT_SHORTNAME } from "./consts";
 export type AppearancePreference = "system" | "light" | "dark";
 
 export type ThemeId =
@@ -64,7 +65,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "light",
 		name: "Default Light",
 		appearance: "light",
-		description: "The default light theme for Browser.js.",
+		description: `The default light theme for ${PRODUCT_SHORTNAME}.`,
 		preview: {
 			toolbar: "#f6fcff",
 			field: "#e6f0f7",
@@ -123,7 +124,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 		id: "dark",
 		name: "Default Dark",
 		appearance: "dark",
-		description: "The default dark theme for Browser.js.",
+		description: `The default dark theme for ${PRODUCT_SHORTNAME}.`,
 		preview: {
 			toolbar: "#1f2429",
 			field: "#131719",

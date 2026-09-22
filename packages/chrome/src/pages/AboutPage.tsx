@@ -1,12 +1,13 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import { versionInfo } from "@mercuryworkshop/scramjet/bundled";
+import { PRODUCT_FULLNAME } from "../consts";
 
 export function AboutPage(this: FC<{ tab: Tab }>) {
 	return (
 		<div>
 			<div class="main">
-				<h1>Puter Browser</h1>
+				<h1>{PRODUCT_FULLNAME}</h1>
 				Scramjet Version: {versionInfo.version} ({versionInfo.build})
 			</div>
 		</div>
