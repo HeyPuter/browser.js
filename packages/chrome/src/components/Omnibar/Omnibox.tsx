@@ -11,7 +11,8 @@ import { trimUrl } from "./utils";
 import { UrlInput } from "@components/Omnibar/UrlInput";
 import { Suggestion } from "@components/Omnibar/Suggestion";
 import { requestUnfocusFrames } from "@components/Shell";
-import { tabsService } from "../..";
+import { tabsService, settingsService } from "../..";
+import { resolveNavigation } from "./navigation";
 
 export const focusOmnibox = createDelegate<void>();
 
@@ -66,9 +67,20 @@ export function Omnibox(
 	this.focusindex = 0;
 	this.searchSuggestions = [];
 	this.value = "";
+	this.realvalue = "";
+	this.active = false;
 	this.trendingSuggestions = [];
 
 	const [lock, unlock] = requestUnfocusFrames();
+	let cancelSuggestions = () => {};
+	const deactivate = () => {
+		cancelSuggestions();
+		unlock();
+		this.active = false;
+		document.body.removeEventListener("click", handleClickOutside);
+		document.body.removeEventListener("auxclick", handleClickOutside);
+	};
+	const handleClickOutside = () => deactivate();
 
 	this.cx.mount = () => {
 		setContextMenu(this.root, [
@@ -79,91 +91,64 @@ export function Omnibox(
 				},
 			},
 		]);
-
-		fetchGoogleTrending();
-		setTimeout(() => {
-			fetchGoogleTrending();
-		}, 1000);
 	};
 
 	focusOmnibox.listen(() => {
 		setTimeout(() => {
+			if (!this.root.isConnected) return;
 			activate();
 			this.subtleinput = true;
 		}, 10);
 	});
 
 	use(this.realvalue).listen(() => {
+		cancelSuggestions();
 		if (!this.realvalue) {
 			this.searchSuggestions = [];
 			return;
 		}
-
-		// if the user is actually trying to search something we can kill the trending suggestions
 		this.trendingSuggestions = [];
-
-		fetchSuggestions(this.realvalue, this.suggestionDenied, (results) => {
+		const denied = this.suggestionDenied;
+		cancelSuggestions = fetchSuggestions(this.realvalue, denied, (results) => {
 			this.searchSuggestions = results;
-
-			const firstResult = results[0];
-			if (!firstResult) return;
-			if (firstResult.kind === "search") {
-				if (!firstResult.title) return;
-				if (this.realvalue.length >= firstResult.title.length) return;
-				if (
-					!firstResult.title
-						.toLowerCase()
-						.startsWith(this.realvalue.toLowerCase())
-				)
-					return;
-
-				let currentCursor = this.input.selectionStart || 0;
-
-				this.input.setSelectionRange(
-					currentCursor,
-					currentCursor + firstResult.title.length
-				);
-				this.value = firstResult.title;
-				this.input.setSelectionRange(
-					currentCursor,
-					currentCursor + firstResult.title.length
-				);
-			} else {
-				if (!firstResult.url) return;
-
-				// todo support http:example.com
-				let normalizedUrl =
-					this.realvalue.startsWith("http://") ||
-					this.realvalue.startsWith("https://")
-						? firstResult.url.href
-						: trimUrl(firstResult.url);
-
-				if (normalizedUrl.endsWith("/") && !this.realvalue.endsWith("/")) {
-					normalizedUrl = normalizedUrl.slice(0, -1);
-				}
-				if (this.realvalue.length >= normalizedUrl.length) return;
-				if (
-					!normalizedUrl.toLowerCase().startsWith(this.realvalue.toLowerCase())
-				)
-					return;
-
-				let currentCursor = this.input.selectionStart || 0;
-
-				this.input.setSelectionRange(
-					currentCursor,
-					currentCursor + normalizedUrl.length
-				);
-				this.value = normalizedUrl;
-				this.input.setSelectionRange(
-					currentCursor,
-					currentCursor + normalizedUrl.length
-				);
-			}
+			if (this.focusindex >= results.length) this.focusindex = 0;
+			const first = results[0];
+			if (!first || denied || !this.active || this.focusindex !== 0) return;
+			const cursor = this.input.selectionStart;
+			if (
+				cursor !== this.realvalue.length ||
+				this.input.selectionEnd !== cursor
+			)
+				return;
+			const completion =
+				first.kind === "search"
+					? first.title
+					: this.realvalue.startsWith("https://")
+						? first.url.href
+						: trimUrl(first.url);
+			if (
+				!completion ||
+				completion.length <= this.realvalue.length ||
+				!completion.toLowerCase().startsWith(this.realvalue.toLowerCase())
+			)
+				return;
+			this.value = completion;
+			this.input.setSelectionRange(cursor, completion.length);
 		});
 		this.suggestionDenied = false;
 	});
 
-	use(this.url.href).listen((url) => {
+	use(
+		settingsService.settings.searchSuggestionsEnabled,
+		settingsService.settings.defaultSearchEngine
+	).listen(() => {
+		cancelSuggestions();
+		this.trendingSuggestions = [];
+		this.realvalue = this.realvalue;
+	});
+
+	use(this.url.href).listen(() => {
+		deactivate();
 		// when the url changes, clear whatever text the user might have had in the search box
 		this.value = "";
 		// also set realvalue to clear the search results
@@ -172,24 +157,15 @@ export function Omnibox(
 
 	const activate = () => {
 		this.subtleinput = false;
+		if (!this.active) lock();
 		this.active = true;
-		lock();
 
 		// empty value == just represent the url
 		if (this.value == "") {
 			if (this.url.href != `${INTERNAL_URL_PROTOCOL}//newtab`) {
-				this.realvalue = this.value = trimUrl(this.url);
+				this.value = this.url.href;
 			}
 		}
-
-		const handleClickOutside = (e: MouseEvent) => {
-			this.active = false;
-			unlock();
-			e.preventDefault();
-
-			document.body.removeEventListener("click", handleClickOutside);
-			document.body.removeEventListener("auxclick", handleClickOutside);
-		};
 
 		document.body.addEventListener("click", handleClickOutside);
 		document.body.addEventListener("auxclick", handleClickOutside);
@@ -203,7 +179,14 @@ export function Omnibox(
 			// don't clutter the results if not on a newtab page
 			fetchGoogleTrending().then(() => {
 				// pick a random 3 from the cache
-				this.trendingSuggestions = trendingCached!
+				if (
+					!this.active ||
+					this.realvalue ||
+					!settingsService.settings.searchSuggestionsEnabled ||
+					settingsService.settings.defaultSearchEngine !== "google"
+				)
+					return;
+				this.trendingSuggestions = [...(trendingCached ?? [])]
 					.sort(() => 0.5 - Math.random())
 					.slice(0, 3)
 					.map((t) => ({
@@ -220,20 +203,24 @@ export function Omnibox(
 		}
 	};
 
-	const navTo = (url: URL) => {
-		tabsService.activetab.pushNavigate(url);
-		this.active = false;
-		this.input.blur();
+	const navTo = (url: URL, newTab = false) => {
+		deactivate();
+		if (newTab) tabsService.newTab(url);
+		else tabsService.activetab.pushNavigate(url);
 	};
 
-	const doSearch = () => {
-		const selected =
-			this.focusindex < this.searchSuggestions.length
-				? this.searchSuggestions[this.focusindex]
-				: this.trendingSuggestions[
-						this.focusindex - this.searchSuggestions.length
-					];
-		navTo(selected.url);
+	const doSearch = (newTab = false) => {
+		if (!this.value.trim()) return;
+		const selected = [...this.searchSuggestions, ...this.trendingSuggestions][
+			this.focusindex
+		];
+		const url =
+			selected?.url ??
+			resolveNavigation(
+				this.value,
+				settingsService.settings.defaultSearchEngine
+			);
+		if (url) navTo(url, newTab);
 	};
 
 	this.selectContent.listen(() => {
@@ -250,6 +237,7 @@ export function Omnibox(
 				: this.trendingSuggestions[
 						this.focusindex - this.searchSuggestions.length
 					];
+		if (!focused) return;
 		this.value =
 			focused.kind === "search" ||
 			focused.kind === "trending" ||
@@ -286,7 +274,10 @@ export function Omnibox(
 				<div class="spacer"></div>
 				{use(this.searchSuggestions).mapEach((item) => (
 					<Suggestion
-						onClick={() => navTo(item.url)}
+						onClick={(e: MouseEvent) => {
+							e.stopPropagation();
+							navTo(item.url);
+						}}
 						input={this.input}
 						item={item}
 						focused={use(this.focusindex).map(
@@ -302,7 +293,10 @@ export function Omnibox(
 						item={item}
 						input={this.input}
 						layout={this.layout}
-						onClick={() => navTo(item.url)}
+						onClick={(e: MouseEvent) => {
+							e.stopPropagation();
+							navTo(item.url);
+						}}
 						focused={use(this.focusindex).map(
 							(i) =>
 								i ===
@@ -327,7 +321,14 @@ export function Omnibox(
 				)}
 				doSearch={doSearch}
 				onkeydown={(e: KeyboardEvent) => {
-					if (e.key === "ArrowDown") {
+					if (e.isComposing) return;
+					if (e.key === "Escape") {
+						e.preventDefault();
+						deactivate();
+						this.value = this.realvalue = "";
+						return;
+					}
+					if (e.key === "ArrowDown" && overflowlength() > 0) {
 						e.preventDefault();
 						let idx = this.focusindex + 1;
 						if (idx >= overflowlength()) {
@@ -336,7 +337,7 @@ export function Omnibox(
 						this.focusindex = idx;
 						updateValue();
 					}
-					if (e.key === "ArrowUp") {
+					if (e.key === "ArrowUp" && overflowlength() > 0) {
 						e.preventDefault();
 						let idx = this.focusindex - 1;
 						if (idx < 0) {
@@ -347,7 +348,7 @@ export function Omnibox(
 					}
 					if (e.key === "Enter") {
 						e.preventDefault();
-						doSearch();
+						doSearch(e.altKey);
 					}
 				}}
 				onkeyup={(e: KeyboardEvent) => {
@@ -374,7 +375,7 @@ export function Omnibox(
 				oninput={(e: InputEvent) => {
 					this.subtleinput = false;
 
-					if (e.inputType === "deleteContentBackward") {
+					if (e.isComposing || e.inputType.startsWith("delete")) {
 						this.suggestionDenied = true;
 					} else {
 						this.suggestionDenied = false;

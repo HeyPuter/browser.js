@@ -1,10 +1,11 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
 import { trimUrl } from "@components/Omnibar/utils";
+import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/navigation";
 import { Icon } from "@components/Icon";
 import { iconSearch } from "../icons";
 import { TopSiteButton, type TopSiteEntry } from "@components/TopSiteButton";
-import { profileService, tabsService } from "..";
+import { profileService, settingsService, tabsService } from "..";
 
 const MAX_TOP_SITES = 8;
 
@@ -83,14 +84,19 @@ export function NewTabPage(this: FC<{ tab: Tab }>) {
 						</div>
 						<input
 							on:keydown={(e: KeyboardEvent) => {
-								if (e.key === "Enter") {
+								if (e.key === "Enter" && !e.isComposing) {
 									e.preventDefault();
 									tabsService.searchNavigate(
 										(e.target as HTMLInputElement).value
 									);
 								}
 							}}
-							placeholder="Search Google or type A URL"
+							placeholder={use(
+								settingsService.settings.defaultSearchEngine
+							).map(
+								(engine) =>
+									`Search ${AVAILABLE_SEARCH_ENGINES[engine].name} or type a URL`
+							)}
 						></input>
 					</div>
 				</div>

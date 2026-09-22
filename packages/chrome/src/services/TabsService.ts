@@ -2,8 +2,7 @@ import { createDelegate } from "dreamland/core";
 import { Tab, type SerializedTab } from "../Tab/Tab.tsx";
 import { Service } from "./Service.ts";
 import { INTERNAL_URL_PROTOCOL } from "../consts.ts";
-// TODO: centralize this to one place somehow
-import * as tldts from "tldts";
+import { resolveNavigation } from "../components/Omnibar/navigation";
 import { puterBranding, isPuter, openUrl, settingsService } from "../index.ts";
 import { focusOmnibox } from "@components/Omnibar/Omnibox.tsx";
 import { uuid } from "../util";
@@ -159,26 +158,11 @@ export class TabsService extends Service {
 		this.markDirty();
 	}
 
-	searchNavigate(url: string) {
-		function validTld(hostname: string) {
-			const res = tldts.parse(url);
-			if (!res.domain) return false;
-			if (res.isIp || res.isIcann) return true;
-			return false;
-		}
-
-		// TODO: dejank
-		if (URL.canParse(url)) {
-			this.activetab.pushNavigate(new URL(url));
-		} else if (
-			URL.canParse("https://" + url) &&
-			validTld(new URL("https://" + url).hostname)
-		) {
-			let fullurl = new URL("https://" + url);
-			this.activetab.pushNavigate(fullurl);
-		} else {
-			const search = `https://google.com/search?q=${encodeURIComponent(url)}`;
-			this.activetab.pushNavigate(new URL(search));
-		}
+	searchNavigate(input: string) {
+		const url = resolveNavigation(
+			input,
+			settingsService.settings.defaultSearchEngine
+		);
+		if (url) this.activetab.pushNavigate(url);
 	}
 }

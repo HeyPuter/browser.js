@@ -30,7 +30,7 @@ export function UrlInput(
 				{use(this.active)
 					.and(
 						use(this.favicon)
-							.and(<Favicon url={this.favicon}></Favicon>)
+							.and(<Favicon iconUrl={use(this.favicon)}></Favicon>)
 							.or(<Icon icon={iconSearch}></Icon>)
 					)
 					.or(<SiteOptionsButton></SiteOptionsButton>)}
@@ -38,6 +38,8 @@ export function UrlInput(
 			{use(this.active).and(
 				<input
 					spellcheck="false"
+					aria-label="Search or enter address"
+					autocomplete="off"
 					this={use(this.input)}
 					value={use(this.value)}
 					on:keydown={(e: KeyboardEvent) => {

@@ -1,11 +1,7 @@
-import { INTERNAL_URL_PROTOCOL } from "../../consts";
-
-export function trimUrl(v: URL) {
-	let isDirectSchema = v.hostname === "";
-	return (
-		(isDirectSchema || v.protocol === INTERNAL_URL_PROTOCOL ? v.protocol : "") +
-		v.host +
-		(v.search ? v.pathname : v.pathname.replace(/\/$/, "")) +
-		v.search
-	);
+export function trimUrl(url: URL) {
+	if (url.protocol !== "https:") return url.href;
+	const display = url.href.slice("https://".length);
+	return url.pathname === "/" && !url.search && !url.hash
+		? display.slice(0, -1)
+		: display;
 }
