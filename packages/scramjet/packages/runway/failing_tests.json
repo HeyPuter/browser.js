@@ -1,8 +1,5 @@
 {
 	"tests": [
-		"cachestorage-add-and-addall",
-		"cachestorage-keys-not-namespaced",
-		"cachestorage-request-keys-urls",
 		"cssurls-author-string-preserved",
 		"cssurls-computed-style",
 		"cssurls-cssom-write-serialization",
@@ -113,7 +110,6 @@
 		"modules-importmap",
 		"originisolation-cross-site-frame-access",
 		"platform-error-stack-urls",
-		"platform-indexeddb-databases",
 		"platform-navigator-serviceworker",
 		"platform-objecturl-revoke",
 		"platform-resource-timing-no-proxy-internals",
@@ -137,12 +133,8 @@
 		"shadowing-var-location-function-ctor",
 		"shadowing-var-location-multi-declarator",
 		"shadowing-var-location-nested-block",
-		"storage-clear",
-		"storage-delete-property",
 		"storage-event-child-frame",
 		"storage-event-parent-listens",
-		"storage-key-by-index",
-		"storage-missing-property-is-undefined",
 		"stylesheets-constructable-url-readback",
 		"stylesheets-document-stylesheets-href",
 		"unsafeprops-delete",
@@ -224,6 +216,7 @@
 		"rewriter-css-unrewrite-regression-import-layer-supports-media",
 		"rewriter-css-unrewrite-uppercase-url-function",
 		"rewriter-css-unrewrite-url",
-		"broadcastchannel-cross-origin-isolated"
+		"broadcastchannel-cross-origin-isolated",
+		"cachekey-retrieved-response-is-fully-corrected"
 	]
 }
