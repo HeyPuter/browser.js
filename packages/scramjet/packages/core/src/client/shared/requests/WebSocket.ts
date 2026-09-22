@@ -295,7 +295,12 @@ export default function (client: ScramjetClient, self: Self) {
 		MessageEvent,
 		setTimeout,
 	} = self;
-	// read now, while the page cannot have replaced it
+	// read once, here, rather than per socket. `prototype` on an interface
+	// object is non-writable and non-configurable, so these reads could not
+	// be redirected later either - but nothing below has to rely on that
+	const WebSocket_prototype = WebSocket.prototype;
+	const ArrayBuffer_prototype = ArrayBuffer.prototype;
+	// and this one while the page cannot have replaced it
 	const Blob_arrayBuffer = Blob.prototype.arrayBuffer;
 
 	const socketmap = client.box.socketmap;
@@ -308,9 +313,9 @@ export default function (client: ScramjetClient, self: Self) {
 			const parsed = parseWebSocketUrl(client, "WebSocket", url);
 
 			const fakeWebSocket = new EventTarget();
-			// both prototypes are tainted - intentional
-			// but we must not resolve WebSocket->prototype at runtime, since it can be redirected
-			Object_setPrototypeOf(fakeWebSocket, WebSocket.prototype);
+			// the page's prototype, which it may have modified - intentional:
+			// that is what a real socket would inherit from too
+			Object_setPrototypeOf(fakeWebSocket, WebSocket_prototype);
 			// no own `constructor`: it used to be assigned here, which left an
 			// own property on every instance where a real WebSocket has none,
 			// so `Object.getOwnPropertyNames(ws)` answered ["constructor"].
@@ -461,7 +466,7 @@ export default function (client: ScramjetClient, self: Self) {
 						const blob = new Blob([data]);
 						state.steps.push(() => deliver(blob));
 					} else {
-						Object_setPrototypeOf(data, ArrayBuffer.prototype);
+						Object_setPrototypeOf(data, ArrayBuffer_prototype);
 						state.steps.push(() => deliver(data));
 					}
 				} else if ("arrayBuffer" in data) {
@@ -472,7 +477,7 @@ export default function (client: ScramjetClient, self: Self) {
 						Promise_then(
 							Reflect_apply(Blob_arrayBuffer, data, []),
 							(buffer: ArrayBuffer) => {
-								Object_setPrototypeOf(buffer, ArrayBuffer.prototype);
+								Object_setPrototypeOf(buffer, ArrayBuffer_prototype);
 								ready(() => deliver(buffer));
 							},
 							() => ready(() => {})

@@ -101,6 +101,9 @@ export default function (client: ScramjetClient, self: Self) {
 		AbortSignal,
 		EventTarget,
 	} = self;
+	// read once, here, rather than per stream - see `WebSocket.ts`
+	const WebSocketStream_prototype = WebSocketStream.prototype;
+	const ArrayBuffer_prototype = ArrayBuffer.prototype;
 	// read now, while the page cannot have replaced them. The getters are the
 	// natives, so calling one on something that is not what it belongs to is a
 	// brand check the page cannot fake
@@ -191,10 +194,9 @@ export default function (client: ScramjetClient, self: Self) {
 			const parsed = parseWebSocketUrl(client, "WebSocketStream", url);
 
 			// no own `constructor`, for the reason `WebSocket` has none - and
-			// the prototype read off the interface object captured at install,
-			// whose `prototype` is non-writable, rather than off `this`
+			// the prototype captured at install rather than read off `this`
 			const fakeWebSocketStream = {};
-			Object_setPrototypeOf(fakeWebSocketStream, WebSocketStream.prototype);
+			Object_setPrototypeOf(fakeWebSocketStream, WebSocketStream_prototype);
 
 			let resolveOpened!: (info: WebSocketOpenInfo) => void;
 			let rejectOpened!: (error: unknown) => void;
@@ -441,7 +443,7 @@ export default function (client: ScramjetClient, self: Self) {
 					steps.push(() => deliver(data));
 				} else if ("byteLength" in data) {
 					// arraybuffer, set the realms prototype so its recognized
-					Object_setPrototypeOf(data, ArrayBuffer.prototype);
+					Object_setPrototypeOf(data, ArrayBuffer_prototype);
 					steps.push(() => deliver(data));
 				} else if ("arrayBuffer" in data) {
 					// blob, convert to arraybuffer - which takes a turn, so it
@@ -450,7 +452,7 @@ export default function (client: ScramjetClient, self: Self) {
 					Promise_then(
 						Reflect_apply(Blob_arrayBuffer, data, []),
 						(buffer: ArrayBuffer) => {
-							Object_setPrototypeOf(buffer, ArrayBuffer.prototype);
+							Object_setPrototypeOf(buffer, ArrayBuffer_prototype);
 							ready(() => deliver(buffer));
 						},
 						() => ready(() => {})
