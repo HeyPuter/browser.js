@@ -9,6 +9,8 @@ import {
 	_WeakSet,
 	Object_create,
 } from "@/shared/snapshot";
+import { FakeWebSocketState } from "./shared/requests/WebSocket";
+import { FakeWebSocketStreamState } from "./shared/requests/WebSocketStream";
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
@@ -43,6 +45,11 @@ export class SingletonBox {
 		new _WeakMap();
 
 	unproxy: _Map<any, any> = new _Map([]);
+
+	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap([]);
+	socketstreammap: _WeakMap<WebSocketStream, FakeWebSocketStreamState> =
+		new _WeakMap([]);
+
 	ctors: Record<string, Function[]> = Object_create(null);
 
 	sourcemaps: SourceMaps = {};
