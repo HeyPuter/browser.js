@@ -82,7 +82,7 @@ export default [
 			"scramjet-core": scramjetCorePlugin,
 		},
 		rules: {
-			"scramjet-core/intercept-brand-check": "warn",
+			"scramjet-core/intercept-brand-check": "error",
 			"scramjet-core/no-globals": [
 				"error",
 				{

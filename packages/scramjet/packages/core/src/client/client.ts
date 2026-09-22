@@ -55,7 +55,6 @@ import {
 	Object_getOwnPropertyNames,
 	Object_getPrototypeOf,
 	Object_setPrototypeOf,
-	Function_call,
 	Object_assign,
 	Promise_then,
 	String_startsWith,

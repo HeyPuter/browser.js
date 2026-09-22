@@ -1,15 +1,11 @@
 import { iswindow, isworker } from "@client/entry";
-import { SCRAMJETCLIENT } from "@/symbols";
 import { GlobalScope, ScramjetClient } from "@client/index";
-import {
-	Object_defineProperty,
-	Object_getPrototypeOf,
-} from "@/shared/snapshot";
+import { Object_getPrototypeOf } from "@/shared/snapshot";
 import { Arguments } from "@client/webidl";
 import { incumbencyMode, rawCallSites } from "@/shared/incumbency";
-import { incumbentClient, realmForFrame } from "./incumbency";
+import { incumbentClient } from "./incumbency";
 
-export default function (client: ScramjetClient, self: Self) {
+export default function (client: ScramjetClient, _self: Self) {
 	const getLegacyRealm = (args: any[]) => {
 		let pollutant: any;
 
