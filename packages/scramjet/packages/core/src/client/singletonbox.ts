@@ -37,6 +37,57 @@ export class SingletonBox {
 		EventTarget,
 		_Map<string, _WeakMap<object, (...args: any) => any>>
 	> = new _WeakMap();
+
+	/**
+	 * The wrapper handed back in place of each element's `NamedNodeMap`, and the
+	 * element each map belongs to.
+	 *
+	 * `attributes` is `[SameObject]`, so `el.attributes === el.attributes` has to
+	 * hold and a fresh Proxy per read is a one-expression tell. The wrapper is
+	 * what hides scramjet's own attributes and surfaces the ones a rewrite rule
+	 * removed, which the native map knows nothing about.
+	 *
+	 * The owner is recorded because a `NamedNodeMap` has no back-reference to its
+	 * element, and `setNamedItem` has to reach the element to rewrite what it is
+	 * inserting - including on a map that is currently empty, where there is no
+	 * attribute to ask.
+	 *
+	 * Shared rather than per-client for the same reason `styleDeclarations` is:
+	 * [SameObject] is a property of the element, not of the realm reading it.
+	 */
+	attributeMaps: _WeakMap<NamedNodeMap, NamedNodeMap> = new _WeakMap();
+	attributeOwners: _WeakMap<NamedNodeMap, Element> = new _WeakMap();
+
+	/**
+	 * The original text of every script and style element whose source scramjet
+	 * rewrote, and of every character data node inside one.
+	 *
+	 * A script's source also lives in an attribute (the HTML rewriter writes it
+	 * there, and it survives cloning and serialization), but a style's has
+	 * nowhere to go, and a text node's has to be tracked per node so that the
+	 * concatenation of an element's children can be rebuilt from its parts.
+	 *
+	 * Shared rather than per-client because a node reached from a second frame
+	 * has to report the same text it does in the first.
+	 */
+	elementSources: _WeakMap<Element, string> = new _WeakMap();
+	characterDataSources: _WeakMap<CharacterData, string> = new _WeakMap();
+
+	/**
+	 * The element each `SVGAnimatedString` handed out for an `href` belongs to.
+	 *
+	 * `SVGAnimatedString` carries no back-reference to its element or to the
+	 * attribute it reflects, and `svg.href.baseVal` has to answer with the URL
+	 * the page wrote rather than the rewritten one in the document. Recorded when
+	 * the element's `href` is read, which is the only way to reach the object;
+	 * `href` is [SameObject], so one entry answers for every later read.
+	 *
+	 * Keyed this way round rather than un-rewriting whatever string turns up: an
+	 * `SVGAnimatedString` is also `className` and `target`, and running a class
+	 * list through the URL un-rewriter is both wrong and loud.
+	 */
+	svgHrefs: _WeakMap<SVGAnimatedString, Element> = new _WeakMap();
+
 	// real events that we're wrapping in event.ts
 	wrappedEvents: _WeakMap<Event, Event> = new _WeakMap();
 	// the reverse: the real event behind each stand-in event.ts hands out
