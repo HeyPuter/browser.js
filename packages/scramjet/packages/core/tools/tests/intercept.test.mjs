@@ -400,3 +400,181 @@ test("all Number-based IDL coercers reject BigInt primitives and object results"
 		17
 	);
 });
+
+test("about:blank and srcdoc retain their inherited origin after fragment navigation", async () => {
+	assert.deepEqual(
+		await evaluate(async () => {
+			const results = [];
+			for (const srcdoc of [false, true]) {
+				const frame = document.createElement("iframe");
+				if (srcdoc) frame.srcdoc = "<!doctype html>";
+				const loaded = new Promise((resolve) => (frame.onload = resolve));
+				document.body.append(frame);
+				await loaded;
+				const client = fixture.makeClient();
+				client.global = frame.contentWindow;
+				client.unrewriteUrl = (value) => value;
+				client.creatorOrigin = location.origin;
+				client.opaqueScope = "opaque-test";
+				const before = client.siteOrigin;
+				frame.contentWindow.location.hash = "hello?query#fragment";
+				results.push({
+					before,
+					after: client.siteOrigin,
+					scope: client.scopeOrigin,
+					native: frame.contentWindow.origin,
+				});
+				frame.remove();
+			}
+			return results;
+		}),
+		Array(2).fill({
+			before: "http://intercept.test",
+			after: "http://intercept.test",
+			scope: "http://intercept.test",
+			native: "http://intercept.test",
+		})
+	);
+});
+
+test("origin inheritance matches about URLs precisely and preserves opaque scope", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			const client = fixture.makeClient();
+			client.creatorOrigin = "https://creator.test";
+			client.opaqueScope = "opaque-test";
+			const results = [];
+			for (const href of [
+				"about:blank?query#fragment",
+				"about:blank?#",
+				"about:srcdoc#?query",
+				"about:srcdoc?",
+				"about:srcdoc?query#fragment",
+				"about:blank-other#fragment",
+				"about://host/blank#fragment",
+				"https://site.test/about:blank#fragment",
+				"data:text/html,hello#fragment",
+			]) {
+				Object.defineProperty(client, "url", {
+					configurable: true,
+					value: new URL(href),
+				});
+				results.push(client.siteOrigin);
+			}
+			client.creatorOrigin = null;
+			Object.defineProperty(client, "url", {
+				value: new URL("about:blank#fragment"),
+			});
+			return { results, origin: client.siteOrigin, scope: client.scopeOrigin };
+		}),
+		{
+			results: [
+				"https://creator.test",
+				"https://creator.test",
+				"https://creator.test",
+				"null",
+				"null",
+				"null",
+				"null",
+				"https://site.test",
+				"null",
+			],
+			origin: null,
+			scope: "opaque-test",
+		}
+	);
+});
+
+test("stack formatting matches native fallback headers when error getters throw", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			function samples() {
+				const results = [];
+				for (const thrown of [
+					new Error("name getter"),
+					"primitive",
+					{
+						get name() {
+							throw new Error("nested");
+						},
+					},
+				]) {
+					const error = new Error("original");
+					Object.defineProperty(error, "name", {
+						get() {
+							throw thrown;
+						},
+					});
+					const stack = error.stack;
+					results.push({
+						header: stack.split("\n")[0],
+						frames: stack.includes("\n    at "),
+					});
+				}
+				results.push({
+					header: new Error("ordinary").stack.split("\n")[0],
+					frames: true,
+				});
+				return results;
+			}
+			const native = samples();
+			fixture.installErrorFormatter({
+				global: globalThis,
+				config: { maskedfiles: [] },
+				context: {},
+			});
+			return { native, patched: samples() };
+		}),
+		{
+			native: [
+				{ header: "<error: Error: name getter>", frames: true },
+				{ header: "<error>", frames: true },
+				{ header: "<error>", frames: true },
+				{ header: "Error: ordinary", frames: true },
+			],
+			patched: [
+				{ header: "<error: Error: name getter>", frames: true },
+				{ header: "<error>", frames: true },
+				{ header: "<error>", frames: true },
+				{ header: "Error: ordinary", frames: true },
+			],
+		}
+	);
+});
+
+test("Intercept warns about added native accessor halves and still installs them", async () => {
+	assert.deepEqual(
+		await evaluate(() => {
+			const warnings = [];
+			globalThis.dbg = { warn: (message) => warnings.push(message) };
+			const client = fixture.makeClient();
+			let written;
+			class Handler extends Blob {
+				get size() {
+					return super.size;
+				}
+				set size(value) {
+					written = value;
+				}
+			}
+			client.Intercept(Handler);
+			const blob = new Blob(["abc"]);
+			blob.size = 7;
+			return {
+				warnings,
+				size: blob.size,
+				written,
+				setter: typeof Object.getOwnPropertyDescriptor(Blob.prototype, "size")
+					.set,
+			};
+		}),
+		{
+			warnings: [
+				"Intercept(Blob.size) adds a setter absent from the native attribute",
+			],
+			size: 3,
+			written: 7,
+			setter: "function",
+		}
+	);
+});

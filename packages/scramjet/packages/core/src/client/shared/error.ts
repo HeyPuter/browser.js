@@ -4,6 +4,7 @@ import { SCRAMJET_SCRIPT_URL } from "@client/nativeerror";
 import {
 	Error_prototype_toString,
 	Object_defineProperty,
+	Reflect_apply,
 	String,
 	String_endsWith,
 	String_split,
@@ -31,7 +32,22 @@ export default function (client: ScramjetClient, _self: Self) {
 
 	const closure = (error: any, frames: any[]) => {
 		// stack must be entirely rebuilt by us
-		let stack: string = Error_prototype_toString.call(error);
+		let stack: string;
+		try {
+			stack = Reflect_apply(Error_prototype_toString, error, []);
+		} catch (formatError) {
+			// Match V8's AppendErrorString fallback, including a second failure
+			// while formatting the exception thrown by a name/message getter.
+			// https://github.com/v8/v8/blob/main/src/execution/messages.cc
+			try {
+				stack =
+					"<error: " +
+					Reflect_apply(Error_prototype_toString, formatError, []) +
+					">";
+			} catch {
+				stack = "<error>";
+			}
+		}
 
 		for (let i = 0; i < frames.length; i++) {
 			let url: string | null = null;

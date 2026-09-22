@@ -59,6 +59,7 @@ import {
 	Promise_then,
 	String_startsWith,
 	String_trim,
+	String_split,
 } from "@/shared/snapshot";
 import {
 	isConstructorMember,
@@ -686,12 +687,20 @@ export class ScramjetClient {
 	 * {@link scopeOrigin} hands out.
 	 */
 	get siteOrigin(): string | null {
-		const href = this.url.href;
-		if (href !== "about:blank" && href !== "about:srcdoc") {
-			return this.url.origin;
+		const url = this.url;
+		// Fragments preserve the document's inherited origin. Queries are also
+		// allowed for about:blank, but not for about:srcdoc.
+		// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#matches-about:blank
+		const href = String_split(url.href, "#")[0];
+		if (
+			href === "about:blank" ||
+			String_startsWith(href, "about:blank?") ||
+			href === "about:srcdoc"
+		) {
+			return this.creatorOrigin;
 		}
 
-		return this.creatorOrigin;
+		return url.origin;
 	}
 
 	/**
@@ -1333,6 +1342,16 @@ return { apply, construct };
 			const check = instance ? checkReceiver : undefined;
 
 			if (oldDescriptor.get || oldDescriptor.set) {
+				if (handlerDescriptor.get && !oldDescriptor.get) {
+					dbg.warn(
+						`Intercept(${member}) adds a getter absent from the native attribute`
+					);
+				}
+				if (handlerDescriptor.set && !oldDescriptor.set) {
+					dbg.warn(
+						`Intercept(${member}) adds a setter absent from the native attribute`
+					);
+				}
 				// a getter takes no arguments, so there is nothing to validate on one
 				newDescriptor.get = handlerDescriptor.get
 					? createProxy(
