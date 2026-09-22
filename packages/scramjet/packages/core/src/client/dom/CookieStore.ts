@@ -121,27 +121,33 @@ export default function (client: ScramjetClient, _self: Self) {
 		return query(name, url);
 	};
 
-	type WriteInit = {
-		name: string;
-		value: string;
-		domain: string | null;
-		path: string;
-		expires: number | null;
-		sameSite: CookieSameSite;
-		partitioned: boolean;
-	};
+	/**
+	 * The converted members of a write, whichever of the four call shapes
+	 * produced it. `CookieInit` is the widest of them, so the reader's own
+	 * output type is the shape — declaring it again by hand is a second copy of
+	 * the member list to keep in step with {@link readCookieInit}.
+	 */
+	type WriteInit = ReturnType<typeof readCookieInit>;
 
 	/**
 	 * https://cookiestore.spec.whatwg.org/#set-a-cookie
 	 *
 	 * The Set-Cookie text for a write, or null when the write is invalid.
 	 *
-	 * Null means "hand this to the native store", not "throw" — see
-	 * {@link nativeInit}. Every rejection that returns null is one the browser
-	 * makes too, so the page gets the browser's own message instead of our
-	 * approximation of it, which is the same bargain `compileIDLValidator`
-	 * strikes for arguments. The two rejections that throw instead are marked
-	 * where they sit: for those, delegating would have the native write for real.
+	 * Null means "hand this to the native store", not "throw". Every rejection
+	 * that returns null is one the browser makes too, so the page gets the
+	 * browser's own message instead of our approximation of it, which is the
+	 * same bargain `compileIDLValidator` strikes for arguments. The two
+	 * rejections that throw instead are marked where they sit: for those,
+	 * delegating would have the native write for real.
+	 *
+	 * The native cannot write as a side effect of a delegated call. Every write
+	 * handed over is one the browser rejects on its own terms — a ';' or '=' in
+	 * the name, a dotted domain, a path with no leading slash, a __Host-
+	 * violation, a pair the parser would not take — none of which depend on
+	 * which origin is asking. What it receives is the {@link WriteInit} we built
+	 * out of already-converted values, never the page's own object, whose
+	 * getters have run once and must not run a second time.
 	 *
 	 * Writes are serialized rather than applied structurally so they go through
 	 * the identical path as the `document.cookie` setter — one jar, mutually
@@ -239,30 +245,6 @@ export default function (client: ScramjetClient, _self: Self) {
 		await client.init.sendSetCookie([{ url: client.url, cookie }]);
 	};
 
-	/**
-	 * The dictionary to hand the native store for a write {@link serialize}
-	 * rejected, so that the page sees a real browser TypeError.
-	 *
-	 * Rebuilt from the values we already converted rather than forwarding the
-	 * page's own object: its getters have run once, and running them a second
-	 * time is exactly the fingerprint the IDL layer exists to prevent.
-	 *
-	 * The native cannot write as a side effect of this. We only get here for a
-	 * cookie the browser rejects on its own terms — a ';' or '=' in the name, a
-	 * dotted domain, a path with no leading slash, a __Host- violation, a pair
-	 * the parser would not take — none of which depend on which origin is
-	 * asking.
-	 */
-	const nativeInit = (init: WriteInit): CookieInit => ({
-		name: init.name,
-		value: init.value,
-		domain: init.domain,
-		path: init.path,
-		expires: init.expires,
-		sameSite: init.sameSite,
-		partitioned: init.partitioned,
-	});
-
 	client.Intercept(class extends CookieStore {
 		@Returns("Promise<CookieListItem?>")
 		@Arguments("optional (USVString or CookieStoreGetOptions)")
@@ -314,7 +296,7 @@ export default function (client: ScramjetClient, _self: Self) {
 				};
 				const cookie = serialize(init);
 
-				return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
+				return cookie === null ? super.set(init) : commit(cookie);
 			}
 
 			const {
@@ -338,7 +320,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			};
 			const cookie = serialize(init);
 
-			return cookie === null ? super.set(nativeInit(init)) : commit(cookie);
+			return cookie === null ? super.set(init) : commit(cookie);
 		}
 
 		/** A delete is a write of an empty value that already expired. */
@@ -367,9 +349,7 @@ export default function (client: ScramjetClient, _self: Self) {
 				};
 				const cookie = serialize(init);
 
-				return cookie === null
-					? super.delete(nativeInit(init))
-					: commit(cookie);
+				return cookie === null ? super.delete(init) : commit(cookie);
 			}
 
 			const { domain, name, partitioned, path } =
@@ -384,7 +364,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			};
 			const cookie = serialize(init);
 
-			return cookie === null ? super.delete(nativeInit(init)) : commit(cookie);
+			return cookie === null ? super.delete(init) : commit(cookie);
 		}
 	});
 }
