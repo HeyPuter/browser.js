@@ -13,12 +13,12 @@ import {
 	_WeakMap,
 } from "@/shared/snapshot";
 import { Arguments, Returns, Type, idlDOMString } from "@client/webidl";
-import { attributeAccess, mirrorAttributeName } from "@client/dom/element";
+import { mirrorAttributeName } from "@client/attributes";
 
 export default function (client: ScramjetClient, self: Self) {
 	const rewrite = (css: string) => rewriteCss(css, client.context, client.meta);
 	const unrewrite = (css: string) => unrewriteCss(css, client.context);
-	const attrs = attributeAccess(client);
+	const attrs = client.attributes;
 	const STYLE_MIRROR = mirrorAttributeName("style");
 
 	/**

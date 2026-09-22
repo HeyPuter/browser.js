@@ -22,6 +22,8 @@ import {
 } from "@/shared";
 import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
+import { AttributeLayer } from "./attributes";
+import { TextLayer } from "./text";
 import { ScramjetConfig } from "@/types";
 import { Tap } from "@/Tap";
 import {
@@ -263,6 +265,11 @@ export class ScramjetClient {
 
 	box: SingletonBox;
 
+	/** The attribute layer: every attribute read and write goes through it. */
+	attributes: AttributeLayer;
+	/** The text layer: a script's and a style's source, and the text around them. */
+	text: TextLayer;
+
 	context: ScramjetContext;
 
 	initHeaders: ScramjetHeaders;
@@ -404,6 +411,8 @@ export class ScramjetClient {
 
 		this.saveNatives();
 		this.errors = new NativeErrors(global as Self);
+		this.attributes = new AttributeLayer(this);
+		this.text = new TextLayer(this);
 
 		this.box.registerClient(this, global as Self);
 

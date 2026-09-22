@@ -4,7 +4,6 @@ import { ForeignContext } from "@/shared/rewriters/html";
 import { String } from "@/shared/snapshot";
 import { Arguments, Returns } from "@client/webidl";
 import { foreignContextForElement } from "@client/dom/markup";
-import { textAccess } from "@client/dom/node";
 
 const ELEMENT_NODE = 1;
 const ATTRIBUTE_NODE = 2;
@@ -28,7 +27,7 @@ function foreignContextForRange(
 }
 
 export default function (client: ScramjetClient, _self: Self) {
-	const text = textAccess(client);
+	const text = client.text;
 
 	const parentOf = (n: Node): Node | null =>
 		new client.native.Node(n).parentNode;

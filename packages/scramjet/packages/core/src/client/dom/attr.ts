@@ -21,12 +21,10 @@
 import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type } from "@client/webidl";
 import {
-	attributeAccess,
-	insertAttributeNode,
 	isInternalAttribute,
 	mirrorAttributeName,
 	mirroredAttributeName,
-} from "@client/dom/element";
+} from "@client/attributes";
 import {
 	Number,
 	Number_isInteger,
@@ -38,46 +36,6 @@ import {
 	String,
 	_Map,
 } from "@/shared/snapshot";
-
-/**
- * The value an `Attr` should report, which is its element's mirror when it has
- * one. Shared with `dom/text.ts`, which owns `Node.prototype.nodeValue` and
- * `textContent` - both of which are an attribute's value when the node is one.
- */
-export function attrValue(client: ScramjetClient, attr: Attr): string {
-	const attrs = attributeAccess(client);
-	const name = attrs.attrName(attr);
-	// a mirror's own value *is* the page's value
-	if (isInternalAttribute(name)) return attrs.attrValue(attr);
-
-	const owner = attrs.owner(attr);
-	if (!owner) return attrs.attrValue(attr);
-
-	const mirror = attrs.raw.get(owner, mirrorAttributeName(name));
-
-	return mirror === null ? attrs.attrValue(attr) : mirror;
-}
-
-/** The write half of {@link attrValue}, so a rule sees the value first. */
-export function setAttrValue(
-	client: ScramjetClient,
-	attr: Attr,
-	value: string
-): void {
-	const attrs = attributeAccess(client);
-	const name = attrs.attrName(attr);
-	const owner = attrs.owner(attr);
-
-	// detached, or the mirror itself: there is no rule to apply, and writing the
-	// mirror is how the page's value is meant to be changed
-	if (!owner || isInternalAttribute(name)) {
-		attrs.setAttrValue(attr, value);
-
-		return;
-	}
-
-	attrs.set(owner, name, value);
-}
 
 /**
  * The position `prop` names in the map, or -1 when it does not name one.
@@ -96,7 +54,7 @@ function indexOf(prop: string | symbol): number {
 }
 
 export default function (client: ScramjetClient, _self: Self) {
-	const attrs = attributeAccess(client);
+	const attrs = client.attributes;
 
 	/**
 	 * The real map behind `map`, which is the wrapper whenever the page called
@@ -346,7 +304,7 @@ export default function (client: ScramjetClient, _self: Self) {
 
 			// the same operation as `Element.setAttributeNode`, under another
 			// name, so it goes through the same rewrite
-			return insertAttributeNode(client, element, attr, false);
+			return attrs.insertNode(element, attr, false);
 		}
 
 		@Arguments("Attr")
@@ -357,7 +315,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (!element)
 				return new client.native.NamedNodeMap(map).setNamedItemNS(attr);
 
-			return insertAttributeNode(client, element, attr, true);
+			return attrs.insertNode(element, attr, true);
 		}
 
 		@Arguments("DOMString")
@@ -459,14 +417,14 @@ export default function (client: ScramjetClient, _self: Self) {
 		get value(): string {
 			void super.name;
 
-			return attrValue(client, this);
+			return attrs.visibleValue(this);
 		}
 
 		@Type("DOMString")
 		set value(value: string) {
 			void super.name;
 
-			setAttrValue(client, this, String(value));
+			attrs.setVisibleValue(this, String(value));
 		}
 	});
 }

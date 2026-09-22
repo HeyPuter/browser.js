@@ -24,12 +24,11 @@
 
 import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
-import { attributeAccess } from "@client/dom/element";
 import { unrewriteUrl } from "@rewriters/url";
 import { String, String_startsWith, _URL } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
-	const attrs = attributeAccess(client);
+	const attrs = client.attributes;
 
 	const DOCUMENT_NODE = 9;
 

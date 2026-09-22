@@ -15,7 +15,6 @@
 
 import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type } from "@client/webidl";
-import { textAccess } from "@client/dom/node";
 import { rewriteHtml, unrewriteHtml } from "@rewriters/html";
 import { ForeignContext } from "@/shared/rewriters/html";
 import { isHtmlMimeType } from "@/shared/mime";
@@ -90,7 +89,7 @@ export function insideForeignContext(
 }
 
 export default function (client: ScramjetClient, _self: Self) {
-	const text = textAccess(client);
+	const text = client.text;
 
 	const parse = (
 		html: string,
