@@ -70,7 +70,9 @@ export default function (client: ScramjetClient, self: Self) {
 			// in its place
 			if (!super.getSVGDocument()) return null;
 
-			return this.contentDocument;
+			// through the same steps as the `contentDocument` getter above, not
+			// through `this.contentDocument`, which the page can shadow
+			return contentDocument(super.contentWindow, this, super.contentDocument);
 		}
 	});
 
@@ -90,7 +92,9 @@ export default function (client: ScramjetClient, self: Self) {
 		getSVGDocument(): Document | null {
 			if (!super.getSVGDocument()) return null;
 
-			return this.contentDocument;
+			// through the same steps as the `contentDocument` getter above, not
+			// through `this.contentDocument`, which the page can shadow
+			return contentDocument(super.contentWindow, this, super.contentDocument);
 		}
 	});
 

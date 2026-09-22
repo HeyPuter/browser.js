@@ -26,27 +26,10 @@ import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
 import { attributeAccess } from "@client/dom/element";
 import { unrewriteUrl } from "@rewriters/url";
-import {
-	Reflect_apply,
-	String,
-	String_startsWith,
-	_URL,
-} from "@/shared/snapshot";
+import { String, String_startsWith, _URL } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
 	const attrs = attributeAccess(client);
-	const node = client.nativeStore.get("Node")!;
-	const document = client.nativeStore.get("Document")!;
-	const nBaseURI = node.baseURI.get;
-	const nNodeType = node.nodeType.get;
-	const nOwnerDocument = node.ownerDocument.get;
-	const nDocumentURL = document.URL.get;
-	const nDocumentQuerySelector = document.querySelector.value;
-	const nDefaultView = document.defaultView.get;
-	const nCreateElement = document.createElement.value;
-	const nFrameElement = client.nativeStore.get("window")?.frameElement?.get;
-	const iframe = client.nativeStore.get("HTMLIFrameElement")!;
-	const nSandbox = iframe.sandbox.get;
 
 	const DOCUMENT_NODE = 9;
 
@@ -66,18 +49,18 @@ export default function (client: ScramjetClient, self: Self) {
 	 */
 	const documentURL = (node: Node): string => {
 		const owner =
-			Reflect_apply(nNodeType, node, []) === DOCUMENT_NODE
+			new client.native.Node(node).nodeType === DOCUMENT_NODE
 				? (node as Document)
-				: Reflect_apply(nOwnerDocument, node, []);
+				: new client.native.Node(node).ownerDocument;
 		if (!owner) return client.url.href;
 
-		return siteUrl(Reflect_apply(nDocumentURL, owner, []));
+		return siteUrl(new client.native.Document(owner).URL);
 	};
 
 	const ownerDocumentOf = (node: Node): Document | null =>
-		Reflect_apply(nNodeType, node, []) === DOCUMENT_NODE
+		new client.native.Node(node).nodeType === DOCUMENT_NODE
 			? (node as Document)
-			: Reflect_apply(nOwnerDocument, node, []);
+			: new client.native.Node(node).ownerDocument;
 
 	/**
 	 * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fallback-base-url -
@@ -92,15 +75,14 @@ export default function (client: ScramjetClient, self: Self) {
 	const fallbackBaseURL = (node: Node): string => {
 		const url = documentURL(node);
 		if (url !== "about:srcdoc" && url !== "about:blank") return url;
-		if (!nFrameElement) return url;
 
 		const owner = ownerDocumentOf(node);
 		if (!owner) return url;
 
 		try {
-			const view = Reflect_apply(nDefaultView, owner, []);
+			const view = new client.native.Document(owner).defaultView;
 			const container: Element | null = view
-				? Reflect_apply(nFrameElement, view, [])
+				? new client.native.window(view).frameElement
 				: null;
 			if (container) return baseURL(container);
 		} catch {
@@ -140,14 +122,14 @@ export default function (client: ScramjetClient, self: Self) {
 	 * element and the site's own URL.
 	 */
 	const baseURL = (node: Node): string => {
-		const native: string = Reflect_apply(nBaseURI, node, []);
+		const native: string = new client.native.Node(node).baseURI;
 		if (!String_startsWith(native, client.context.prefix.origin)) return native;
 
 		const owner = ownerDocumentOf(node);
 		if (
 			owner &&
 			String_startsWith(native, client.context.prefix.href) &&
-			native === Reflect_apply(nDocumentURL, owner, [])
+			native === new client.native.Document(owner).URL
 		) {
 			const site = unrewriteUrl(native, client.context);
 			if (isAbsolute(site)) return site;
@@ -163,9 +145,9 @@ export default function (client: ScramjetClient, self: Self) {
 		if (!owner) return fallback;
 
 		// the first base element with an href, in tree order
-		const base: Element | null = Reflect_apply(nDocumentQuerySelector, owner, [
-			"base[href]",
-		]);
+		const base: Element | null = new client.native.Document(
+			owner
+		).querySelector("base[href]");
 		if (!base) return fallback;
 
 		const href = attrs.get(base, "href");
@@ -481,18 +463,20 @@ export default function (client: ScramjetClient, self: Self) {
 		let standIn = client.box.sandboxStandIns.get(element);
 		if (!standIn) {
 			const owner = ownerDocumentOf(element) ?? client.global.document;
-			standIn = Reflect_apply(nCreateElement, owner, ["iframe"]) as Element;
+			standIn = new client.native.Document(owner).createElement(
+				"iframe"
+			) as Element;
 			const value = attrs.get(element, "sandbox");
 			if (value !== null) attrs.raw.set(standIn, "sandbox", value);
 
 			client.box.sandboxStandIns.set(element, standIn);
 			client.box.sandboxLists.set(
-				Reflect_apply(nSandbox, standIn, []),
+				new client.native.HTMLIFrameElement(standIn).sandbox,
 				element
 			);
 		}
 
-		return Reflect_apply(nSandbox, standIn, []);
+		return new client.native.HTMLIFrameElement(standIn).sandbox;
 	};
 
 	/**

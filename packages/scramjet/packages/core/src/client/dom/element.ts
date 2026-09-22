@@ -28,7 +28,6 @@ import { eventAttributes } from "@rewriters/html";
 import { rewriteJs } from "@rewriters/js";
 import {
 	Array_indexOf,
-	Reflect_apply,
 	String,
 	String_charCodeAt,
 	String_indexOf,
@@ -225,57 +224,35 @@ export type AttributeAccess = {
 
 const accessors = new _WeakMap<ScramjetClient, AttributeAccess>([]);
 
-/**
- * The attribute primitives for `client`, built once.
- *
- * Reaches the natives through the snapshotted descriptors rather than
- * `client.native.Element`, which mints two proxies per property access. These
- * sit on the read path of every reflected attribute in the document.
- */
+/** The attribute primitives for `client`, built once. */
 export function attributeAccess(client: ScramjetClient): AttributeAccess {
 	const existing = accessors.get(client);
 	if (existing) return existing;
 
-	const element = client.nativeStore.get("Element")!;
-	const attr = client.nativeStore.get("Attr")!;
-
-	const nGetAttribute = element.getAttribute.value;
-	const nSetAttribute = element.setAttribute.value;
-	const nRemoveAttribute = element.removeAttribute.value;
-	const nHasAttribute = element.hasAttribute.value;
-	const nGetAttributeNames = element.getAttributeNames.value;
-	const nGetAttributeNode = element.getAttributeNode.value;
-	const nLocalName = element.localName.get;
-	const nNamespaceURI = element.namespaceURI.get;
-	const nOwnerDocument = element.ownerDocument.get;
-	const nAttrName = attr.name.get;
-	const nAttrValue = attr.value.get;
-	const nSetAttrValue = attr.value.set;
-	const nAttrNamespaceURI = attr.namespaceURI.get;
-	const nOwnerElement = attr.ownerElement.get;
-
 	const raw = {
 		get: (element: Element, name: string): string | null =>
-			Reflect_apply(nGetAttribute, element, [name]),
+			new client.native.Element(element).getAttribute(name),
 		set: (element: Element, name: string, value: string): void => {
-			Reflect_apply(nSetAttribute, element, [name, value]);
+			new client.native.Element(element).setAttribute(name, value);
 		},
 		remove: (element: Element, name: string): void => {
-			Reflect_apply(nRemoveAttribute, element, [name]);
+			new client.native.Element(element).removeAttribute(name);
 		},
 		has: (element: Element, name: string): boolean =>
-			Reflect_apply(nHasAttribute, element, [name]),
+			new client.native.Element(element).hasAttribute(name),
 	};
 
 	const localName = (element: Element): string =>
-		Reflect_apply(nLocalName, element, []);
+		new client.native.Element(element).localName;
 
-	const isHtml = (element: Element): boolean =>
-		Reflect_apply(nNamespaceURI, element, []) === HTML_NAMESPACE &&
-		client.box.instanceof(
-			Reflect_apply(nOwnerDocument, element, []),
-			"HTMLDocument"
+	const isHtml = (element: Element): boolean => {
+		const nElement = new client.native.Element(element);
+
+		return (
+			nElement.namespaceURI === HTML_NAMESPACE &&
+			client.box.instanceof(nElement.ownerDocument, "HTMLDocument")
 		);
+	};
 
 	const qualify = (element: Element, qualifiedName: string): string =>
 		hasUppercase(qualifiedName) && isHtml(element)
@@ -414,7 +391,9 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 	};
 
 	const names = (element: Element): string[] => {
-		const all: string[] = Reflect_apply(nGetAttributeNames, element, []);
+		const all: string[] = new client.native.Element(
+			element
+		).getAttributeNames();
 
 		let internal = false;
 		for (let i = 0; i < all.length; i++) {
@@ -451,16 +430,13 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 	const node = (element: Element, qualifiedName: string): Attr | null => {
 		if (isInternalAttribute(qualifiedName)) return null;
 
-		const real: Attr | null = Reflect_apply(nGetAttributeNode, element, [
-			qualifiedName,
-		]);
+		const nElement = new client.native.Element(element);
+		const real: Attr | null = nElement.getAttributeNode(qualifiedName);
 		if (real) return real;
 
 		// a removed attribute is represented by its mirror's node, which
 		// `dom/attr.ts` renames back
-		return Reflect_apply(nGetAttributeNode, element, [
-			mirrorAttributeName(qualifiedName),
-		]);
+		return nElement.getAttributeNode(mirrorAttributeName(qualifiedName));
 	};
 
 	const access: AttributeAccess = {
@@ -473,12 +449,12 @@ export function attributeAccess(client: ScramjetClient): AttributeAccess {
 		rewriter,
 		changed,
 		node,
-		owner: (attr) => Reflect_apply(nOwnerElement, attr, []),
-		attrName: (attr) => Reflect_apply(nAttrName, attr, []),
-		attrValue: (attr) => Reflect_apply(nAttrValue, attr, []),
-		attrNamespace: (attr) => Reflect_apply(nAttrNamespaceURI, attr, []),
+		owner: (attr) => new client.native.Attr(attr).ownerElement,
+		attrName: (attr) => new client.native.Attr(attr).name,
+		attrValue: (attr) => new client.native.Attr(attr).value,
+		attrNamespace: (attr) => new client.native.Attr(attr).namespaceURI,
 		setAttrValue: (attr, value) => {
-			Reflect_apply(nSetAttrValue, attr, [value]);
+			new client.native.Attr(attr).value = value;
 		},
 		isHtml,
 		localName,
@@ -506,23 +482,24 @@ export function insertAttributeNode(
 	namespaced: boolean
 ): Attr | null {
 	const attrs = attributeAccess(client);
-	const natives = client.nativeStore.get("Element")!;
-	const insert = namespaced
-		? natives.setAttributeNodeNS.value
-		: natives.setAttributeNode.value;
+	const nElement = new client.native.Element(element);
+	const insert = (): Attr | null =>
+		namespaced
+			? nElement.setAttributeNodeNS(attr)
+			: nElement.setAttributeNode(attr);
 
 	// an attribute that already belongs to an element is either this
 	// element's - a no-op the native answers with the node itself - or
 	// another's, which is an InUseAttributeError. neither may be rewritten
 	// first: the value is already the rewritten one, and rewriting it again
 	// would land a proxy URL in the mirror
-	if (attrs.owner(attr) !== null) return Reflect_apply(insert, element, [attr]);
+	if (attrs.owner(attr) !== null) return insert();
 
 	const name = attrs.attrName(attr);
 	// a page-built attribute under our own prefix would poison a mirror, so it
 	// is dropped the same way `setAttribute` drops one
 	if (isInternalAttribute(name)) {
-		void Reflect_apply(natives.hasAttributes.value, element, []);
+		void nElement.hasAttributes();
 
 		return null;
 	}
@@ -534,7 +511,7 @@ export function insertAttributeNode(
 	);
 
 	if (!rewrite) {
-		const replaced: Attr | null = Reflect_apply(insert, element, [attr]);
+		const replaced = insert();
 		// a stale mirror from an earlier rewritten value under this name would
 		// otherwise go on answering for the one just inserted
 		attrs.raw.remove(element, mirrorAttributeName(name));
@@ -548,7 +525,7 @@ export function insertAttributeNode(
 
 	let replaced: Attr | null;
 	try {
-		replaced = Reflect_apply(insert, element, [attr]);
+		replaced = insert();
 	} catch (err) {
 		// a namespace clash, or an element that is not one - the node the page
 		// still holds must not come back carrying the rewritten value

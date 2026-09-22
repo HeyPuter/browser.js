@@ -32,7 +32,6 @@ import {
 	Number_isInteger,
 	Object_getOwnPropertyDescriptor,
 	Object_getPrototypeOf,
-	Reflect_apply,
 	Reflect_get,
 	Reflect_has,
 	Reflect_ownKeys,
@@ -98,15 +97,6 @@ function indexOf(prop: string | symbol): number {
 
 export default function (client: ScramjetClient, _self: Self) {
 	const attrs = attributeAccess(client);
-	const namedNodeMap = client.nativeStore.get("NamedNodeMap")!;
-	const nItem = namedNodeMap.item.value;
-	const nLength = namedNodeMap.length.get;
-	const nGetNamedItem = namedNodeMap.getNamedItem.value;
-	const nGetNamedItemNS = namedNodeMap.getNamedItemNS.value;
-	const nSetNamedItem = namedNodeMap.setNamedItem.value;
-	const nSetNamedItemNS = namedNodeMap.setNamedItemNS.value;
-	const nRemoveNamedItem = namedNodeMap.removeNamedItem.value;
-	const nRemoveNamedItemNS = namedNodeMap.removeNamedItemNS.value;
 
 	/**
 	 * The real map behind `map`, which is the wrapper whenever the page called
@@ -130,7 +120,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		const known = client.box.attributeOwners.get(map);
 		if (known) return known;
 
-		const first: Attr | null = Reflect_apply(nItem, map, [0]);
+		const first: Attr | null = new client.native.NamedNodeMap(map).item(0);
 
 		return first ? attrs.owner(first) : null;
 	};
@@ -138,7 +128,7 @@ export default function (client: ScramjetClient, _self: Self) {
 	/** The attribute at `index` of what the page can see. */
 	const itemAt = (map: NamedNodeMap, index: number): Attr | null => {
 		const element = ownerOf(map);
-		if (!element) return Reflect_apply(nItem, real(map), [index]);
+		if (!element) return new client.native.NamedNodeMap(real(map)).item(index);
 
 		const names = attrs.names(element);
 		if (index >= names.length) return null;
@@ -292,7 +282,7 @@ export default function (client: ScramjetClient, _self: Self) {
 	/** The brand check every map member owes, run on the real map. */
 	const brand = (map: NamedNodeMap): NamedNodeMap => {
 		const target = real(map);
-		void Reflect_apply(nLength, target, []);
+		void new client.native.NamedNodeMap(target).length;
 
 		return target;
 	};
@@ -309,7 +299,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		get length(): number {
 			const map = brand(this);
 			const element = ownerOf(map);
-			if (!element) return Reflect_apply(nLength, map, []);
+			if (!element) return new client.native.NamedNodeMap(map).length;
 
 			return attrs.names(element).length;
 		}
@@ -325,7 +315,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		getNamedItem(qualifiedName: string): Attr | null {
 			const map = brand(this);
 			const element = ownerOf(map);
-			if (!element) return Reflect_apply(nGetNamedItem, map, [qualifiedName]);
+			if (!element)
+				return new client.native.NamedNodeMap(map).getNamedItem(qualifiedName);
 
 			return attrs.node(element, attrs.qualify(element, qualifiedName));
 		}
@@ -334,10 +325,9 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("Attr?")
 		getNamedItemNS(namespace: string | null, localName: string): Attr | null {
 			const map = brand(this);
-			const node: Attr | null = Reflect_apply(nGetNamedItemNS, map, [
-				namespace,
-				localName,
-			]);
+			const node: Attr | null = new client.native.NamedNodeMap(
+				map
+			).getNamedItemNS(namespace, localName);
 			if (node) return isInternalAttribute(attrs.attrName(node)) ? null : node;
 
 			const element = ownerOf(map);
@@ -351,7 +341,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		setNamedItem(attr: Attr): Attr | null {
 			const map = brand(this);
 			const element = ownerOf(map);
-			if (!element) return Reflect_apply(nSetNamedItem, map, [attr]);
+			if (!element)
+				return new client.native.NamedNodeMap(map).setNamedItem(attr);
 
 			// the same operation as `Element.setAttributeNode`, under another
 			// name, so it goes through the same rewrite
@@ -363,7 +354,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		setNamedItemNS(attr: Attr): Attr | null {
 			const map = brand(this);
 			const element = ownerOf(map);
-			if (!element) return Reflect_apply(nSetNamedItemNS, map, [attr]);
+			if (!element)
+				return new client.native.NamedNodeMap(map).setNamedItemNS(attr);
 
 			return insertAttributeNode(client, element, attr, true);
 		}
@@ -374,17 +366,20 @@ export default function (client: ScramjetClient, _self: Self) {
 			const map = brand(this);
 			const element = ownerOf(map);
 			if (!element)
-				return Reflect_apply(nRemoveNamedItem, map, [qualifiedName]);
+				return new client.native.NamedNodeMap(map).removeNamedItem(
+					qualifiedName
+				);
 
 			const name = attrs.qualify(element, qualifiedName);
 			const node = attrs.node(element, name);
 			// nothing visible under that name: hand it to the native, which
 			// throws the spec's NotFoundError
-			if (!node) return Reflect_apply(nRemoveNamedItem, map, [name]);
+			if (!node)
+				return new client.native.NamedNodeMap(map).removeNamedItem(name);
 
-			const removed: Attr = Reflect_apply(nRemoveNamedItem, map, [
-				attrs.attrName(node),
-			]);
+			const removed: Attr = new client.native.NamedNodeMap(map).removeNamedItem(
+				attrs.attrName(node)
+			);
 			attrs.raw.remove(element, mirrorAttributeName(name));
 			attrs.changed(element, name, null);
 
@@ -396,19 +391,17 @@ export default function (client: ScramjetClient, _self: Self) {
 		removeNamedItemNS(namespace: string | null, localName: string): Attr {
 			const map = brand(this);
 			const element = ownerOf(map);
-			const node: Attr | null = Reflect_apply(nGetNamedItemNS, map, [
-				namespace,
-				localName,
-			]);
+			const node: Attr | null = new client.native.NamedNodeMap(
+				map
+			).getNamedItemNS(namespace, localName);
 
 			if (element && node) {
 				const name = attrs.attrName(node);
 				if (!isInternalAttribute(name)) {
 					attrs.raw.remove(element, mirrorAttributeName(name));
-					const removed: Attr = Reflect_apply(nRemoveNamedItemNS, map, [
-						namespace,
-						localName,
-					]);
+					const removed: Attr = new client.native.NamedNodeMap(
+						map
+					).removeNamedItemNS(namespace, localName);
 					if (namespace === null) attrs.changed(element, name, null);
 
 					return removed;
@@ -420,9 +413,9 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (element && !node && namespace === null) {
 				const mirror = attrs.node(element, localName);
 				if (mirror && isInternalAttribute(attrs.attrName(mirror))) {
-					const removed: Attr = Reflect_apply(nRemoveNamedItem, map, [
-						attrs.attrName(mirror),
-					]);
+					const removed: Attr = new client.native.NamedNodeMap(
+						map
+					).removeNamedItem(attrs.attrName(mirror));
 					attrs.changed(element, localName, null);
 
 					return removed;
@@ -431,10 +424,10 @@ export default function (client: ScramjetClient, _self: Self) {
 
 			// an internal attribute, or nothing at all: either way the page is
 			// owed the NotFoundError for a name it cannot see
-			return Reflect_apply(nRemoveNamedItemNS, map, [
+			return new client.native.NamedNodeMap(map).removeNamedItemNS(
 				namespace,
-				isInternalAttribute(localName) ? "" : localName,
-			]);
+				isInternalAttribute(localName) ? "" : localName
+			);
 		}
 	});
 	/* eslint-enable scramjet-core/intercept-brand-check */

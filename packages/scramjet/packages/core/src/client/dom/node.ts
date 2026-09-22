@@ -54,7 +54,6 @@ import {
 	JSON_parse,
 	JSON_stringify,
 	Object_hasOwn,
-	Reflect_apply,
 	String,
 	String_substring,
 	String_toLowerCase,
@@ -155,52 +154,22 @@ export function textAccess(client: ScramjetClient): TextAccess {
 	if (existing) return existing;
 
 	const attrs = attributeAccess(client);
-	const node = client.nativeStore.get("Node")!;
-	const characterData = client.nativeStore.get("CharacterData")!;
-	const element = client.nativeStore.get("Element")!;
-	const fragment = client.nativeStore.get("DocumentFragment")!;
-	const document = client.nativeStore.get("Document")!;
-
-	const nNodeType = node.nodeType.get;
-	const nParentElement = node.parentElement.get;
-	const nFirstChild = node.firstChild.get;
-	const nNextSibling = node.nextSibling.get;
-	const nOwnerDocument = node.ownerDocument.get;
-	const nSetTextContent = node.textContent.set;
-	const nGetData = characterData.data.get;
-	const nSetData = characterData.data.set;
-	const nNamespaceURI = element.namespaceURI.get;
-	// `childElementCount` and `querySelector` are installed once per interface
-	// that mixes ParentNode in, and each copy brand checks for its own - so a
-	// DocumentFragment has to be asked with the fragment's
-	const nChildElementCount = element.childElementCount.get;
-	const nQuerySelector = element.querySelector.value;
-	const nFragmentChildElementCount = fragment.childElementCount.get;
-	const nFragmentQuerySelector = fragment.querySelector.value;
-	const nCreateTextNode = document.createTextNode.value;
-	const nInsertBefore = node.insertBefore.value;
-	const nAppendChild = node.appendChild.value;
-	const nRemoveChild = node.removeChild.value;
-	const nIsConnected = node.isConnected.get;
-	const nGetTextContent = node.textContent.get;
-	const nAfter = characterData.after.value;
-
-	const type = (node: Node): number => Reflect_apply(nNodeType, node, []);
+	const type = (node: Node): number => new client.native.Node(node).nodeType;
 	const parent = (node: Node): Element | null =>
-		Reflect_apply(nParentElement, node, []);
+		new client.native.Node(node).parentElement;
 	const parent_ = parent;
 	const firstChild = (node: Node): Node | null =>
-		Reflect_apply(nFirstChild, node, []);
+		new client.native.Node(node).firstChild;
 	const nextSibling = (node: Node): Node | null =>
-		Reflect_apply(nNextSibling, node, []);
+		new client.native.Node(node).nextSibling;
 	const rawData = (node: CharacterData): string =>
-		Reflect_apply(nGetData, node, []);
+		new client.native.CharacterData(node).data;
 	const writeData = (node: CharacterData, text: string): void => {
-		Reflect_apply(nSetData, node, [text]);
+		new client.native.CharacterData(node).data = text;
 	};
 
 	const kind = (element: Element): RawTextKind | null => {
-		const namespace = Reflect_apply(nNamespaceURI, element, []);
+		const namespace = new client.native.Element(element).namespaceURI;
 		// an element named "script" in some other namespace is not one, and
 		// running its text through a javascript rewriter would corrupt it
 		if (namespace !== HTML_NAMESPACE && namespace !== SVG_NAMESPACE) {
@@ -404,7 +373,9 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		// answers for it
 		recordSource(element, text);
 
-		Reflect_apply(nSetTextContent, element, [rewrite ? rewrite(text) : text]);
+		new client.native.Node(element).textContent = rewrite
+			? rewrite(text)
+			: text;
 
 		const child = firstChild(element);
 		if (child)
@@ -433,15 +404,19 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		const what = type(node);
 		if (what === ELEMENT_NODE && kind(node as Element) !== null) return true;
 
-		const isFragment = what === DOCUMENT_FRAGMENT_NODE;
-		const count = isFragment ? nFragmentChildElementCount : nChildElementCount;
-		const query = isFragment ? nFragmentQuerySelector : nQuerySelector;
+		// `childElementCount` and `querySelector` are installed once per
+		// interface that mixes ParentNode in, and each copy brand checks for its
+		// own - so a DocumentFragment has to be asked with the fragment's
+		const parent =
+			what === DOCUMENT_FRAGMENT_NODE
+				? new client.native.DocumentFragment(node)
+				: new client.native.Element(node);
 
 		// something with no element children can have no script or style under
 		// it, and this is the read path of every `textContent` in the document
-		if (Reflect_apply(count, node, []) === 0) return false;
+		if (parent.childElementCount === 0) return false;
 
-		return !!Reflect_apply(query, node, ["script,style"]);
+		return !!parent.querySelector("script,style");
 	};
 
 	/**
@@ -460,7 +435,7 @@ export function textAccess(client: ScramjetClient): TextAccess {
 			} else if (what === ELEMENT_NODE) {
 				if (kind(child as Element) !== null) out += source(child as Element);
 				else if (containsRawText(child)) out += descendantText(child);
-				else out += Reflect_apply(nGetTextContent, child, []);
+				else out += new client.native.Node(child).textContent;
 			}
 		}
 
@@ -469,9 +444,9 @@ export function textAccess(client: ScramjetClient): TextAccess {
 
 	const createText = (near: Node, text: string): Text => {
 		const document =
-			Reflect_apply(nOwnerDocument, near, []) ?? client.global.document;
+			new client.native.Node(near).ownerDocument ?? client.global.document;
 
-		return Reflect_apply(nCreateTextNode, document, [text]);
+		return new client.native.Document(document).createTextNode(text);
 	};
 
 	const blank = (node: CharacterData) => {
@@ -503,7 +478,7 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		// chain the page can rebuild, and consults a `Symbol.hasInstance` the
 		// page can define - either one decides whether the text is blanked
 		try {
-			Reflect_apply(nNodeType, value, []);
+			void new client.native.Node(value).nodeType;
 
 			return true;
 		} catch {
@@ -544,11 +519,11 @@ export function textAccess(client: ScramjetClient): TextAccess {
 	 */
 	const reprepare = (element: Element) => {
 		if (kind(element) !== "script" || !rewriterFor(element)) return;
-		if (!Reflect_apply(nIsConnected, element, [])) return;
+		if (!new client.native.Node(element).isConnected) return;
 
 		const probe = createText(element, "");
-		Reflect_apply(nAppendChild, element, [probe]);
-		Reflect_apply(nRemoveChild, element, [probe]);
+		new client.native.Node(element).appendChild(probe);
+		new client.native.Node(element).removeChild(probe);
 	};
 
 	/**
@@ -672,7 +647,7 @@ export function textAccess(client: ScramjetClient): TextAccess {
 		return around(
 			parent,
 			[node],
-			(): Text => Reflect_apply(nInsertBefore, parent, [node, reference])
+			(): Text => new client.native.Node(parent).insertBefore(node, reference)
 		);
 	};
 
@@ -690,7 +665,7 @@ export function textAccess(client: ScramjetClient): TextAccess {
 			String_substring(value, 0, offset)
 		);
 
-		Reflect_apply(nAfter, node, [tail]);
+		new client.native.CharacterData(node).after(tail);
 		sync(owner);
 
 		return tail;
@@ -747,13 +722,6 @@ export default function (client: ScramjetClient, _self: Self) {
 		text.restore(node as CharacterData);
 	};
 
-	const nDocumentQuerySelectorAll =
-		client.nativeStore.get("Document")!.querySelectorAll.value;
-	const nElementQuerySelectorAll =
-		client.nativeStore.get("Element")!.querySelectorAll.value;
-	const nFragmentQuerySelectorAll =
-		client.nativeStore.get("DocumentFragment")!.querySelectorAll.value;
-
 	/**
 	 * `node`, if it is a script or a style, and every one under it - the ones
 	 * `normalize` will actually merge, which is those with more than one Text
@@ -769,19 +737,18 @@ export default function (client: ScramjetClient, _self: Self) {
 			out[out.length] = node as Element;
 		}
 
-		const query =
+		// the same per-interface copies as `containsRawText`'s
+		const parent =
 			what === ELEMENT_NODE
-				? nElementQuerySelectorAll
+				? new client.native.Element(node)
 				: what === DOCUMENT_FRAGMENT_NODE
-					? nFragmentQuerySelectorAll
+					? new client.native.DocumentFragment(node)
 					: what === DOCUMENT_NODE
-						? nDocumentQuerySelectorAll
+						? new client.native.Document(node)
 						: null;
-		if (!query) return out;
+		if (!parent) return out;
 
-		const found: NodeListOf<Element> = Reflect_apply(query, node, [
-			"script,style",
-		]);
+		const found: NodeListOf<Element> = parent.querySelectorAll("script,style");
 		for (let i = 0; i < found.length; i++) {
 			if (merges(found[i])) out[out.length] = found[i];
 		}

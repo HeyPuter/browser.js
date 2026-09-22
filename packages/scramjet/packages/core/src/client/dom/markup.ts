@@ -19,12 +19,7 @@ import { textAccess } from "@client/dom/node";
 import { rewriteHtml, unrewriteHtml } from "@rewriters/html";
 import { ForeignContext } from "@/shared/rewriters/html";
 import { isHtmlMimeType } from "@/shared/mime";
-import {
-	Array_indexOf,
-	Reflect_apply,
-	String,
-	String_toLowerCase,
-} from "@/shared/snapshot";
+import { Array_indexOf, String, String_toLowerCase } from "@/shared/snapshot";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -51,9 +46,9 @@ export function foreignContextForElement(
 	client: ScramjetClient,
 	element: Element
 ): ForeignContext {
-	const natives = client.nativeStore.get("Element")!;
-	const namespace = Reflect_apply(natives.namespaceURI.get, element, []);
-	const local: string = Reflect_apply(natives.localName.get, element, []);
+	const nElement = new client.native.Element(element);
+	const namespace = nElement.namespaceURI;
+	const local: string = nElement.localName;
 
 	if (namespace === SVG_NAMESPACE) {
 		return Array_indexOf(SVG_HTML_INTEGRATION_POINTS, local) !== -1
@@ -66,9 +61,7 @@ export function foreignContextForElement(
 			return "html";
 		}
 		if (local === "annotation-xml") {
-			const encoding = Reflect_apply(natives.getAttribute.value, element, [
-				"encoding",
-			]);
+			const encoding = nElement.getAttribute("encoding");
 			const lowered = encoding === null ? "" : String_toLowerCase(encoding);
 			if (lowered === "text/html" || lowered === "application/xhtml+xml") {
 				return "html";
@@ -91,12 +84,7 @@ export function insideForeignContext(
 ): ForeignContext {
 	if (!element) return "html";
 
-	const node = client.nativeStore.get("Node")!;
-	const parent: Element | null = Reflect_apply(
-		node.parentElement.get,
-		element,
-		[]
-	);
+	const parent: Element | null = new client.native.Node(element).parentElement;
 
 	return parent ? foreignContextForElement(client, parent) : "html";
 }
