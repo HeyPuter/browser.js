@@ -7,22 +7,6 @@ export const enabled = (client: ScramjetClient, self: Self) =>
 
 /**
  * https://html.spec.whatwg.org/multipage/web-messaging.html#broadcastchannel
- *
- * A BroadcastChannel is matched on the tuple (storage key, name), and every
- * proxied document shares the one real storage key - so the name is the only
- * thing keeping two sites' channels apart, and it has to carry the origin.
- * Without this, `new BroadcastChannel("chat")` on two unrelated sites is one
- * channel, and `postmessage.ts` stamps the sender's origin into the envelope,
- * so the receiving site reads a foreign `event.origin` off a message it should
- * never have been given.
- *
- * `scopeOrigin` rather than `url.origin`, for the same reason `indexeddb.ts`,
- * `caches.ts`, `worker.ts` and `dom/storage.ts` use it: an about:blank or
- * srcdoc document has no origin of its own and serializes as the opaque
- * "null", so keying on its URL would file every such frame on every site under
- * one shared namespace - the same cross-site channel, one level down. A
- * document with no proxied creator to inherit from gets a bucket unique to
- * itself instead of joining that namespace.
  */
 export default function (client: ScramjetClient) {
 	client.Intercept(class extends BroadcastChannel {

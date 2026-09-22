@@ -4,8 +4,6 @@ import { readWorkerOptions, readWorkletOptions } from "@client/helpers";
 import { String_indexOf, String_substring } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
-	// `scopeOrigin`, not `url.origin`: an about:blank frame's shared workers
-	// are its creator's, and its own URL has no origin to key on
 	const scoped = (name: string) => `${client.scopeOrigin}@${name}`;
 
 	/**
@@ -18,11 +16,6 @@ export default function (client: ScramjetClient, self: Self) {
 	const credentialsOption = (credentials: RequestCredentials) =>
 		credentials === "include" ? "include" : undefined;
 
-	// The other half of that scoping, and it has to be installed before the
-	// interceptors below - `SharedWorker` and `Worklet` are `[Exposed=Window]`
-	// in practice, so naming them in a worker throws and takes the rest of the
-	// module with it.
-	//
 	// A shared worker is the one scoped name the page can read back from the
 	// inside: `SharedWorkerGlobalScope.name` is the string the constructor was
 	// given, so without this a site reads `https://site.example@myworker`.
