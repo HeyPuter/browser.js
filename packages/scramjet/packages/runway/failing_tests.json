@@ -217,6 +217,10 @@
 		"rewriter-css-unrewrite-uppercase-url-function",
 		"rewriter-css-unrewrite-url",
 		"broadcastchannel-cross-origin-isolated",
-		"cachekey-retrieved-response-is-fully-corrected"
+		"cachekey-retrieved-response-is-fully-corrected",
+		"wsfidelity-abnormal-closure",
+		"wsfidelity-connection-refused",
+		"wsfidelity-protocol-negotiated",
+		"wsfidelity-stream-connection-refused"
 	]
 }

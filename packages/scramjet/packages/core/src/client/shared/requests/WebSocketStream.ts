@@ -9,8 +9,6 @@
    brand-checks natively. */
 import {
 	Array_from,
-	Math_trunc,
-	Number_isFinite,
 	Object_setPrototypeOf,
 	Promise_then,
 } from "@/shared/snapshot";
@@ -19,7 +17,9 @@ import {
 	Arguments,
 	Constructor,
 	Type,
+	clampToIDLInteger,
 	idlDictionary,
+	idlIsBufferSource,
 	idlUSVString,
 } from "@client/webidl";
 import { type BareCompatibleWebSocket } from "@mercuryworkshop/proxy-transports";
@@ -33,6 +33,7 @@ import {
 	parseWebSocketUrl,
 	reportedClose,
 	validateClose,
+	validateProtocols,
 	webSocketHeaders,
 } from "./WebSocket";
 
@@ -50,13 +51,12 @@ export type FakeWebSocketStreamState = {
 
 /**
  * https://websockets.spec.whatwg.org/#dictdef-websocketcloseinfo, read by hand:
- * `closeCode` is `[EnforceRange]`, which `dictionaryReader` does not carry
- * through, and wrapping 70000 to 4464 would close with a code nobody named.
+ * `closeCode` is `[Clamp]` - Chrome's binding, measured: 70000 is an
+ * InvalidAccessError, not a TypeError - which `dictionaryReader` does not
+ * carry through, and wrapping 70000 to 4464 would close with a code nobody
+ * named.
  */
-function readWebSocketCloseInfo(
-	client: ScramjetClient,
-	value: unknown
-): {
+function readWebSocketCloseInfo(value: unknown): {
 	closeCode?: number;
 	reason: string;
 } {
@@ -66,16 +66,7 @@ function readWebSocketCloseInfo(
 	// read once each, in WebIDL's (lexicographic) order
 	const closeCode = dict.closeCode;
 	if (closeCode !== undefined) {
-		// https://webidl.spec.whatwg.org/#abstract-opdef-converttoint
-		const x = +(closeCode as number);
-		if (!Number_isFinite(x) || Math_trunc(x) < 0 || Math_trunc(x) > 65535) {
-			throw client.errors.typeError({
-				read: "closeCode",
-				on: "WebSocketCloseInfo",
-				detail: "Value is outside the 'unsigned short' value range.",
-			});
-		}
-		out.closeCode = Math_trunc(x) + 0;
+		out.closeCode = clampToIDLInteger(closeCode, [0, 65535]);
 	}
 
 	const reason = dict.reason;
@@ -105,10 +96,19 @@ export default function (client: ScramjetClient, self: Self) {
 	 * `closeCode`: the constructor only takes the codes a page may send, and
 	 * 1006 is not one of them.
 	 */
-	const connectionError = (): Error =>
+	const connectionError = (message = ""): Error =>
 		WebSocketError
-			? new WebSocketError("")
-			: new DOMException("", "NetworkError");
+			? new WebSocketError(message)
+			: new DOMException(message, "NetworkError");
+
+	/**
+	 * What an abort during the handshake rejects with. Not the signal's
+	 * reason, which Chrome ignores here - measured.
+	 */
+	const abortError = (): DOMException =>
+		client.errors.domException("AbortError", {
+			detail: "WebSocket handshake was aborted",
+		});
 
 	/**
 	 * https://websockets.spec.whatwg.org/#websocketstream-cancel - a
@@ -145,9 +145,9 @@ export default function (client: ScramjetClient, self: Self) {
 			if (rawProtocols !== undefined) {
 				if (typeof rawProtocols !== "object" || rawProtocols === null) {
 					throw client.errors.typeError({
-						read: "protocols",
-						on: "WebSocketStreamOptions",
-						detail: "The provided value cannot be converted to a sequence.",
+						construct: "WebSocketStream",
+						detail:
+							"Failed to read the 'protocols' property from 'WebSocketStreamOptions': The provided value cannot be converted to a sequence.",
 					});
 				}
 				protocols = Array_from(rawProtocols as Iterable<unknown>, idlUSVString);
@@ -160,15 +160,16 @@ export default function (client: ScramjetClient, self: Self) {
 					void new client.native.AbortSignal(rawSignal).aborted;
 				} catch {
 					throw client.errors.typeError({
-						read: "signal",
-						on: "WebSocketStreamOptions",
-						detail: "Failed to convert value to 'AbortSignal'.",
+						construct: "WebSocketStream",
+						detail:
+							"Failed to read the 'signal' property from 'WebSocketStreamOptions': Failed to convert value to 'AbortSignal'.",
 					});
 				}
 				signal = rawSignal as AbortSignal;
 			}
 
 			const parsed = parseWebSocketUrl(client, "WebSocketStream", url);
+			validateProtocols(client, "WebSocketStream", protocols);
 
 			// no own `constructor`, for the reason `WebSocket` has none - and
 			// the prototype captured at install rather than read off `this`
@@ -194,9 +195,9 @@ export default function (client: ScramjetClient, self: Self) {
 
 			// an already-aborted signal: nothing is connected at all
 			if (signal && new client.native.AbortSignal(signal).aborted) {
-				const reason = new client.native.AbortSignal(signal).reason;
-				rejectOpened(reason);
-				rejectClosed(reason);
+				const error = abortError();
+				rejectOpened(error);
+				rejectClosed(error);
 				map.set(fakeWebSocketStream as WebSocketStream, {
 					url: parsed.href,
 					barews: null!,
@@ -242,10 +243,7 @@ export default function (client: ScramjetClient, self: Self) {
 				write(chunk) {
 					// https://websockets.spec.whatwg.org/#websocketstream-write -
 					// a BufferSource goes as binary, anything else as text
-					const data =
-						typeof chunk === "object" && chunk !== null && "byteLength" in chunk
-							? chunk
-							: idlUSVString(chunk);
+					const data = idlIsBufferSource(chunk) ? chunk : idlUSVString(chunk);
 
 					return barews.send(data);
 				},
@@ -332,7 +330,9 @@ export default function (client: ScramjetClient, self: Self) {
 					// transport has no socket to close until it opens - calling
 					// through threw `this._close is not a function` at the page
 					if (state.readyState === WEBSOCKET_CONNECTING) {
-						failConnection(connectionError());
+						failConnection(
+							connectionError("WebSocket closed before handshake complete.")
+						);
 
 						return;
 					}
@@ -351,7 +351,7 @@ export default function (client: ScramjetClient, self: Self) {
 			if (signal) {
 				new client.native.EventTarget(signal).addEventListener("abort", () => {
 					if (state.readyState !== WEBSOCKET_CONNECTING) return;
-					failConnection(new client.native.AbortSignal(signal).reason);
+					failConnection(abortError());
 				});
 			}
 
@@ -469,7 +469,7 @@ export default function (client: ScramjetClient, self: Self) {
 			const ws = map.get(this);
 			if (!ws) return super.close(closeInfo);
 
-			const info = readWebSocketCloseInfo(client, closeInfo);
+			const info = readWebSocketCloseInfo(closeInfo);
 			// the reason is checked whether or not a code came with it
 			validateClose(client, "WebSocketStream", info.closeCode, info.reason);
 

@@ -21,7 +21,13 @@ import {
 	TypedArray_prototype_byteLength,
 	_URL,
 } from "@/shared/snapshot";
-import { Arguments, Constructor, Type } from "@client/webidl";
+import {
+	Arguments,
+	Constructor,
+	Type,
+	idlIsBufferSource,
+	idlUSVString,
+} from "@client/webidl";
 import { EventHandlerSlot } from "@client/eventhandler";
 import { registrableDomainForRedirect } from "@/fetch/fetch";
 
@@ -141,6 +147,50 @@ export function parseWebSocketUrl(
 	}
 
 	return parsed;
+}
+
+/** https://httpwg.org/specs/rfc9110.html#tokens - `tchar` */
+const TOKEN_PUNCTUATION = "!#$%&'*+-.^_`|~";
+const isToken = (s: string): boolean => {
+	if (s.length === 0) return false;
+	for (let i = 0; i < s.length; i++) {
+		const c = s.charCodeAt(i);
+		const alnum =
+			(c >= 0x30 && c <= 0x39) ||
+			(c >= 0x41 && c <= 0x5a) ||
+			(c >= 0x61 && c <= 0x7a);
+		if (!alnum && TOKEN_PUNCTUATION.indexOf(s[i]) === -1) return false;
+	}
+
+	return true;
+};
+
+/**
+ * https://websockets.spec.whatwg.org/#dom-websocket-websocket steps 7-8, shared
+ * with `WebSocketStream`: every protocol offered is a token, and none twice.
+ */
+export function validateProtocols(
+	client: ScramjetClient,
+	iface: "WebSocket" | "WebSocketStream",
+	protocols: readonly string[]
+) {
+	for (let i = 0; i < protocols.length; i++) {
+		const protocol = protocols[i];
+		for (let j = 0; j < i; j++) {
+			if (protocols[j] === protocol) {
+				throw client.errors.domException("SyntaxError", {
+					construct: iface,
+					detail: `The subprotocol '${protocol}' is duplicated.`,
+				});
+			}
+		}
+		if (!isToken(protocol)) {
+			throw client.errors.domException("SyntaxError", {
+				construct: iface,
+				detail: `The subprotocol '${protocol}' is invalid.`,
+			});
+		}
+	}
 }
 
 /**
@@ -281,6 +331,13 @@ export type FakeWebSocketState = {
 	/** Report the failure `failed` records, from a task of its own. */
 	fail: () => void;
 	steps: OrderedSteps;
+	/**
+	 * What the page sends, in the order it sent it. The transport sends a
+	 * Blob only once it has read it, so a `send()` after one overtook it;
+	 * reading it here and holding everything behind it keeps the order the
+	 * spec promises.
+	 */
+	outgoing: OrderedSteps;
 
 	handlers: Record<"open" | "message" | "close" | "error", EventHandlerSlot>;
 };
@@ -309,6 +366,9 @@ export default function (client: ScramjetClient, self: Self) {
 			// steps 1-6: a URL that cannot be a socket's is a SyntaxError here,
 			// before anything is created
 			const parsed = parseWebSocketUrl(client, "WebSocket", url);
+			// a single string is a list of one
+			if (typeof protocols === "string") protocols = [protocols];
+			validateProtocols(client, "WebSocket", protocols);
 
 			const fakeWebSocket = new EventTarget();
 			// the page's prototype, which it may have modified - intentional:
@@ -344,6 +404,7 @@ export default function (client: ScramjetClient, self: Self) {
 					}, 0);
 				},
 				steps: new OrderedSteps(),
+				outgoing: new OrderedSteps(),
 
 				// the `on*` handlers are ordinary listeners on the socket, added
 				// when each is first set - see `EventHandlerSlot` - so they see
@@ -651,7 +712,46 @@ export default function (client: ScramjetClient, self: Self) {
 			// the transport's send is async: returning its promise handed the
 			// page a value where native returns undefined, and a failure in it
 			// became an unhandled rejection the page never asked for
-			Promise_then(ws.barews.send(data), undefined, () => {});
+			const transmit = (payload: unknown) => {
+				Promise_then(ws.barews.send(payload as string), undefined, () => {});
+			};
+
+			// https://webidl.spec.whatwg.org/#es-union: a BufferSource goes as
+			// itself, a Blob as its bytes, and anything else is converted to a
+			// string. The transport only knows those three, and threw at a number
+			if (idlIsBufferSource(data)) {
+				ws.outgoing.push(() => transmit(data));
+
+				return;
+			}
+			if (typeof data === "object" && data) {
+				// the `size` getter is the brand check: `arrayBuffer()` returns a
+				// promise, so on something that is not a Blob it rejects rather
+				// than throwing, and every object would have looked like one
+				let isBlob = false;
+				try {
+					void new client.native.Blob(data).size;
+					isBlob = true;
+				} catch {
+					// not a Blob
+				}
+				if (isBlob) {
+					const bytes: Promise<ArrayBuffer> = new client.native.Blob(
+						data
+					).arrayBuffer();
+					const ready = ws.outgoing.reserve();
+					Promise_then(
+						bytes,
+						(buffer: ArrayBuffer) => ready(() => transmit(buffer)),
+						() => ready(() => {})
+					);
+
+					return;
+				}
+			}
+
+			const text = idlUSVString(data);
+			ws.outgoing.push(() => transmit(text));
 		}
 
 		// https://websockets.spec.whatwg.org/#dom-websocket-close
