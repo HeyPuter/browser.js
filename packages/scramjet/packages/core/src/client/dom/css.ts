@@ -2,12 +2,15 @@ import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { ScramjetClient } from "@client/index";
 import {
 	Object_getOwnPropertyDescriptor,
-	Object_hasOwn,
+	Object_getOwnPropertyNames,
 	Reflect_apply,
 	Reflect_defineProperty,
 	Reflect_get,
 	Reflect_set,
 	Number_isInteger,
+	_Map,
+	_Set,
+	_WeakMap,
 } from "@/shared/snapshot";
 import { Arguments, Returns, Type, idlDOMString } from "@client/webidl";
 
@@ -68,6 +71,23 @@ export default function (client: ScramjetClient, self: Self) {
 			return super.insertRule(rewrite(rule), index);
 		}
 
+		/**
+		 * Blink's legacy alias for `insertRule`, spelled as a whole rule split
+		 * in two. `style` is a declaration block body and carries `url()` just
+		 * as `insertRule`'s does, so it needs the same rewrite - without this
+		 * it was the one way left to get an unrewritten URL into a stylesheet.
+		 * Absent on an engine that does not have it, which `Intercept` skips.
+		 */
+		@Arguments(
+			"optional DOMString",
+			"optional DOMString",
+			"optional unsigned long"
+		)
+		@Returns("long")
+		addRule(selector?: string, style?: string, index?: number): number {
+			return super.addRule(selector, style ? rewrite(style) : style, index);
+		}
+
 		@Arguments("USVString")
 		@Returns("Promise<CSSStyleSheet>")
 		async replace(text: string): Promise<CSSStyleSheet> {
@@ -125,35 +145,87 @@ export default function (client: ScramjetClient, self: Self) {
 		return Number_isInteger(n) && n >= 0 && `${n}` === prop;
 	};
 
-	const isCssAttribute = (decl: object, prop: string | symbol) =>
-		typeof prop === "string" && !isIndex(prop) && Object_hasOwn(decl, prop);
-
 	const toCssValue = (value: unknown) =>
 		value === null ? "" : idlDOMString(value);
 
-	const wrapStyleDeclaration = (style: CSSStyleDeclaration) =>
-		new Proxy(style, {
+	/**
+	 * The CSS attribute names carried by each kind of declaration, taken once
+	 * from the first one of that kind we are handed.
+	 *
+	 * Testing `Object.hasOwn` per access does not work: an expando becomes an
+	 * own property the moment it is written, so `el.style.mine = "x"` is a CSS
+	 * attribute from the second read onwards and the page's own string goes
+	 * back through the CSS un-rewriter. Remembering the expandos instead has a
+	 * worse failure: it caches a *negative* verdict, so any name that is
+	 * momentarily not own is poisoned for the life of the declaration and stops
+	 * being rewritten at all.
+	 *
+	 * A snapshot has neither problem. It is also per *kind* rather than per
+	 * declaration: the set runs to ~740 names, and one copy per wrapped
+	 * declaration would cost more than the page's own style objects. The kind
+	 * is the interface handing the declaration out, which each `style`
+	 * interceptor below already names in its `@Type` - so a
+	 * `CSSFontFaceDescriptors` brings `src` and a `CSSMarginDescriptors` brings
+	 * its own set, with no list here to keep in sync with any of them.
+	 *
+	 * The declaration it is taken from is pristine: every path to one goes
+	 * through a `style` getter below, and the snapshot happens on the first of
+	 * those, so the page has never held it. Array indices are dropped - a rule
+	 * that already has declarations carries some, and they are not attributes.
+	 */
+	const cssAttributesByKind = new _Map<string, _Set<string>>();
+
+	const cssAttributesFor = (kind: string, style: CSSStyleDeclaration) => {
+		const cached = cssAttributesByKind.get(kind);
+		if (cached) return cached;
+
+		const names = new _Set<string>();
+		const own = Object_getOwnPropertyNames(style);
+		for (let i = 0; i < own.length; i++) {
+			if (!isIndex(own[i])) names.add(own[i]);
+		}
+		cssAttributesByKind.set(kind, names);
+
+		return names;
+	};
+
+	const wrapStyleDeclaration = (kind: string, style: CSSStyleDeclaration) => {
+		const cssAttributes = cssAttributesFor(kind, style);
+
+		/**
+		 * One wrapper per underlying function, so `style.setProperty` is the
+		 * same object on every read as it is natively. A fresh Proxy per read
+		 * makes `el.style.setProperty !== el.style.setProperty`, which is both
+		 * a one-expression tell and a break for anything that caches a method.
+		 */
+		const methods = new _WeakMap<object, any>();
+
+		const isAttribute = (prop: string | symbol) =>
+			typeof prop === "string" && cssAttributes.has(prop);
+
+		return new Proxy(style, {
 			get(target, prop) {
-				if (isCssAttribute(target, prop)) {
-					const value = Reflect_get(target, prop);
-
-					return value ? unrewrite(value) : value;
-				}
-
 				const value = Reflect_get(target, prop);
+
+				if (isAttribute(prop)) return value ? unrewrite(value) : value;
+
 				if (typeof value === "function") {
-					return new Proxy(value, {
+					const cached = methods.get(value);
+					if (cached) return cached;
+
+					const wrapped = new Proxy(value, {
 						apply: (fn, _that, args) => Reflect_apply(fn, target, args),
 					});
+					methods.set(value, wrapped);
+
+					return wrapped;
 				}
 
 				return value;
 			},
 
 			set(target, prop, value) {
-				if (!isCssAttribute(target, prop)) {
-					return Reflect_set(target, prop, value);
-				}
+				if (!isAttribute(prop)) return Reflect_set(target, prop, value);
 
 				const css = toCssValue(value);
 
@@ -164,7 +236,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 			getOwnPropertyDescriptor(target, prop) {
 				const desc = Object_getOwnPropertyDescriptor(target, prop);
-				if (!desc || !isCssAttribute(target, prop)) return desc;
+				if (!desc || !isAttribute(prop)) return desc;
 
 				if (desc.value) desc.value = unrewrite(desc.value);
 
@@ -172,7 +244,7 @@ export default function (client: ScramjetClient, self: Self) {
 			},
 
 			defineProperty(target, prop, desc) {
-				if (!isCssAttribute(target, prop) || !("value" in desc)) {
+				if (!isAttribute(prop) || !("value" in desc)) {
 					return Reflect_defineProperty(target, prop, desc);
 				}
 
@@ -184,6 +256,7 @@ export default function (client: ScramjetClient, self: Self) {
 				});
 			},
 		});
+	};
 
 	/**
 	 *   correct but extremely expensive proxy
@@ -192,7 +265,10 @@ export default function (client: ScramjetClient, self: Self) {
 	 *     @Arguments("Element", "optional CSSOMString?")
 	 *     @Returns("CSSStyleDeclaration")
 	 *     static getComputedStyle(elt: Element, pseudoElt?: string | null) {
-	 *       return wrapStyleDeclaration(nGlobal.getComputedStyle(elt, pseudoElt));
+	 *       return wrapStyleDeclaration(
+	 *         "CSSStyleProperties",
+	 *         nGlobal.getComputedStyle(elt, pseudoElt)
+	 *       );
 	 *     }
 	 *   });
 	 */
@@ -206,10 +282,10 @@ export default function (client: ScramjetClient, self: Self) {
 	 * `Intercept` leaves the half an interceptor doesn't declare alone. The
 	 * write then lands on the `cssText` interceptor above, which rewrites it.
 	 */
-	const inlineStyle = (declaration: CSSStyleDeclaration) => {
+	const inlineStyle = (kind: string, declaration: CSSStyleDeclaration) => {
 		let wrapper = client.box.styleDeclarations.get(declaration);
 		if (!wrapper) {
-			wrapper = wrapStyleDeclaration(declaration);
+			wrapper = wrapStyleDeclaration(kind, declaration);
 			client.box.styleDeclarations.set(declaration, wrapper);
 		}
 
@@ -219,14 +295,14 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends HTMLElement {
 		@Type("CSSStyleProperties")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSStyleProperties", super.style);
 		}
 	});
 
 	client.Intercept(class extends SVGElement {
 		@Type("CSSStyleProperties")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSStyleProperties", super.style);
 		}
 	});
 
@@ -234,7 +310,7 @@ export default function (client: ScramjetClient, self: Self) {
 		client.Intercept(class extends MathMLElement {
 			@Type("CSSStyleProperties")
 			get style(): CSSStyleDeclaration {
-				return inlineStyle(super.style);
+				return inlineStyle("CSSStyleProperties", super.style);
 			}
 		});
 	}
@@ -242,14 +318,14 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends CSSStyleRule {
 		@Type("CSSStyleProperties")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSStyleProperties", super.style);
 		}
 	});
 
 	client.Intercept(class extends CSSPageRule {
 		@Type("CSSStyleProperties")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSStyleProperties", super.style);
 		}
 	});
 
@@ -257,7 +333,7 @@ export default function (client: ScramjetClient, self: Self) {
 		client.Intercept(class extends CSSMarginRule {
 			@Type("CSSMarginDescriptors")
 			get style(): CSSStyleDeclaration {
-				return inlineStyle(super.style);
+				return inlineStyle("CSSMarginDescriptors", super.style);
 			}
 		});
 	}
@@ -266,7 +342,7 @@ export default function (client: ScramjetClient, self: Self) {
 		client.Intercept(class extends CSSNestedDeclarations {
 			@Type("CSSStyleProperties")
 			get style(): CSSStyleDeclaration {
-				return inlineStyle(super.style);
+				return inlineStyle("CSSStyleProperties", super.style);
 			}
 		});
 	}
@@ -274,14 +350,14 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends CSSKeyframeRule {
 		@Type("CSSStyleProperties")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSStyleProperties", super.style);
 		}
 	});
 
 	client.Intercept(class extends CSSFontFaceRule {
 		@Type("CSSFontFaceDescriptors")
 		get style(): CSSStyleDeclaration {
-			return inlineStyle(super.style);
+			return inlineStyle("CSSFontFaceDescriptors", super.style);
 		}
 	});
 
@@ -289,7 +365,7 @@ export default function (client: ScramjetClient, self: Self) {
 		client.Intercept(class extends CSSPositionTryRule {
 			@Type("CSSPositionTryDescriptors")
 			get style(): CSSStyleDeclaration {
-				return inlineStyle(super.style);
+				return inlineStyle("CSSPositionTryDescriptors", super.style);
 			}
 		});
 	}
