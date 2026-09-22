@@ -263,11 +263,6 @@ export default function (client: ScramjetClient, _self: Self) {
 		partitioned: init.partitioned,
 	});
 
-	// every member below is answered out of the cookie jar, so nothing in a
-	// body would otherwise consult the receiver, and
-	// `CookieStore.prototype.get.call({}, ...)` would answer where a browser
-	// rejects. `onchange` is the cheapest member that brand-checks, and reading
-	// it has no other effect — hence the discarded read that opens each one
 	client.Intercept(class extends CookieStore {
 		@Returns("Promise<CookieListItem?>")
 		@Arguments("optional (USVString or CookieStoreGetOptions)")
