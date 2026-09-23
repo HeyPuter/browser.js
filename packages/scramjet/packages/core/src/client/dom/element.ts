@@ -18,6 +18,9 @@ import {
 } from "@client/attributes";
 import { String } from "@/shared/snapshot";
 
+const internalAttributeSelector =
+	/\[\s*(?:\*?\|)?scramjet-attr(?:-|\s|\]|[~|^$*=])/i;
+
 export default function (client: ScramjetClient, _self: Self) {
 	const attrs = client.attributes;
 
@@ -30,6 +33,40 @@ export default function (client: ScramjetClient, _self: Self) {
 
 	// https://dom.spec.whatwg.org/#interface-element
 	client.Intercept(class extends Element {
+		@Arguments("DOMString")
+		@Returns("Element?")
+		querySelector(selectors: string): Element | null {
+			const result = super.querySelector(selectors);
+
+			return internalAttributeSelector.test(selectors) ? null : result;
+		}
+
+		@Arguments("DOMString")
+		@Returns("NodeList")
+		querySelectorAll(selectors: string): NodeListOf<Element> {
+			const result = super.querySelectorAll(selectors);
+
+			return internalAttributeSelector.test(selectors)
+				? super.querySelectorAll(":not(*)")
+				: result;
+		}
+
+		@Arguments("DOMString")
+		@Returns("boolean")
+		matches(selectors: string): boolean {
+			const result = super.matches(selectors);
+
+			return internalAttributeSelector.test(selectors) ? false : result;
+		}
+
+		@Arguments("DOMString")
+		@Returns("Element?")
+		closest(selectors: string): Element | null {
+			const result = super.closest(selectors);
+
+			return internalAttributeSelector.test(selectors) ? null : result;
+		}
+
 		@Arguments()
 		@Returns("boolean")
 		hasAttributes(): boolean {
@@ -111,13 +148,18 @@ export default function (client: ScramjetClient, _self: Self) {
 			value: string
 		): void {
 			const text = String(value);
-			const internal = isInternalAttribute(qualifiedName);
-			const rewrite = internal
-				? null
-				: attrs.rewriter(this, ruleAttributeName(namespace, qualifiedName));
+			if (isInternalAttribute(qualifiedName)) {
+				void super.hasAttributes();
+
+				return;
+			}
+			const rewrite = attrs.rewriter(
+				this,
+				ruleAttributeName(namespace, qualifiedName)
+			);
 			if (!rewrite) {
 				super.setAttributeNS(namespace, qualifiedName, text);
-				if (!internal && namespace === null) {
+				if (namespace === null) {
 					attrs.changed(this, qualifiedName, text);
 				}
 

@@ -620,6 +620,20 @@ export default function (client: ScramjetClient, self: Self) {
 	// --- scripts and stylesheets --------------------------------------------
 
 	client.Intercept(class extends HTMLScriptElement {
+		@Type("DOMString")
+		get type(): string {
+			void super.type;
+
+			return reflect(this, "type");
+		}
+
+		@Type("DOMString")
+		set type(value: string) {
+			void super.type;
+
+			set(this, "type", value);
+		}
+
 		@Type("USVString")
 		get src(): string {
 			void super.type;

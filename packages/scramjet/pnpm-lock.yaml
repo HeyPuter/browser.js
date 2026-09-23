@@ -24,7 +24,7 @@ overrides:
 
 patchedDependencies:
   htmlparser2@12.0.0:
-    hash: 741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b
+    hash: bda5268997c1cd1a1d0b0e116b9454ec61ff1a8e43ff2929fe3bee6dff730d52
     path: patches/htmlparser2@12.0.0.patch
 
 importers:
@@ -132,7 +132,7 @@ importers:
         version: 3.2.2
       htmlparser2:
         specifier: 12.0.0
-        version: 12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b)
+        version: 12.0.0(patch_hash=bda5268997c1cd1a1d0b0e116b9454ec61ff1a8e43ff2929fe3bee6dff730d52)
       idb:
         specifier: ^8.0.3
         version: 8.0.3
@@ -3869,7 +3869,7 @@ snapshots:
     dependencies:
       acorn: 8.15.0
       browserslist-to-es-version: 1.2.0
-      htmlparser2: 12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b)
+      htmlparser2: 12.0.0(patch_hash=bda5268997c1cd1a1d0b0e116b9454ec61ff1a8e43ff2929fe3bee6dff730d52)
       picocolors: 1.1.1
       source-map: 0.7.6
     optionalDependencies:
@@ -4928,7 +4928,7 @@ snapshots:
       dom-serializer: 2.0.0
       domhandler: 5.0.3
       htm: 3.1.1
-      htmlparser2: 12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b)
+      htmlparser2: 12.0.0(patch_hash=bda5268997c1cd1a1d0b0e116b9454ec61ff1a8e43ff2929fe3bee6dff730d52)
       rrweb-cssom: 0.8.0
 
   dunder-proto@1.0.1:
@@ -5427,7 +5427,7 @@ snapshots:
 
   html-escaper@2.0.2: {}
 
-  htmlparser2@12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b):
+  htmlparser2@12.0.0(patch_hash=bda5268997c1cd1a1d0b0e116b9454ec61ff1a8e43ff2929fe3bee6dff730d52):
     dependencies:
       domelementtype: 3.0.0
       domhandler: 6.0.1

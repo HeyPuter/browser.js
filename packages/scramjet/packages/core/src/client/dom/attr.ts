@@ -122,6 +122,24 @@ export default function (client: ScramjetClient, _self: Self) {
 			// native accessor called with a proxy as its receiver fails its own
 			// brand check. `length` is an accessor
 			get(target, prop) {
+				if (prop === Symbol.iterator || prop === "values") {
+					return function* (this: NamedNodeMap) {
+						const owner = ownerOf(brand(this));
+						if (!owner) {
+							const iterator = new client.native.NamedNodeMap(real(this))[
+								Symbol.iterator
+							]();
+							for (const attr of iterator) yield attr;
+							return;
+						}
+						const names = attrs.names(owner);
+						for (let i = 0; i < names.length; i++) {
+							const attr = attrs.node(owner, names[i]);
+							if (attr) yield attr;
+						}
+					};
+				}
+
 				const index = indexOf(prop);
 				if (index !== -1) return itemAt(target, index) ?? undefined;
 
@@ -327,6 +345,11 @@ export default function (client: ScramjetClient, _self: Self) {
 				return new client.native.NamedNodeMap(map).removeNamedItem(
 					qualifiedName
 				);
+			if (isInternalAttribute(qualifiedName)) {
+				return new client.native.NamedNodeMap(map).removeNamedItem(
+					"scramjet-attr"
+				);
+			}
 
 			const name = attrs.qualify(element, qualifiedName);
 			const node = attrs.node(element, name);

@@ -36,9 +36,10 @@ import {
 /**
  * The prefix on every attribute scramjet keeps for itself.
  *
- * Matched without the trailing dash when *hiding*, so nothing under the name
- * can be read or written by a page however it spells it, and with the dash when
- * computing a mirror, which is the only form we ever write.
+ * Matched without the trailing dash when *hiding*, case-insensitively, so
+ * nothing under the name can be read or written by a page however it spells
+ * it. A trailing dash is required when computing a mirror, and that is the
+ * only form we ever write.
  */
 const INTERNAL_PREFIX = "scramjet-attr";
 const MIRROR_PREFIX = "scramjet-attr-";
@@ -89,7 +90,7 @@ export function ruleAttributeName(
 
 /** Whether `qualifiedName` names an attribute of scramjet's own. */
 export function isInternalAttribute(qualifiedName: string): boolean {
-	return String_startsWith(qualifiedName, INTERNAL_PREFIX);
+	return String_startsWith(String_toLowerCase(qualifiedName), INTERNAL_PREFIX);
 }
 
 /** The internal name mirroring `qualifiedName`. */
@@ -312,6 +313,18 @@ export class AttributeLayer {
 		if (qualifiedName === "http-equiv" && this.localName(element) === "meta") {
 			const content = this.get(element, "content");
 			if (content !== null) this.set(element, "content", content);
+		}
+
+		// A script's block type controls whether its child text is code, data, or
+		// an import map. When either legacy type attribute changes, re-derive the
+		// live text from the saved source before a later child change can prepare
+		// the script (HTML's "prepare the script element" algorithm, step 8).
+		// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+		if (
+			(qualifiedName === "type" || qualifiedName === "language") &&
+			this.localName(element) === "script"
+		) {
+			this.client.text.sync(element);
 		}
 	}
 

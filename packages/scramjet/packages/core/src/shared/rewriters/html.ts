@@ -42,6 +42,12 @@ export type HtmlContext = {
 	// response headers for worker originating documents
 	headers?: RawHeaders;
 	foreignContext?: ForeignContext;
+	// XML MIME types use the XML tokenizer and serializer, while sharing the
+	// attribute rewriting rules with HTML documents.
+	xmlMode?: boolean;
+	// `DOMParser`'s HTML parser has scripting disabled, which changes how it
+	// treats `noscript` content.
+	scriptingEnabled?: boolean;
 	history?: TrackedHistoryState[];
 };
 
@@ -79,6 +85,7 @@ export class IncrementalHtmlRewriter {
 		});
 		this.parser = new Parser(this.handler, {
 			startingForeignContext: htmlcontext.foreignContext,
+			xmlMode: htmlcontext.xmlMode,
 		});
 	}
 
@@ -163,6 +170,8 @@ function rewriteHtmlInner(
 	const handler = new DomHandler((err, dom) => dom);
 	const parser = new Parser(handler, {
 		startingForeignContext: htmlcontext.foreignContext,
+		xmlMode: htmlcontext.xmlMode,
+		scriptingEnabled: htmlcontext.scriptingEnabled,
 	});
 
 	parser.write(html);
@@ -277,7 +286,10 @@ function rewriteHtmlInner(
 		return props.setRawHtml;
 	}
 
-	return render(handler.root, renderOptions);
+	return render(handler.root, {
+		...renderOptions,
+		xmlMode: htmlcontext.xmlMode,
+	});
 }
 
 export function rewriteHtml(
@@ -323,13 +335,14 @@ export function unrewriteHtml(
 	function traverse(node: ChildNode) {
 		if ("attribs" in node) {
 			for (const key in node.attribs) {
-				if (key == "scramjet-attr-script-source-src") {
+				if (key.toLowerCase() === "scramjet-attr-script-source-src") {
 					if (node.children[0] && "data" in node.children[0])
 						node.children[0].data = base64Decode(node.attribs[key]);
+					delete node.attribs[key];
 					continue;
 				}
 
-				if (key.startsWith("scramjet-attr-")) {
+				if (key.toLowerCase().startsWith("scramjet-attr-")) {
 					node.attribs[key.slice("scramjet-attr-".length)] = node.attribs[key];
 					delete node.attribs[key];
 				}

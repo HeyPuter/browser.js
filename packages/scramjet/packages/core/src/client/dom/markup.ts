@@ -349,14 +349,18 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("(TrustedHTML or DOMString)", "DOMParserSupportedType")
 		@Returns("Document")
 		parseFromString(string: string, type: DOMParserSupportedType): Document {
-			// TODO: an XML or SVG document is parsed by a different parser, and
-			// running it through the HTML rewriter would rewrite the wrong things
-			if (!isHtmlMimeType(String(type))) {
-				return super.parseFromString(string, type);
-			}
+			const html = String(string);
+			const mime = String(type);
+			const isHtml = isHtmlMimeType(mime);
 
 			return super.parseFromString(
-				parse(String(string), "DOMParser.prototype.parseFromString", "html"),
+				rewriteHtml(html, client.context, client.meta, {
+					loadScripts: false,
+					inline: true,
+					source: client.url.href,
+					apisource: "DOMParser.prototype.parseFromString",
+					...(isHtml ? { scriptingEnabled: false } : { xmlMode: true }),
+				}),
 				type
 			);
 		}

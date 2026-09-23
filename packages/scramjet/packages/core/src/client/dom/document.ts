@@ -71,6 +71,40 @@ export default function (client: ScramjetClient, self: Self) {
 			super.write(getDocumentWriter(this).write(Array_join(text, "") + "\n"));
 		}
 
+		@Arguments("DOMString", "optional boolean", "optional DOMString")
+		@Returns("boolean")
+		execCommand(commandId: string, showUI?: boolean, value?: string): boolean {
+			if (String_toLowerCase(String(commandId)) !== "inserttext") {
+				return super.execCommand(commandId, showUI, value);
+			}
+
+			const selection = nativeGlobal.getSelection();
+			if (!selection || selection.rangeCount === 0) {
+				return super.execCommand(commandId, showUI, value);
+			}
+
+			const range = selection.getRangeAt(0);
+			const parent = range.startContainer;
+			if (
+				!range.collapsed ||
+				new client.native.Node(parent).nodeType !== 1 ||
+				client.text.kind(parent as Element) !== "script"
+			) {
+				return super.execCommand(commandId, showUI, value);
+			}
+
+			const children = new client.native.Node(parent).childNodes;
+			const reference = children.item(range.startOffset);
+			const inserted = client.text.insertText(
+				parent,
+				reference,
+				String(value ?? "")
+			);
+			selection.collapse(inserted, inserted.length);
+
+			return true;
+		}
+
 		@Arguments()
 		@Returns("undefined")
 		close(): void {
