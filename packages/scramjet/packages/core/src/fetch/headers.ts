@@ -152,7 +152,29 @@ export function rewriteRequestHeaders(
 		rawOriginUrl &&
 		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
 	) {
-		headers.set("Origin", originUrl.origin);
+		// https://fetch.spec.whatwg.org/#origin-header
+		//
+		// "If request's method is neither GET nor HEAD, or request's mode is
+		// websocket or cors" -- a plain GET for a script, an image or a
+		// document carries no Origin at all. This was setting one on every
+		// request that had an initiator under the prefix, so the proxy
+		// announced an origin where a browser announces nothing.
+		//
+		// Measured at the wire against a live direct load: three URLs --
+		// `orchestrate/chl_page/v1`, `favicon.ico`, and the Turnstile widget --
+		// had `origin: https://rateyourmusic.com` from the sandbox and no
+		// Origin at all from the oracle.
+		//
+		// `computeFetchMode` rather than `request.mode`, for the reason the
+		// Sec-Fetch-Mode comment below gives: the service worker reports the
+		// mode against the PROXY's URL space.
+		const method = (request.method || "GET").toUpperCase();
+		const originMode = computeFetchMode(request, parsed);
+		if (method !== "GET" && method !== "HEAD") {
+			headers.set("Origin", originUrl.origin);
+		} else if (originMode === "cors" || originMode === "websocket") {
+			headers.set("Origin", originUrl.origin);
+		}
 
 		const referer = createReferrerString(
 			originUrl,
