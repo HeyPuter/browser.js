@@ -830,6 +830,27 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 	});
 
+	// --- metadata -----------------------------------------------------------
+	// Both pragmas the rewriter touches leave what the page wrote in the mirror:
+	// a refresh's content is rewritten, and a content security policy's is
+	// moved off the element so the pragma never runs.
+	// https://html.spec.whatwg.org/multipage/semantics.html#dom-meta-content
+	client.Intercept(class extends HTMLMetaElement {
+		@Type("DOMString")
+		get content(): string {
+			void super.content;
+
+			return reflect(this, "content");
+		}
+
+		@Type("DOMString")
+		set content(value: string) {
+			void super.content;
+
+			set(this, "content", value);
+		}
+	});
+
 	// --- the nonce, which is not in the document at all ---------------------
 
 	// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#dom-noncedelement-nonce -

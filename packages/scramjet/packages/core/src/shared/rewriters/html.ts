@@ -2,7 +2,6 @@ import {
 	type AnyNode,
 	type CDATA,
 	type ChildNode,
-	Comment,
 	type Document,
 	DomBuilder,
 	Element,
@@ -529,8 +528,29 @@ function traverseParsedHtml(
 		if (
 			String_toLowerCase(attribs["http-equiv"]) === "content-security-policy"
 		) {
-			// just delete it. this needs to be emulated eventually but like
-			return new Comment(attribs.content);
+			// Neutralise the policy without removing the ELEMENT.
+			//
+			// This used to become a Comment, which the page can see: nodeType
+			// goes from 1 to 8 (DOM Standard, Node.nodeType), so anything
+			// walking the tree finds a node of the wrong kind exactly where the
+			// meta should be -- and the comment carried the policy as its data,
+			// so the text was still readable, just on the wrong node type.
+			//
+			// Dropping `content` is the edit the pragma ignores: the Content
+			// security policy state returns before parsing when the element has
+			// no content attribute (HTML Standard 4.2.5.3). Renaming
+			// `http-equiv` would also disable it, but an attribute selector
+			// reads the real attribute rather than the mirror, so
+			// `meta[http-equiv="content-security-policy"]` would stop matching
+			// an element that is plainly still there.
+			//
+			// The value rides in the `scramjet-attr-` mirror that reads already
+			// un-alias, so the element stays an element, still answers a CSP
+			// selector, and still reads its own policy back.
+			if (attribs["content"] !== undefined) {
+				attribs["scramjet-attr-content"] = attribs["content"];
+				delete attribs["content"];
+			}
 		}
 		// a refresh's content is rewritten - and mirrored - by its rule in
 		// `htmlRules`, the same one a script's write goes through
