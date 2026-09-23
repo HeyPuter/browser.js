@@ -12,7 +12,17 @@ import {
 	ScramjetFetchRequest,
 } from ".";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
-import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
+import {
+	_URL,
+	_Set,
+	ArrayBuffer_isView,
+	ArrayBuffer_prototype_byteLength,
+	Blob_prototype_size,
+	Reflect_apply,
+	String,
+	String_startsWith,
+	TextEncoder_encode,
+} from "@/shared/snapshot";
 import {
 	createReferrerString,
 	DEFAULT_REFERRER_POLICY,
@@ -20,6 +30,28 @@ import {
 } from "./util";
 import { isFetchPreload } from "@/shared/htmlRules";
 import { applyClientHints, clientHintsAllowed } from "./clienthints";
+
+/** A body's length in BYTES, or null when only the transport can know. */
+function bodyLength(body: unknown): number | null {
+	if (body === null || body === undefined) return null;
+	if (typeof body === "string") return TextEncoder_encode(body).length;
+	if (ArrayBuffer_isView(body)) return body.byteLength;
+	// the byteLength and size getters read the internal slots, so they tell a
+	// buffer or a Blob apart without `instanceof`, whatever realm it came from
+	try {
+		return Reflect_apply(ArrayBuffer_prototype_byteLength, body, []);
+	} catch {
+		// not an ArrayBuffer
+	}
+	try {
+		return Reflect_apply(Blob_prototype_size, body, []);
+	} catch {
+		// not a Blob
+	}
+
+	// A stream. Chromium sends no `content-length` for one either.
+	return null;
+}
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -385,6 +417,18 @@ export function rewriteRequestHeaders(
 		parsed.url,
 		clientHintsAllowed(parsed.url, parsed.fetchInitiatorOrigin)
 	);
+
+	// How long the body is, when that is knowable.
+	//
+	// The transport frames a length of its own once it is handed bytes rather
+	// than a stream (see `controller/src/sw.ts`), but it appends the header
+	// where Chromium leads with it. Setting it here puts it through
+	// `toRawHeaders`, which orders it against the measured table.
+	//
+	// A ReadableStream is the one case with no answer, and it is also the one
+	// case Chromium has no answer for either: that is when it uses chunked.
+	const len = bodyLength(request.body);
+	if (len !== null) headers.set("content-length", String(len));
 
 	return headers;
 }
