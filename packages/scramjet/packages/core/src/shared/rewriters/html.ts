@@ -1,6 +1,17 @@
-import { ElementType, Parser } from "htmlparser2";
-import { ChildNode, DomHandler, Element, Comment } from "domhandler";
-import render from "dom-serializer";
+import {
+	type AnyNode,
+	type CDATA,
+	type ChildNode,
+	Comment,
+	type Document,
+	DomBuilder,
+	Element,
+	ElementType,
+	Parser,
+	parseDocument,
+	render,
+} from "@/shared/htmlparser";
+import { type NullArray, nullArray } from "@/shared/htmlparser/safe";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
@@ -11,14 +22,16 @@ import { Tap } from "@/Tap";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { TrackedHistoryState } from "@/fetch";
 import {
+	Error,
 	Performance_now,
-	Object_entries,
+	Object_keys,
 	JSON_parse,
 	JSON_stringify,
 	TextEncoder_encode,
-	Array_from,
-	String_fromCodePoint,
-	btoa,
+	Array_indexOf,
+	String_slice,
+	String_startsWith,
+	String_toLowerCase,
 	_URL,
 } from "@/shared/snapshot";
 import { flagEnabled } from "..";
@@ -51,28 +64,13 @@ export type HtmlContext = {
 	history?: TrackedHistoryState[];
 };
 
-const renderOptions = {
-	encodeEntities: "utf8" as const,
-	decodeEntities: false,
-};
-function serializeHtmlNode(node: ChildNode) {
-	return render(node, renderOptions);
-}
-
-function isElementNode(node: ChildNode): node is Element {
-	return (
-		node.type === ElementType.Tag ||
-		node.type === ElementType.Script ||
-		node.type === ElementType.Style
-	);
-}
-
 export class IncrementalHtmlRewriter {
-	private readonly handler: DomHandler;
+	private readonly builder = new DomBuilder();
 	private readonly parser: Parser;
-	private readonly completedElements = new WeakSet<Element>();
-	private readonly emittedLengths = new WeakMap<ChildNode, number>();
-	private readonly rewrittenNodes = new WeakMap<ChildNode, string>();
+	/** Per child of the root, by index: how much of its output went out. */
+	private readonly emittedLengths: NullArray<number> = nullArray();
+	/** Per child of the root, by index: its rewrite, once it is complete. */
+	private readonly rewrittenNodes: NullArray<string> = nullArray();
 	private ended = false;
 
 	constructor(
@@ -80,10 +78,7 @@ export class IncrementalHtmlRewriter {
 		private readonly meta: URLMeta,
 		private readonly htmlcontext: HtmlContext
 	) {
-		this.handler = new DomHandler(undefined, undefined, (element) => {
-			this.completedElements.add(element);
-		});
-		this.parser = new Parser(this.handler, {
+		this.parser = new Parser(this.builder, {
 			startingForeignContext: htmlcontext.foreignContext,
 			xmlMode: htmlcontext.xmlMode,
 		});
@@ -115,34 +110,38 @@ export class IncrementalHtmlRewriter {
 	}
 
 	private flush() {
+		const { children } = this.builder.root;
 		let output = "";
 
-		for (const node of this.handler.root.childNodes) {
-			const rewritten = this.getAvailableOutput(node);
+		for (let index = 0; index < children.length; index++) {
+			const rewritten = this.getAvailableOutput(children, index);
 			if (rewritten === null) {
 				break;
 			}
 
-			const emittedLength = this.emittedLengths.get(node) ?? 0;
+			const emittedLength = this.emittedLengths[index] ?? 0;
 			if (rewritten.length > emittedLength) {
-				output += rewritten.slice(emittedLength);
-				this.emittedLengths.set(node, rewritten.length);
+				output += String_slice(rewritten, emittedLength);
+				this.emittedLengths[index] = rewritten.length;
 			}
 		}
 
 		return output;
 	}
 
-	private getAvailableOutput(node: ChildNode) {
-		if (!isElementNode(node)) {
-			return serializeHtmlNode(node);
+	private getAvailableOutput(children: NullArray<ChildNode>, index: number) {
+		const node = children[index];
+		if (node.type !== ElementType.Tag) {
+			return render(node);
 		}
 
-		if (!this.completedElements.has(node)) {
+		// Only the last child of the root can still be open: anything after it
+		// was added once the parser was back at the top level.
+		if (index === children.length - 1 && this.builder.openElements > 0) {
 			return null;
 		}
 
-		let rewritten = this.rewrittenNodes.get(node);
+		let rewritten = this.rewrittenNodes[index];
 		if (rewritten === undefined) {
 			rewritten = rewriteHtmlInner(
 				node,
@@ -150,7 +149,7 @@ export class IncrementalHtmlRewriter {
 				this.meta,
 				this.htmlcontext
 			);
-			this.rewrittenNodes.set(node, rewritten);
+			this.rewrittenNodes[index] = rewritten;
 		}
 
 		return rewritten;
@@ -164,36 +163,34 @@ function rewriteHtmlInner(
 	htmlcontext: HtmlContext
 ) {
 	if (typeof html !== "string") {
-		html = serializeHtmlNode(html);
+		html = render(html);
 	}
 
-	const handler = new DomHandler((err, dom) => dom);
-	const parser = new Parser(handler, {
+	const root = parseDocument(html, {
 		startingForeignContext: htmlcontext.foreignContext,
 		xmlMode: htmlcontext.xmlMode,
 		scriptingEnabled: htmlcontext.scriptingEnabled,
 	});
 
-	parser.write(html);
-	parser.end();
 	Tap.dispatch(
 		context.hooks!.rewriter.html.pre,
 		{
-			handler,
+			root,
 			meta,
 			htmlcontext,
 			origHtml: html,
 		},
 		undefined
 	);
-	traverseParsedHtml(handler.root, context, meta);
+	traverseParsedHtml(root, context, meta);
 
 	let htmlRoot: Element | undefined;
 	let headElement: Element | undefined;
 	let bodyElement: Element | undefined;
 
 	function detectQuirks() {
-		for (const child of handler.root.childNodes) {
+		for (let index = 0; index < root.children.length; index++) {
+			const child = root.children[index];
 			if (
 				child.type === ElementType.Directive ||
 				child.type === ElementType.Comment ||
@@ -203,7 +200,7 @@ function rewriteHtmlInner(
 			}
 
 			if (child.type === ElementType.Tag && child.name === "html") {
-				htmlRoot = child as Element;
+				htmlRoot = child;
 			} else {
 				// there's a child of the root that isn't an html element or a doctype/comment/text
 				return true;
@@ -212,7 +209,8 @@ function rewriteHtmlInner(
 
 		if (!htmlRoot) return true; // no html tag or it's somewhere else other than first child
 
-		for (const child of htmlRoot.childNodes) {
+		for (let index = 0; index < htmlRoot.children.length; index++) {
+			const child = htmlRoot.children[index];
 			if (
 				child.type === ElementType.Directive ||
 				child.type === ElementType.Comment ||
@@ -226,9 +224,9 @@ function rewriteHtmlInner(
 					// head comes after body
 					return true;
 				}
-				headElement = child as Element;
+				headElement = child;
 			} else if (child.type === ElementType.Tag && child.name === "body") {
-				bodyElement = child as Element;
+				bodyElement = child;
 			} else {
 				// there's a child of html that isn't head or body
 				// fine if head already exists, bad if it doesn't
@@ -248,7 +246,7 @@ function rewriteHtmlInner(
 			new Element("script", { src, "scramjet-injected": "true" });
 		const injectScripts = context.interface.getInjectScripts(
 			meta,
-			handler,
+			root,
 			htmlcontext,
 			script
 		);
@@ -259,14 +257,14 @@ function rewriteHtmlInner(
 			);
 			// there's weird stuff going on with the document that could result in page scripts being loaded before our inject scripts
 			// so inject them at position 0
-			handler.root.children.unshift(...injectScripts);
+			root.prepend(injectScripts);
 		} else {
 			if (!headElement) {
-				headElement = new Element("head", {}, []);
-				htmlRoot.children.unshift(headElement);
+				headElement = new Element("head", {});
+				htmlRoot.prepend([headElement]);
 			}
 
-			headElement.children.unshift(...injectScripts);
+			headElement.prepend(injectScripts);
 		}
 	}
 
@@ -274,7 +272,7 @@ function rewriteHtmlInner(
 	Tap.dispatch(
 		context.hooks!.rewriter.html.post,
 		{
-			handler,
+			root,
 			meta,
 			htmlcontext,
 			origHtml: html,
@@ -286,10 +284,7 @@ function rewriteHtmlInner(
 		return props.setRawHtml;
 	}
 
-	return render(handler.root, {
-		...renderOptions,
-		xmlMode: htmlcontext.xmlMode,
-	});
+	return render(root, htmlcontext.xmlMode);
 }
 
 export function rewriteHtml(
@@ -307,11 +302,6 @@ export function rewriteHtml(
 	return ret;
 }
 
-// type ParseState = {
-// 	base: string;
-// 	origin?: URL;
-// };
-
 /**
  * Undo {@link rewriteHtml} over a serialization.
  *
@@ -324,118 +314,133 @@ export function unrewriteHtml(
 	foreignContext?: ForeignContext,
 	context?: ScramjetContext
 ) {
-	const handler = new DomHandler((err, dom) => dom);
-	const parser = new Parser(handler, {
+	const root = parseDocument(html, {
 		startingForeignContext: foreignContext,
 	});
 
-	parser.write(html);
-	parser.end();
-
-	function traverse(node: ChildNode) {
-		if ("attribs" in node) {
-			for (const key in node.attribs) {
-				if (key.toLowerCase() === "scramjet-attr-script-source-src") {
-					if (node.children[0] && "data" in node.children[0])
-						node.children[0].data = base64Decode(node.attribs[key]);
-					delete node.attribs[key];
+	function traverse(node: AnyNode) {
+		if (node.type === ElementType.Tag) {
+			const { attribs } = node;
+			const keys = Object_keys(attribs);
+			for (let index = 0; index < keys.length; index++) {
+				const key = keys[index];
+				const lower = String_toLowerCase(key);
+				if (lower === "scramjet-attr-script-source-src") {
+					const child = node.children[0];
+					if (child && "data" in child) child.data = base64Decode(attribs[key]);
+					delete attribs[key];
 					continue;
 				}
 
-				if (key.toLowerCase().startsWith("scramjet-attr-")) {
-					node.attribs[key.slice("scramjet-attr-".length)] = node.attribs[key];
-					delete node.attribs[key];
+				if (String_startsWith(lower, "scramjet-attr-")) {
+					attribs[String_slice(key, "scramjet-attr-".length)] = attribs[key];
+					delete attribs[key];
 				}
+			}
+
+			// a style element has no mirror to restore from - the stylesheet is
+			// recovered by running the rewrite backwards
+			const child = node.children[0];
+			if (
+				context &&
+				node.name === "style" &&
+				child !== undefined &&
+				"data" in child
+			) {
+				child.data = unrewriteCss(child.data, context);
 			}
 		}
 
-		// a style element has no mirror to restore from - the stylesheet is
-		// recovered by running the rewrite backwards
-		if (
-			context &&
-			node.type === ElementType.Style &&
-			node.children[0] !== undefined &&
-			"data" in node.children[0]
-		) {
-			node.children[0].data = unrewriteCss(node.children[0].data, context);
-		}
-
-		if ("childNodes" in node) {
-			for (const child of node.childNodes) {
-				traverse(child);
+		if ("children" in node) {
+			for (let index = 0; index < node.children.length; index++) {
+				traverse(node.children[index]);
 			}
 		}
 	}
 
-	traverse(handler.root);
+	traverse(root);
 
-	return render(handler.root, {
-		...renderOptions,
-	});
+	return render(root);
 }
 
-// i need to add the attributes in during rewriting
-
 function traverseParsedHtml(
-	node: any,
+	node: AnyNode,
 	context: ScramjetContext,
 	meta: URLMeta
-) {
-	if (node.name === "base" && node.attribs.href !== undefined) {
-		meta.base = new _URL(node.attribs.href, meta.origin);
+): AnyNode {
+	if (node.type !== ElementType.Tag) {
+		if ("children" in node) traverseChildren(node, context, meta);
+
+		return node;
 	}
 
-	if (node.attribs) {
-		for (const rule of htmlRules) {
-			for (const attr in rule) {
-				const sel = rule[attr.toLowerCase()];
-				if (typeof sel === "function") continue;
+	const { attribs } = node;
 
-				if (sel === "*" || sel.includes(node.name)) {
-					if (node.attribs[attr] !== undefined) {
-						const value = node.attribs[attr];
-						const v = rule.fn(
-							value,
-							context,
-							meta,
-							(name) => node.attribs[name] || null
-						);
+	if (node.name === "base" && attribs.href !== undefined) {
+		meta.base = new _URL(attribs.href, meta.origin);
+	}
 
-						if (v === null) delete node.attribs[attr];
-						else {
-							node.attribs[attr] = v;
-						}
-						node.attribs[`scramjet-attr-${attr}`] = value;
+	for (let ruleIndex = 0; ruleIndex < htmlRules.length; ruleIndex++) {
+		const rule = htmlRules[ruleIndex];
+		const ruleKeys = Object_keys(rule);
+		for (let keyIndex = 0; keyIndex < ruleKeys.length; keyIndex++) {
+			const attr = ruleKeys[keyIndex];
+			const sel = rule[String_toLowerCase(attr)];
+			if (typeof sel === "function") continue;
+
+			if (sel === "*" || Array_indexOf(sel, node.name) !== -1) {
+				if (attribs[attr] !== undefined) {
+					const value = attribs[attr];
+					const v = rule.fn(
+						value,
+						context,
+						meta,
+						(name) => attribs[name] || null
+					);
+
+					if (v === null) delete attribs[attr];
+					else {
+						attribs[attr] = v;
 					}
+					attribs[`scramjet-attr-${attr}`] = value;
 				}
 			}
 		}
-		for (const [attr, value] of Object_entries(node.attribs)) {
-			if (eventAttributes.includes(attr)) {
-				node.attribs[`scramjet-attr-${attr}`] = value;
-				node.attribs[attr] = rewriteJs(
-					value as string,
-					`(inline ${attr} on element)`,
-					context,
-					meta
-				);
-			}
+	}
+	const attrKeys = Object_keys(attribs);
+	for (let index = 0; index < attrKeys.length; index++) {
+		const attr = attrKeys[index];
+		if (Array_indexOf(eventAttributes, attr) !== -1) {
+			const value = attribs[attr];
+			attribs[`scramjet-attr-${attr}`] = value;
+			attribs[attr] = rewriteJs(
+				value,
+				`(inline ${attr} on element)`,
+				context,
+				meta
+			) as string;
 		}
 	}
 
-	if (node.name === "style" && node.children[0] !== undefined)
-		node.children[0].data = rewriteCss(node.children[0].data, context, meta);
+	const text = node.children[0];
+	const hasText = text !== undefined && text.type === ElementType.Text;
+
+	if (node.name === "style" && hasText)
+		text.data = rewriteCss(text.data, context, meta);
 
 	if (
 		node.name === "script" &&
-		node.attribs.type?.toLowerCase() === "importmap" &&
-		node.children[0] !== undefined
+		attribs.type !== undefined &&
+		String_toLowerCase(attribs.type) === "importmap" &&
+		hasText
 	) {
-		const json = node.children[0].data;
+		const json = text.data;
 		try {
 			const map = JSON_parse(json);
 			if (map.imports) {
-				for (const key in map.imports) {
+				const specifiers = Object_keys(map.imports);
+				for (let index = 0; index < specifiers.length; index++) {
+					const key = specifiers[index];
 					let url = map.imports[key];
 					if (typeof url === "string") {
 						url = rewriteUrl(url, context, meta, { isModule: true });
@@ -444,62 +449,62 @@ function traverseParsedHtml(
 				}
 			}
 
-			node.children[0].data = JSON_stringify(map);
+			text.data = JSON_stringify(map);
 		} catch (e) {
 			dbg.error("Failed to parse importmap JSON:", e);
 		}
 	}
-	if (
-		node.name === "script" &&
-		node.attribs &&
-		node.children[0] !== undefined
-	) {
+	if (node.name === "script" && hasText) {
 		const scriptBlockType = getScriptBlockTypeString(
-			"type" in node.attribs ? node.attribs.type : undefined,
-			"language" in node.attribs ? node.attribs.language : undefined,
-			"type" in node.attribs,
-			"language" in node.attribs
+			"type" in attribs ? attribs.type : undefined,
+			"language" in attribs ? attribs.language : undefined,
+			"type" in attribs,
+			"language" in attribs
 		);
 		if (isScriptType(scriptBlockType)) {
-			let js = node.children[0].data;
+			let js = text.data;
 			const module = isModuleScriptType(scriptBlockType);
-			node.attribs["scramjet-attr-script-source-src"] = bytesToBase64(
+			attribs["scramjet-attr-script-source-src"] = bytesToBase64(
 				TextEncoder_encode(js)
 			);
 			const htmlcomment = /<!--[\s\S]*?-->/g;
 			js = js.replace(htmlcomment, "");
-			node.children[0].data = rewriteJs(
+			text.data = rewriteJs(
 				js,
 				"(inline script element)",
 				context,
 				meta,
 				module
-			);
+			) as string;
 		}
 	}
 
-	if (node.name === "meta" && node.attribs["http-equiv"] !== undefined) {
+	if (node.name === "meta" && attribs["http-equiv"] !== undefined) {
 		if (
-			node.attribs["http-equiv"].toLowerCase() === "content-security-policy"
+			String_toLowerCase(attribs["http-equiv"]) === "content-security-policy"
 		) {
 			// just delete it. this needs to be emulated eventually but like
-			node = new Comment(node.attribs.content);
+			return new Comment(attribs.content);
 		}
 		// a refresh's content is rewritten - and mirrored - by its rule in
 		// `htmlRules`, the same one a script's write goes through
 	}
 
-	if (node.childNodes) {
-		for (const childNode in node.childNodes) {
-			node.childNodes[childNode] = traverseParsedHtml(
-				node.childNodes[childNode],
-				context,
-				meta
-			);
-		}
-	}
+	traverseChildren(node, context, meta);
 
 	return node;
+}
+
+function traverseChildren(
+	node: Document | Element | CDATA,
+	context: ScramjetContext,
+	meta: URLMeta
+) {
+	for (let index = 0; index < node.children.length; index++) {
+		const child = node.children[index];
+		const rewritten = traverseParsedHtml(child, context, meta);
+		if (rewritten !== child) node.replaceChild(index, rewritten as ChildNode);
+	}
 }
 
 export function rewriteSrcset(
