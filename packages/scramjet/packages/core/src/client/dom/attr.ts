@@ -360,10 +360,15 @@ export default function (client: ScramjetClient, _self: Self) {
 			// throws the spec's NotFoundError
 			if (!node)
 				return new client.native.NamedNodeMap(map).removeNamedItem(name);
+			// a stripped attribute, which only its mirror represents
+			if (
+				attrs.nativeOwner(node) === null ||
+				isInternalAttribute(attrs.attrName(node))
+			) {
+				return attrs.removeStripped(element, name)!;
+			}
 
-			const mirror = isInternalAttribute(attrs.attrName(node))
-				? null
-				: attrs.raw.get(element, mirrorAttributeName(name));
+			const mirror = attrs.raw.get(element, mirrorAttributeName(name));
 			const removed: Attr = new client.native.NamedNodeMap(map).removeNamedItem(
 				attrs.attrName(node)
 			);
@@ -404,14 +409,8 @@ export default function (client: ScramjetClient, _self: Self) {
 			// a stripped attribute is represented by its mirror alone, which has
 			// no namespace and a name the native would never match
 			if (element && !node && namespace === null) {
-				const mirror = attrs.strippedNode(element, localName);
-				if (mirror) {
-					const removed: Attr = new client.native.NamedNodeMap(
-						map
-					).removeNamedItem(attrs.attrName(mirror));
-					attrs.changed(element, localName, null);
-
-					return removed;
+				if (attrs.strippedNode(element, localName)) {
+					return attrs.removeStripped(element, localName)!;
 				}
 			}
 
@@ -446,6 +445,15 @@ export default function (client: ScramjetClient, _self: Self) {
 			// a mirror is written without a namespace, so its local name and its
 			// qualified name are the same string
 			return mirrored ? mirrored : super.localName;
+		}
+
+		// a stripped attribute the page inserted as a node never reaches the
+		// document, and belongs to its element only as far as the page can tell
+		@Type("Element?")
+		get ownerElement(): Element | null {
+			void super.name;
+
+			return attrs.owner(this);
 		}
 
 		@Type("DOMString")

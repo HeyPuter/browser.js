@@ -2,7 +2,7 @@ import { rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
 import { ForeignContext } from "@/shared/rewriters/html";
 import { Array_indexOf, String, String_substring } from "@/shared/snapshot";
-import { Arguments, Returns } from "@client/webidl";
+import { Arguments, Returns, Type } from "@client/webidl";
 import { foreignContextForElement } from "@client/dom/markup";
 
 const ELEMENT_NODE = 1;
@@ -243,6 +243,30 @@ export default function (client: ScramjetClient, _self: Self) {
 
 		return out;
 	};
+
+	/**
+	 * A boundary offset, in the page's text. Inside a script's or a style's
+	 * Text the native counts the rewritten code, which is longer than what the
+	 * page wrote - `selectNodeContents` on one would put the end past the end.
+	 */
+	const pageOffset = (container: Node, offset: number): number => {
+		if (!isText(container) || !isRawText(parentOf(container))) return offset;
+		const length = text.data(container as CharacterData).length;
+
+		return offset > length ? length : offset;
+	};
+
+	client.Intercept(class extends AbstractRange {
+		@Type("unsigned long")
+		get startOffset(): number {
+			return pageOffset(super.startContainer, super.startOffset);
+		}
+
+		@Type("unsigned long")
+		get endOffset(): number {
+			return pageOffset(super.endContainer, super.endOffset);
+		}
+	});
 
 	client.Intercept(class extends Range {
 		@Arguments()

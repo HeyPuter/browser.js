@@ -251,27 +251,19 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments()
 		@Returns("undefined")
 		normalize(): void {
-			// the merge concatenates the *live* data, which is already the
-			// rewritten whole, so only the per-node records have to be rebuilt -
-			// for this node if it is a script or a style, and for every one
-			// under it, whose later Text children the native merges away along
-			// with their records
+			// every script and style with more than one Text child is
+			// normalized over the page's text first, which leaves the native
+			// nothing of theirs to merge or remove; its records are then turned
+			// back into the rewritten whole
 			const self = this as Node;
 			const affected = rawTextInclusiveDescendants(self);
-			const sources: string[] = [];
 			for (let i = 0; i < affected.length; i++) {
-				sources[i] = text.source(affected[i]);
+				text.normalizeChildren(affected[i]);
 			}
 
 			super.normalize();
 
-			for (let i = 0; i < affected.length; i++) {
-				const children = text.textChildren(affected[i]);
-				if (children.length > 0) {
-					client.box.characterDataSources.set(children[0], sources[i]);
-				}
-				text.sync(affected[i]);
-			}
+			for (let i = 0; i < affected.length; i++) text.sync(affected[i]);
 		}
 	});
 

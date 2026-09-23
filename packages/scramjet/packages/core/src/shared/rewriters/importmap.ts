@@ -20,6 +20,7 @@
 import { ScramjetContext } from "@/shared";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import {
+	Array_isArray,
 	JSON_parse,
 	JSON_stringify,
 	Object_keys,
@@ -31,66 +32,155 @@ import {
 
 type SpecifierMap = Record<string, unknown>;
 
-/** A specifier map's addresses, which are module URLs. */
+const isMap = (value: unknown): value is Record<string, any> =>
+	value !== null && typeof value === "object" && !Array_isArray(value);
+
+/**
+ * Whether the browser accepts `map` at all. A top level, an `imports`, a
+ * `scopes`, one of the scopes' maps or an `integrity` that is not a JSON
+ * object makes it throw, and the whole map is ignored - not just that part.
+ *
+ * https://html.spec.whatwg.org/multipage/webappapis.html#parse-an-import-map-string
+ */
+function isValidImportMap(map: unknown): map is Record<string, any> {
+	if (!isMap(map)) return false;
+	if (map.imports !== undefined && !isMap(map.imports)) return false;
+	if (map.integrity !== undefined && !isMap(map.integrity)) return false;
+	if (map.scopes !== undefined) {
+		if (!isMap(map.scopes)) return false;
+		const prefixes = Object_keys(map.scopes);
+		for (let i = 0; i < prefixes.length; i++) {
+			if (!isMap(map.scopes[prefixes[i]])) return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * How a URL in the map is compared: whole, as a specifier map's prefix (a key
+ * or address ending in `/`, extended by concatenation), or as a scope.
+ */
+type URLForm = "exact" | "prefix" | "scope";
+
+/**
+ * A module URL out of the map, rewritten to the one the module loader will
+ * compare it against.
+ *
+ * Exact entries become the whole proxy URL, the same one `rewriteUrl` gives
+ * every module import - so a URL-like key matches the rewritten specifier in
+ * a static import, and an exact scope matches the module's own URL.
+ *
+ * A prefix has to end in a literal `/` for the browser to accept it, and has
+ * the rest of the specifier appended as it is. So it is the encoded address
+ * *without* its trailing slash, then the slash: `/mapped/` becomes
+ * `<prefix>http%3A%2F%2Fhost%2Fmapped/`, and `item.js` under it becomes
+ * `<prefix>http%3A%2F%2Fhost%2Fmapped/item.js` - which the codec decodes to
+ * the right URL, since a literal `/` survives percent-decoding. It carries
+ * none of the proxy's query, which is why the service worker has to
+ * recognize the module it loads without one (`fetch/parse.ts`).
+ *
+ * A scope is matched against the importing module's URL, which is always
+ * fully encoded - so it is the encoded address and nothing more.
+ *
+ * Known hole: both the prefix and the scope rely on a codec whose output
+ * for a URL starts with its output for a prefix of it, as percent-encoding's
+ * does. And a prefix *scope* cannot end in a literal `/` and still be the
+ * start of an encoded module URL, so the browser treats it as an exact one:
+ * a static import from a module under it is not scoped. `import()` is
+ * resolved by the client instead (`client/shared/import.ts`), which gets
+ * scopes right. So is a URL-like prefix key, which never matches a static
+ * import's fully encoded URL.
+ */
+function rewriteModuleURL(
+	url: string,
+	form: URLForm,
+	context: ScramjetContext,
+	meta: URLMeta
+): string {
+	if (form === "exact") {
+		return rewriteUrl(url, context, meta, { isModule: true });
+	}
+
+	let parsed: _URL;
+	try {
+		parsed = new _URL(url, meta.base);
+	} catch {
+		return url;
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url;
+	parsed.hash = "";
+
+	const href = parsed.href;
+	if (form === "scope" || !String_endsWith(href, "/")) {
+		return context.prefix.href + context.interface.codecEncode(href);
+	}
+
+	return (
+		context.prefix.href +
+		context.interface.codecEncode(String_substring(href, 0, href.length - 1)) +
+		"/"
+	);
+}
+
+/**
+ * A specifier map: every address, and every key that is URL-like. A bare key
+ * is left as it is - it is compared against the specifier the page wrote,
+ * which nothing rewrites.
+ */
 function rewriteSpecifierMap(
 	map: SpecifierMap,
 	context: ScramjetContext,
 	meta: URLMeta
-) {
-	const specifiers = Object_keys(map);
-	for (let i = 0; i < specifiers.length; i++) {
-		const url = map[specifiers[i]];
-		if (typeof url === "string") {
-			map[specifiers[i]] = rewriteUrl(url, context, meta, { isModule: true });
-		}
+): SpecifierMap {
+	const out: SpecifierMap = {};
+	const keys = Object_keys(map);
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i];
+		const form: URLForm = String_endsWith(key, "/") ? "prefix" : "exact";
+		const address = map[key];
+		const rewrittenKey =
+			urlLike(key, meta.base) !== null
+				? rewriteModuleURL(key, form, context, meta)
+				: key;
+		out[rewrittenKey] =
+			typeof address === "string"
+				? rewriteModuleURL(address, form, context, meta)
+				: address;
 	}
+
+	return out;
 }
 
 /**
- * A scope, which the loader matches as a *prefix* of the importing module's
- * URL. So it is rewritten to the start of a proxy URL only - the encoded
- * address with none of the query the proxy appends after it, which would sit
- * in the middle of every URL the scope has to match.
+ * Rewrite an import map's JSON. Throws what `JSON.parse` throws; a map the
+ * browser would reject is handed back as it is, for the browser to reject.
  */
-function rewriteScope(
-	scope: string,
-	context: ScramjetContext,
-	meta: URLMeta
-): string {
-	let url: _URL;
-	try {
-		url = new _URL(scope, meta.base);
-	} catch {
-		return scope;
-	}
-	if (url.protocol !== "http:" && url.protocol !== "https:") return scope;
-	url.hash = "";
-
-	return context.prefix.href + context.interface.codecEncode(url.href);
-}
-
-/** Rewrite an import map's JSON. Throws what `JSON.parse` throws. */
 export function rewriteImportMap(
 	json: string,
 	context: ScramjetContext,
 	meta: URLMeta
 ): string {
 	const map = JSON_parse(json);
-	if (!map || typeof map !== "object") return json;
+	if (!isValidImportMap(map)) return json;
 
-	if (map.imports && typeof map.imports === "object") {
-		rewriteSpecifierMap(map.imports, context, meta);
+	if (map.imports !== undefined) {
+		map.imports = rewriteSpecifierMap(map.imports, context, meta);
 	}
 
-	if (map.scopes && typeof map.scopes === "object") {
+	if (map.scopes !== undefined) {
 		const scopes: Record<string, unknown> = {};
 		const prefixes = Object_keys(map.scopes);
 		for (let i = 0; i < prefixes.length; i++) {
-			const specifiers = map.scopes[prefixes[i]];
-			if (specifiers && typeof specifiers === "object") {
-				rewriteSpecifierMap(specifiers, context, meta);
-			}
-			scopes[rewriteScope(prefixes[i], context, meta)] = specifiers;
+			const prefix = prefixes[i];
+			scopes[
+				rewriteModuleURL(
+					prefix,
+					String_endsWith(prefix, "/") ? "scope" : "exact",
+					context,
+					meta
+				)
+			] = rewriteSpecifierMap(map.scopes[prefix], context, meta);
 		}
 		map.scopes = scopes;
 	}
@@ -197,13 +287,13 @@ export function parseImportMaps(
 		} catch {
 			continue;
 		}
-		if (!map || typeof map !== "object") continue;
+		if (!isValidImportMap(map)) continue;
 
-		if (map.imports && typeof map.imports === "object") {
+		if (map.imports !== undefined) {
 			normalizeSpecifierMap(map.imports, base, state.imports);
 		}
 
-		if (map.scopes && typeof map.scopes === "object") {
+		if (map.scopes !== undefined) {
 			const prefixes = Object_keys(map.scopes);
 			for (let j = 0; j < prefixes.length; j++) {
 				let prefixURL: _URL;
@@ -213,7 +303,6 @@ export function parseImportMaps(
 					continue;
 				}
 				const specifiers = map.scopes[prefixes[j]];
-				if (!specifiers || typeof specifiers !== "object") continue;
 
 				let scope: NormalizedSpecifierMap | null = null;
 				for (let k = 0; k < state.scopes.length; k++) {

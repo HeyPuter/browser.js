@@ -222,6 +222,9 @@
 		"wsfidelity-connection-refused",
 		"wsfidelity-protocol-negotiated",
 		"wsfidelity-stream-connection-refused",
-		"elementlayer-review112-import-map-integrity"
+		"elementlayer-review112-import-map-integrity",
+		"elementlayer-review112-mutation-observer-attribute-records",
+		"elementlayer-review112-selector-rewritten-attribute-value",
+		"elementlayer-review112-selector-stripped-attribute"
 	]
 }

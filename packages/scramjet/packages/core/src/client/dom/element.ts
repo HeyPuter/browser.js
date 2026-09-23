@@ -107,7 +107,7 @@ export default function (client: ScramjetClient, _self: Self) {
 				if (namespace) return null;
 				const mirror = attrs.strippedNode(this, localName);
 
-				return mirror ? attrs.attrValue(mirror) : null;
+				return mirror ? attrs.visibleValue(mirror) : null;
 			}
 
 			if (isInternalAttribute(attrs.attrName(node))) return null;
@@ -168,6 +168,27 @@ export default function (client: ScramjetClient, _self: Self) {
 
 			const rewritten = rewrite(text);
 			const live = rewritten === null ? "" : rewritten;
+
+			// a stripped attribute in the null namespace is `setAttribute` by
+			// another name - with no prefix, which is the one thing the native
+			// would still refuse, and does so before touching anything. going
+			// through the native write would put the attribute down and take it
+			// away again, two mutations the page could observe
+			if (
+				rewritten === null &&
+				namespace === null &&
+				!super.hasAttribute(qualifiedName)
+			) {
+				if (
+					!isValidAttributeLocalName(qualifiedName) ||
+					qualifiedName.includes(":")
+				) {
+					super.setAttributeNS(namespace, qualifiedName, live);
+				}
+				attrs.set(this, qualifiedName, text);
+
+				return;
+			}
 
 			// a name the mirror cannot be written under is one the native refuses
 			// too, and its error is the one the page is owed
@@ -237,8 +258,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			// leaves only the mirror, which carries no namespace - so a
 			// namespace-less removal has to find it by name
 			if (namespace === null && attrs.strippedNode(this, localName)) {
-				attrs.raw.remove(this, mirrorAttributeName(localName));
-				attrs.changed(this, localName, null);
+				attrs.remove(this, localName);
 			}
 		}
 
@@ -337,7 +357,30 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Attr")
 		@Returns("Attr")
 		removeAttributeNode(attr: Attr): Attr {
+			void super.hasAttributes();
+
+			// the page's own node for a stripped attribute, which the document
+			// never held
+			if (
+				attrs.nativeOwner(attr) === null &&
+				attrs.owner(attr) === (this as Element)
+			) {
+				attrs.remove(this, attrs.attrName(attr));
+
+				return attr;
+			}
+
 			const name = attrs.heldName(this, attr);
+			const mirrored = mirroredAttributeName(name);
+			// the mirror node standing in for a stripped attribute is what
+			// `getAttributeNode("nonce")` hands out, and removing it is removing
+			// that attribute
+			if (mirrored && attrs.nativeOwner(attr) === (this as Element)) {
+				attrs.remove(this, mirrored);
+
+				return attr;
+			}
+
 			const mirror = attrs.mirrorOf(this, attr);
 			// first, so an attribute this element does not have throws the spec's
 			// NotFoundError before anything has been touched
@@ -347,12 +390,6 @@ export default function (client: ScramjetClient, _self: Self) {
 				if (mirror !== null) attrs.raw.remove(this, mirrorAttributeName(name));
 				attrs.detached(removed, mirror);
 				attrs.changed(this, name, null);
-			} else {
-				// the mirror node standing in for a stripped attribute is what
-				// `getAttributeNode("nonce")` hands out, and removing it is
-				// removing that attribute
-				const mirrored = mirroredAttributeName(name);
-				if (mirrored) attrs.changed(this, mirrored, null);
 			}
 
 			return removed;

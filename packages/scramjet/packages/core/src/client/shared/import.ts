@@ -26,15 +26,8 @@ export default function (client: ScramjetClient, self: Self) {
 		const document = client.global.document as Document | undefined;
 		if (!document) return null;
 
-		const scripts: NodeListOf<Element> = new client.native.Document(
-			document
-		).querySelectorAll("script[type=importmap i]");
-		if (scripts.length === 0) return null;
-
-		const sources: string[] = [];
-		for (let i = 0; i < scripts.length; i++) {
-			sources[i] = client.text.source(scripts[i]);
-		}
+		const sources = client.text.registeredImportMaps(document);
+		if (sources.length === 0) return null;
 
 		return parseImportMaps(sources, client.meta.base);
 	};

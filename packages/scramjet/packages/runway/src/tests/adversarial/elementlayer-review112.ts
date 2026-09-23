@@ -5,6 +5,22 @@ import { basicTest, serverTest } from "../../testcommon.ts";
 // Reproductions for findings in the review of #112. These exercise
 // the public DOM surface, so the same assertions run in the bare harness.
 
+const moduleTest = (name: string, js: string, files: Record<string, string>) =>
+	serverTest({
+		name,
+		autoPass: true,
+		js,
+		start: async (server) => {
+			server.on("request", (req, res) => {
+				const path = (req.url ?? "").split("?")[0];
+				const source = files[path];
+				if (source === undefined) return;
+				res.writeHead(200, { "Content-Type": "application/javascript" });
+				res.end(source);
+			});
+		},
+	});
+
 export default [
 	basicTest({
 		name: "elementlayer-review112-empty-namespace-nonce-change",
@@ -360,6 +376,189 @@ export default [
 			const script = template.content.firstElementChild;
 			assertEqual(script.getAttributeNames().join(","), "nonce,id", "parsed attribute names retain source order");
 			assertEqual(script.attributes.item(0).name, "nonce", "NamedNodeMap index zero retains the first attribute");
+		`,
+	}),
+	moduleTest(
+		"elementlayer-review112-import-map-prefix-static",
+		`
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({ imports: { "review112-prefix/": "/mapped/" } });
+			document.head.append(map);
+			const entry = await import("/prefix-entry.js");
+			assertEqual(entry.default, 112, "a prefix mapping resolves a static import");
+		`,
+		{
+			"/prefix-entry.js":
+				'import value from "review112-prefix/item.js"; export default value;',
+			"/mapped/item.js": "export default 112;",
+		}
+	),
+	moduleTest(
+		"elementlayer-review112-import-map-url-key-static",
+		`
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({ imports: { "/original.js": "/mapped.js" } });
+			document.head.append(map);
+			const entry = await import("/url-key-entry.js");
+			assertEqual(entry.default, 112, "a URL-like key remaps a static import");
+		`,
+		{
+			"/url-key-entry.js":
+				'import value from "/original.js"; export default value;',
+			"/original.js": "export default 111;",
+			"/mapped.js": "export default 112;",
+		}
+	),
+	basicTest({
+		name: "elementlayer-review112-import-map-ignores-text-mutation",
+		js: `
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({
+				imports: { "review112-mutated": "data:text/javascript,export default 112" }
+			});
+			document.head.append(map);
+			map.textContent = JSON.stringify({
+				imports: { "review112-mutated": "data:text/javascript,export default 113" }
+			});
+			const module = await import("review112-mutated");
+			assertEqual(module.default, 112, "a registered map keeps its original value after text mutation");
+		`,
+	}),
+	moduleTest(
+		"elementlayer-review112-import-map-exact-scope-static",
+		`
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({
+				scopes: { [location.origin + "/scope-entry.js"]: { "review112-exact": "/scope-target.js" } }
+			});
+			document.head.append(map);
+			const entry = await import("/scope-entry.js");
+			assertEqual(entry.default, 112, "an exact scope applies to its module's static import");
+		`,
+		{
+			"/scope-entry.js":
+				'import value from "review112-exact"; export default value;',
+			"/scope-target.js": "export default 112;",
+		}
+	),
+	basicTest({
+		name: "elementlayer-review112-range-script-text-offset",
+		js: `
+			const script = document.createElement("script");
+			script.textContent = "location.href";
+			const node = script.firstChild;
+			const range = document.createRange();
+			range.selectNodeContents(node);
+			assertEqual(range.endOffset, node.length, "Range endOffset uses the page's Text length");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-invalid-import-map-rejected",
+		js: `
+			const suppressParseError = (event) => {
+				if (String(event.message).includes("Failed to parse import map")) event.preventDefault();
+			};
+			window.addEventListener("error", suppressParseError);
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({
+				imports: [],
+				scopes: { [location.origin + "/"]: { "review112-invalid": "data:text/javascript,export default 112" } }
+			});
+			document.head.append(map);
+			let rejected = false;
+			try { await import("review112-invalid"); }
+			catch { rejected = true; }
+			window.removeEventListener("error", suppressParseError);
+			assertEqual(rejected, true, "an invalid imports field rejects the entire map");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-selector-rewritten-attribute-value",
+		js: `
+			const img = document.createElement("img");
+			img.setAttribute("src", "/review112-image.png");
+			assertEqual(img.getAttribute("src"), "/review112-image.png", "the page sees the original src");
+			assertEqual(img.matches('[src="/review112-image.png"]'), true, "attribute selectors match the page's value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-selector-stripped-attribute",
+		js: `
+			const iframe = document.createElement("iframe");
+			iframe.setAttribute("sandbox", "allow-scripts");
+			assertEqual(iframe.hasAttribute("sandbox"), true, "the sandbox attribute is visible");
+			assertEqual(iframe.matches("[sandbox]"), true, "attribute selectors find a stripped attribute");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-mutation-observer-attribute-records",
+		js: `
+			const img = document.createElement("img");
+			const observer = new MutationObserver(() => {});
+			observer.observe(img, { attributes: true, attributeOldValue: true });
+			img.setAttribute("src", "/review112-image.png");
+			const records = observer.takeRecords();
+			observer.disconnect();
+			assertEqual(records.map((record) => record.attributeName).join(","), "src", "one page-visible attribute mutation is recorded");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-stripped-attribute-custom-element-reaction",
+		js: `
+			const observed = [];
+			class Review112NonceReaction extends HTMLElement {
+				static observedAttributes = ["nonce"];
+				attributeChangedCallback(name, oldValue, newValue) {
+					observed.push([name, oldValue, newValue]);
+				}
+			}
+			customElements.define("review112-nonce-reaction", Review112NonceReaction);
+			const element = document.createElement("review112-nonce-reaction");
+			element.setAttribute("nonce", "value");
+			assertEqual(observed.length, 1, "the nonce mutation invokes the observed callback");
+			assertEqual(observed[0].join(","), "nonce,,value", "the callback receives the visible name and value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-stripped-setattributenode-identity",
+		js: `
+			const element = document.createElement("div");
+			const attr = document.createAttribute("nonce");
+			attr.value = "value";
+			element.setAttributeNode(attr);
+			assertEqual(attr.ownerElement, element, "the supplied Attr remains attached");
+			assertEqual(element.getAttributeNode("nonce"), attr, "getAttributeNode returns the supplied Attr");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-normalize-separated-script-text",
+		js: `
+			const script = document.createElement("script");
+			const first = document.createTextNode("location");
+			const separator = document.createComment("separator");
+			const second = document.createTextNode(".href");
+			script.append(first, separator, second);
+			script.normalize();
+			assertEqual(script.childNodes.length, 3, "normalize retains noncontiguous nonempty Text nodes");
+			assertEqual(script.childNodes[2], second, "the second Text node retains its position");
+			assertEqual(second.parentNode, script, "the second Text node remains attached");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-ancestor-rawtext-nested-textcontent",
+		js: `
+			const parent = document.createElement("div");
+			const script = document.createElement("script");
+			const nested = document.createElement("b");
+			nested.textContent = "nested";
+			script.append(nested);
+			parent.append(script);
+			assertEqual(parent.textContent, "nested", "an ancestor includes text nested inside a script");
 		`,
 	}),
 ];

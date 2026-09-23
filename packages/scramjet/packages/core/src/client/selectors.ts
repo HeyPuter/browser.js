@@ -8,6 +8,14 @@
  * attribute selector is replaced, in place, by one that never matches, and the
  * rest of the selector is left to mean what it meant.
  *
+ * Known hole: every other attribute selector is matched by the browser
+ * against the document as it really is. A rewritten attribute is matched by
+ * its rewritten value, so `[src="/a.png"]` misses an image the page gave that
+ * `src`; a stripped one is not there at all, so `[sandbox]` misses every
+ * sandboxed iframe. Fixing either means evaluating selectors ourselves, or
+ * rewriting them against the mirrors - which `:has()`, `:is()` and nesting
+ * make a selector engine's worth of work. The same goes for stylesheets.
+ *
  * https://drafts.csswg.org/selectors/#attribute-selectors
  */
 

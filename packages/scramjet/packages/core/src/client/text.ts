@@ -44,6 +44,7 @@ import { rewriteJs } from "@rewriters/js";
 import { rewriteImportMap } from "@rewriters/importmap";
 import { base64Decode, bytesToBase64 } from "@/shared/util";
 import {
+	_WeakMap,
 	String_substring,
 	String_toLowerCase,
 	TextEncoder_encode,
@@ -66,6 +67,15 @@ type InsertionCommit = { done(): void; undo(): void };
 
 /** The text primitives, bound to one client - `client.text`, built in its constructor. */
 export class TextLayer {
+	/**
+	 * The import maps the document has registered, in registration order, and
+	 * the source each was registered with. The browser reads a map once, when
+	 * the script is prepared - rewriting its text afterwards changes nothing -
+	 * so neither may the resolver in `client/shared/import.ts`.
+	 */
+	private readonly importMaps: Element[] = [];
+	private readonly importMapSources = new _WeakMap<Element, string>();
+
 	constructor(private readonly client: ScramjetClient) {}
 
 	private get attrs() {
@@ -336,8 +346,50 @@ export class TextLayer {
 		}
 	}
 
+	/**
+	 * Record `element` as a registered import map, with the source it has now,
+	 * if the browser would have registered it by this point: a connected
+	 * `importmap` script with something in it. Run before anything changes the
+	 * text of a script, since the text it had is the text that counts.
+	 */
+	noteImportMap(element: Element): void {
+		if (this.importMapSources.has(element)) return;
+		if (this.kind(element) !== "script") return;
+		if (String_toLowerCase(this.scriptBlockType(element)) !== "importmap") {
+			return;
+		}
+		if (!new this.client.native.Node(element).isConnected) return;
+
+		const source = this.source(element);
+		if (source === "") return;
+
+		this.importMapSources.set(element, source);
+		this.importMaps[this.importMaps.length] = element;
+	}
+
+	/**
+	 * The sources of every import map `document` has registered, in order.
+	 * A map the parser put down, or one inserted since the last look, is
+	 * picked up here - its text has not changed since, or it would have been
+	 * noted then.
+	 */
+	registeredImportMaps(document: Document): string[] {
+		const found: NodeListOf<Element> = new this.client.native.Document(
+			document
+		).querySelectorAll("script[type=importmap i]");
+		for (let i = 0; i < found.length; i++) this.noteImportMap(found[i]);
+
+		const out: string[] = [];
+		for (let i = 0; i < this.importMaps.length; i++) {
+			out[i] = this.importMapSources.get(this.importMaps[i])!;
+		}
+
+		return out;
+	}
+
 	/** Replace the child text content of `element`, rewriting it. */
 	setSource(element: Element, text: string): void {
+		this.noteImportMap(element);
 		const rewrite = this.rewriterFor(element);
 
 		// first, for the reason `sync` gives: the write can run the script, and
@@ -356,6 +408,7 @@ export class TextLayer {
 	/** Replace one node's data, rewriting the element it belongs to. */
 	setData(node: CharacterData, text: string): void {
 		const owner = this.parent(node);
+		if (owner) this.noteImportMap(owner);
 
 		if (!owner || this.kind(owner) === null) {
 			// plain text: what the page wrote is what the document holds, and a
@@ -370,6 +423,54 @@ export class TextLayer {
 		this.adopt(owner);
 		this.sources.set(node, text);
 		this.sync(owner);
+	}
+
+	/**
+	 * `normalize` for the Text children of a script or a style, done over the
+	 * page's text - ahead of the native, which would get it wrong.
+	 *
+	 * The native merges and removes by the *live* data, and every Text child
+	 * after the first holds none: the rewritten whole is in the first. Left to
+	 * it, a Text node the page wrote after a comment would be removed as empty.
+	 * So each run of contiguous Text is merged into its first non-empty node
+	 * here, empty ones are removed, and each survivor that holds nothing live
+	 * is given a placeholder the native will leave alone. {@link sync}, which
+	 * the caller runs once the native is done, puts the live text back.
+	 *
+	 * https://dom.spec.whatwg.org/#dom-node-normalize
+	 */
+	normalizeChildren(element: Element): void {
+		this.adopt(element);
+		const nElement = new this.client.native.Node(element);
+
+		let child = this.firstChild(element);
+		while (child) {
+			let next = this.nextSibling(child);
+			// exclusive Text only: a CDATA section is never merged or removed
+			if (this.type(child) !== TEXT_NODE) {
+				child = next;
+				continue;
+			}
+
+			const node = child as CharacterData;
+			let merged = this.data(node);
+			if (merged === "") {
+				this.sources.delete(node);
+				nElement.removeChild(node);
+				child = next;
+				continue;
+			}
+			while (next && this.type(next) === TEXT_NODE) {
+				const following = this.nextSibling(next);
+				merged += this.data(next as CharacterData);
+				this.sources.delete(next as CharacterData);
+				nElement.removeChild(next);
+				next = following;
+			}
+			this.sources.set(node, merged);
+			if (this.rawData(node) === "") this.writeData(node, " ");
+			child = next;
+		}
 	}
 
 	/** Whether anything under `node` is a script or a style. */
@@ -485,8 +586,10 @@ export class TextLayer {
 			if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
 				out += this.data(child as CharacterData);
 			} else if (what === ELEMENT_NODE) {
+				// a script's or a style's own text is its source, and anything
+				// nested under it still counts - so it is walked like the rest
 				if (this.kind(child as Element) !== null) {
-					out += this.source(child as Element);
+					out += this.descendantText(child);
 				} else if (this.containsRawText(child)) {
 					out += this.descendantText(child);
 				} else {
@@ -660,7 +763,10 @@ export class TextLayer {
 			record: string | undefined;
 		}[] = [];
 
-		if (into && target) this.adopt(target);
+		if (into && target) {
+			this.noteImportMap(target);
+			this.adopt(target);
+		}
 
 		for (let i = 0; i < nodes.length; i++) {
 			const inserted = nodes[i];

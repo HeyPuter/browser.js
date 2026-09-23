@@ -18,6 +18,14 @@
  * for `Attr` and `NamedNodeMap`, `dom/reflect.ts` for the reflected IDL
  * attributes, and the text layer for a script's source. Nothing reads
  * `scramjet-attr-` by hand.
+ *
+ * Known hole: a MutationObserver sees the document, not this layer. One
+ * `setAttribute("src", ...)` is two records - the mirror's, under its
+ * `scramjet-attr-` name, and the real attribute's - with rewritten values in
+ * `oldValue`, and a stripped attribute's change shows up under the mirror's
+ * name alone. Hiding them means wrapping every observer's callback and
+ * `takeRecords` to filter and rename records, and to recover old values the
+ * document never held.
  */
 
 import type { ScramjetClient } from "@client/index";
@@ -25,7 +33,11 @@ import { htmlRules } from "@/shared/htmlRules";
 import { SCRIPT_SOURCE_ATTRIBUTE, eventAttributes } from "@rewriters/html";
 import { rewriteJs } from "@rewriters/js";
 import {
+	_Map,
+	_WeakMap,
 	Array_indexOf,
+	Reflect_apply,
+	String,
 	String_charCodeAt,
 	String_indexOf,
 	String_startsWith,
@@ -188,6 +200,19 @@ export class AttributeLayer {
 		remove(element: Element, name: string): void;
 		has(element: Element, name: string): boolean;
 	};
+
+	/**
+	 * The page's own `Attr` for a stripped attribute it inserted as a node.
+	 *
+	 * A rule that strips an attribute leaves only its mirror in the document,
+	 * so the node the page handed to `setAttributeNode` can never really be
+	 * attached - and the page expects `ownerElement` and `getAttributeNode` to
+	 * go on answering with it. It is recorded here instead, and every member
+	 * that would answer with the mirror's node answers with it. Keyed by
+	 * element, then by name; the reverse map is for `ownerElement`.
+	 */
+	private readonly standIns = new _WeakMap<Element, _Map<string, Attr>>();
+	private readonly standInOwners = new _WeakMap<Attr, Element>();
 
 	constructor(private readonly client: ScramjetClient) {
 		this.raw = {
@@ -363,6 +388,11 @@ export class AttributeLayer {
 		}
 
 		const rewritten = rewrite(value);
+		const stripped =
+			rewritten === null && !this.raw.has(element, qualifiedName);
+		const old = stripped
+			? this.raw.get(element, mirrorAttributeName(qualifiedName))
+			: null;
 
 		// the mirror goes down first: the rewritten value can start a fetch the
 		// moment it lands, and anything that reads the attribute back out of
@@ -373,6 +403,7 @@ export class AttributeLayer {
 		else this.raw.set(element, qualifiedName, rewritten);
 
 		this.changed(element, qualifiedName, value);
+		if (stripped) this.reactStripped(element, qualifiedName, old, value);
 	}
 
 	/** Remove the attribute and its mirror together. */
@@ -387,11 +418,137 @@ export class AttributeLayer {
 			element
 		).getAttributeNode(qualifiedName);
 		const mirror = this.raw.get(element, mirrorAttributeName(qualifiedName));
+		const standIn = this.standIn(element, qualifiedName);
 		this.raw.remove(element, mirrorAttributeName(qualifiedName));
 		this.raw.remove(element, qualifiedName);
 		this.detached(node, mirror);
+		if (standIn) this.release(element, qualifiedName, standIn, mirror);
 
 		this.changed(element, qualifiedName, null);
+		// a stripped attribute: the document saw only the mirror go, which no
+		// custom element observes
+		if (!node && mirror !== null) {
+			this.reactStripped(element, qualifiedName, mirror, null);
+		}
+	}
+
+	/**
+	 * Remove the stripped attribute `name`, which only its mirror represents,
+	 * and hand back the node the page should get for it: its own `Attr` if it
+	 * inserted one, the mirror's node - renamed by `dom/attr.ts` - otherwise.
+	 */
+	removeStripped(element: Element, name: string): Attr | null {
+		const node =
+			this.standIn(element, name) ??
+			new this.client.native.Element(element).getAttributeNode(
+				mirrorAttributeName(name)
+			);
+		this.remove(element, name);
+
+		return node;
+	}
+
+	/** The page's `Attr` standing in for the stripped attribute `name`, or null. */
+	standIn(element: Element, name: string): Attr | null {
+		const map = this.standIns.get(element);
+		const attr = map?.get(name);
+		if (!map || !attr) return null;
+
+		// the attribute has since landed in the document for real, or its
+		// mirror has gone some way that did not come through here
+		if (
+			this.raw.has(element, name) ||
+			!this.raw.has(element, mirrorAttributeName(name))
+		) {
+			map.delete(name);
+			this.standInOwners.delete(attr);
+
+			return null;
+		}
+
+		return attr;
+	}
+
+	/** Detach a stand-in, which goes back to answering with its own value. */
+	private release(
+		element: Element,
+		name: string,
+		attr: Attr,
+		value: string | null
+	) {
+		this.standIns.get(element)?.delete(name);
+		this.standInOwners.delete(attr);
+		if (value !== null) this.setAttrValue(attr, value);
+	}
+
+	/** The node the page should see in place of `attr`, a node of the document's. */
+	face(element: Element, attr: Attr): Attr {
+		const mirrored = mirroredAttributeName(this.attrName(attr));
+		if (!mirrored) return attr;
+
+		return this.standIn(element, mirrored) ?? attr;
+	}
+
+	/**
+	 * `attributeChangedCallback` for a change to a stripped attribute, which
+	 * the document never sees - so the browser never enqueues the reaction.
+	 * Run synchronously, which is where the native reaction runs for a call
+	 * from script.
+	 *
+	 * The observed list and the callback are read off the definition now,
+	 * rather than captured by `define` the way the spec has it: reading them
+	 * at `define` would mean reading them a second time. Only an autonomous
+	 * custom element is recognized; a customized built-in's `is` value is not
+	 * readable from here.
+	 *
+	 * https://html.spec.whatwg.org/multipage/custom-elements.html#concept-custom-element-reaction
+	 */
+	private reactStripped(
+		element: Element,
+		name: string,
+		oldValue: string | null,
+		newValue: string | null
+	) {
+		const client = this.client;
+		const registry = client.global.customElements as
+			| CustomElementRegistry
+			| undefined;
+		if (!registry) return;
+
+		const nElement = new client.native.Element(element);
+		let definition: CustomElementConstructor | undefined;
+		try {
+			definition = new client.native.CustomElementRegistry(registry).get(
+				nElement.localName
+			);
+		} catch {
+			return;
+		}
+		// defined, but this element not yet upgraded to it
+		if (typeof definition !== "function" || !nElement.matches(":defined")) {
+			return;
+		}
+
+		let callback: unknown;
+		let listed = false;
+		try {
+			callback = definition.prototype.attributeChangedCallback;
+			const observed = (definition as any).observedAttributes;
+			if (observed === undefined || observed === null) return;
+			for (const entry of observed as Iterable<unknown>) {
+				if (String(entry) === name) listed = true;
+			}
+		} catch {
+			return;
+		}
+		if (!listed || typeof callback !== "function") return;
+
+		try {
+			Reflect_apply(callback, element, [name, oldValue, newValue, null]);
+		} catch (err) {
+			// a reaction's exception is reported, never thrown at the caller
+			new client.native.window(client.global).reportError(err);
+		}
 	}
 
 	/** The qualified names the page should see, in the document's order. */
@@ -449,7 +606,7 @@ export class AttributeLayer {
 			const mirrored = mirroredAttributeName(this.attrName(attr));
 			if (mirrored === "") continue;
 			if (mirrored !== null && this.raw.has(element, mirrored)) continue;
-			out[out.length] = attr;
+			out[out.length] = mirrored === null ? attr : this.face(element, attr);
 		}
 
 		return out;
@@ -465,6 +622,10 @@ export class AttributeLayer {
 	 * has a value of its own.
 	 */
 	mirrorOf(element: Element, attr: Attr): string | null {
+		if (this.standIn(element, this.attrName(attr)) === attr) {
+			return this.raw.get(element, mirrorAttributeName(this.attrName(attr)));
+		}
+
 		const name = this.heldName(element, attr);
 		if (isInternalAttribute(name)) return null;
 		if (new this.client.native.Element(element).getAttributeNode(name) !== attr)
@@ -504,9 +665,13 @@ export class AttributeLayer {
 		const real: Attr | null = nElement.getAttributeNode(qualifiedName);
 		if (real) return real;
 
-		// a removed attribute is represented by its mirror's node, which
-		// `dom/attr.ts` renames back
-		return nElement.getAttributeNode(mirrorAttributeName(qualifiedName));
+		// a removed attribute is represented by the page's own node, if it
+		// inserted one, and by its mirror's node - which `dom/attr.ts` renames
+		// back - if it did not
+		return (
+			this.standIn(element, qualifiedName) ??
+			nElement.getAttributeNode(mirrorAttributeName(qualifiedName))
+		);
 	}
 
 	/**
@@ -520,8 +685,11 @@ export class AttributeLayer {
 		if (isInternalAttribute(localName)) return null;
 		if (this.raw.has(element, localName)) return null;
 
-		return new this.client.native.Element(element).getAttributeNode(
-			mirrorAttributeName(localName)
+		return (
+			this.standIn(element, localName) ??
+			new this.client.native.Element(element).getAttributeNode(
+				mirrorAttributeName(localName)
+			)
 		);
 	}
 
@@ -540,8 +708,23 @@ export class AttributeLayer {
 		this.setAttrValue(attr, mirror);
 	}
 
-	/** The element an `Attr` node belongs to, or null when it is detached. */
+	/**
+	 * The element an `Attr` node belongs to, or null when it is detached - as
+	 * the page sees it, so a stand-in belongs to the element it stands in on.
+	 */
 	owner(attr: Attr): Element | null {
+		const owner = this.nativeOwner(attr);
+		if (owner) return owner;
+
+		const element = this.standInOwners.get(attr);
+
+		return element && this.standIn(element, this.attrName(attr)) === attr
+			? element
+			: null;
+	}
+
+	/** The element the document really has `attr` on. */
+	nativeOwner(attr: Attr): Element | null {
 		return new this.client.native.Attr(attr).ownerElement;
 	}
 
@@ -591,19 +774,24 @@ export class AttributeLayer {
 		// detached, or the mirror itself: there is no rule to apply, and writing
 		// the mirror is how the page's value is meant to be changed
 		if (!owner || isInternalAttribute(name)) {
+			const old = this.attrValue(attr);
 			this.setAttrValue(attr, value);
 			// a mirror node stands in for the attribute its rule stripped, so
 			// this is a change to *that* attribute, and its change steps run -
 			// `nonce`'s slot and `sandbox`'s token list follow it
 			const mirrored = owner ? mirroredAttributeName(name) : null;
-			if (mirrored) this.changed(owner!, mirrored, value);
+			if (mirrored) {
+				this.changed(owner!, mirrored, value);
+				this.reactStripped(owner!, mirrored, old, value);
+			}
 
 			return;
 		}
 
 		const namespace = this.attrNamespace(attr);
 		const owns =
-			new this.client.native.Element(owner).getAttributeNode(name) === attr;
+			new this.client.native.Element(owner).getAttributeNode(name) === attr ||
+			this.standIn(owner, name) === attr;
 		// the attribute a write by name reaches, so the write by name is the same
 		// operation
 		if (namespace === null && owns) {
@@ -636,6 +824,40 @@ export class AttributeLayer {
 	}
 
 	/**
+	 * {@link insertNode} for an attribute its rule strips. It never lands in
+	 * the document - inserting it only to take it out again would be two
+	 * mutations a MutationObserver or a custom element would see - so its
+	 * mirror is written, and the node itself becomes the stand-in the page's
+	 * lookups answer with. The node it replaces is the previous stand-in, if
+	 * the page inserted one.
+	 */
+	private insertStripped(
+		element: Element,
+		name: string,
+		attr: Attr,
+		value: string,
+		old: string | null
+	): Attr | null {
+		const previous = this.standIn(element, name);
+
+		this.raw.set(element, mirrorAttributeName(name), value);
+
+		let map = this.standIns.get(element);
+		if (!map) {
+			map = new _Map<string, Attr>();
+			this.standIns.set(element, map);
+		}
+		if (previous) this.release(element, name, previous, old);
+		map.set(name, attr);
+		this.standInOwners.set(attr, element);
+
+		this.changed(element, name, value);
+		this.reactStripped(element, name, old, value);
+
+		return previous;
+	}
+
+	/**
 	 * `setAttributeNode` and `setAttributeNodeNS`, which `NamedNodeMap`'s
 	 * `setNamedItem` and `setNamedItemNS` are the same operation as.
 	 *
@@ -656,7 +878,18 @@ export class AttributeLayer {
 		// another's, which is an InUseAttributeError. neither may be rewritten
 		// first: the value is already the rewritten one, and rewriting it again
 		// would land a proxy URL in the mirror
-		if (this.owner(attr) !== null) return insert();
+		if (this.nativeOwner(attr) !== null) return insert();
+		// the same two cases, for a node that only looks attached
+		const standingIn = this.owner(attr);
+		if (standingIn === element) return attr;
+		if (standingIn) {
+			throw this.client.errors.domException("InUseAttributeError", {
+				execute: namespaced ? "setAttributeNodeNS" : "setAttributeNode",
+				on: "Element",
+				detail:
+					"The node provided is an attribute node that is already an attribute of another Element; attribute nodes must be explicitly cloned.",
+			});
+		}
 
 		const name = this.attrName(attr);
 		// a page-built attribute under our own prefix would poison a mirror, so
@@ -688,6 +921,9 @@ export class AttributeLayer {
 		let rewritten: string | null = value;
 		if (rewrite) {
 			rewritten = rewrite(value);
+			if (rewritten === null && !previous) {
+				return this.insertStripped(element, name, attr, value, staleMirror);
+			}
 			this.setAttrValue(attr, rewritten === null ? "" : rewritten);
 			// the mirror goes down first, for the reason `set` gives - and
 			// because inserting the node runs a custom element's
