@@ -139,10 +139,10 @@ export class SingletonBox {
 
 	sourcemaps: SourceMaps = {};
 
-	/** keyed by the nonce a rewritten script registers itself under */
+	/** keyed by the private ID a rewritten script registers itself under */
 	scriptrealms: Record<string, ScriptRealm> = {};
 
-	/** `pst` mode's index into {@link scriptrealms}: script source hash -> nonce */
+	/** `pst` mode's index into {@link scriptrealms}: script source hash -> registration ID */
 	scripthashes: Record<string, string> = {};
 
 	/**

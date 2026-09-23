@@ -1,8 +1,7 @@
 import { ScramjetClient } from "@client/index";
-import { Object_defineProperty, Reflect_apply, _URL } from "@/shared/snapshot";
+import { Object_defineProperty, Reflect_apply } from "@/shared/snapshot";
 import { CallSite, incumbencyMode, rawCallSites } from "@/shared/incumbency";
 import { isOwnScript } from "@client/nativeerror";
-import { QP } from "@/fetch/parse";
 
 /**
  * What one rewritten script has to be made to look like, and how a frame is
@@ -21,13 +20,6 @@ export type ScriptRealm = {
 	client: ScramjetClient;
 	/** the scramtag the rewriter stamped into this script's functions */
 	tag: string;
-	/**
-	 * The `//# sourceURL` the original source carried, verbatim and unresolved
-	 * - V8 does not resolve a relative one, so neither may we. Only `nonce`
-	 * mode needs it: it overwrites the sourceURL and has to hand this back in
-	 * its place. Null when the source had none.
-	 */
-	pageSourceUrl: string | null;
 };
 
 /**
@@ -37,12 +29,7 @@ export type ScriptRealm = {
 export const enabled = (client: ScramjetClient) => {
 	const mode = incumbencyMode(client.context, client.url);
 
-	return (
-		mode === "pst" ||
-		mode === "nonce" ||
-		mode === "stamp" ||
-		mode === "lazystamp"
-	);
+	return mode === "pst" || mode === "stamp" || mode === "lazystamp";
 };
 
 /**
@@ -70,9 +57,9 @@ export default function (client: ScramjetClient, self: Self) {
 
 	// every rewritten script registers itself before it runs
 	Object_defineProperty(self, client.config.globals.registerrealmfn, {
-		value: (nonce: string, tag: string, pageSourceUrl: string | null) => {
-			const realm: ScriptRealm = { client, tag, pageSourceUrl };
-			client.box.scriptrealms[nonce] = realm;
+		value: (scriptId: string, tag: string) => {
+			const realm: ScriptRealm = { client, tag };
+			client.box.scriptrealms[scriptId] = realm;
 
 			if (mode !== "pst") return;
 
@@ -87,7 +74,7 @@ export default function (client: ScramjetClient, self: Self) {
 			// its hash is the key a later stack walk looks it up by, and nothing
 			// had to be written into the source - or shown to the page - to get
 			// it there
-			if (hash) client.box.scripthashes[hash] = nonce;
+			if (hash) client.box.scripthashes[hash] = scriptId;
 		},
 		enumerable: false,
 		writable: false,
@@ -118,36 +105,19 @@ export function firstPageFrame(
 }
 
 /**
- * The realm a stack frame belongs to, whichever mode put it there. This is the
- * lookup an incumbent-settings-object walk wants: hand it a frame, get back
- * the script and the client it ran in.
+ * The realm a PST stack frame belongs to: look up the registered script and
+ * the client it ran in by its hash.
  */
 export function realmForFrame(
 	client: ScramjetClient,
 	frame: CallSite
 ): ScriptRealm | null {
-	const byNonce = (nonce: string | null | undefined) =>
-		nonce ? (client.box.scriptrealms[nonce] ?? null) : null;
-
-	// `pst`: the script's own hash indexes the registration, and is on every
-	// frame including eval'd ones
 	try {
 		const hash = frame.getScriptHash?.();
-		if (hash) {
-			const found = byNonce(client.box.scripthashes[hash]);
-			if (found) return found;
-		}
+		const scriptId = hash && client.box.scripthashes[hash];
+		return scriptId ? (client.box.scriptrealms[scriptId] ?? null) : null;
 	} catch {
-		// not a V8 CallSite; fall through to the sourceURL
-	}
-
-	// `nonce`: the identity is in the sourceURL the rewriter appended
-	try {
-		const shown = frame.getScriptNameOrSourceURL?.();
-
-		return shown ? byNonce(new _URL(shown).searchParams.get(QP.nonce)) : null;
-	} catch {
-		// a bare sourceURL that is not a URL at all, or no accessor
+		// Not a usable V8 CallSite.
 		return null;
 	}
 }

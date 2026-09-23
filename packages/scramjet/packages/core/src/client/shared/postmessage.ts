@@ -34,14 +34,14 @@ export default function (client: ScramjetClient, self: Self) {
 			) {
 				const mode = incumbencyMode(client.context, client.url);
 				let senderClient: ScramjetClient;
-				if (mode === "pst" || mode === "nonce") {
+				if (mode === "pst") {
 					const sites = rawCallSites();
 					// there are 4 scramjet frames between a caller and rawCallSites()
 					// 5 if accounting for the extra trampoline frame
 					const index = client.flagEnabled("debugTrampolines") ? 5 : 4;
 					const last = sites[index];
-					const nonce = client.box.scripthashes[last.getScriptHash()];
-					senderClient = client.box.scriptrealms[nonce].client;
+					const scriptId = client.box.scripthashes[last.getScriptHash()];
+					senderClient = client.box.scriptrealms[scriptId].client;
 				} else if (mode === "stamp" || mode === "lazystamp") {
 					// the innermost rewritten call site on the stack is the
 					// script that called in. Nothing there means the host

@@ -1,7 +1,5 @@
 import { multiFrameTest } from "../../testcommon.ts";
 
-/* eslint-disable quotes -- browser snippets are clearer as template literals */
-
 // https://html.spec.whatwg.org/multipage/web-messaging.html#window-post-message-steps
 //
 // Step 4: if `targetOrigin` is neither "*" nor "/", it is parsed, and step 8
@@ -68,7 +66,7 @@ export default [
 	multiFrameTest({
 		name: "pmtarget-matching-origin-is-delivered",
 		root: {
-			js: ({ url }) => `
+			js: () => `
 				(async () => {
 					await new Promise((r) => setTimeout(r, 400));
 
@@ -91,7 +89,7 @@ export default [
 					originid: "cross",
 					id: "pmtargetecho",
 					js: () => `
-						parent.postMessage({ pmtargetOrigin: location.origin }, "*");
+						parent.postMessage({ pmtargetOrigin: new URL(document.URL).origin }, "*");
 
 						let got = false;
 						window.addEventListener("message", (event) => {

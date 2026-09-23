@@ -43,8 +43,6 @@ pub struct Config {
 pub enum IncumbencyMode {
 	/// `Error.prepareStackTrace` plus `CallSite.getScriptHash`, both V8 only
 	Pst,
-	/// a `//# sourceURL` carrying a per-rewrite nonce
-	Nonce,
 	/// not implemented yet; acts as `None`
 	Stamp,
 	/// not implemented yet; acts as `None`
@@ -64,7 +62,6 @@ impl FromStr for IncumbencyMode {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		match s {
 			"pst" => Ok(Self::Pst),
-			"nonce" => Ok(Self::Nonce),
 			"stamp" => Ok(Self::Stamp),
 			"lazystamp" => Ok(Self::LazyStamp),
 			"none" => Ok(Self::None),

@@ -55,7 +55,7 @@ export function rawCallSites(): CallSite[] | null {
  * It measures the bundle's own script, so a deployment that injects scramjet
  * somewhere a hash is not computed for - CDP evaluation, where the hash comes
  * back empty - reads as unavailable even though the page's own scripts would
- * have had one. That falls back to `nonce`, which is the safe direction.
+ * have had one. The defaults select `lazystamp` when this probe fails.
  */
 export const pstAvailable: boolean = (() => {
 	const frames = rawCallSites();
