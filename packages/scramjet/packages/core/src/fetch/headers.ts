@@ -342,12 +342,25 @@ export function rewriteRequestHeaders(
 
 	// Origin and the SameSite context are the initiator's: the referrer is the
 	// wrong place to look for it, since its policy is free to cut it down to
-	// the proxy's origin or drop it. Origin is sent on every request that has
-	// an initiator - more often than Chrome sends it, which no server minds,
-	// where sending it less often or as "null" can fail a CSRF check
+	// the proxy's origin or drop it.
 	const initiator = resolveFetchInitiatorUrl(request, parsed, handler);
 	headers.delete("Origin");
-	if (initiator) headers.set("Origin", initiator.origin);
+	// https://fetch.spec.whatwg.org/#origin-header - only for a method other
+	// than GET or HEAD, or a cors or websocket request: a plain GET for a
+	// script, an image or a document carries none. The mode is
+	// `computeFetchMode`'s, since the service worker reports it against the
+	// proxy's URL space
+	if (initiator) {
+		const method = (request.method || "GET").toUpperCase();
+		const mode = computeFetchMode(request, parsed);
+		if (
+			(method !== "GET" && method !== "HEAD") ||
+			mode === "cors" ||
+			mode === "websocket"
+		) {
+			headers.set("Origin", initiator.origin);
+		}
+	}
 
 	if (parsed.referrer) headers.set("Referer", parsed.referrer);
 
