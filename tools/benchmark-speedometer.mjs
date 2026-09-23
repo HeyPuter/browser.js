@@ -23,6 +23,7 @@ const outputDir =
 	process.env.SPEEDOMETER_OUTPUT_DIR ?? "/tmp/speedometer-results";
 const timeoutMs = Number(process.env.SPEEDOMETER_TIMEOUT_MS ?? 900000);
 const suites = process.env.SPEEDOMETER_SUITES;
+const cpuProfilePath = process.env.SPEEDOMETER_CPU_PROFILE;
 
 const benchmark = express();
 benchmark.use(express.static(speedometerRoot));
@@ -122,6 +123,12 @@ try {
 			);
 	}
 
+	let profiler;
+	if (cpuProfilePath) {
+		profiler = await context.newCDPSession(page);
+		await profiler.send("Profiler.enable");
+		await profiler.send("Profiler.start");
+	}
 	const started = Date.now();
 	const interval = setInterval(async () => {
 		try {
@@ -148,6 +155,10 @@ try {
 		);
 	} finally {
 		clearInterval(interval);
+	}
+	if (profiler) {
+		const { profile } = await profiler.send("Profiler.stop");
+		writeFileSync(cpuProfilePath, JSON.stringify(profile));
 	}
 	const result = await frame.evaluate(() => ({
 		score: document.getElementById("result-number")?.textContent,

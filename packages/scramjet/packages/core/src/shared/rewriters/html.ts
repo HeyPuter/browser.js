@@ -56,6 +56,24 @@ export const SCRIPT_SOURCE_ATTRIBUTE = "scramjet-attr_script-source";
 /** The name the mirror of `attr` is kept under. */
 const mirrorName = (attr: string) => `scramjet-attr-${attr}`;
 
+// Initialized on first rewrite because htmlRules imports rewriteHtml from this
+// module. Keep rule order, but avoid enumerating every rule for every element.
+let ruleAttributeNames: string[][] | undefined;
+function getRuleAttributeNames(): string[][] {
+	if (ruleAttributeNames) return ruleAttributeNames;
+	const all: string[][] = [];
+	for (let i = 0; i < htmlRules.length; i++) {
+		const names = Object_keys(htmlRules[i]);
+		const attributes: string[] = [];
+		for (let j = 0; j < names.length; j++) {
+			if (names[j] !== "fn") attributes[attributes.length] = names[j];
+		}
+		all[i] = attributes;
+	}
+	ruleAttributeNames = all;
+	return all;
+}
+
 /**
  * Put `to` where `from` is in an element's attribute list.
  *
@@ -413,6 +431,7 @@ function traverseParsedHtml(
 	}
 
 	const { attribs } = node;
+	const ruleAttributeNames = getRuleAttributeNames();
 
 	if (node.name === "base" && attribs.href !== undefined) {
 		meta.base = new _URL(attribs.href, meta.origin);
@@ -420,28 +439,28 @@ function traverseParsedHtml(
 
 	for (let ruleIndex = 0; ruleIndex < htmlRules.length; ruleIndex++) {
 		const rule = htmlRules[ruleIndex];
-		const ruleKeys = Object_keys(rule);
+		const ruleKeys = ruleAttributeNames[ruleIndex];
 		for (let keyIndex = 0; keyIndex < ruleKeys.length; keyIndex++) {
 			const attr = ruleKeys[keyIndex];
-			const sel = rule[String_toLowerCase(attr)];
+			// Most elements do not carry any attribute a given rule handles.
+			if (attribs[attr] === undefined) continue;
+			const sel = rule[attr];
 			if (typeof sel === "function") continue;
 
 			if (sel === "*" || Array_indexOf(sel, node.name) !== -1) {
-				if (attribs[attr] !== undefined) {
-					const value = attribs[attr];
-					const v = rule.fn(
-						value,
-						context,
-						meta,
-						(name) => attribs[name] || null
-					);
+				const value = attribs[attr];
+				const v = rule.fn(
+					value,
+					context,
+					meta,
+					(name) => attribs[name] || null
+				);
 
-					if (v === null) {
-						replaceAttribute(attribs, attr, mirrorName(attr), value);
-					} else {
-						attribs[attr] = v;
-						attribs[mirrorName(attr)] = value;
-					}
+				if (v === null) {
+					replaceAttribute(attribs, attr, mirrorName(attr), value);
+				} else {
+					attribs[attr] = v;
+					attribs[mirrorName(attr)] = value;
 				}
 			}
 		}
@@ -449,7 +468,11 @@ function traverseParsedHtml(
 	const attrKeys = Object_keys(attribs);
 	for (let index = 0; index < attrKeys.length; index++) {
 		const attr = attrKeys[index];
-		if (Array_indexOf(eventAttributes, attr) !== -1) {
+		if (
+			attr[0] === "o" &&
+			attr[1] === "n" &&
+			Array_indexOf(eventAttributes, attr) !== -1
+		) {
 			const value = attribs[attr];
 			attribs[mirrorName(attr)] = value;
 			attribs[attr] = rewriteJs(

@@ -63,3 +63,69 @@ SPEEDOMETER_SUITES="$(cat tools/benchmark-speedometer-suites.txt)" \
 SPEEDOMETER_VARIANT=rewrite SPEEDOMETER_ITERATIONS=10 \
 node --experimental-strip-types --no-warnings tools/benchmark-speedometer.mjs
 ```
+
+## HTML rule-scan optimization
+
+After the selector-mirror fix, a clean full 10-iteration rewrite run scored
+**13.2 ± 0.72**, with no page errors. A Chrome CPU profile of a 10-iteration
+TodoMVC-jQuery run placed 651 samples in `traverseParsedHtml`, 414 in
+`traverseChildren`, 194 in the HTML parser, and 125 in interceptor installation.
+The selector proxy was not a material CPU hotspot in that run. This is sampled
+CPU time, not a breakdown of Speedometer's score.
+
+The HTML rewriter now caches its ordered rule keys and tests whether an element
+has the attribute before checking whether its tag is eligible. The rule
+functions, their order, and the parser are unchanged. An unprofiled A/B run of
+TodoMVC-jQuery on the same built branch measured **2.14 ± 0.16** before and
+**2.75 ± 0.096** after (higher is better); mean suite duration fell from
+473 ms to 364 ms over 10 iterations. Two full default 10-iteration runs after
+the change scored **14.2 ± 0.74** and **14.0 ± 0.56**, both with no page
+errors. These were separate runs, so the full-suite score difference includes
+normal run-to-run variation.
+
+Raw records: `/tmp/speedometer-results/{selector-fix-full,baseline-unprofiled,opt-jquery,html-opt-full,html-opt-final}`.
+CPU profiles: `/tmp/speedometer-rewrite.cpuprofile` and
+`/tmp/speedometer-jquery.cpuprofile`. Set `SPEEDOMETER_CPU_PROFILE` to write a
+Chrome CPU profile from the runner.
+
+## Event-attribute check
+
+A second profile of the optimized TodoMVC-jQuery run still placed HTML
+traversal above the other Scramjet work: 254 samples in
+`traverseParsedHtml`, 134 in `traverseChildren`, 174 in the tokenizer, and
+129 in interceptor installation. The rewriter had been searching its list of
+roughly 100 event-handler attributes for every parsed attribute. It now tests
+the `on` prefix first, then uses the same list and rewrite path for matching
+names.
+
+Two unprofiled 10-iteration jQuery runs with the prefix check scored **2.77**
+and **2.79**; two runs without it scored **2.63** and **2.65**. Mean suite time
+across those runs was **361 ms** with the check and **381 ms** without it.
+The full default 10-iteration suite scored **14.1 ± 0.64** after the change,
+within the range of the previous 14.0–14.2 runs, and logged no page errors.
+All 62 markup escape tests passed.
+
+Raw records: `/tmp/speedometer-results/{pass2-baseline,pass2-baseline-repeat,pass2-prefilter,pass2-prefilter-repeat,pass2-full}`.
+CPU profile: `/tmp/speedometer-pass2-jquery.cpuprofile`.
+
+## Native-wrapper class cache
+
+A profile of Stockcharts, Preact, and Svelte put 410 samples in interceptor
+installation and 136 in the `client.native` property lookup. That lookup was
+creating a new internal wrapper class for every `client.native.Element`,
+`client.native.Node`, and similar access. The class only closes over the
+client's fixed native descriptor table, so each client now caches one class
+per interface name. The wrapper instance and its native method proxies still
+work as before.
+
+In paired, unprofiled 10-iteration runs of those three suites, scores were
+**25.5** and **25.2** without the cache, versus **28.4** and **27.6** with it.
+Two full default 10-iteration runs with the cache scored **15.0 ± 0.96** and
+**15.5 ± 0.51**, both with zero page errors; the preceding full runs scored
+14.0–14.2. The broad element-layer tests had 65 passes and the same two
+expected failures; all 62 markup escape tests and both selector regressions
+passed.
+
+Raw records: `/tmp/speedometer-results/{pass3-baseline,pass3-baseline-repeat,pass3-cache,pass3-cache-repeat,pass3-full,pass3-full-repeat}`.
+Profiles: `/tmp/speedometer-pass3.cpuprofile` and
+`/tmp/speedometer-pass3-cache.cpuprofile`.

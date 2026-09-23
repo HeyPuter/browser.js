@@ -302,11 +302,14 @@ export class ScramjetClient {
 		{},
 		{
 			get: (_target: any, prototype: string) => {
+				// Each class closes over this client's fixed native descriptor table.
+				const cached = this.nativeClasses.get(prototype);
+				if (cached) return cached;
 				const descriptors = this.nativeStore.get(prototype);
 				if (!descriptors) {
 					throw new Error(`No native descriptors found for ${prototype}`);
 				}
-				return class {
+				const nativeClass = class {
 					constructor(object: any) {
 						return new Proxy(
 							{},
@@ -343,9 +346,12 @@ export class ScramjetClient {
 						);
 					}
 				};
+				this.nativeClasses.set(prototype, nativeClass);
+				return nativeClass;
 			},
 		}
 	);
+	private nativeClasses = new _Map<string, any>();
 	nativeStore: Map<string, Record<string, PropertyDescriptor>> = new _Map();
 
 	/**
