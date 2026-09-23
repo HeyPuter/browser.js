@@ -89,10 +89,9 @@ export default function (client: ScramjetClient, _self: Self) {
 		const element = ownerOf(map);
 		if (!element) return new client.native.NamedNodeMap(real(map)).item(index);
 
-		const names = attrs.names(element);
-		if (index >= names.length) return null;
+		const nodes = attrs.nodes(element);
 
-		return attrs.node(element, names[index]);
+		return index < nodes.length ? nodes[index] : null;
 	};
 
 	/**
@@ -133,11 +132,8 @@ export default function (client: ScramjetClient, _self: Self) {
 							for (const attr of iterator) yield attr;
 							return;
 						}
-						const names = attrs.names(owner);
-						for (let i = 0; i < names.length; i++) {
-							const attr = attrs.node(owner, names[i]);
-							if (attr) yield attr;
-						}
+						const nodes = attrs.nodes(owner);
+						for (let i = 0; i < nodes.length; i++) yield nodes[i];
 					};
 				}
 
@@ -389,10 +385,12 @@ export default function (client: ScramjetClient, _self: Self) {
 			).getNamedItemNS(namespace, localName);
 
 			if (element && node) {
-				const name = attrs.attrName(node);
+				const name = attrs.heldName(element, node);
 				if (!isInternalAttribute(name)) {
-					const mirror = attrs.raw.get(element, mirrorAttributeName(name));
-					attrs.raw.remove(element, mirrorAttributeName(name));
+					const mirror = attrs.mirrorOf(element, node);
+					if (mirror !== null) {
+						attrs.raw.remove(element, mirrorAttributeName(name));
+					}
 					const removed: Attr = new client.native.NamedNodeMap(
 						map
 					).removeNamedItemNS(namespace, localName);

@@ -2,7 +2,7 @@ import { basicTest } from "../../testcommon.ts";
 
 /* eslint-disable quotes -- browser snippets are clearer as template literals */
 
-// Reproductions for the eight findings in the review of #112. These exercise
+// Reproductions for findings in the review of #112. These exercise
 // the public DOM surface, so the same assertions run in the bare harness.
 
 export default [
@@ -145,6 +145,104 @@ export default [
 			element.setAttributeNode(attr);
 			assertEqual(observed.length, 1, "one callback for the style attribute");
 			assertEqual(observed[0], value, "callback sees the page's value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-prefixed-xlink-attr-value",
+		js: `
+			const xlink = "http://www.w3.org/1999/xlink";
+			const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+			const first = "https://example.test/first.svg#shape";
+			const second = "https://example.test/second.svg#shape";
+			use.setAttributeNS(xlink, "p:href", first);
+			const attr = use.getAttributeNodeNS(xlink, "href");
+			attr.value = second;
+			assertEqual(attr.value, second, "Attr.value reflects the new page URL");
+			assertEqual(use.getAttributeNS(xlink, "href"), second, "the XLink attribute is updated");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-namespace-mirror-collision",
+		js: `
+			const img = document.createElement("img");
+			const first = "https://example.test/image.png";
+			const second = "https://example.test/other.png";
+			img.setAttribute("src", first);
+			img.setAttributeNS("urn:review112", "src", second);
+			assertEqual(img.getAttribute("src"), first, "the null-namespace src keeps its own value");
+			assertEqual(img.getAttributeNS(null, "src"), first, "null-namespace lookup keeps its own value");
+			assertEqual(img.getAttributeNS("urn:review112", "src"), second, "the unrelated namespaced attribute keeps its value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-namespaced-callback-sees-page-value",
+		js: `
+			const observed = [];
+			class Review112NamespacedStyleElement extends HTMLElement {
+				static observedAttributes = ["style"];
+				attributeChangedCallback() {
+					observed.push(this.getAttribute("style"));
+				}
+			}
+			customElements.define("review112-ns-style", Review112NamespacedStyleElement);
+			const element = document.createElement("review112-ns-style");
+			const value = "background-image: url(https://example.test/image.png)";
+			element.setAttributeNS(null, "style", value);
+			assertEqual(observed.length, 1, "the style change fires one callback");
+			assertEqual(observed[0], value, "the synchronous callback sees the page's CSS");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-attribute-map-duplicate-qualified-names",
+		js: `
+			const element = document.createElement("div");
+			element.setAttributeNS("urn:first", "p:x", "one");
+			element.setAttributeNS("urn:second", "p:x", "two");
+			assertEqual(element.attributes.length, 2, "both namespace-distinct attributes are listed");
+			assertEqual(element.attributes.item(0).namespaceURI, "urn:first", "first indexed attribute");
+			assertEqual(element.attributes.item(1).namespaceURI, "urn:second", "second indexed attribute");
+			assert(element.attributes[0] !== element.attributes[1], "indexed properties identify distinct Attr nodes");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-setattributenode-replaces-other-prefix",
+		js: `
+			const xlink = "http://www.w3.org/1999/xlink";
+			const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+			const first = "https://example.test/first.svg#shape";
+			const second = "https://example.test/second.svg#shape";
+			use.setAttributeNS(xlink, "xlink:href", first);
+			const old = use.getAttributeNodeNS(xlink, "href");
+			const replacement = document.createAttributeNS(xlink, "p:href");
+			replacement.value = second;
+			assertEqual(use.setAttributeNode(replacement), old, "the matching namespace and local name are replaced");
+			assertEqual(old.ownerElement, null, "the old Attr is detached");
+			assertEqual(old.value, first, "the detached Attr retains its page value");
+			assertEqual(use.getAttributeNS(xlink, "href"), second, "the replacement exposes its page value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-cloned-script-text-source",
+		js: `
+			const script = document.createElement("script");
+			const source = "var __review112 = location.href.length + 1;";
+			script.textContent = source;
+			const clone = script.firstChild.cloneNode();
+			assertEqual(clone.data, source, "a cloned Text node exposes the page's source");
+			assertEqual(clone.textContent, source, "cloned textContent exposes the page's source");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-fragment-moved-script-text-source",
+		js: `
+			const script = document.createElement("script");
+			const source = "var __review112 = location.href.length + 1;";
+			script.textContent = source;
+			const text = script.firstChild;
+			const fragment = document.createDocumentFragment();
+			fragment.append(text);
+			assertEqual(text.data, source, "the moved Text node keeps the page source");
+			assertEqual(fragment.textContent, source, "the fragment exposes the page source");
 		`,
 	}),
 ];

@@ -57,6 +57,7 @@ const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 const CDATA_SECTION_NODE = 4;
+const DOCUMENT_NODE = 9;
 const DOCUMENT_FRAGMENT_NODE = 11;
 
 /** A script or a style: an element whose children are code rather than text. */
@@ -408,6 +409,77 @@ export class TextLayer {
 		if (parent.childElementCount === 0) return false;
 
 		return !!parent.querySelector("script,style");
+	}
+
+	/**
+	 * Carry the page's text over to a copy `cloneNode` or `importNode` just
+	 * made of `original`.
+	 *
+	 * The native copies what the document holds, which inside a script or a
+	 * style is the rewritten text. A Text node on its own is detached once
+	 * copied, so it simply gets the page's text back. A copied subtree keeps
+	 * the rewritten text, since it is still code, and each of its script and
+	 * style Text children is given the record its original had.
+	 */
+	cloned(original: Node, clone: Node): void {
+		const what = this.type(original);
+		if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
+			const page = this.data(original as CharacterData);
+			if (page !== this.rawData(clone as CharacterData)) {
+				this.writeData(clone as CharacterData, page);
+			}
+
+			return;
+		}
+		// an attribute, a comment, a doctype: nothing a script could be under
+		if (
+			what !== ELEMENT_NODE &&
+			what !== DOCUMENT_FRAGMENT_NODE &&
+			what !== DOCUMENT_NODE
+		) {
+			return;
+		}
+		if (what !== DOCUMENT_NODE && !this.containsRawText(original)) return;
+
+		const from = this.rawTextInclusiveDescendants(original);
+		const to = this.rawTextInclusiveDescendants(clone);
+		// the clone is the same tree, so the two lists line up
+		if (from.length !== to.length) return;
+
+		for (let i = 0; i < from.length; i++) {
+			const a = this.textChildren(from[i]);
+			const b = this.textChildren(to[i]);
+			for (let j = 0; j < a.length && j < b.length; j++) {
+				this.sources.set(b[j], this.data(a[j]));
+			}
+		}
+	}
+
+	/** `node`, if it is a script or a style, and every one under it. */
+	private rawTextInclusiveDescendants(node: Node): Element[] {
+		const what = this.type(node);
+		const out: Element[] = [];
+		if (what === ELEMENT_NODE && this.kind(node as Element) !== null) {
+			out[out.length] = node as Element;
+		}
+
+		// the same per-interface copies as `containsRawText`'s
+		const parent =
+			what === ELEMENT_NODE
+				? new this.client.native.Element(node)
+				: what === DOCUMENT_FRAGMENT_NODE
+					? new this.client.native.DocumentFragment(node)
+					: what === DOCUMENT_NODE
+						? new this.client.native.Document(node)
+						: null;
+		if (!parent) return out;
+
+		const found: NodeListOf<Element> = parent.querySelectorAll("script,style");
+		for (let i = 0; i < found.length; i++) {
+			if (this.kind(found[i]) !== null) out[out.length] = found[i];
+		}
+
+		return out;
 	}
 
 	/**

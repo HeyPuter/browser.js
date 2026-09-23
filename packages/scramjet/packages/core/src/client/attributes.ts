@@ -70,22 +70,28 @@ export function localPart(qualifiedName: string): string {
 }
 
 /**
- * The name the rule table knows a namespaced attribute by.
+ * The name the rule table knows a namespaced attribute by, or null when no
+ * rule can apply to it.
  *
  * The rules key on `xlink:href`, which is the spelling the HTML parser gives
  * the attribute. Through `setAttributeNS` the prefix is the page's to choose,
  * and `setAttributeNS(XLINK, "x:href", url)` is the same attribute - one the
  * browser fetches from - under a name no rule would otherwise match.
+ *
+ * Every other rule is for an attribute in the null namespace. `src` in some
+ * page-chosen namespace is not the attribute an image loads from, and
+ * rewriting it would put a proxy URL - and a mirror - where neither belongs.
  */
 export function ruleAttributeName(
 	namespace: string | null,
 	qualifiedName: string
-): string {
+): string | null {
+	if (namespace === null) return qualifiedName;
 	if (namespace === XLINK_NAMESPACE && localPart(qualifiedName) === "href") {
 		return "xlink:href";
 	}
 
-	return qualifiedName;
+	return null;
 }
 
 /**
@@ -289,6 +295,17 @@ export class AttributeLayer {
 		return null;
 	}
 
+	/** {@link rewriter}, for an attribute identified by namespace too. */
+	rewriterNS(
+		element: Element,
+		namespace: string | null,
+		qualifiedName: string
+	): AttributeRewriter | null {
+		const name = ruleAttributeName(namespace, qualifiedName);
+
+		return name === null ? null : this.rewriter(element, name);
+	}
+
 	/**
 	 * The attribute change steps scramjet keeps for itself, run after every
 	 * write or removal that did not go through {@link set} or {@link remove}
@@ -419,6 +436,70 @@ export class AttributeLayer {
 		return out;
 	}
 
+	/**
+	 * The `Attr` nodes the page should see, in the document's order - what
+	 * {@link names} lists, as nodes. Not looked up by name: two attributes in
+	 * different namespaces can share a qualified name, and a lookup would find
+	 * the first one for both.
+	 */
+	nodes(element: Element): Attr[] {
+		const map = new this.client.native.NamedNodeMap(
+			new this.client.native.Element(element).attributes
+		);
+		const length = map.length;
+		const out: Attr[] = [];
+		for (let i = 0; i < length; i++) {
+			const attr: Attr = map.item(i);
+			const mirrored = mirroredAttributeName(this.attrName(attr));
+			if (mirrored === "") continue;
+			if (mirrored !== null && this.raw.has(element, mirrored)) continue;
+			out[out.length] = attr;
+		}
+
+		return out;
+	}
+
+	/**
+	 * The page's value for `attr`, out of its element's mirror, or null when it
+	 * has none.
+	 *
+	 * The mirror is keyed on the qualified name, and it belongs to the
+	 * attribute a lookup by that name finds - the first one holding it. A
+	 * later attribute that happens to share the name, in another namespace,
+	 * has a value of its own.
+	 */
+	mirrorOf(element: Element, attr: Attr): string | null {
+		const name = this.heldName(element, attr);
+		if (isInternalAttribute(name)) return null;
+		if (new this.client.native.Element(element).getAttributeNode(name) !== attr)
+			return null;
+
+		return this.raw.get(element, mirrorAttributeName(name));
+	}
+
+	/**
+	 * The qualified name `element` holds `attr` under, which is what its
+	 * mirror is keyed on.
+	 *
+	 * Usually the node's own name. But Blink replaces an attribute with the
+	 * same namespace and local name in place and keeps the old qualified name:
+	 * `p:href` set over `xlink:href` is listed, looked up and serialized as
+	 * `xlink:href`, while the node goes on calling itself `p:href`.
+	 */
+	heldName(element: Element, attr: Attr): string {
+		const name = this.attrName(attr);
+		const nElement = new this.client.native.Element(element);
+		if (nElement.getAttributeNode(name) === attr) return name;
+
+		const map = new this.client.native.NamedNodeMap(nElement.attributes);
+		const length = map.length;
+		for (let i = 0; i < length; i++) {
+			if (map.item(i) === attr) return nElement.getAttributeNames()[i];
+		}
+
+		return name;
+	}
+
 	/** The `Attr` node the page should see for `qualifiedName`, or null. */
 	node(element: Element, qualifiedName: string): Attr | null {
 		if (isInternalAttribute(qualifiedName)) return null;
@@ -501,7 +582,7 @@ export class AttributeLayer {
 		const owner = this.owner(attr);
 		if (!owner) return this.attrValue(attr);
 
-		const mirror = this.raw.get(owner, mirrorAttributeName(name));
+		const mirror = this.mirrorOf(owner, attr);
 
 		return mirror === null ? this.attrValue(attr) : mirror;
 	}
@@ -519,7 +600,38 @@ export class AttributeLayer {
 			return;
 		}
 
-		this.set(owner, name, value);
+		const namespace = this.attrNamespace(attr);
+		const owns =
+			new this.client.native.Element(owner).getAttributeNode(name) === attr;
+		// the attribute a write by name reaches, so the write by name is the same
+		// operation
+		if (namespace === null && owns) {
+			this.set(owner, name, value);
+
+			return;
+		}
+
+		// a namespaced attribute - `p:href` in XLink is the same attribute as
+		// `xlink:href`, and has to reach the same rule - or one that shares its
+		// qualified name with another, which a write by name would miss. either
+		// way it is this node that is written
+		const rewrite = this.rewriterNS(owner, namespace, name);
+		if (!rewrite) {
+			this.setAttrValue(attr, value);
+
+			return;
+		}
+
+		const rewritten = rewrite(value);
+		if (owns) this.raw.set(owner, mirrorAttributeName(name), value);
+		if (rewritten !== null) {
+			this.setAttrValue(attr, rewritten);
+
+			return;
+		}
+
+		new this.client.native.Element(owner).removeAttributeNode(attr);
+		this.setAttrValue(attr, value);
 	}
 
 	/**
@@ -555,45 +667,32 @@ export class AttributeLayer {
 		}
 
 		const value = this.attrValue(attr);
-		const rewrite = this.rewriter(
-			element,
-			ruleAttributeName(this.attrNamespace(attr), name)
-		);
-
-		// what the node being replaced answered with, so it can go on answering
-		// with it once it is detached. `setAttributeNodeNS` replaces by namespace
-		// and local name, which need not be the same qualified name
 		const namespace = this.attrNamespace(attr);
-		const previous: Attr | null = namespaced
-			? nElement.getAttributeNodeNS(
-					namespace,
-					new this.client.native.Attr(attr).localName
-				)
-			: nElement.getAttributeNode(name);
-		const previousMirror = previous
-			? this.raw.get(element, mirrorAttributeName(this.attrName(previous)))
-			: null;
+		const rewrite = this.rewriterNS(element, namespace, name);
 
-		if (!rewrite) {
-			const replaced = insert();
-			// a stale mirror from an earlier rewritten value under this name
-			// would otherwise go on answering for the one just inserted
-			this.raw.remove(element, mirrorAttributeName(name));
-			this.detached(replaced, previousMirror);
-			this.changed(element, name, value);
+		// the node being replaced, and what it answered with, so it can go on
+		// answering with it once it is detached. both members replace by
+		// namespace and local name, which need not be the same qualified name -
+		// `p:href` in XLink replaces `xlink:href`
+		// https://dom.spec.whatwg.org/#concept-element-attributes-set
+		const previous: Attr | null = nElement.getAttributeNodeNS(
+			namespace,
+			new this.client.native.Attr(attr).localName
+		);
+		const previousName = previous ? this.attrName(previous) : null;
+		const previousMirror = previous ? this.mirrorOf(element, previous) : null;
 
-			return replaced;
-		}
-
-		const rewritten = rewrite(value);
-		this.setAttrValue(attr, rewritten === null ? "" : rewritten);
-
-		// the mirror goes down first, for the reason `set` gives - and because
-		// inserting the node runs a custom element's attributeChangedCallback,
-		// which reads the attribute back
 		const mirrorName = mirrorAttributeName(name);
 		const staleMirror = this.raw.get(element, mirrorName);
-		this.raw.set(element, mirrorName, value);
+		let rewritten: string | null = value;
+		if (rewrite) {
+			rewritten = rewrite(value);
+			this.setAttrValue(attr, rewritten === null ? "" : rewritten);
+			// the mirror goes down first, for the reason `set` gives - and
+			// because inserting the node runs a custom element's
+			// attributeChangedCallback, which reads the attribute back
+			this.raw.set(element, mirrorName, value);
+		}
 
 		let replaced: Attr | null;
 		try {
@@ -602,21 +701,39 @@ export class AttributeLayer {
 			// a namespace clash, or an element that is not one - the node the
 			// page still holds must not come back carrying the rewritten value,
 			// and the element must not come back carrying its mirror
-			if (staleMirror === null) this.raw.remove(element, mirrorName);
-			else this.raw.set(element, mirrorName, staleMirror);
-			this.setAttrValue(attr, value);
+			if (rewrite) {
+				if (staleMirror === null) this.raw.remove(element, mirrorName);
+				else this.raw.set(element, mirrorName, staleMirror);
+				this.setAttrValue(attr, value);
+			}
 			throw err;
 		}
 
+		// the name the document holds it under now. Blink replaces an attribute
+		// with the same namespace and local name in place, keeping the old
+		// qualified name - so `p:href` inserted over `xlink:href` is held as
+		// `xlink:href`, and the mirror has to follow it there
+		const held = this.owner(attr) ? this.heldName(element, attr) : name;
+		if (rewrite && held !== name) {
+			this.raw.set(element, mirrorAttributeName(held), value);
+			if (staleMirror === null) this.raw.remove(element, mirrorName);
+			else this.raw.set(element, mirrorName, staleMirror);
+		}
+
+		// the replaced node's mirror stops answering: it is gone, and nothing
+		// takes its place under that name unless the new node was mirrored there
+		if (previousMirror !== null && (previousName !== held || !rewrite)) {
+			this.raw.remove(element, mirrorAttributeName(previousName!));
+		}
 		this.detached(replaced, previousMirror);
-		this.changed(element, name, value);
+		this.changed(element, held, value);
 
 		if (rewritten !== null) return replaced;
 
 		// the rule wants the attribute gone. it had to be inserted all the same -
 		// that is what makes this a *replacement* of whatever was there, which is
 		// the node the page is handed back
-		this.raw.remove(element, name);
+		this.raw.remove(element, held);
 		// and the node the page still holds gets its own value back, now that it
 		// is detached and writing it has no effect on the document
 		this.setAttrValue(attr, value);

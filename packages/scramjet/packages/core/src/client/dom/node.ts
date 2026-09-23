@@ -182,6 +182,15 @@ export default function (client: ScramjetClient, _self: Self) {
 			super.textContent = value;
 		}
 
+		@Arguments("optional boolean")
+		@Returns("Node")
+		cloneNode(subtree?: boolean): Node {
+			const clone = super.cloneNode(subtree);
+			text.cloned(this as Node, clone);
+
+			return clone;
+		}
+
 		@Arguments("Node")
 		@Returns("Node")
 		appendChild<T extends Node>(node: T): T {
@@ -367,6 +376,91 @@ export default function (client: ScramjetClient, _self: Self) {
 			void super.hasAttributes();
 
 			text.around(this, [node], () => super.moveBefore(node, child));
+		}
+	});
+
+	// https://dom.spec.whatwg.org/#interface-parentnode, on the two parents
+	// that are never a script or a style themselves - but whose insertions can
+	// still take a Text node out of one
+	client.Intercept(class extends DocumentFragment {
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		append(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.append(...nodes));
+		}
+
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		prepend(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.prepend(...nodes));
+		}
+
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		replaceChildren(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.replaceChildren(...nodes));
+		}
+
+		@Arguments("Node", "Node?")
+		@Returns("undefined")
+		moveBefore(node: Node, child: Node | null): void {
+			void super.childElementCount;
+
+			text.around(this, [node], () => super.moveBefore(node, child));
+		}
+	});
+
+	client.Intercept(class extends Document {
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		append(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.append(...nodes));
+		}
+
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		prepend(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.prepend(...nodes));
+		}
+
+		@Arguments("(Node or DOMString)...")
+		@Returns("undefined")
+		replaceChildren(...nodes: (Node | string)[]): void {
+			void super.childElementCount;
+
+			text.around(this, nodes, () => super.replaceChildren(...nodes));
+		}
+
+		@Arguments("Node", "Node?")
+		@Returns("undefined")
+		moveBefore(node: Node, child: Node | null): void {
+			void super.childElementCount;
+
+			text.around(this, [node], () => super.moveBefore(node, child));
+		}
+	});
+
+	client.Intercept(class extends Document {
+		// `(boolean or ImportNodeOptions)` where the engine has the options
+		// bag, `boolean` where it does not - so the argument goes to the native
+		// untouched, to be converted by whichever this is
+		@Arguments("Node", "optional any")
+		@Returns("Node")
+		importNode<T extends Node>(node: T, subtree?: any): T {
+			const clone = super.importNode(node, subtree);
+			text.cloned(node, clone);
+
+			return clone;
 		}
 	});
 

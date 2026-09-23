@@ -15,7 +15,6 @@ import {
 	mirrorAttributeName,
 	mirroredAttributeName,
 	nullNamespace,
-	ruleAttributeName,
 } from "@client/attributes";
 import { String } from "@/shared/snapshot";
 import { hideInternalAttributes } from "@client/selectors";
@@ -111,10 +110,9 @@ export default function (client: ScramjetClient, _self: Self) {
 				return mirror ? attrs.attrValue(mirror) : null;
 			}
 
-			const name = attrs.attrName(node);
-			if (isInternalAttribute(name)) return null;
+			if (isInternalAttribute(attrs.attrName(node))) return null;
 
-			const mirror = attrs.raw.get(this, mirrorAttributeName(name));
+			const mirror = attrs.mirrorOf(this, node);
 
 			return mirror === null ? attrs.attrValue(node) : mirror;
 		}
@@ -158,10 +156,7 @@ export default function (client: ScramjetClient, _self: Self) {
 
 				return;
 			}
-			const rewrite = attrs.rewriter(
-				this,
-				ruleAttributeName(namespace, qualifiedName)
-			);
+			const rewrite = attrs.rewriterNS(this, namespace, qualifiedName);
 			if (!rewrite) {
 				super.setAttributeNS(namespace, qualifiedName, text);
 				if (namespace === null) {
@@ -172,29 +167,44 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 
 			const rewritten = rewrite(text);
+			const live = rewritten === null ? "" : rewritten;
 
-			// the native goes first here, unlike the namespace-less write: it
-			// validates the namespace against the qualified name, and a call that
-			// throws must not leave a mirror behind for every later read to
-			// answer out of
-			super.setAttributeNS(
-				namespace,
-				qualifiedName,
-				rewritten === null ? "" : rewritten
-			);
-			// keyed on the qualified name the document holds, which is what a
+			// a name the mirror cannot be written under is one the native refuses
+			// too, and its error is the one the page is owed
+			if (!isValidAttributeLocalName(qualifiedName)) {
+				super.setAttributeNS(namespace, qualifiedName, live);
+
+				return;
+			}
+
+			// keyed on the qualified name the document will hold, which is what a
 			// namespace-less read asks for. that is not necessarily the one just
 			// passed: an existing attribute in the same namespace under another
 			// prefix only has its value changed, and keeps its own name
 			const local = localPart(qualifiedName);
-			const node = super.getAttributeNodeNS(namespace, local);
-			const name = node ? attrs.attrName(node) : qualifiedName;
+			const existing = super.getAttributeNodeNS(namespace, local);
+			const name = existing ? attrs.attrName(existing) : qualifiedName;
+			const mirrorName = mirrorAttributeName(name);
+			const stale = attrs.raw.get(this, mirrorName);
+
+			// the mirror goes down first, for the reason `set` gives - the write
+			// runs a custom element's attributeChangedCallback, which reads the
+			// attribute back. the native validates the namespace against the
+			// qualified name, and a call that throws must not leave the mirror
+			// behind for every later read to answer out of
+			attrs.raw.set(this, mirrorName, text);
+			try {
+				super.setAttributeNS(namespace, qualifiedName, live);
+			} catch (err) {
+				if (stale === null) attrs.raw.remove(this, mirrorName);
+				else attrs.raw.set(this, mirrorName, stale);
+				throw err;
+			}
 			// `removeAttributeNS` takes the *local* name, and a prefixed qualified
 			// name handed to it matches nothing - leaving the empty attribute in
 			// place of the one the rule wanted gone
 			if (rewritten === null) super.removeAttributeNS(namespace, local);
 
-			attrs.raw.set(this, mirrorAttributeName(name), text);
 			if (namespace === null) attrs.changed(this, name, text);
 		}
 
@@ -212,10 +222,10 @@ export default function (client: ScramjetClient, _self: Self) {
 			namespace = nullNamespace(namespace);
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (node) {
-				const name = attrs.attrName(node);
+				const name = attrs.heldName(this, node);
 				if (isInternalAttribute(name)) return;
-				const mirror = attrs.raw.get(this, mirrorAttributeName(name));
-				attrs.raw.remove(this, mirrorAttributeName(name));
+				const mirror = attrs.mirrorOf(this, node);
+				if (mirror !== null) attrs.raw.remove(this, mirrorAttributeName(name));
 				super.removeAttributeNS(namespace, localName);
 				attrs.detached(node, mirror);
 				if (namespace === null) attrs.changed(this, name, null);
@@ -327,16 +337,14 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("Attr")
 		@Returns("Attr")
 		removeAttributeNode(attr: Attr): Attr {
-			const name = attrs.attrName(attr);
-			const mirror = isInternalAttribute(name)
-				? null
-				: attrs.raw.get(this, mirrorAttributeName(name));
+			const name = attrs.heldName(this, attr);
+			const mirror = attrs.mirrorOf(this, attr);
 			// first, so an attribute this element does not have throws the spec's
 			// NotFoundError before anything has been touched
 			const removed = super.removeAttributeNode(attr);
 
 			if (!isInternalAttribute(name)) {
-				attrs.raw.remove(this, mirrorAttributeName(name));
+				if (mirror !== null) attrs.raw.remove(this, mirrorAttributeName(name));
 				attrs.detached(removed, mirror);
 				attrs.changed(this, name, null);
 			} else {
