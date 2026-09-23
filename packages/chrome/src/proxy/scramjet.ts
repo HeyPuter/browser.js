@@ -110,6 +110,13 @@ class ProxyFrameContext {
 					if (tab.history.justTriggeredNavigation) {
 						// url bar was typed in, we triggered this navigation, don't push a new state since we already did
 						tab.history.justTriggeredNavigation = false;
+						// Redirects commit their final URL to the entry we already created.
+						tab.history.replace(
+							new URL(url),
+							null,
+							tab.history.current().state,
+							false
+						);
 					} else {
 						// the page just loaded on its own (a link was clicked, window.location was set)
 						tab.history.push(new URL(url), undefined, null, false);

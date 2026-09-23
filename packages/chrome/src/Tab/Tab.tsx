@@ -143,6 +143,9 @@ export class Tab extends StatefulClass {
 	// only caller should be history.ts for this
 	_directnavigate(url: URL) {
 		this.url = url;
+		// Internal pages never send a frame load acknowledgement.
+		this.history.justTriggeredNavigation =
+			url.protocol !== INTERNAL_URL_PROTOCOL;
 		this.icon = "/defaultfavicon.png";
 		if (url.protocol == INTERNAL_URL_PROTOCOL) {
 			this.icon = null;
@@ -203,7 +206,7 @@ export class Tab extends StatefulClass {
 		this.history.push(url, null, null, true, false);
 	}
 	replaceNavigate(url: URL) {
-		this.history.replace(url, null, true);
+		this.history.replace(url, null, null, true);
 	}
 
 	back() {
@@ -220,6 +223,7 @@ export class Tab extends StatefulClass {
 		if (this.internalpage) {
 			this._directnavigate(this.url);
 		} else {
+			this.history.justTriggeredNavigation = true;
 			this.frame.reload();
 		}
 	}

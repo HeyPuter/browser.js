@@ -66,7 +66,9 @@ export class History extends StatefulClass {
 		if (data) {
 			this.index = data.index;
 			this.states = data.states.map((state) => HistoryState.deserialize(state));
+			for (const state of this.states) this.own(state);
 		}
+		this.updateNavigationState();
 	}
 	serialize(): SerializedHistory {
 		return {
@@ -95,7 +97,7 @@ export class History extends StatefulClass {
 			this.states.slice(this.index + 1).forEach((state) => this.disown(state));
 
 			// "fork" history tree, creating a new timeline
-			this.states.splice(this.index, this.states.length - this.index);
+			this.states.splice(this.index + 1);
 		}
 		const hstate = new HistoryState({ url, state, title });
 		if (virtual) hstate.virtual = true;
@@ -114,8 +116,7 @@ export class History extends StatefulClass {
 			this.tab._directnavigate(url);
 		} else this.tab.url = url;
 
-		this.tab.canGoBack = this.canGoBack();
-		this.tab.canGoForward = this.canGoForward();
+		this.updateNavigationState();
 
 		this.markDirty();
 		return this.states[this.index];
@@ -126,34 +127,37 @@ export class History extends StatefulClass {
 		state: any,
 		navigate: boolean = true
 	): HistoryState {
-		if (this.index < this.states.length) {
+		if (this.index >= 0 && this.index < this.states.length) {
 			this.current().url = url;
 			this.current().state = state;
 			this.current().title = title;
 			this.current().favicon = null;
 		} else {
-			return this.push(url, state);
+			return this.push(url, title, state, navigate);
 		}
 
 		if (navigate) {
 			this.justTriggeredNavigation = true;
 			this.tab._directnavigate(url);
-		}
+		} else this.tab.url = url;
 
-		this.tab.canGoBack = this.canGoBack();
-		this.tab.canGoForward = this.canGoForward();
+		this.updateNavigationState();
 
 		this.markDirty();
 		return this.states[this.index];
 	}
 	go(delta: number, navigate: boolean = true): HistoryState {
 		const current = this.current();
-		this.index += delta;
-		if (this.index < 0) {
-			this.index = 0;
-		} else if (this.index >= this.states.length) {
-			this.index = this.states.length - 1;
+		// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-history-go
+		if (delta === 0) {
+			if (navigate) this.tab.reload();
+			return current;
 		}
+		const target = this.index + delta;
+		// https://html.spec.whatwg.org/multipage/browsing-the-web.html#traverse-the-history-by-a-delta
+		if (!Number.isInteger(target) || target < 0 || target >= this.states.length)
+			return current;
+		this.index = target;
 
 		let newstate = this.states[this.index];
 
@@ -174,8 +178,7 @@ export class History extends StatefulClass {
 			this.tab.icon = newstate.favicon;
 		}
 
-		this.tab.canGoBack = this.canGoBack();
-		this.tab.canGoForward = this.canGoForward();
+		this.updateNavigationState();
 
 		this.markDirty();
 		return newstate;
@@ -185,5 +188,10 @@ export class History extends StatefulClass {
 	}
 	canGoForward(): boolean {
 		return this.index < this.states.length - 1;
+	}
+
+	private updateNavigationState() {
+		this.tab.canGoBack = this.canGoBack();
+		this.tab.canGoForward = this.canGoForward();
 	}
 }
