@@ -7,7 +7,6 @@ import {
 	TextEncoder_encode,
 	RegExp_exec,
 	Crypto_getRandomValues,
-	String_charCodeAt,
 	_RegExp,
 	_TextDecoder,
 	_Uint8Array,
@@ -15,11 +14,9 @@ import {
 	Performance_now,
 	String_substring,
 	String_endsWith,
-	JSON_stringify,
 } from "../snapshot";
 import { bytesToBase64 } from "@/shared/util";
 import { incumbencyMode } from "@/shared/incumbency";
-import { rewriteUrl } from "@rewriters/url";
 
 // eslint-disable-next-line scramjet-core/no-globals
 Error.stackTraceLimit = 50;
@@ -48,8 +45,6 @@ type RewriterResult = {
 	js: string | Uint8Array;
 	map: Uint8Array | null;
 	tag: string;
-	/** the `//# sourceURL` the original source carried, if any */
-	pageSourceUrl: string | null;
 	errors: string[];
 };
 function rewriteJsWasm(
@@ -101,12 +96,11 @@ function rewriteJsWasm(
 			dbg.time(meta, before, `oxc rewrite for "${source || "(unknown)"}"`);
 		}
 
-		const { js, map, scramtag, sourceurl, errors } = out;
+		const { js, map, scramtag, errors } = out;
 
 		return {
 			js: typeof input === "string" ? TextDecoder_decode(js) : js,
 			tag: scramtag,
-			pageSourceUrl: sourceurl ?? null,
 			map,
 			errors,
 		};
@@ -115,127 +109,41 @@ function rewriteJsWasm(
 	}
 }
 
-/**
- * 128 bits of hex. Hex rather than base64url because the value has to survive
- * two places that do not escape: a query string, and the `//# sourceURL` line
- * comment, which ends at the first whitespace or line terminator.
- *
- * `getRandomValues` is taken from the snapshot, not off the live global. A
- * page that replaced `crypto.getRandomValues` would otherwise get to pick
- * every nonce the rewriter generates, which is the whole ballgame.
- */
-const NONCE_BYTES = 16;
+/** A private PST registration ID, generated independently for each rewrite. */
+const SCRIPT_ID_BYTES = 16;
 const HEX = "0123456789abcdef";
 
-function genRealmNonce(): string {
-	const bytes = Crypto_getRandomValues(new _Uint8Array(NONCE_BYTES));
-
-	let nonce = "";
-	for (let i = 0; i < NONCE_BYTES; i++) {
-		nonce += HEX[bytes[i] >> 4] + HEX[bytes[i] & 0xf];
+function genScriptId(): string {
+	const bytes = Crypto_getRandomValues(new _Uint8Array(SCRIPT_ID_BYTES));
+	let id = "";
+	for (let i = 0; i < SCRIPT_ID_BYTES; i++) {
+		id += HEX[bytes[i] >> 4] + HEX[bytes[i] & 0xf];
 	}
-
-	return nonce;
+	return id;
 }
 
-/** what `rewriteUrl` can actually rewrite; anything else names the document */
-const absoluteHttp = new _RegExp(/^https?:\/\//i);
-
-/**
- * The name the script answers to in a stack trace, carrying the nonce.
- *
- * Most callers hand the rewriter a real URL, but an inline script or a
- * `javascript:` URL gets a "(inline script element)" style label instead.
- * Those are named by the document that carried them - resolving the label as
- * a relative URL would invent a path that never existed.
- */
-function scriptSourceUrl(
-	url: string | null,
-	nonce: string,
+function buildPrelude(
+	res: RewriterResult,
 	context: ScramjetContext,
 	meta: URLMeta
 ): string {
-	const real = url && RegExp_exec(absoluteHttp, url) ? url : meta.base.href;
-
-	return rewriteUrl(real, context, meta, { nonce });
-}
-
-/**
- * V8 takes the *last* `//# sourceURL` in a file and ignores every earlier one,
- * the legacy `//@` spelling included, so appending ours discards whatever the
- * page wrote without scanning the source for it - a scan could not tell a real
- * comment from the same text sitting inside a string literal, and rewriting
- * one of those would change what the script does.
- *
- * Two ways the comment silently does nothing and the frame falls back to the
- * resource URL, which for us means a frame no longer carries its nonce: it has
- * to start its own line, and the value may not contain whitespace.
- */
-function sourceUrlComment(url: string): string {
-	let safe = "";
-	for (let i = 0; i < url.length; i++) {
-		const c = String_charCodeAt(url, i);
-		// a URL out of `rewriteUrl` is already percent-encoded and should never
-		// reach either branch, but the codec is the embedder's to write
-		if (c <= 0x20) {
-			safe += `%${HEX[c >> 4]}${HEX[c & 0xf]}`;
-		} else if (c === 0x2028 || c === 0x2029 || c === 0xfeff) {
-			// no single-byte escape for these; a name is worth less than a name
-			// the engine throws away
-			continue;
-		} else {
-			safe += url[i];
-		}
-	}
-
-	return `\n//# sourceURL=${safe}`;
-}
-
-/**
- * What gets wrapped around the rewritten script: statements that have to run
- * before it does, and the `//# sourceURL` that names it. Both empty in the
- * common case.
- */
-type Wrapping = { prelude: string; epilogue: string };
-
-function buildWrapping(
-	res: RewriterResult,
-	url: string | null,
-	context: ScramjetContext,
-	meta: URLMeta
-): Wrapping {
 	let prelude = "";
-	let epilogue = "";
 
 	if (flagEnabled("sourcemaps", context, meta.base)) {
 		const pushmap = globalThis[context.config.globals.pushsourcemapfn];
 		if (pushmap) {
-			// same realm as the consumer: hand over the buffer itself, no
-			// serialization round trip at all
+			// Same realm as the consumer: hand over the buffer directly.
 			pushmap(res.map, res.tag);
 		} else {
 			prelude += `${context.config.globals.pushsourcemapfn}("${bytesToBase64(res.map)}","${res.tag}");`;
 		}
 	}
 
-	const incumbency = incumbencyMode(context, meta.base);
-	if (incumbency === "pst" || incumbency === "nonce") {
-		const nonce = genRealmNonce();
-
-		// `pageSourceUrl` is a run of non-whitespace out of the page's own
-		// source and reaches here verbatim, quotes and backslashes included, so
-		// it is emitted as a literal rather than interpolated into one
-		prelude += `${context.config.globals.registerrealmfn}("${nonce}","${res.tag}",${JSON_stringify(res.pageSourceUrl)});`;
-
-		// only `nonce` puts the identity somewhere the page can read, and so
-		// only `nonce` has anything to emulate back. `pst` reads the script
-		// hash that is already on every frame and leaves the source alone
-		if (incumbency === "nonce") {
-			epilogue = sourceUrlComment(scriptSourceUrl(url, nonce, context, meta));
-		}
+	if (incumbencyMode(context, meta.base) === "pst") {
+		prelude += `${context.config.globals.registerrealmfn}("${genScriptId()}","${res.tag}");`;
 	}
 
-	return { prelude, epilogue };
+	return prelude;
 }
 
 /** the prologue keeps its own semicolon, or borrows one so the prelude parses */
@@ -243,41 +151,35 @@ function afterPrologue(directive: string, prelude: string): string {
 	return String_endsWith(directive, ";") ? prelude : `;${prelude}`;
 }
 
-function spliceString(js: string, { prelude, epilogue }: Wrapping): string {
-	if (!prelude) return js + epilogue;
-
+function spliceString(js: string, prelude: string): string {
 	const match = RegExp_exec(strictPrologue, js);
-	if (!match) return `${prelude}${js}${epilogue}`;
+	if (!match) return `${prelude}${js}`;
 
 	const at = match[0].length;
 
-	return `${String_substring(js, 0, at)}${afterPrologue(match[0], prelude)}${String_substring(js, at)}${epilogue}`;
+	return `${String_substring(js, 0, at)}${afterPrologue(match[0], prelude)}${String_substring(js, at)}`;
 }
 
 /**
  * Splicing as bytes keeps a script that arrived as bytes from making a round
  * trip through a UTF-16 string it would only be encoded back out of, and gets
- * both ends done in one allocation.
+ * the insertion done in one allocation.
  */
-function spliceBytes(js: Uint8Array, { prelude, epilogue }: Wrapping) {
-	const head = prelude
-		? headDecoder.decode(js.subarray(0, PROLOGUE_SCAN_BYTES))
-		: "";
-	const match = prelude ? RegExp_exec(strictPrologue, head) : null;
+function spliceBytes(js: Uint8Array, prelude: string) {
+	const head = headDecoder.decode(js.subarray(0, PROLOGUE_SCAN_BYTES));
+	const match = RegExp_exec(strictPrologue, head);
 
 	const insert = TextEncoder_encode(
-		prelude ? (match ? afterPrologue(match[0], prelude) : prelude) : ""
+		match ? afterPrologue(match[0], prelude) : prelude
 	);
 	// the directive is ASCII, but the whitespace before it need not be, so the
 	// split point has to be measured in bytes rather than in characters
 	const at = match ? TextEncoder_encode(match[0]).length : 0;
-	const tail = TextEncoder_encode(epilogue);
 
-	const out = new _Uint8Array(js.length + insert.length + tail.length);
+	const out = new _Uint8Array(js.length + insert.length);
 	out.set(js.subarray(0, at));
 	out.set(insert, at);
 	out.set(js.subarray(at), at + insert.length);
-	out.set(tail, js.length + insert.length);
 
 	return out;
 }
@@ -301,7 +203,7 @@ export function rewriteJs(
 ): string | Uint8Array {
 	try {
 		const res = rewriteJsInner(js, url, context, meta, isModule);
-		const wrapping = buildWrapping(res, url, context, meta);
+		const prelude = buildPrelude(res, context, meta);
 
 		if (flagEnabled("rewriterLogs", context, meta.base)) {
 			for (const error of res.errors) {
@@ -309,11 +211,11 @@ export function rewriteJs(
 			}
 		}
 
-		if (!wrapping.prelude && !wrapping.epilogue) return res.js;
+		if (!prelude) return res.js;
 
 		return typeof res.js === "string"
-			? spliceString(res.js, wrapping)
-			: spliceBytes(res.js, wrapping);
+			? spliceString(res.js, prelude)
+			: spliceBytes(res.js, prelude);
 	} catch (err) {
 		dbg.warn(
 			"failed rewriting js for",

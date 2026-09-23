@@ -406,6 +406,26 @@ async function runTestOnHarness(
 	timeout: number = 30000
 ): Promise<TestResult> {
 	await syncRunwayCleartextHarness(page, test);
+	await page.evaluate(
+		({ mode, siteFlags }) => {
+			const harness = window as any;
+			const config = harness.__runwayController?.scramjetConfig;
+			if (!config) return;
+			if (!harness.__runwayIncumbencyDefaults) {
+				harness.__runwayIncumbencyDefaults = {
+					mode: config.flags.incumbency,
+					siteFlags: { ...config.siteFlags },
+				};
+			}
+			const defaults = harness.__runwayIncumbencyDefaults;
+			config.flags.incumbency = mode ?? defaults.mode;
+			config.siteFlags = { ...defaults.siteFlags };
+			for (const [pattern, incumbency] of Object.entries(siteFlags ?? {})) {
+				config.siteFlags[pattern] = { incumbency };
+			}
+		},
+		{ mode: test.incumbencyMode, siteFlags: test.incumbencySiteFlags }
+	);
 
 	const warmProxiedUrl = async (url: string) => {
 		const proxiedUrl = await page.evaluate((targetUrl) => {

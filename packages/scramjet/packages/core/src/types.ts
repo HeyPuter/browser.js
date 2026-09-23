@@ -21,10 +21,6 @@ export interface ScramjetVersionInfo {
  * - `pst`   `Error.prepareStackTrace` plus `CallSite.getScriptHash`, both V8
  *           only. Costs nothing observable: the hash is already on every
  *           frame, eval'd ones included, and is not part of what a page reads.
- * - `nonce` A `//# sourceURL` carrying a per-rewrite nonce. Works wherever a
- *           stack can be read, but the sourceURL *is* what the page reads - in
- *           stack traces, in `onerror`, and in `ErrorEvent.filename` - so
- *           every one of those has to be emulated back.
  * - `stamp` Every call in a rewritten script goes through `callfn`, which
  *           records the calling script's realm for the length of the call.
  *           Reads no stack and shows the page nothing, at the cost of a call
@@ -40,7 +36,7 @@ export interface ScramjetVersionInfo {
  * Nothing substitutes one mode for another at use time: the default flags
  * choose one the engine can do, and a mode set by hand is used as given.
  */
-export type IncumbencyMode = "pst" | "nonce" | "stamp" | "lazystamp" | "none";
+export type IncumbencyMode = "pst" | "stamp" | "lazystamp" | "none";
 
 export type ScramjetFlags = {
 	syncxhr: boolean;

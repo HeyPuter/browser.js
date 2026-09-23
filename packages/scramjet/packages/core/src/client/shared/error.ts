@@ -2,14 +2,12 @@ import { unrewriteUrl } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
 import { isOwnScript } from "@client/nativeerror";
 import { RAWFRAMES } from "@/symbols";
-import { QP } from "@/fetch/parse";
 import {
 	Error_prototype_toString,
 	Object_defineProperty,
 	Reflect_apply,
 	String,
 	String_split,
-	_URL,
 } from "@/shared/snapshot";
 
 export const enabled = (client: ScramjetClient) =>
@@ -17,32 +15,6 @@ export const enabled = (client: ScramjetClient) =>
 
 export default function (client: ScramjetClient, _self: Self) {
 	// v8 only. all we need to do is clean the scramjet urls from stack traces
-	/**
-	 * What this frame would have been named without the proxy.
-	 *
-	 * Rewriting appends a `//# sourceURL` of scramjet's own, so the name in the
-	 * frame is ours, not the script's. When the source carried a sourceURL of
-	 * its own that value is what the page expects to see, verbatim - V8 does
-	 * not resolve a relative one - and the rewriter recorded it against the
-	 * nonce. Otherwise the frame should name the script's real URL, which is
-	 * what unrewriting ours gets back.
-	 */
-	const pageName = (shown: string): string => {
-		let nonce: string | null = null;
-		try {
-			nonce = new _URL(shown).searchParams.get(QP.nonce);
-		} catch {
-			// not a URL at all - a page's own bare sourceURL, or `<anonymous>`
-		}
-
-		if (nonce) {
-			const realm = client.box.scriptrealms[nonce];
-			if (realm && realm.pageSourceUrl !== null) return realm.pageSourceUrl;
-		}
-
-		return unrewriteUrl(shown, client.context);
-	};
-
 	const closure = (error: any, frames: any[]) => {
 		// scramjet reading a stack for itself wants the CallSites, not the string
 		// a page gets. this formatter refuses to be replaced, so this marker is
@@ -99,7 +71,9 @@ export default function (client: ScramjetClient, _self: Self) {
 				try {
 					// splitting on the url rather than replaceAll, which a page can
 					// replace on String.prototype
-					frame = String_split(frame, shown).join(pageName(shown));
+					frame = String_split(frame, shown).join(
+						unrewriteUrl(shown, client.context)
+					);
 				} catch {
 					// not one of ours; leave the frame alone
 				}
