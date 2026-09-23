@@ -159,9 +159,49 @@ export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
 }
 
 /**
+ * May this request carry HIGH-ENTROPY client hints at all?
+ *
+ * `Accept-CH` is not the only gate. Each hint is also governed by a permissions
+ * policy whose default allowlist is `self`, so a hint reaches a cross-origin
+ * destination only when the embedding document delegates it -- with `allow=` on
+ * the iframe or a `Permissions-Policy` header. Nothing on rateyourmusic does.
+ *
+ * Without this the shim sent `Sec-CH-UA-Arch`, `-Bitness`, `-Model` and
+ * `-Platform-Version` to challenges.cloudflare.com in a cross-origin iframe,
+ * on the request for the challenge document itself, where an unmodified
+ * browser sends none of them.
+ *
+ * And it made the shim RESTART. Chromium's `Critical-CH` throttle skips a hint
+ * the policy does not allow rather than counting it missing
+ * (`GetCriticalHintsMissingStatus`: `if (!IsClientHintAllowed(...)) continue;`),
+ * so for a cross-origin frame every critical hint is not-allowed, nothing is
+ * missing, and there is no restart. The shim counted them missing and asked for
+ * the challenge document a SECOND time -- which the recorded journey has only
+ * one response for, and which live means the challenge is issued twice.
+ *
+ * `$io` carries the origin that asked, so the default policy is expressible
+ * here exactly: same origin allowed, cross origin not.
+ */
+export function clientHintsAllowed(
+	url: URL,
+	initiatorOrigin: string | undefined
+): boolean {
+	// No initiator is a top-level navigation: the document being fetched IS the
+	// one the policy is `self` for.
+	if (!initiatorOrigin) return true;
+
+	return initiatorOrigin === url.origin;
+}
+
+/**
  * The hints this origin has asked for, if they are known yet.
  */
-export function applyClientHints(headers: ScramjetHeaders, url: URL) {
+export function applyClientHints(
+	headers: ScramjetHeaders,
+	url: URL,
+	allowed = true
+) {
+	if (!allowed) return;
 	const wanted = accepted.get(url.origin);
 	if (!wanted || values === null) return;
 
@@ -181,8 +221,16 @@ export function applyClientHints(headers: ScramjetHeaders, url: URL) {
  */
 export function needsCriticalRestart(
 	responseHeaders: ScramjetHeaders,
-	requestHeaders: ScramjetHeaders
+	requestHeaders: ScramjetHeaders,
+	/**
+	 * Whether the permissions policy lets this request carry the hints at all.
+	 * A hint it does not allow is SKIPPED rather than counted missing, which is
+	 * what stops a cross-origin frame restarting forever over a hint it is
+	 * never going to be sent. See `clientHintsAllowed`.
+	 */
+	allowed = true
 ): boolean {
+	if (!allowed) return false;
 	const critical = responseHeaders.get("critical-ch");
 	if (critical === null || values === null) return false;
 

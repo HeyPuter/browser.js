@@ -27,6 +27,7 @@ import { _URL, URL_revokeObjectURL } from "@/shared/snapshot";
 import {
 	acceptClientHints,
 	needsCriticalRestart,
+	clientHintsAllowed,
 	readyClientHints,
 } from "./clienthints";
 
@@ -98,7 +99,13 @@ export async function doHandleFetch(
 	// `needsCriticalRestart` only asks again for hints this browser actually
 	// has, so a server naming one we cannot produce is answered rather than
 	// retried forever.
-	if (needsCriticalRestart(firstHeaders, newheaders)) {
+	if (
+		needsCriticalRestart(
+			firstHeaders,
+			newheaders,
+			clientHintsAllowed(parsed.url, parsed.fetchInitiatorOrigin)
+		)
+	) {
 		newheaders = rewriteRequestHeaders(request, handler, parsed);
 		response = await doNetworkFetch(handler, request, parsed, newheaders);
 		firstHeaders = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
