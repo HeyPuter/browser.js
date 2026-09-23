@@ -138,10 +138,38 @@ export function rewriteRequestHeaders(
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");
 
+	// The browser's own referrer, when it gave a full one, outranks
+	// `rawClientUrl` -- because it is the only correctly TIMED answer.
+	//
+	// Blink fixes a request's referrer when the request is CREATED.
+	// `rawClientUrl` is `client.url`, read by `await clients.get()` inside the
+	// fetch handler, which runs afterwards. Any same-document URL change in
+	// that window -- a `history.replaceState` -- silently rewrites the Referer
+	// of a request that was already on its way.
+	//
+	// Measured on rateyourmusic, where it costs the challenge: the interstitial
+	// replaceStates itself to `/?__cf_chl_rt_tk=<token>`, loads
+	// `orchestrate/chl_page/v1`, and replaceStates the token back off. The
+	// oracle's request carries `referer: https://rateyourmusic.com/?__cf_chl_rt_tk=...`
+	// and the sandbox's carried `referer: https://rateyourmusic.com/` -- the
+	// token gone, on the one request whose response carries the served
+	// challenge configuration (RULES.md #201). Neither side ever REQUESTS a URL
+	// with that token, so the URL only ever exists in place.
+	//
+	// Only when it is a full URL under the prefix. A policy that trims the
+	// referrer to an origin gives something that does not unrewrite to a target
+	// URL at all, and there `rawClientUrl` is still the better answer -- so the
+	// old order is kept for every case except the one it gets wrong.
+	const timedReferrer =
+		request.rawReferrer &&
+		request.rawReferrer.startsWith(handler.context.prefix.href)
+			? new _URL(request.rawReferrer)
+			: undefined;
 	const rawOriginUrl =
 		parsed.referrerSourceUrl !== undefined
 			? parsed.referrerSourceUrl
-			: request.rawClientUrl ||
+			: timedReferrer ||
+				request.rawClientUrl ||
 				(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
 	const originUrl =
 		rawOriginUrl &&
