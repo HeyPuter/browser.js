@@ -48,6 +48,53 @@ export function uncarriedHeaderName(name: string): string | null {
 	return String_substring(name, CARRIED_HEADER_PREFIX.length);
 }
 
+/**
+ * Chrome's request header order, measured rather than taken from a document.
+ *
+ * Taken by asking a server to report the order it actually received -- the raw
+ * header list, not the lowercased and sorted view a request object exposes --
+ * for a GET and for a POST, direct and proxied, against the same endpoint.
+ * Comparing a proxied fetch against a direct navigation does not work: those
+ * differ in a browser too. Chromium's order is identical across runs.
+ */
+const CHROME_REQUEST_ORDER = [
+	"sec-ch-ua-platform",
+	"accept-language",
+	"sec-ch-ua",
+	"content-type",
+	"sec-ch-ua-mobile",
+	"user-agent",
+	"accept",
+	"origin",
+	"sec-fetch-site",
+	"sec-fetch-mode",
+	"sec-fetch-user",
+	"sec-fetch-dest",
+	"referer",
+	"accept-encoding",
+	"cookie",
+];
+
+/**
+ * The same order for a request with no `content-type`.
+ *
+ * Chrome's order is not one sequence. It depends on WHICH headers are present:
+ * with a `content-type` the order runs `sec-ch-ua content-type sec-ch-ua-mobile
+ * User-Agent`, and without one the last two swap to `User-Agent
+ * sec-ch-ua-mobile`. Measured both ways, three runs each, identical every time
+ * -- so it is a shape and not noise, and one table cannot hold it.
+ *
+ * These are the two sets that were measured. A request carrying headers neither
+ * capture had -- `upgrade-insecure-requests`, `sec-fetch-user` and `priority`
+ * all ride on a top-level navigation -- may well order differently again, and
+ * the way to find out is to measure it with `pages/tlsfp.html` rather than to
+ * reason about it. Guessing produces a third order that matches nothing, which
+ * is worse than the one it replaced.
+ */
+const CHROME_REQUEST_ORDER_NO_BODY = CHROME_REQUEST_ORDER.map((h) => h)
+	.filter((h) => h !== "user-agent")
+	.flatMap((h) => (h === "sec-ch-ua-mobile" ? ["user-agent", h] : [h]));
+
 export class ScramjetHeaders {
 	headers = {};
 
@@ -77,13 +124,45 @@ export class ScramjetHeaders {
 		return key.toLowerCase() in this.headers;
 	}
 
+	/**
+	 * The request headers, in the order a browser sends them.
+	 *
+	 * Header order is a fingerprint, and Cloudflare reads it. Insertion order
+	 * is whatever the rewriting happened to do and is not Chrome's -- measured
+	 * against Chromium 155, same request, same server:
+	 *
+	 *   Chromium  sec-ch-ua-platform Accept-Language sec-ch-ua User-Agent
+	 *             sec-ch-ua-mobile Accept Sec-Fetch-* Referer Accept-Encoding
+	 *   before    accept accept-language sec-ch-ua sec-ch-ua-mobile
+	 *             sec-ch-ua-platform user-agent origin referer Sec-Fetch-*
+	 *             accept-encoding
+	 *
+	 * Stable across runs on both sides, so it is a shape and not noise. One
+	 * order covers GET and POST: the headers only a POST has -- `content-type`,
+	 * `origin`, `cookie` -- sit at fixed points in the same sequence, which is
+	 * what makes a single rank table right rather than a coincidence.
+	 *
+	 * Anything not listed keeps its insertion order, after everything listed.
+	 * The list is what was measured; inventing positions for the rest would be
+	 * guessing at a fingerprint, which is how you get a third order that
+	 * matches nothing.
+	 *
+	 * Only requests: this is the single place an outgoing header list is made
+	 * (`fetch.ts`), and a response's order belongs to the server.
+	 */
 	toRawHeaders(): RawHeaders {
-		const raw: RawHeaders = [];
+		const order =
+			"content-type" in this.headers
+				? CHROME_REQUEST_ORDER
+				: CHROME_REQUEST_ORDER_NO_BODY;
+		const known: RawHeaders = [];
+		const rest: RawHeaders = [];
 		for (const k in this.headers) {
-			raw.push([k, this.headers[k]]);
+			(order.indexOf(k) === -1 ? rest : known).push([k, this.headers[k]]);
 		}
+		known.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
 
-		return raw;
+		return [...known, ...rest];
 	}
 
 	toNativeHeaders(): Headers {
