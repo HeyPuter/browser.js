@@ -7,7 +7,6 @@
 		"domattr-attributes-namednodemap",
 		"domattr-integrity-property",
 		"domattr-mutationobserver-records",
-		"domattr-selector-literal-value",
 		"domattr-shadow-innerhtml-urls",
 		"elurls-anchor-component-setters",
 		"elurls-anchor-stringifier",
@@ -221,6 +220,8 @@
 		"wsfidelity-abnormal-closure",
 		"wsfidelity-connection-refused",
 		"wsfidelity-protocol-negotiated",
-		"wsfidelity-stream-connection-refused"
+		"wsfidelity-stream-connection-refused",
+		"elementlayer-review112-import-map-integrity",
+		"elementlayer-review112-mutation-observer-attribute-records"
 	]
 }

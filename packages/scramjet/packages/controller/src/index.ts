@@ -667,7 +667,7 @@ function yieldGetInjectScripts(
 ) {
 	const getInjectScripts: ScramjetInterface["getInjectScripts"] = (
 		meta,
-		handler,
+		_root,
 		htmlcontext,
 		script
 	) => {
