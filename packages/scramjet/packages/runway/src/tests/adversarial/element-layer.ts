@@ -98,14 +98,16 @@ export default [
 			if (!("moveBefore" in Element.prototype)) {
 				pass("no moveBefore");
 			} else {
-				// connected and empty: prepared, but not started, so its next
-				// children change runs it
+				// connected and empty: prepared, but not started. a move is not
+				// an insertion, so natively it does not prepare the script - the
+				// next insertion does, and runs the moved text with it
 				const script = document.createElement("script");
 				document.body.append(script);
 				const div = document.createElement("div");
 				div.textContent = "${PAYLOAD}";
 				document.body.append(div);
 				script.moveBefore(div.firstChild, null);
+				script.appendChild(document.createTextNode(""));
 			}
 		`
 	),
