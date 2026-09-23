@@ -26,6 +26,7 @@ import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
 import { unrewriteUrl } from "@rewriters/url";
 import { XLINK_NAMESPACE } from "@client/attributes";
+import { nodeClient, trustedString } from "@client/trustedtypes";
 import {
 	String,
 	String_startsWith,
@@ -651,6 +652,16 @@ export default function (client: ScramjetClient, self: Self) {
 		@Type("USVString")
 		set src(value: string) {
 			void super.type;
+
+			// As with innerHTML: a response's Trusted Types requirement is about
+			// the value the PAGE assigned, so it is checked before the URL is
+			// rewritten.
+			value = trustedString(
+				nodeClient(client, this),
+				value,
+				"TrustedScriptURL",
+				"HTMLScriptElement src"
+			);
 
 			set(this, "src", value);
 		}
