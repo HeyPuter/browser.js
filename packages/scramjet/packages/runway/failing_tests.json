@@ -221,6 +221,7 @@
 		"wsfidelity-abnormal-closure",
 		"wsfidelity-connection-refused",
 		"wsfidelity-protocol-negotiated",
-		"wsfidelity-stream-connection-refused"
+		"wsfidelity-stream-connection-refused",
+		"elementlayer-review112-import-map-integrity"
 	]
 }

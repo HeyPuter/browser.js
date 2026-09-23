@@ -15,6 +15,7 @@ import { type NullArray, nullArray } from "@/shared/htmlparser/safe";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
+import { rewriteImportMap } from "@rewriters/importmap";
 import { ScramjetContext } from "@/shared";
 import { htmlRules } from "@/shared/htmlRules";
 import { base64Decode, bytesToBase64 } from "@/shared/util";
@@ -25,8 +26,6 @@ import {
 	Error,
 	Performance_now,
 	Object_keys,
-	JSON_parse,
-	JSON_stringify,
 	TextEncoder_encode,
 	Array_indexOf,
 	String_slice,
@@ -42,6 +41,45 @@ import {
 } from "@/shared/mime";
 
 export type ForeignContext = "svg" | "math" | "html";
+
+/**
+ * Where a script element's original source is kept, in base64.
+ *
+ * Under the prefix every internal attribute shares, so it is hidden like the
+ * rest - but not under the `scramjet-attr-` a mirror is named with. As
+ * `scramjet-attr-script-source-src` it was also the mirror of a page's own
+ * `script-source-src` attribute, and every lookup of that name found the
+ * source instead.
+ */
+export const SCRIPT_SOURCE_ATTRIBUTE = "scramjet-attr_script-source";
+
+/** The name the mirror of `attr` is kept under. */
+const mirrorName = (attr: string) => `scramjet-attr-${attr}`;
+
+/**
+ * Put `to` where `from` is in an element's attribute list.
+ *
+ * An attribute a rule removes leaves its mirror to represent it, and the page
+ * reads the list back in the order the parser gave it - so the mirror takes
+ * the removed attribute's place rather than joining the end.
+ */
+function replaceAttribute(
+	attribs: Record<string, string>,
+	from: string,
+	to: string,
+	value: string
+) {
+	const keys = Object_keys(attribs);
+	const values: string[] = [];
+	for (let i = 0; i < keys.length; i++) {
+		values[i] = attribs[keys[i]];
+		delete attribs[keys[i]];
+	}
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] === from) attribs[to] = value;
+		else if (keys[i] !== to) attribs[keys[i]] = values[i];
+	}
+}
 
 export type HtmlContext = {
 	// should we inject scramjet scripts at the top of the document?
@@ -325,7 +363,7 @@ export function unrewriteHtml(
 			for (let index = 0; index < keys.length; index++) {
 				const key = keys[index];
 				const lower = String_toLowerCase(key);
-				if (lower === "scramjet-attr-script-source-src") {
+				if (lower === SCRIPT_SOURCE_ATTRIBUTE) {
 					const child = node.children[0];
 					if (child && "data" in child) child.data = base64Decode(attribs[key]);
 					delete attribs[key];
@@ -398,11 +436,12 @@ function traverseParsedHtml(
 						(name) => attribs[name] || null
 					);
 
-					if (v === null) delete attribs[attr];
-					else {
+					if (v === null) {
+						replaceAttribute(attribs, attr, mirrorName(attr), value);
+					} else {
 						attribs[attr] = v;
+						attribs[mirrorName(attr)] = value;
 					}
-					attribs[`scramjet-attr-${attr}`] = value;
 				}
 			}
 		}
@@ -412,7 +451,7 @@ function traverseParsedHtml(
 		const attr = attrKeys[index];
 		if (Array_indexOf(eventAttributes, attr) !== -1) {
 			const value = attribs[attr];
-			attribs[`scramjet-attr-${attr}`] = value;
+			attribs[mirrorName(attr)] = value;
 			attribs[attr] = rewriteJs(
 				value,
 				`(inline ${attr} on element)`,
@@ -434,22 +473,8 @@ function traverseParsedHtml(
 		String_toLowerCase(attribs.type) === "importmap" &&
 		hasText
 	) {
-		const json = text.data;
 		try {
-			const map = JSON_parse(json);
-			if (map.imports) {
-				const specifiers = Object_keys(map.imports);
-				for (let index = 0; index < specifiers.length; index++) {
-					const key = specifiers[index];
-					let url = map.imports[key];
-					if (typeof url === "string") {
-						url = rewriteUrl(url, context, meta, { isModule: true });
-						map.imports[key] = url;
-					}
-				}
-			}
-
-			text.data = JSON_stringify(map);
+			text.data = rewriteImportMap(text.data, context, meta);
 		} catch (e) {
 			dbg.error("Failed to parse importmap JSON:", e);
 		}
@@ -464,9 +489,7 @@ function traverseParsedHtml(
 		if (isScriptType(scriptBlockType)) {
 			let js = text.data;
 			const module = isModuleScriptType(scriptBlockType);
-			attribs["scramjet-attr-script-source-src"] = bytesToBase64(
-				TextEncoder_encode(js)
-			);
+			attribs[SCRIPT_SOURCE_ATTRIBUTE] = bytesToBase64(TextEncoder_encode(js));
 			const htmlcomment = /<!--[\s\S]*?-->/g;
 			js = js.replace(htmlcomment, "");
 			text.data = rewriteJs(

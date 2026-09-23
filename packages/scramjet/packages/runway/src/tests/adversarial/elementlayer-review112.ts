@@ -1,4 +1,4 @@
-import { basicTest } from "../../testcommon.ts";
+import { basicTest, serverTest } from "../../testcommon.ts";
 
 /* eslint-disable quotes -- browser snippets are clearer as template literals */
 
@@ -243,6 +243,123 @@ export default [
 			fragment.append(text);
 			assertEqual(text.data, source, "the moved Text node keeps the page source");
 			assertEqual(fragment.textContent, source, "the fragment exposes the page source");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-range-script-text-source",
+		js: `
+			const script = document.createElement("script");
+			const source = "var __review112_range = location.href.length + 1;";
+			script.textContent = source;
+			const range = document.createRange();
+			range.selectNodeContents(script);
+			assertEqual(range.toString(), source, "Range stringification exposes the page's source");
+			assertEqual(range.cloneContents().textContent, source, "cloned range content exposes the page's source");
+			assertEqual(range.extractContents().textContent, source, "extracted range content exposes the page's source");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-scoped-import-map",
+		js: `
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({
+				scopes: { [location.origin + "/"]: { "review112-scoped": "data:text/javascript,export default 112" } }
+			});
+			document.head.append(map);
+			const module = await import("review112-scoped");
+			assertEqual(module.default, 112, "a scoped import map resolves from the document's origin");
+		`,
+	}),
+	serverTest({
+		name: "elementlayer-review112-import-map-integrity",
+		autoPass: true,
+		js: `
+			const checked = location.origin + "/review112-integrity.js?checked";
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = JSON.stringify({
+				integrity: { [checked]: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }
+			});
+			document.head.append(map);
+			const control = await import("/review112-integrity.js?control");
+			assertEqual(control.default, 112, "the module loads without integrity metadata");
+			let rejected = false;
+			try { await import("/review112-integrity.js?checked"); }
+			catch { rejected = true; }
+			assertEqual(rejected, true, "import map integrity rejects a module with the wrong digest");
+		`,
+		start: async (server) => {
+			server.on("request", (req, res) => {
+				if (req.url?.startsWith("/review112-integrity.js?")) {
+					res.writeHead(200, { "Content-Type": "application/javascript" });
+					res.end("export default 112;");
+				}
+			});
+		},
+	}),
+	basicTest({
+		name: "elementlayer-review112-script-source-marker-alias",
+		js: `
+			const script = document.createElement("script");
+			script.textContent = "var __review112_marker = location.href;";
+			assertEqual(script.getAttribute("script-source-src"), null, "internal source marker is not a public attribute");
+			assertEqual(script.hasAttribute("script-source-src"), false, "internal source marker is absent from hasAttribute");
+			assertEqual(script.getAttributeNode("script-source-src"), null, "internal source marker has no public Attr node");
+			script.setAttribute("script-source-src", "page-value");
+			assertEqual(script.getAttribute("script-source-src"), "page-value", "a page attribute of the same name keeps its value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-stripped-attr-value-change-steps",
+		js: `
+			const script = document.createElement("script");
+			script.setAttribute("nonce", "old");
+			script.getAttributeNode("nonce").value = "new";
+			assertEqual(script.nonce, "new", "Attr.value runs the nonce change steps");
+			const frame = document.createElement("iframe");
+			frame.setAttribute("sandbox", "allow-scripts");
+			const tokens = frame.sandbox;
+			frame.getAttributeNode("sandbox").value = "allow-forms";
+			assertEqual(tokens.contains("allow-forms"), true, "an existing sandbox token list sees the new value");
+			assertEqual(tokens.contains("allow-scripts"), false, "an existing sandbox token list drops the old value");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-svg-href-arbitrary-xlink-prefix",
+		js: `
+			const xlink = "http://www.w3.org/1999/xlink";
+			const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+			const first = "https://example.test/first.svg#shape";
+			const second = "https://example.test/second.svg#shape";
+			use.setAttributeNS(xlink, "p:href", first);
+			assertEqual(use.href.baseVal, first, "baseVal exposes the page's XLink URL");
+			assertEqual(use.href.animVal, first, "animVal exposes the page's XLink URL");
+			use.href.baseVal = second;
+			assertEqual(use.getAttributeNS(xlink, "href"), second, "baseVal updates the existing XLink attribute");
+			assertEqual(use.getAttribute("href"), null, "baseVal does not create another href attribute");
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-rawtext-nested-textcontent",
+		js: `
+			for (const tag of ["script", "style"]) {
+				const element = document.createElement(tag);
+				const child = document.createElement("b");
+				child.textContent = "nested text";
+				element.append(child);
+				assertEqual(element.textContent, "nested text", tag + " textContent includes descendant text");
+			}
+		`,
+	}),
+	basicTest({
+		name: "elementlayer-review112-parsed-attribute-order",
+		js: `
+			const template = document.createElement("template");
+			template.innerHTML = '<script nonce="value" id="marker"></script>';
+			const script = template.content.firstElementChild;
+			assertEqual(script.getAttributeNames().join(","), "nonce,id", "parsed attribute names retain source order");
+			assertEqual(script.attributes.item(0).name, "nonce", "NamedNodeMap index zero retains the first attribute");
 		`,
 	}),
 ];

@@ -151,10 +151,9 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 
 			if (!text.containsRawText(this as Node)) return super.textContent;
-			if (what === ELEMENT_NODE && text.kind(this as any) !== null) {
-				return text.source(this as any);
-			}
 
+			// the descendant text content, a script's or a style's included: an
+			// element appended under one is not code, but its text still counts
 			return text.descendantText(this as Node);
 		}
 
@@ -667,13 +666,13 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Type("[LegacyNullToEmptyString] DOMString")
 		get innerText(): string {
 			// a script or a style is never rendered, so its innerText is its text
-			// content - which for these two is their source.
+			// content: the source, and the text of anything appended under it.
 			// `title` is the brand check: reading the native innerText forces
 			// layout, and on this path the answer is thrown away
 			if (text.kind(this) !== null) {
 				void super.title;
 
-				return text.source(this);
+				return text.descendantText(this);
 			}
 
 			return super.innerText;
@@ -745,7 +744,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			get textContent(): string | null {
 				void super.type;
 
-				return text.source(this);
+				return text.descendantText(this);
 			}
 
 			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)?")
@@ -759,7 +758,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			get innerText(): string {
 				void super.type;
 
-				return text.source(this);
+				return text.descendantText(this);
 			}
 
 			@Type("(TrustedScript or [LegacyNullToEmptyString] DOMString)")

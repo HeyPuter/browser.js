@@ -9,7 +9,7 @@
  * concatenation of its Text children - held two ways at once:
  *
  *   - what the page wrote, per node, in `box.characterDataSources` (and, for a
- *     script, in the `scramjet-attr-script-source-src` attribute, which is
+ *     script, in the `scramjet-attr_script-source` attribute, which is
  *     where the HTML rewriter leaves it and which survives cloning)
  *   - what the document holds, which is the rewritten whole in the *first* Text
  *     child with every later one emptied, so that the browser's own
@@ -41,11 +41,9 @@ import {
 } from "@/shared/mime";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
-import { rewriteUrl } from "@rewriters/url";
+import { rewriteImportMap } from "@rewriters/importmap";
 import { base64Decode, bytesToBase64 } from "@/shared/util";
 import {
-	JSON_parse,
-	JSON_stringify,
 	String_substring,
 	String_toLowerCase,
 	TextEncoder_encode,
@@ -187,22 +185,7 @@ export class TextLayer {
 
 	private rewriteImportMap(json: string): string {
 		try {
-			const map = JSON_parse(json);
-			if (map && map.imports) {
-				for (const key in map.imports) {
-					const url = map.imports[key];
-					if (typeof url === "string") {
-						map.imports[key] = rewriteUrl(
-							url,
-							this.client.context,
-							this.client.meta,
-							{ isModule: true }
-						);
-					}
-				}
-			}
-
-			return JSON_stringify(map);
+			return rewriteImportMap(json, this.client.context, this.client.meta);
 		} catch (err) {
 			dbg.error("failed to parse an importmap", err);
 
@@ -534,6 +517,31 @@ export class TextLayer {
 	blank(node: CharacterData): void {
 		this.sources.set(node, this.data(node));
 		this.writeData(node, "");
+	}
+
+	/**
+	 * Give `copy`, a Text node the native just made out of one of the page's,
+	 * the page's text `page`. Inside a script or a style that is its record,
+	 * and the document goes on holding code; anywhere else it is the data.
+	 */
+	copied(copy: CharacterData, page: string): void {
+		const owner = this.parent(copy);
+		if (owner && this.kind(owner) !== null) {
+			this.sources.set(copy, page);
+
+			return;
+		}
+
+		this.sources.delete(copy);
+		if (this.rawData(copy) !== page) this.writeData(copy, page);
+	}
+
+	/**
+	 * Replace what `node` is recorded as saying, without re-deriving its
+	 * element - for a caller about to {@link sync} it anyway.
+	 */
+	record(node: CharacterData, page: string): void {
+		this.sources.set(node, page);
 	}
 
 	/** Hand `node` back its own text, for a move out of a script into plain text. */

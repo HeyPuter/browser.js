@@ -22,7 +22,7 @@
 
 import type { ScramjetClient } from "@client/index";
 import { htmlRules } from "@/shared/htmlRules";
-import { eventAttributes } from "@rewriters/html";
+import { SCRIPT_SOURCE_ATTRIBUTE, eventAttributes } from "@rewriters/html";
 import { rewriteJs } from "@rewriters/js";
 import {
 	Array_indexOf,
@@ -45,14 +45,10 @@ const INTERNAL_PREFIX = "scramjet-attr";
 const MIRROR_PREFIX = "scramjet-attr-";
 
 /**
- * Where a script element's original source is kept, in base64.
- *
- * It carries the mirror prefix but is not a mirror - there is no
- * `script-source-src` content attribute for it to stand in for - so it is
- * hidden outright rather than surfaced under a shortened name. The name is the
+ * Where a script element's original source is kept, in base64. The name is the
  * HTML rewriter's; both ends of the round trip have to agree on it.
  */
-export const SCRIPT_SOURCE_ATTRIBUTE = "scramjet-attr-script-source-src";
+export { SCRIPT_SOURCE_ATTRIBUTE };
 
 /** The HTML namespace, for the spec's "is in the HTML namespace" tests. */
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
@@ -596,6 +592,11 @@ export class AttributeLayer {
 		// the mirror is how the page's value is meant to be changed
 		if (!owner || isInternalAttribute(name)) {
 			this.setAttrValue(attr, value);
+			// a mirror node stands in for the attribute its rule stripped, so
+			// this is a change to *that* attribute, and its change steps run -
+			// `nonce`'s slot and `sandbox`'s token list follow it
+			const mirrored = owner ? mirroredAttributeName(name) : null;
+			if (mirrored) this.changed(owner!, mirrored, value);
 
 			return;
 		}

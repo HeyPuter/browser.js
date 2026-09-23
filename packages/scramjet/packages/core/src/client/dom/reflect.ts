@@ -25,6 +25,7 @@
 import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
 import { unrewriteUrl } from "@rewriters/url";
+import { XLINK_NAMESPACE } from "@client/attributes";
 import { String, String_startsWith, _URL } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
@@ -1392,11 +1393,30 @@ export default function (client: ScramjetClient, self: Self) {
 		});
 	}
 
-	/** The attribute an SVG element's `href` reflects, preferring the modern one. */
-	const svgHrefAttribute = (element: Element): string =>
-		!attrs.has(element, "href") && attrs.has(element, "xlink:href")
-			? "xlink:href"
-			: "href";
+	/**
+	 * The XLink `href` an SVG element's `href` falls back to, under whatever
+	 * prefix it was set with - `p:href` in the XLink namespace is the same
+	 * attribute as `xlink:href`. Null when the plain `href` is there to answer,
+	 * or when there is no XLink one either.
+	 *
+	 * https://svgwg.org/svg2-draft/types.html#__svg__SVGURIReference__href
+	 */
+	const svgXlinkHref = (element: Element): Attr | null => {
+		if (attrs.has(element, "href")) return null;
+
+		return new client.native.Element(element).getAttributeNodeNS(
+			XLINK_NAMESPACE,
+			"href"
+		);
+	};
+
+	/** The page's value for an SVG element's `href`, or null when unset. */
+	const svgHref = (element: Element): string | null => {
+		const xlink = svgXlinkHref(element);
+		if (xlink) return attrs.visibleValue(xlink);
+
+		return attrs.get(element, "href");
+	};
 
 	client.Intercept(class extends SVGAnimatedString {
 		@Type("DOMString")
@@ -1407,7 +1427,7 @@ export default function (client: ScramjetClient, self: Self) {
 			// URL - only the ones recorded above are
 			if (!owner) return native;
 
-			const value = attrs.get(owner, svgHrefAttribute(owner));
+			const value = svgHref(owner);
 
 			return value === null ? native : value;
 		}
@@ -1423,7 +1443,11 @@ export default function (client: ScramjetClient, self: Self) {
 				return;
 			}
 
-			attrs.set(owner, svgHrefAttribute(owner), String(value));
+			// the attribute the getter reads is the one written: an existing
+			// XLink href keeps its prefix, and no plain one appears beside it
+			const xlink = svgXlinkHref(owner);
+			if (xlink) attrs.setVisibleValue(xlink, String(value));
+			else attrs.set(owner, "href", String(value));
 		}
 
 		// no setter - an animated value is the animation's to write
@@ -1433,7 +1457,7 @@ export default function (client: ScramjetClient, self: Self) {
 			const owner = client.box.svgHrefs.get(this);
 			if (!owner) return native;
 
-			const value = attrs.get(owner, svgHrefAttribute(owner));
+			const value = svgHref(owner);
 
 			return value === null ? native : value;
 		}
