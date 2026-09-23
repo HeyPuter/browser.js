@@ -116,6 +116,8 @@ export async function doHandleFetch(
 			refererPolicy: ScramjetHeaders.fromRawHeaders(response.rawHeaders).get(
 				"referrer-policy"
 			),
+			// What the browser sent for THIS navigation. See TrackedHistoryState.
+			referrer: request.rawReferrer,
 		});
 	}
 

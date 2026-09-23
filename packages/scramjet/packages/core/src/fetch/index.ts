@@ -97,6 +97,25 @@ export type FetchHandlerInit = {
 export type TrackedHistoryState = {
 	url: string;
 	refererPolicy?: string;
+	/**
+	 * The `Referer` the BROWSER computed for this navigation, still proxied.
+	 *
+	 * `document.referrer` used to be derived from the previous entry in this
+	 * array, and that array records document FETCHES -- so it cannot see a
+	 * document whose URL was changed by the History API without one. Cloudflare's
+	 * interstitial does exactly that: it `replaceState`s itself to
+	 * `/?__cf_chl_tk=<token>` and then navigates, so no request is ever made
+	 * for a URL carrying the token and nothing in this array records it.
+	 *
+	 * Measured: a direct load's page reads a 145-character referrer carrying
+	 * the token where the proxied one read the 26-character origin. The value
+	 * travels -- analytics scripts forward it -- and `__cf_chl_tk` is what
+	 * ties a challenge to its redemption.
+	 *
+	 * So take the browser's answer instead of recomputing one. It already
+	 * applies the referrer policy, and it already knows about `replaceState`.
+	 */
+	referrer?: string | null;
 };
 export class ScramjetFetchTrackedClient {
 	history: TrackedHistoryState[] = [];
