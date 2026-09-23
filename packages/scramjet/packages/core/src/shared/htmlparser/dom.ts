@@ -13,6 +13,7 @@
 import {
 	Array_pop,
 	Array_push,
+	Array_splice,
 	Array_unshift,
 	Object_setPrototypeOf,
 } from "../snapshot";
@@ -97,6 +98,14 @@ abstract class NodeWithChildren extends Node {
 			nodes[index].parent = this as NodeWithChildren as ParentNode;
 			Array_unshift(this.children, nodes[index]);
 		}
+	}
+
+	/** Add `nodes`, in order, before the child currently at `index`. */
+	insertAt(index: number, nodes: ArrayLike<ChildNode>): void {
+		for (let i = 0; i < nodes.length; i++) {
+			nodes[i].parent = this as NodeWithChildren as ParentNode;
+		}
+		Array_splice(this.children, index, 0, ...(nodes as ChildNode[]));
 	}
 
 	/** Swap the child at `index` for `node`. */

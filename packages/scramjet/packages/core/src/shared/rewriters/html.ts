@@ -311,9 +311,36 @@ function rewriteHtmlInner(
 			dbg.warn(
 				`detected quirky document structure parsing @ ${meta.origin.href}!`
 			);
-			// there's weird stuff going on with the document that could result in page scripts being loaded before our inject scripts
-			// so inject them at position 0
-			root.prepend(injectScripts);
+			// Weird document structure could get page scripts loaded before our
+			// inject scripts, so they go as early as possible -- but AFTER the
+			// doctype.
+			//
+			// "Position 0" put them in front of it, and that is what made the
+			// document quirky. In the "initial" insertion mode a DOCTYPE token
+			// is consumed normally, but a start tag falls to "Anything else",
+			// which sets the Document to quirks mode before reprocessing it
+			// (HTML Standard 13.2.6.4.1). A <script> ahead of the DOCTYPE
+			// therefore guarantees BackCompat, and the detector caused the
+			// condition it is named for -- taking compatMode and every layout
+			// metric derived from it (clientHeight, scrollHeight) with it.
+			//
+			// A comment token in that mode is just inserted and the mode does
+			// not change, so leading comments are legal ahead of the doctype and
+			// are skipped too. The scripts land at the first position that is
+			// still ahead of anything the page can run.
+			let at = 0;
+			while (at < root.children.length) {
+				const node = root.children[at];
+				if (
+					node.type === ElementType.Directive ||
+					node.type === ElementType.Comment
+				) {
+					at++;
+					continue;
+				}
+				break;
+			}
+			root.insertAt(at, injectScripts);
 		} else {
 			if (!headElement) {
 				headElement = new Element("head", {});
