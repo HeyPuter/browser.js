@@ -14,6 +14,7 @@ import {
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { _URL, _Set } from "@/shared/snapshot";
 import { createReferrerString } from "./util";
+import { applyClientHints } from "./clienthints";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -196,6 +197,10 @@ export function rewriteRequestHeaders(
 	}
 
 	applyFetchMetadataHeaders(headers, request, parsed, handler);
+	// After everything else, and keyed on the TARGET origin: the browser put
+	// the low-entropy three on this request for the PROXY's origin, and the
+	// high-entropy ones are owed to whoever asked for them by name.
+	applyClientHints(headers, parsed.url);
 
 	return headers;
 }

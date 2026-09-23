@@ -24,6 +24,11 @@ import {
 	worstFetchSite,
 } from "./headers";
 import { _URL, URL_revokeObjectURL } from "@/shared/snapshot";
+import {
+	acceptClientHints,
+	needsCriticalRestart,
+	readyClientHints,
+} from "./clienthints";
 
 export async function doHandleFetch(
 	handler: ScramjetFetchHandler,
@@ -63,10 +68,42 @@ export async function doHandleFetch(
 		}
 	}
 
-	const newheaders = rewriteRequestHeaders(request, handler, parsed);
+	// Before the headers are composed, not after: a hint that is not resolved
+	// yet is a hint that silently does not get sent, on whichever request
+	// happens to be first -- which on a challenge page is the one that decides
+	// what the rest of the journey looks like.
+	await readyClientHints();
+	let newheaders = rewriteRequestHeaders(request, handler, parsed);
 
 	let responseBody: BodyType;
-	const response = await doNetworkFetch(handler, request, parsed, newheaders);
+	let response = await doNetworkFetch(handler, request, parsed, newheaders);
+
+	// `Accept-CH` first, so a `Critical-CH` naming the same hints has somewhere
+	// to read them from.
+	let firstHeaders = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
+	acceptClientHints(parsed.url, firstHeaders);
+
+	// Once, and only once. The server is saying it cannot act on the request it
+	// was given, so the response is dropped and the request reissued with the
+	// hints it named. rateyourmusic's challenge answers its first navigation
+	// this way, which is why its recorded journey holds two 403s for `/`.
+	//
+	// The replay transport used to fake this by skipping a recorded response
+	// rather than asking for one, because the proxy did not perform the restart
+	// and the oracle did. Now that it happens here, both sides ask the store the
+	// same number of times and the fake is gone -- doing it in both places
+	// advanced the store's per-URL counter twice, which took rym from 74
+	// divergences to 125.
+	//
+	// `needsCriticalRestart` only asks again for hints this browser actually
+	// has, so a server naming one we cannot produce is answered rather than
+	// retried forever.
+	if (needsCriticalRestart(firstHeaders, newheaders)) {
+		newheaders = rewriteRequestHeaders(request, handler, parsed);
+		response = await doNetworkFetch(handler, request, parsed, newheaders);
+		firstHeaders = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
+		acceptClientHints(parsed.url, firstHeaders);
+	}
 
 	// set-cookie needs to take the raw headers. after this, we can flatten the headers into a ScramjetHeaders object
 	await handleCookies(handler, request, parsed, response.rawHeaders);
