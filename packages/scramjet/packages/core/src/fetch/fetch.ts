@@ -86,15 +86,9 @@ export async function doHandleFetch(
 
 	// Once, and only once. The server is saying it cannot act on the request it
 	// was given, so the response is dropped and the request reissued with the
-	// hints it named. rateyourmusic's challenge answers its first navigation
-	// this way, which is why its recorded journey holds two 403s for `/`.
-	//
-	// The replay transport used to fake this by skipping a recorded response
-	// rather than asking for one, because the proxy did not perform the restart
-	// and the oracle did. Now that it happens here, both sides ask the store the
-	// same number of times and the fake is gone -- doing it in both places
-	// advanced the store's per-URL counter twice, which took rym from 74
-	// divergences to 125.
+	// hints it named. A Cloudflare managed challenge answers its first
+	// navigation this way, which is why such a journey holds two 403s for the
+	// same URL and not one.
 	//
 	// `needsCriticalRestart` only asks again for hints this browser actually
 	// has, so a server naming one we cannot produce is answered rather than

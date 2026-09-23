@@ -525,6 +525,11 @@ export type _TextDecoder = Wrapped<TextDecoder>;
 export const _TextEncoder = makeWrap(globalThis.TextEncoder);
 export type _TextEncoder = Wrapped<TextEncoder>;
 export const _Blob = makeWrap(globalThis.Blob);
+/** Blob.prototype's `size` getter: the slot, so a Blob is told apart without `instanceof`. */
+export const Blob_prototype_size = Object_getOwnPropertyDescriptor(
+	globalThis.Blob.prototype,
+	"size"
+)!.get!;
 export type _Blob = Wrapped<Blob>;
 
 export function makeWrap<T extends object>(source: T): Wrapped<T> {
