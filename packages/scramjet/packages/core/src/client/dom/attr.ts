@@ -24,6 +24,7 @@ import {
 	isInternalAttribute,
 	mirrorAttributeName,
 	mirroredAttributeName,
+	nullNamespace,
 } from "@client/attributes";
 import {
 	Number,
@@ -170,7 +171,12 @@ export default function (client: ScramjetClient, _self: Self) {
 				const keys: (string | symbol)[] = [];
 				const seen = new _Map<string, true>([]);
 
-				for (let i = 0; i < names.length; i++) keys[keys.length] = String(i);
+				// an attribute named "0" is already listed as the index it shares
+				// its key with, and a key listed twice breaks the proxy invariant
+				for (let i = 0; i < names.length; i++) {
+					keys[keys.length] = String(i);
+					seen.set(String(i), true);
+				}
 				for (let i = 0; i < names.length; i++) {
 					if (seen.get(names[i])) continue;
 					seen.set(names[i], true);
@@ -300,6 +306,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("Attr?")
 		getNamedItemNS(namespace: string | null, localName: string): Attr | null {
+			namespace = nullNamespace(namespace);
 			const map = brand(this);
 			const node: Attr | null = new client.native.NamedNodeMap(
 				map
@@ -309,7 +316,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			const element = ownerOf(map);
 			if (!element || namespace) return null;
 
-			return attrs.node(element, localName);
+			return attrs.strippedNode(element, localName);
 		}
 
 		@Arguments("Attr")
@@ -358,10 +365,14 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (!node)
 				return new client.native.NamedNodeMap(map).removeNamedItem(name);
 
+			const mirror = isInternalAttribute(attrs.attrName(node))
+				? null
+				: attrs.raw.get(element, mirrorAttributeName(name));
 			const removed: Attr = new client.native.NamedNodeMap(map).removeNamedItem(
 				attrs.attrName(node)
 			);
 			attrs.raw.remove(element, mirrorAttributeName(name));
+			attrs.detached(removed, mirror);
 			attrs.changed(element, name, null);
 
 			return removed;
@@ -370,6 +381,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("Attr")
 		removeNamedItemNS(namespace: string | null, localName: string): Attr {
+			namespace = nullNamespace(namespace);
 			const map = brand(this);
 			const element = ownerOf(map);
 			const node: Attr | null = new client.native.NamedNodeMap(
@@ -379,10 +391,12 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (element && node) {
 				const name = attrs.attrName(node);
 				if (!isInternalAttribute(name)) {
+					const mirror = attrs.raw.get(element, mirrorAttributeName(name));
 					attrs.raw.remove(element, mirrorAttributeName(name));
 					const removed: Attr = new client.native.NamedNodeMap(
 						map
 					).removeNamedItemNS(namespace, localName);
+					attrs.detached(removed, mirror);
 					if (namespace === null) attrs.changed(element, name, null);
 
 					return removed;
@@ -392,8 +406,8 @@ export default function (client: ScramjetClient, _self: Self) {
 			// a stripped attribute is represented by its mirror alone, which has
 			// no namespace and a name the native would never match
 			if (element && !node && namespace === null) {
-				const mirror = attrs.node(element, localName);
-				if (mirror && isInternalAttribute(attrs.attrName(mirror))) {
+				const mirror = attrs.strippedNode(element, localName);
+				if (mirror) {
 					const removed: Attr = new client.native.NamedNodeMap(
 						map
 					).removeNamedItem(attrs.attrName(mirror));

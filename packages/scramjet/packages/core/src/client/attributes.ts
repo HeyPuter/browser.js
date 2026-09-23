@@ -88,6 +88,15 @@ export function ruleAttributeName(
 	return qualifiedName;
 }
 
+/**
+ * The "if namespace is the empty string, set it to null" step every `*NS`
+ * member opens with, so that the rest can test for null alone.
+ * https://dom.spec.whatwg.org/#validate-and-extract
+ */
+export function nullNamespace(namespace: string | null): string | null {
+	return namespace === "" ? null : namespace;
+}
+
 /** Whether `qualifiedName` names an attribute of scramjet's own. */
 export function isInternalAttribute(qualifiedName: string): boolean {
 	return String_startsWith(String_toLowerCase(qualifiedName), INTERNAL_PREFIX);
@@ -361,8 +370,13 @@ export class AttributeLayer {
 		// outright (`nonce`, `sandbox`) leaves nothing but the mirror behind, and
 		// a removal that checked for the real one first would leave that mirror
 		// to answer `getAttribute` forever
+		const node: Attr | null = new this.client.native.Element(
+			element
+		).getAttributeNode(qualifiedName);
+		const mirror = this.raw.get(element, mirrorAttributeName(qualifiedName));
 		this.raw.remove(element, mirrorAttributeName(qualifiedName));
 		this.raw.remove(element, qualifiedName);
+		this.detached(node, mirror);
 
 		this.changed(element, qualifiedName, null);
 	}
@@ -416,6 +430,37 @@ export class AttributeLayer {
 		// a removed attribute is represented by its mirror's node, which
 		// `dom/attr.ts` renames back
 		return nElement.getAttributeNode(mirrorAttributeName(qualifiedName));
+	}
+
+	/**
+	 * The mirror node standing in for a stripped attribute named `localName`,
+	 * for a namespace-less `*NS` lookup the native could not answer. Only when
+	 * nothing in the document holds that qualified name: a namespaced
+	 * `xlink:href` is not in the null namespace, and its mirror must not make
+	 * it look as though it were.
+	 */
+	strippedNode(element: Element, localName: string): Attr | null {
+		if (isInternalAttribute(localName)) return null;
+		if (this.raw.has(element, localName)) return null;
+
+		return new this.client.native.Element(element).getAttributeNode(
+			mirrorAttributeName(localName)
+		);
+	}
+
+	/**
+	 * Hand a node that has just left its element the page's value back.
+	 *
+	 * Detached, an `Attr` answers with what it holds, which for a rewritten
+	 * attribute is the proxy's value - so the mirror it was answering out of
+	 * a moment ago is written into it. `mirror` is read before the removal.
+	 */
+	detached(attr: Attr | null, mirror: string | null): void {
+		if (!attr || mirror === null) return;
+		if (isInternalAttribute(this.attrName(attr))) return;
+		if (this.owner(attr) !== null) return;
+
+		this.setAttrValue(attr, mirror);
 	}
 
 	/** The element an `Attr` node belongs to, or null when it is detached. */
@@ -515,11 +560,26 @@ export class AttributeLayer {
 			ruleAttributeName(this.attrNamespace(attr), name)
 		);
 
+		// what the node being replaced answered with, so it can go on answering
+		// with it once it is detached. `setAttributeNodeNS` replaces by namespace
+		// and local name, which need not be the same qualified name
+		const namespace = this.attrNamespace(attr);
+		const previous: Attr | null = namespaced
+			? nElement.getAttributeNodeNS(
+					namespace,
+					new this.client.native.Attr(attr).localName
+				)
+			: nElement.getAttributeNode(name);
+		const previousMirror = previous
+			? this.raw.get(element, mirrorAttributeName(this.attrName(previous)))
+			: null;
+
 		if (!rewrite) {
 			const replaced = insert();
 			// a stale mirror from an earlier rewritten value under this name
 			// would otherwise go on answering for the one just inserted
 			this.raw.remove(element, mirrorAttributeName(name));
+			this.detached(replaced, previousMirror);
 			this.changed(element, name, value);
 
 			return replaced;
@@ -528,17 +588,27 @@ export class AttributeLayer {
 		const rewritten = rewrite(value);
 		this.setAttrValue(attr, rewritten === null ? "" : rewritten);
 
+		// the mirror goes down first, for the reason `set` gives - and because
+		// inserting the node runs a custom element's attributeChangedCallback,
+		// which reads the attribute back
+		const mirrorName = mirrorAttributeName(name);
+		const staleMirror = this.raw.get(element, mirrorName);
+		this.raw.set(element, mirrorName, value);
+
 		let replaced: Attr | null;
 		try {
 			replaced = insert();
 		} catch (err) {
 			// a namespace clash, or an element that is not one - the node the
-			// page still holds must not come back carrying the rewritten value
+			// page still holds must not come back carrying the rewritten value,
+			// and the element must not come back carrying its mirror
+			if (staleMirror === null) this.raw.remove(element, mirrorName);
+			else this.raw.set(element, mirrorName, staleMirror);
 			this.setAttrValue(attr, value);
 			throw err;
 		}
 
-		this.raw.set(element, mirrorAttributeName(name), value);
+		this.detached(replaced, previousMirror);
 		this.changed(element, name, value);
 
 		if (rewritten !== null) return replaced;

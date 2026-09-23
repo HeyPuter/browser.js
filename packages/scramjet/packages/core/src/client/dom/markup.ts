@@ -107,6 +107,47 @@ export default function (client: ScramjetClient, _self: Self) {
 	const serialize = (html: string, foreignContext: ForeignContext) =>
 		unrewriteHtml(html, foreignContext, client.context);
 
+	/**
+	 * The markup of a script or a style: its children, with each Text child
+	 * serialized unescaped as the page wrote it - which the rewritten text in
+	 * the document is not. Anything else under it serializes as it would
+	 * anywhere; a comment appended by script is still a comment.
+	 *
+	 * https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+	 */
+	const rawTextMarkup = (element: Element): string => {
+		let out = "";
+		for (
+			let child = new client.native.Node(element).firstChild;
+			child;
+			child = new client.native.Node(child).nextSibling
+		) {
+			switch (text.type(child)) {
+				case 3: // Text
+				case 4: // CDATASection
+					out += text.data(child as CharacterData);
+					break;
+				case 8: // Comment
+					out += `<!--${new client.native.CharacterData(child).data}-->`;
+					break;
+				case 7: {
+					// ProcessingInstruction
+					const pi = new client.native.ProcessingInstruction(child);
+					out += `<?${pi.target} ${pi.data}>`;
+					break;
+				}
+				case 1: // Element
+					out += serialize(
+						new client.native.Element(child).outerHTML,
+						insideForeignContext(client, child as Element)
+					);
+					break;
+			}
+		}
+
+		return out;
+	};
+
 	/** Whether `node` is a script or a style, whose markup is its text. */
 	const rawTextElement = (node: Node | null): boolean =>
 		node !== null &&
@@ -148,7 +189,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (text.kind(this) !== null) {
 				void super.tagName;
 
-				return text.source(this);
+				return rawTextMarkup(this);
 			}
 
 			return serialize(super.innerHTML, foreignContextForElement(client, this));
@@ -239,7 +280,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			if (text.kind(this) !== null) {
 				void super.getHTML(options);
 
-				return text.source(this);
+				return rawTextMarkup(this);
 			}
 
 			return serialize(

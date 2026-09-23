@@ -95,6 +95,16 @@ export class TextLayer {
 		return new this.client.native.Node(node).nextSibling;
 	}
 
+	private previousSibling(node: Node): Node | null {
+		return new this.client.native.Node(node).previousSibling;
+	}
+
+	private isText(node: Node): boolean {
+		const what = this.type(node);
+
+		return what === TEXT_NODE || what === CDATA_SECTION_NODE;
+	}
+
 	private rawData(node: CharacterData): string {
 		return new this.client.native.CharacterData(node).data;
 	}
@@ -211,6 +221,33 @@ export class TextLayer {
 			if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
 				out[out.length] = child as CharacterData;
 			}
+		}
+
+		return out;
+	}
+
+	/**
+	 * https://dom.spec.whatwg.org/#dom-text-wholetext - the data of the
+	 * contiguous Text nodes around `node`, as the page wrote them. A comment or
+	 * an element between two of a script's Text children ends the run.
+	 */
+	wholeText(node: CharacterData): string {
+		let first: Node = node;
+		for (
+			let prev = this.previousSibling(first);
+			prev && this.isText(prev);
+			prev = this.previousSibling(first)
+		) {
+			first = prev;
+		}
+
+		let out = "";
+		for (
+			let child: Node | null = first;
+			child && this.isText(child);
+			child = this.nextSibling(child)
+		) {
+			out += this.data(child as CharacterData);
 		}
 
 		return out;

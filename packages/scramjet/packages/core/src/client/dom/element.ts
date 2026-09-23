@@ -14,12 +14,11 @@ import {
 	localPart,
 	mirrorAttributeName,
 	mirroredAttributeName,
+	nullNamespace,
 	ruleAttributeName,
 } from "@client/attributes";
 import { String } from "@/shared/snapshot";
-
-const internalAttributeSelector =
-	/\[\s*(?:\*?\|)?scramjet-attr(?:-|\s|\]|[~|^$*=])/i;
+import { hideInternalAttributes } from "@client/selectors";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const attrs = client.attributes;
@@ -36,35 +35,39 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString")
 		@Returns("Element?")
 		querySelector(selectors: string): Element | null {
+			// the native first, on what the page wrote: an invalid selector
+			// throws a SyntaxError that has to quote the page's own string
 			const result = super.querySelector(selectors);
+			const hidden = hideInternalAttributes(selectors);
 
-			return internalAttributeSelector.test(selectors) ? null : result;
+			return hidden === null ? result : super.querySelector(hidden);
 		}
 
 		@Arguments("DOMString")
 		@Returns("NodeList")
 		querySelectorAll(selectors: string): NodeListOf<Element> {
 			const result = super.querySelectorAll(selectors);
+			const hidden = hideInternalAttributes(selectors);
 
-			return internalAttributeSelector.test(selectors)
-				? super.querySelectorAll(":not(*)")
-				: result;
+			return hidden === null ? result : super.querySelectorAll(hidden);
 		}
 
 		@Arguments("DOMString")
 		@Returns("boolean")
 		matches(selectors: string): boolean {
 			const result = super.matches(selectors);
+			const hidden = hideInternalAttributes(selectors);
 
-			return internalAttributeSelector.test(selectors) ? false : result;
+			return hidden === null ? result : super.matches(hidden);
 		}
 
 		@Arguments("DOMString")
 		@Returns("Element?")
 		closest(selectors: string): Element | null {
 			const result = super.closest(selectors);
+			const hidden = hideInternalAttributes(selectors);
 
-			return internalAttributeSelector.test(selectors) ? null : result;
+			return hidden === null ? result : super.closest(hidden);
 		}
 
 		@Arguments()
@@ -97,12 +100,13 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("DOMString?")
 		getAttributeNS(namespace: string | null, localName: string): string | null {
+			namespace = nullNamespace(namespace);
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (!node) {
 				// a namespace-less lookup can still be answered by a mirror, which
 				// carries no namespace and a name the native would never match
 				if (namespace) return null;
-				const mirror = attrs.node(this, localName);
+				const mirror = attrs.strippedNode(this, localName);
 
 				return mirror ? attrs.attrValue(mirror) : null;
 			}
@@ -147,6 +151,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			qualifiedName: string,
 			value: string
 		): void {
+			namespace = nullNamespace(namespace);
 			const text = String(value);
 			if (isInternalAttribute(qualifiedName)) {
 				void super.hasAttributes();
@@ -177,17 +182,20 @@ export default function (client: ScramjetClient, _self: Self) {
 				qualifiedName,
 				rewritten === null ? "" : rewritten
 			);
+			// keyed on the qualified name the document holds, which is what a
+			// namespace-less read asks for. that is not necessarily the one just
+			// passed: an existing attribute in the same namespace under another
+			// prefix only has its value changed, and keeps its own name
+			const local = localPart(qualifiedName);
+			const node = super.getAttributeNodeNS(namespace, local);
+			const name = node ? attrs.attrName(node) : qualifiedName;
 			// `removeAttributeNS` takes the *local* name, and a prefixed qualified
 			// name handed to it matches nothing - leaving the empty attribute in
 			// place of the one the rule wanted gone
-			if (rewritten === null) {
-				super.removeAttributeNS(namespace, localPart(qualifiedName));
-			}
+			if (rewritten === null) super.removeAttributeNS(namespace, local);
 
-			// keyed on the qualified name, which is what the document holds and
-			// what a namespace-less read asks for
-			attrs.raw.set(this, mirrorAttributeName(qualifiedName), text);
-			if (namespace === null) attrs.changed(this, qualifiedName, text);
+			attrs.raw.set(this, mirrorAttributeName(name), text);
+			if (namespace === null) attrs.changed(this, name, text);
 		}
 
 		@Arguments("DOMString")
@@ -201,12 +209,15 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("undefined")
 		removeAttributeNS(namespace: string | null, localName: string): void {
+			namespace = nullNamespace(namespace);
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (node) {
 				const name = attrs.attrName(node);
 				if (isInternalAttribute(name)) return;
+				const mirror = attrs.raw.get(this, mirrorAttributeName(name));
 				attrs.raw.remove(this, mirrorAttributeName(name));
 				super.removeAttributeNS(namespace, localName);
+				attrs.detached(node, mirror);
 				if (namespace === null) attrs.changed(this, name, null);
 
 				return;
@@ -215,12 +226,9 @@ export default function (client: ScramjetClient, _self: Self) {
 			// a rule that strips the attribute outright (`nonce`, `sandbox`)
 			// leaves only the mirror, which carries no namespace - so a
 			// namespace-less removal has to find it by name
-			if (namespace === null && !isInternalAttribute(localName)) {
-				const mirror = mirrorAttributeName(localName);
-				if (attrs.raw.has(this, mirror)) {
-					attrs.raw.remove(this, mirror);
-					attrs.changed(this, localName, null);
-				}
+			if (namespace === null && attrs.strippedNode(this, localName)) {
+				attrs.raw.remove(this, mirrorAttributeName(localName));
+				attrs.changed(this, localName, null);
 			}
 		}
 
@@ -272,10 +280,11 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("DOMString?", "DOMString")
 		@Returns("boolean")
 		hasAttributeNS(namespace: string | null, localName: string): boolean {
+			namespace = nullNamespace(namespace);
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (node) return !isInternalAttribute(attrs.attrName(node));
 
-			return namespace ? false : !!attrs.node(this, localName);
+			return namespace ? false : !!attrs.strippedNode(this, localName);
 		}
 
 		@Arguments("DOMString")
@@ -292,10 +301,11 @@ export default function (client: ScramjetClient, _self: Self) {
 			namespace: string | null,
 			localName: string
 		): Attr | null {
+			namespace = nullNamespace(namespace);
 			const node = super.getAttributeNodeNS(namespace, localName);
 			if (node) return isInternalAttribute(attrs.attrName(node)) ? null : node;
 
-			return namespace ? null : attrs.node(this, localName);
+			return namespace ? null : attrs.strippedNode(this, localName);
 		}
 
 		@Arguments("Attr")
@@ -318,12 +328,16 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("Attr")
 		removeAttributeNode(attr: Attr): Attr {
 			const name = attrs.attrName(attr);
+			const mirror = isInternalAttribute(name)
+				? null
+				: attrs.raw.get(this, mirrorAttributeName(name));
 			// first, so an attribute this element does not have throws the spec's
 			// NotFoundError before anything has been touched
 			const removed = super.removeAttributeNode(attr);
 
 			if (!isInternalAttribute(name)) {
 				attrs.raw.remove(this, mirrorAttributeName(name));
+				attrs.detached(removed, mirror);
 				attrs.changed(this, name, null);
 			} else {
 				// the mirror node standing in for a stripped attribute is what

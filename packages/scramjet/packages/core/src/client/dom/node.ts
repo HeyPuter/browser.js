@@ -553,13 +553,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			const owner = text.parent(this);
 			if (!owner || text.kind(owner) === null) return super.wholeText;
 
-			// contiguous Text siblings, which inside a script or a style is every
-			// Text child the element has
-			let out = "";
-			const children = text.textChildren(owner);
-			for (let i = 0; i < children.length; i++) out += text.data(children[i]);
-
-			return out;
+			return text.wholeText(this);
 		}
 
 		@Arguments("unsigned long")
