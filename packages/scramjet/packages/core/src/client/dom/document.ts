@@ -12,6 +12,7 @@ import {
 import { createReferrerString } from "@/fetch/util";
 import { openWindowSteps } from "@client/helpers";
 import { Arguments, Returns, Type } from "@client/webidl";
+import { rewriteAttributeSelectors } from "@client/selectors";
 
 export default function (client: ScramjetClient, self: Self) {
 	const nativeGlobal = new client.native.window(self);
@@ -253,15 +254,23 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 	});
 
-	client.Proxy(
-		["Document.prototype.querySelector", "Document.prototype.querySelectorAll"],
-		{
-			apply(ctx) {
-				ctx.args[0] = String(ctx.args[0]).replace(
-					/((?:^|\s)\b\w+\[(?:src|href|data-href))[\^]?(=['"]?(?:https?[:])?\/\/)/,
-					"$1*$2"
-				);
-			},
+	client.Intercept(class extends Document {
+		@Arguments("DOMString")
+		@Returns("Element?")
+		querySelector(selectors: string): Element | null {
+			const result = super.querySelector(selectors);
+			const rewritten = rewriteAttributeSelectors(selectors);
+
+			return rewritten === null ? result : super.querySelector(rewritten);
 		}
-	);
+
+		@Arguments("DOMString")
+		@Returns("NodeList")
+		querySelectorAll(selectors: string): NodeListOf<Element> {
+			const result = super.querySelectorAll(selectors);
+			const rewritten = rewriteAttributeSelectors(selectors);
+
+			return rewritten === null ? result : super.querySelectorAll(rewritten);
+		}
+	});
 }

@@ -1,34 +1,56 @@
 /**
- * Selectors that name scramjet's own attributes.
+ * Attribute selectors over the page-visible DOM.
  *
- * A page cannot see `scramjet-attr-*`, so a selector that tests for one has to
- * behave as though the attribute were absent - which is not the same as the
- * whole selector matching nothing. `div, [scramjet-attr-src]` still matches
- * every div, and `:not([scramjet-attr-src])` matches everything. So each such
- * attribute selector is replaced, in place, by one that never matches, and the
- * rest of the selector is left to mean what it meant.
- *
- * Known hole: every other attribute selector is matched by the browser
- * against the document as it really is. A rewritten attribute is matched by
- * its rewritten value, so `[src="/a.png"]` misses an image the page gave that
- * `src`; a stripped one is not there at all, so `[sandbox]` misses every
- * sandboxed iframe. Fixing either means evaluating selectors ourselves, or
- * rewriting them against the mirrors - which `:has()`, `:is()` and nesting
- * make a selector engine's worth of work. The same goes for stylesheets.
+ * A page cannot see `scramjet-attr-*`. Attribute selectors for rewritten
+ * attributes instead match the author's value in the mirror, while ordinary
+ * attributes keep native matching. This works inside selector lists and
+ * functional pseudo-classes because each attribute selector is replaced in
+ * place. Stylesheet selectors are outside this DOM API layer.
  *
  * https://drafts.csswg.org/selectors/#attribute-selectors
  */
 
-import { isInternalAttribute } from "@client/attributes";
+import { isInternalAttribute, mirrorAttributeName } from "@client/attributes";
 import {
+	Array_indexOf,
 	Number_parseInt,
 	String_charCodeAt,
 	String_fromCodePoint,
+	String_startsWith,
 	String_substring,
+	String_toLowerCase,
 } from "@/shared/snapshot";
 
 /** A simple selector that matches no element, valid anywhere `[attr]` is. */
 const NEVER = ":not(*)";
+
+// The null-namespace attribute names in htmlRules whose live value can differ
+// from the page-visible one. The `on*` names use the event-handler rule.
+const MIRRORED_NAMES = [
+	"src",
+	"href",
+	"data",
+	"action",
+	"formaction",
+	"poster",
+	"sandbox",
+	"integrity",
+	"nonce",
+	"csp",
+	"credentialless",
+	"srcset",
+	"imagesrcset",
+	"srcdoc",
+	"style",
+	"target",
+	"content",
+];
+
+function canHaveMirror(name: string): boolean {
+	return (
+		Array_indexOf(MIRRORED_NAMES, name) !== -1 || String_startsWith(name, "on")
+	);
+}
 
 function isHex(c: number): boolean {
 	return (
@@ -69,9 +91,15 @@ function closingBracket(selector: string, start: number): number {
  * The attribute name an attribute selector's body tests for, with its CSS
  * escapes decoded and its namespace prefix dropped.
  */
-function attributeName(body: string): string {
+function attributeName(body: string): {
+	name: string;
+	start: number;
+	end: number;
+	namespaced: boolean;
+} {
 	let i = 0;
 	while (i < body.length && isWhitespace(String_charCodeAt(body, i))) i++;
+	let start = i;
 
 	const ident = (): string => {
 		let out = "";
@@ -122,23 +150,25 @@ function attributeName(body: string): string {
 	// `*|name`, `ns|name` and `|name` - the part before a lone `|` (one that
 	// is not the start of `|=`) is a namespace prefix
 	let name = String_charCodeAt(body, i) === 0x2a ? (i++, "*") : ident();
+	let namespaced = false;
 	if (
 		String_charCodeAt(body, i) === 0x7c &&
 		String_charCodeAt(body, i + 1) !== 0x3d
 	) {
+		namespaced = true;
 		i++;
+		start = i;
 		name = ident();
 	}
 
-	return name;
+	return { name, start, end: i, namespaced };
 }
 
 /**
- * `selector` with every attribute selector naming an internal attribute
- * replaced by one that never matches, or null when it names none - the
- * common case, which callers answer with the native result they already have.
+ * `selector` with internal attributes hidden and mirrored attributes matched
+ * against their page-visible value. Null means the native selector is enough.
  */
-export function hideInternalAttributes(selector: string): string | null {
+export function rewriteAttributeSelectors(selector: string): string | null {
 	let out = "";
 	let last = 0;
 	let changed = false;
@@ -168,10 +198,31 @@ export function hideInternalAttributes(selector: string): string | null {
 			i + 1,
 			end === -1 ? stop : stop - 1
 		);
-		if (isInternalAttribute(attributeName(body))) {
+		const attribute = attributeName(body);
+		if (isInternalAttribute(attribute.name)) {
 			out += String_substring(selector, last, i) + NEVER;
 			last = stop;
 			changed = true;
+		} else if (!attribute.namespaced) {
+			const name = String_toLowerCase(attribute.name);
+			if (canHaveMirror(name)) {
+				const mirrorName = mirrorAttributeName(name);
+				const original = String_substring(selector, i, stop);
+				const mirror =
+					"[" +
+					String_substring(body, 0, attribute.start) +
+					mirrorName +
+					String_substring(body, attribute.end) +
+					"]";
+				// An attribute selector tests the value visible to the page. If a
+				// mirror exists, the live attribute is hidden by that mirror's value.
+				// https://drafts.csswg.org/selectors/#attribute-selectors
+				out +=
+					String_substring(selector, last, i) +
+					`:is(${original}:not([${mirrorName}]),${mirror})`;
+				last = stop;
+				changed = true;
+			}
 		}
 		i = stop - 1;
 	}

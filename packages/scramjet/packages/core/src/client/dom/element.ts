@@ -17,7 +17,7 @@ import {
 	nullNamespace,
 } from "@client/attributes";
 import { String } from "@/shared/snapshot";
-import { hideInternalAttributes } from "@client/selectors";
+import { rewriteAttributeSelectors } from "@client/selectors";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const attrs = client.attributes;
@@ -37,7 +37,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			// the native first, on what the page wrote: an invalid selector
 			// throws a SyntaxError that has to quote the page's own string
 			const result = super.querySelector(selectors);
-			const hidden = hideInternalAttributes(selectors);
+			const hidden = rewriteAttributeSelectors(selectors);
 
 			return hidden === null ? result : super.querySelector(hidden);
 		}
@@ -46,7 +46,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("NodeList")
 		querySelectorAll(selectors: string): NodeListOf<Element> {
 			const result = super.querySelectorAll(selectors);
-			const hidden = hideInternalAttributes(selectors);
+			const hidden = rewriteAttributeSelectors(selectors);
 
 			return hidden === null ? result : super.querySelectorAll(hidden);
 		}
@@ -55,7 +55,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("boolean")
 		matches(selectors: string): boolean {
 			const result = super.matches(selectors);
-			const hidden = hideInternalAttributes(selectors);
+			const hidden = rewriteAttributeSelectors(selectors);
 
 			return hidden === null ? result : super.matches(hidden);
 		}
@@ -64,7 +64,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Returns("Element?")
 		closest(selectors: string): Element | null {
 			const result = super.closest(selectors);
-			const hidden = hideInternalAttributes(selectors);
+			const hidden = rewriteAttributeSelectors(selectors);
 
 			return hidden === null ? result : super.closest(hidden);
 		}
@@ -393,6 +393,26 @@ export default function (client: ScramjetClient, _self: Self) {
 			}
 
 			return removed;
+		}
+	});
+
+	client.Intercept(class extends DocumentFragment {
+		@Arguments("DOMString")
+		@Returns("Element?")
+		querySelector(selectors: string): Element | null {
+			const result = super.querySelector(selectors);
+			const rewritten = rewriteAttributeSelectors(selectors);
+
+			return rewritten === null ? result : super.querySelector(rewritten);
+		}
+
+		@Arguments("DOMString")
+		@Returns("NodeList")
+		querySelectorAll(selectors: string): NodeListOf<Element> {
+			const result = super.querySelectorAll(selectors);
+			const rewritten = rewriteAttributeSelectors(selectors);
+
+			return rewritten === null ? result : super.querySelectorAll(rewritten);
 		}
 	});
 }
