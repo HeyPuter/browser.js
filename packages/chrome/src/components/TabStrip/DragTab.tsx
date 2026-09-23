@@ -93,14 +93,14 @@ function buildTabContextMenu(tab: Tab, destroy: () => void) {
 			label: "Reload",
 			icon: iconRefresh,
 			action: () => {
-				tab.frame.reload();
+				tab.reload();
 			},
 		},
 		{
 			label: "Duplicate",
 			icon: iconDuplicate,
 			action: () => {
-				tabsService.newTabRight(tab, tab.url);
+				tabsService.duplicateTab(tab);
 			},
 		},
 		{

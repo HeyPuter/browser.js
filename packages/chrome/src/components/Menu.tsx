@@ -124,6 +124,7 @@ export function Menu(
 						) : item.checkbox ? (
 							<button
 								class="item"
+								disabled={item.disabled ?? false}
 								on:click={(e: MouseEvent) => {
 									if (!item.checkbox) return;
 									item.checkbox.value = !item.checkbox.value;
@@ -138,6 +139,7 @@ export function Menu(
 						) : (
 							<button
 								class="item"
+								disabled={item.disabled ?? false}
 								on:click={(e: MouseEvent) => {
 									item.action?.();
 									close();
@@ -229,6 +231,7 @@ let activeMenu: HTMLElement | null = null;
 type MenuItem =
 	| {
 			label: string;
+			disabled?: boolean;
 			action?: () => void;
 			checkbox?: Pointer<boolean>;
 			icon?: IconDescription;
@@ -237,11 +240,11 @@ type MenuItem =
 	| "-";
 
 export function setContextMenu(elm: HTMLElement, items: MenuItem[]) {
-	elm.addEventListener("contextmenu", (e) => {
+	elm.oncontextmenu = (e) => {
 		e.preventDefault();
 		e.stopPropagation();
 		createMenu({ left: e.clientX, top: e.clientY }, items);
-	});
+	};
 }
 
 export function createMenu(

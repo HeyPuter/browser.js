@@ -196,6 +196,12 @@ export function Omnibar(
 							},
 							"-",
 							{
+								label: "Reopen closed tab",
+								disabled: tabsService.closedTabs.length === 0,
+								action: () => tabsService.reopenClosedTab(),
+								icon: iconRefresh,
+							},
+							{
 								label: "History",
 								action: () => {
 									tabsService.newTab(

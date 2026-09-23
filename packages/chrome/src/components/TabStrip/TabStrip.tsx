@@ -11,6 +11,7 @@ import {
 } from "@components/TabStrip/DragTab";
 import { requestUnfocusFrames } from "@components/Shell";
 import { easing } from "../../easing";
+import { tabsService } from "../..";
 
 type VisualTab = {
 	tab: Tab;
@@ -147,7 +148,7 @@ export function TabStrip(
 		const width = getTabWidth();
 		const tabPadding = getTabPadding();
 
-		reorderTabs();
+		if (this.currentlydragging !== null) reorderTabs();
 
 		let dragpos = -1;
 		let currpos = getLayoutStart();
@@ -271,6 +272,10 @@ export function TabStrip(
 			tab.root.style.zIndex = "1";
 		}
 		this.currentlydragging = null;
+		tabsService.moveTab(
+			tab.tab,
+			this.visualtabs.filter((t) => !t.closing).indexOf(tab)
+		);
 		unlock();
 		window.removeEventListener("mousemove", mouseMoveHandler);
 		window.removeEventListener("mouseup", mouseUpHandler);

@@ -1,4 +1,3 @@
-import { createDelegate, createState } from "dreamland/core";
 import { StatefulClass } from "../util/StatefulClass";
 import { History, type SerializedHistory } from "./History";
 import { INTERNAL_URL_PROTOCOL } from "../consts";
@@ -55,6 +54,8 @@ export class Tab extends StatefulClass {
 	onChobitsuMessage: ((message: string) => void) | null = null;
 	waitForInit: Promise<void>;
 	private initResolve!: () => void;
+	private disposed = false;
+	private progressTimer: ReturnType<typeof setInterval>;
 
 	constructor(init: Partial<Tab>, history?: SerializedHistory) {
 		super();
@@ -65,10 +66,13 @@ export class Tab extends StatefulClass {
 		this.frame = new ProxyFrame();
 		this.history = new History(this, history);
 		this.own(this.history);
+		if (this.history.states.length === 0)
+			this.history.push(this.url, null, null, false);
 		this.waitForInit = new Promise((resolve) => {
 			this.initResolve = resolve;
 		});
 		mountedPromise.then(() => {
+			if (this.disposed) return;
 			if (history) {
 				// restore from serialized state
 
@@ -82,6 +86,10 @@ export class Tab extends StatefulClass {
 					let ptr = use(tabsService.activetab).constrain(this);
 					let activated = false;
 					ptr.listen((tab) => {
+						if (this.disposed) {
+							ptr.unconstrain(this);
+							return;
+						}
 						if (tab === this && !activated) {
 							this._directnavigate(this.url);
 							ptr.unconstrain(this);
@@ -91,19 +99,12 @@ export class Tab extends StatefulClass {
 				}
 			} else {
 				// was just created
-				this.history.push(this.url, undefined);
+				this._directnavigate(this.url);
 			}
 		});
 
 		const lerp = (a: number, b: number, t: number) => a * (1 - t) + b * t;
-		const finishLoad = () => {
-			this.loadProgress = 1;
-			setTimeout(() => {
-				this.loadProgress = 0;
-				this.loadProgressTarget = 0;
-			}, 250);
-		};
-		setInterval(() => {
+		this.progressTimer = setInterval(() => {
 			if (this.loadProgress < this.loadProgressTarget) {
 				this.loadProgress = lerp(
 					this.loadProgress,
@@ -148,6 +149,7 @@ export class Tab extends StatefulClass {
 			url.protocol !== INTERNAL_URL_PROTOCOL;
 		this.icon = "/defaultfavicon.png";
 		if (url.protocol == INTERNAL_URL_PROTOCOL) {
+			this.frame.clear();
 			this.icon = null;
 			this.history.current().favicon = "/icon.png";
 			switch (url.host) {
@@ -198,8 +200,16 @@ export class Tab extends StatefulClass {
 	}
 
 	initialLoad() {
+		if (this.disposed) return;
+		this.justCreated = false;
 		this.initResolve();
 		this.internalpage = null;
+	}
+
+	dispose() {
+		this.disposed = true;
+		clearInterval(this.progressTimer);
+		this.frame.clear();
 	}
 
 	pushNavigate(url: URL) {

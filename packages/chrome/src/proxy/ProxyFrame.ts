@@ -4,12 +4,15 @@ import { Controller, controllerForURL } from "./Controller";
 export class ProxyFrame {
 	frame: HTMLIFrameElement;
 	controller: Controller | null = null;
+	private navigation = 0;
 	constructor() {
 		this.frame = document.createElement("iframe");
 	}
 
 	async go(url: URL) {
+		const navigation = ++this.navigation;
 		let controller = await controllerForURL(url);
+		if (navigation !== this.navigation) return;
 		this.controller = controller;
 
 		const prefix = controller.prefix;
@@ -22,5 +25,11 @@ export class ProxyFrame {
 
 	reload() {
 		this.frame.contentWindow?.location.reload();
+	}
+
+	clear() {
+		this.navigation++;
+		this.controller = null;
+		this.frame.src = "about:blank";
 	}
 }
