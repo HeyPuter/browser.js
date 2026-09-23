@@ -261,10 +261,12 @@ function applyFetchMetadataHeaders(
 	// and fall back to a destination-based default for everything else.
 	headers.set("Sec-Fetch-Mode", computeFetchMode(request, parsed));
 
+	let emulatedTopLevel = false;
 	if (parsed.destination === "iframe") {
 		if (!parsed.isIframe) {
 			// emulate a top-level navigation
 			headers.set("Sec-Fetch-Dest", "document");
+			emulatedTopLevel = true;
 		} else {
 			headers.set("Sec-Fetch-Dest", "iframe");
 		}
@@ -288,6 +290,26 @@ function applyFetchMetadataHeaders(
 		request.initialHeaders.get("sec-fetch-user") === "?1"
 	) {
 		headers.set("Sec-Fetch-User", "?1");
+	} else if (emulatedTopLevel && site === "none") {
+		// The Dest emulation two blocks up is only half of the lie. Measured
+		// against Chromium 155, a browser attaches `Sec-Fetch-User` to a
+		// navigation if and only if
+		// transient user activation is live -- the same frame, the same URL,
+		// navigated from a click sends `?1` and navigated from a timer six
+		// seconds later does not.
+		//
+		// `Sec-Fetch-Site: none` means browser-initiated: a typed URL, a
+		// bookmark, a new tab. Every way of producing one is a user acting, so
+		// Chrome never sends this combination without `?1`, and claiming
+		// `Dest: document` + `Mode: navigate` + `Site: none` while withholding
+		// it produces a request no browser makes. That is worse than either
+		// lie alone, because it is the ENTRY navigation -- the request an
+		// anti-bot decides on before a line of the page's JavaScript runs.
+		//
+		// Only here. A scripted `location.href` inside the guest computes a
+		// real site of same-origin or cross-site, takes neither branch, and
+		// keeps correctly saying nothing.
+		headers.set("Sec-Fetch-User", "?1");
 	}
 
 	// Sec-Fetch-Storage-Access: per https://privacycg.github.io/storage-access-headers/.
@@ -302,6 +324,68 @@ function applyFetchMetadataHeaders(
 	if (site === "cross-site" && requestIncludesCredentials(request, parsed)) {
 		headers.set("Sec-Fetch-Storage-Access", "none");
 	}
+
+	applyPriorityHeader(headers, parsed, emulatedTopLevel);
+
+	// No `accept-encoding`: it is the transport's to send, because the
+	// transport is what decodes the response. Chromium offers `gzip, deflate,
+	// br, zstd`, but a server takes whichever it likes best, and a transport
+	// offered an encoding it cannot decode fails the request outright -
+	// libcurl answers zstd with "Unrecognized or bad HTTP Content or
+	// Transfer-Encoding".
+}
+
+/**
+ * RFC 9218 extensible priorities, as Chrome sends them.
+ *
+ * Measured against Chromium 155 over HTTP/2, one page pulling one of each kind
+ * against a throwaway h2 server. The numbers are recorded here because this is
+ * where they are used:
+ *
+ *   document   u=0, i      iframe   u=0, i      style  u=0
+ *   script     u=1         font     u=1         fetch  u=1, i
+ *   image      u=2, i      favicon  u=1, i
+ *   script defer/async     (no header at all)
+ *   image from `new Image()` after parse      `i`
+ *
+ * The default is `u=3, i=0`, and Chrome omits whatever matches it -- which is
+ * why a deferred script sends nothing and a late image sends `i` alone.
+ *
+ * Only the destinations whose value does not depend on something a service
+ * worker cannot see. `script` and `image` are deliberately absent: the same
+ * destination is `u=1` or nothing depending on `defer`/`async`, and `u=2, i`
+ * or `i` depending on whether the parser or a script asked for it, and neither
+ * distinction survives into `event.request`. Guessing one of the two would
+ * replace "header missing" with "header wrong", which is the same size of
+ * difference and harder to find later.
+ *
+ * Sent regardless of protocol because the protocol is not known here -- ALPN
+ * settles it inside the transport, long after this. A browser sends none on
+ * HTTP/1.1, so there it is one header more than Chromium's; only the transport
+ * learns the protocol, so dropping it there is the transport's to do.
+ */
+function applyPriorityHeader(
+	headers: ScramjetHeaders,
+	parsed: ScramjetFetchParsed,
+	emulatedTopLevel: boolean
+) {
+	// An iframe the proxy is presenting as a top-level document is still
+	// `u=0, i` -- measured, a real iframe and a real document agree on this
+	// one -- so the emulation costs nothing here.
+	void emulatedTopLevel;
+
+	const priority = {
+		document: "u=0, i",
+		iframe: "u=0, i",
+		frame: "u=0, i",
+		embed: "u=0, i",
+		object: "u=0, i",
+		style: "u=0",
+		font: "u=1",
+		empty: "u=1, i",
+	}[parsed.destination || "empty"];
+
+	if (priority) headers.set("Priority", priority);
 }
 
 /**

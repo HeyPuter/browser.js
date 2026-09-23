@@ -73,6 +73,9 @@ const CHROME_REQUEST_ORDER = [
 	"referer",
 	"accept-encoding",
 	"cookie",
+	// Last on everything Chrome sends it on -- navigation and subresource,
+	// GET and POST, after `accept-encoding` and after `cookie`.
+	"priority",
 ];
 
 /**
@@ -83,17 +86,67 @@ const CHROME_REQUEST_ORDER = [
  * User-Agent`, and without one the last two swap to `User-Agent
  * sec-ch-ua-mobile`. Measured both ways, three runs each, identical every time
  * -- so it is a shape and not noise, and one table cannot hold it.
- *
- * These are the two sets that were measured. A request carrying headers neither
- * capture had -- `upgrade-insecure-requests`, `sec-fetch-user` and `priority`
- * all ride on a top-level navigation -- may well order differently again, and
- * the way to find out is to measure it with `pages/tlsfp.html` rather than to
- * reason about it. Guessing produces a third order that matches nothing, which
- * is worse than the one it replaced.
  */
 const CHROME_REQUEST_ORDER_NO_BODY = CHROME_REQUEST_ORDER.map((h) => h)
 	.filter((h) => h !== "user-agent")
 	.flatMap((h) => (h === "sec-ch-ua-mobile" ? ["user-agent", h] : [h]));
+
+/**
+ * Chrome's order on a NAVIGATION, which is a third sequence again.
+ *
+ * The two tables above were both measured from a fetch, and the comment that
+ * used to sit here said a request carrying `upgrade-insecure-requests`,
+ * `sec-fetch-user` or `priority` -- all three ride on a navigation and on
+ * nothing else -- might well order differently, and that the way to find out
+ * was to measure it rather than reason about it.
+ *
+ * Measured on a real navigation: it does. The three
+ * client hints lead, grouped, where a fetch splits them around
+ * `accept-language`; `upgrade-insecure-requests` sits between
+ * `accept-language` and `content-type`; and `origin` moves up to just after
+ * `user-agent` instead of following `accept`.
+ *
+ *   fetch       sec-ch-ua-platform accept-language sec-ch-ua content-type
+ *               sec-ch-ua-mobile user-agent accept origin sec-fetch-*
+ *               referer accept-encoding cookie
+ *   navigation  sec-ch-ua sec-ch-ua-mobile sec-ch-ua-platform accept-language
+ *               upgrade-insecure-requests content-type user-agent origin accept
+ *               sec-fetch-* referer accept-encoding cookie
+ *
+ * Unlike the fetch case ONE table covers both methods here: the GET and the
+ * form POST of the same page, taken in the same run, put every header they
+ * share in the same place, and `content-type` and `origin` simply appear at
+ * fixed points in that sequence when the POST adds them. Taken with a fetch in
+ * the same run as a control, which reproduced the table above header for
+ * header -- so this is the navigation differing and not the old measurement
+ * having drifted.
+ *
+ * `host`, `connection`, `content-length` and `cache-control` are in the
+ * capture and not in the table: they are framing the transport adds, and over
+ * HTTP/2 -- which is what the target speaks -- the first three are
+ * pseudo-headers that do not sit in this list at all.
+ */
+const CHROME_NAVIGATION_ORDER = [
+	"sec-ch-ua",
+	"sec-ch-ua-mobile",
+	"sec-ch-ua-platform",
+	"accept-language",
+	"upgrade-insecure-requests",
+	"content-type",
+	"user-agent",
+	"origin",
+	"accept",
+	"sec-fetch-site",
+	"sec-fetch-mode",
+	"sec-fetch-user",
+	"sec-fetch-dest",
+	"referer",
+	"accept-encoding",
+	"cookie",
+	// Last on everything Chrome sends it on -- navigation and subresource,
+	// GET and POST, after `accept-encoding` and after `cookie`.
+	"priority",
+];
 
 export class ScramjetHeaders {
 	headers = {};
@@ -151,10 +204,18 @@ export class ScramjetHeaders {
 	 * (`fetch.ts`), and a response's order belongs to the server.
 	 */
 	toRawHeaders(): RawHeaders {
+		// `upgrade-insecure-requests` is the discriminator because Chrome puts
+		// it on navigations and on nothing else, which is exactly the split the
+		// tables disagree over. Reading it off the headers keeps the ordering
+		// decided by the same thing everywhere `toRawHeaders` is called,
+		// rather than by whether a caller remembered to say which kind of
+		// request it had.
 		const order =
-			"content-type" in this.headers
-				? CHROME_REQUEST_ORDER
-				: CHROME_REQUEST_ORDER_NO_BODY;
+			"upgrade-insecure-requests" in this.headers
+				? CHROME_NAVIGATION_ORDER
+				: "content-type" in this.headers
+					? CHROME_REQUEST_ORDER
+					: CHROME_REQUEST_ORDER_NO_BODY;
 		const known: RawHeaders = [];
 		const rest: RawHeaders = [];
 		for (const k in this.headers) {
