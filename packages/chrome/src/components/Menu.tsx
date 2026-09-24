@@ -1,12 +1,14 @@
-import { createDelegate, css, Pointer, type FC } from "dreamland/core";
+import { css, Pointer, type FC } from "dreamland/core";
 import { Checkbox } from "@components/Checkbox";
 import { Icon } from "@components/Icon";
 import type { IconDescription } from "../icons";
 import { emToPx } from "../util";
-import { isPuter } from "..";
 import { requestUnfocusFrames } from "@components/Shell";
 
-export const closeMenu = createDelegate<void>();
+let activeMenuClose: (() => void) | null = null;
+export function closeMenu() {
+	activeMenuClose?.();
+}
 
 export type PositionConstraints = {
 	left?: number;
@@ -32,7 +34,7 @@ export function Menu(
 	>
 ) {
 	this.closing = true;
-	requestAnimationFrame(() => {
+	const openingFrame = requestAnimationFrame(() => {
 		this.closing = false;
 	});
 	this.x = 0;
@@ -41,20 +43,39 @@ export function Menu(
 	this.transformOriginY = "top";
 
 	const [lock, unlock] = requestUnfocusFrames();
+	let closed = false;
+	const previousFocus = document.activeElement;
+	const menuItems = () => [
+		...this.root.querySelectorAll<HTMLElement>(
+			'[role="menuitem"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)'
+		),
+	];
 
 	const close = () => {
+		if (closed) return;
+		closed = true;
+		cancelAnimationFrame(openingFrame);
+		if (activeMenuClose === close) activeMenuClose = null;
+		if (activeMenu === this.root) activeMenu = null;
 		unlock();
+		if (
+			this.root.contains(document.activeElement) &&
+			previousFocus instanceof HTMLElement &&
+			previousFocus.isConnected
+		)
+			previousFocus.focus({ preventScroll: true });
 
 		window.removeEventListener("mousedown", ev, { capture: true });
 		window.removeEventListener("contextmenu", ev, { capture: true });
 		window.removeEventListener("click", ev, { capture: true });
 
 		this.closing = true;
-		this.root.addEventListener("transitionend", () => {
-			this.root.remove();
-		});
+		this.root.inert = true;
+		this.root.setAttribute("aria-hidden", "true");
+		// A menu closed before its first paint has no transitionend event.
+		setTimeout(() => this.root.remove(), 150);
 	};
-	closeMenu.listen(close);
+	activeMenuClose = close;
 
 	const ev = (e: MouseEvent) => {
 		// Don't close if the click is over the menu
@@ -109,9 +130,68 @@ export function Menu(
 		this.root.addEventListener("mousedown", (e) => {
 			e.stopPropagation();
 		});
+		(this.items ? (menuItems()[0] ?? this.root) : this.root).focus({
+			preventScroll: true,
+		});
+	};
+	let search = "";
+	let searchTime = 0;
+	const onKeyDown = (event: KeyboardEvent) => {
+		if (event.key === "Escape") {
+			close();
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
+		if (event.key === "Tab") {
+			close();
+			return;
+		}
+		if (!this.items || event.altKey || event.ctrlKey || event.metaKey) return;
+		const items = menuItems();
+		if (!items.length) return;
+		const current = items.indexOf(document.activeElement as HTMLElement);
+		let next: HTMLElement | undefined;
+		if (event.key === "ArrowDown") next = items[(current + 1) % items.length];
+		else if (event.key === "ArrowUp")
+			next = items[(current - 1 + items.length) % items.length];
+		else if (event.key === "Home") next = items[0];
+		else if (event.key === "End") next = items.at(-1);
+		else if (
+			event.key === "Enter" &&
+			event.target instanceof HTMLInputElement
+		) {
+			event.target.click();
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		} else if (event.key.length === 1 && event.key !== " ") {
+			const now = performance.now();
+			search = now - searchTime > 700 ? event.key : search + event.key;
+			searchTime = now;
+			const query = [...search].every((char) => char === search[0])
+				? search[0]
+				: search;
+			next = [...items.slice(current + 1), ...items.slice(0, current + 1)].find(
+				(item) =>
+					item
+						.closest(".item")
+						?.textContent?.trim()
+						.toLocaleLowerCase()
+						.startsWith(query.toLocaleLowerCase())
+			);
+		}
+		if (next) {
+			next.focus({ preventScroll: true });
+			event.preventDefault();
+			event.stopPropagation();
+		}
 	};
 	return (
 		<div
+			role={this.items ? "menu" : undefined}
+			tabIndex={-1}
+			on:keydown={onKeyDown}
 			style={use`--x: ${this.x}px; --y: ${this.y}px; --transform-origin-x: ${this.transformOriginX}; --transform-origin-y: ${this.transformOriginY};`}
 			class:closing={use(this.closing)}
 		>
@@ -120,29 +200,27 @@ export function Menu(
 						item == null ? (
 							""
 						) : item == "-" ? (
-							<div class="separator" />
+							<div class="separator" role="separator" />
 						) : item.checkbox ? (
-							<button
-								class="item"
-								disabled={item.disabled ?? false}
-								on:click={(e: MouseEvent) => {
-									if (!item.checkbox) return;
-									item.checkbox.value = !item.checkbox.value;
-
-									e.preventDefault();
-									e.stopPropagation();
-								}}
-							>
-								<Checkbox value={item.checkbox}></Checkbox>
+							<label class="item">
+								<Checkbox
+									value={item.checkbox}
+									disabled={item.disabled ?? false}
+									role="menuitemcheckbox"
+									tabIndex={-1}
+								></Checkbox>
 								{item.label}
-							</button>
+							</label>
 						) : (
 							<button
+								type="button"
+								role="menuitem"
+								tabIndex={-1}
 								class="item"
 								disabled={item.disabled ?? false}
 								on:click={(e: MouseEvent) => {
-									item.action?.();
 									close();
+									item.action?.();
 									e.stopPropagation();
 								}}
 							>
@@ -221,8 +299,14 @@ Menu.style = css`
 		background: var(--toolbar_field);
 		border: 1px solid var(--text-20);
 	}
-	.item:hover {
+	.item:hover,
+	.item:focus-visible,
+	.item:has(input:focus-visible) {
 		background: var(--text-10);
+	}
+	.item:disabled,
+	.item:has(input:disabled) {
+		opacity: 0.5;
 	}
 `;
 

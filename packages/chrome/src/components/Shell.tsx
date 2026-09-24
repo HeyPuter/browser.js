@@ -38,6 +38,11 @@ export function Shell(this: FC<{}>) {
 				class="container"
 				data-tab={tab.id}
 				id={"tab" + tab.id}
+				role="tabpanel"
+				aria-labelledby={"tab-label-" + tab.id}
+				aria-hidden={use(tabsService.activetab).map((t) => t !== tab)}
+				inert={use(tabsService.activetab).map((t) => t !== tab)}
+				tabIndex={0}
 				class:active={use(tabsService.activetab).map((t) => t === tab)}
 				class:showframe={use(tab.internalpage).map((t) => !t)}
 			>

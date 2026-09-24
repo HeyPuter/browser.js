@@ -1,6 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../../Tab/Tab";
-import { setContextMenu } from "@components/Menu";
+import { createMenu, setContextMenu } from "@components/Menu";
 import {
 	iconClose,
 	iconDuplicate,
@@ -19,6 +19,87 @@ type VisualTab = {
 	root: HTMLElement;
 	closing: boolean;
 };
+
+// Removed tabs remain painted during their closing animation. They must stop
+// participating in keyboard navigation immediately, including pin/unpin moves.
+export function retireTab(root: HTMLElement) {
+	root.inert = true;
+	root.tabIndex = -1;
+	root.removeAttribute("id");
+	root.setAttribute("aria-hidden", "true");
+}
+
+export function retainTabFocus(strip: HTMLElement | undefined) {
+	const focused = document.activeElement?.closest<HTMLElement>('[role="tab"]');
+	// Closing the final tab opens a new-tab page and deliberately focuses the
+	// address bar. Do not race that focus request with a replacement tab label.
+	if (
+		!focused ||
+		focused.inert ||
+		!tabsService.tabs.length ||
+		!strip?.contains(focused)
+	)
+		return;
+	const id = focused.dataset.id;
+	// Rendering the reordered list may detach even an unchanged tab element.
+	queueMicrotask(() => {
+		if (!strip.isConnected) return;
+		const selected = tabsService.tabs.some((tab) => tab.id === id)
+			? id
+			: tabsService.activetab.id;
+		strip
+			.querySelector<HTMLElement>(
+				`[role="tab"][data-id="${selected}"]:not([inert])`
+			)
+			?.focus({ preventScroll: true });
+	});
+}
+
+function tabKeyDown(
+	root: HTMLElement,
+	event: KeyboardEvent,
+	tab: Tab,
+	destroy: () => void
+) {
+	if (event.target !== root || event.altKey || event.ctrlKey || event.metaKey)
+		return;
+	const strip = root.closest('[role="tablist"]');
+	if (!strip) return;
+	if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+		const bounds = root.getBoundingClientRect();
+		createMenu(
+			{ left: bounds.left, top: bounds.bottom },
+			buildTabContextMenu(tab, destroy)
+		);
+	} else if (event.shiftKey) return;
+	else if (event.key === "Delete") destroy();
+	else if (event.key === "Enter" || event.key === " ")
+		tabsService.activetab = tab;
+	else {
+		// Model order stays authoritative while the painted tabs are animating.
+		const elements = [...strip.querySelectorAll<HTMLElement>('[role="tab"]')];
+		const tabs = tabsService.tabs.flatMap((candidate) => {
+			const element = elements.find(
+				(el) => !el.inert && el.dataset.id === candidate.id
+			);
+			return element ? [element] : [];
+		});
+		const index = tabs.indexOf(root);
+		if (index < 0) return;
+		const vertical = strip.getAttribute("aria-orientation") === "vertical";
+		let next: HTMLElement | undefined;
+		if (event.key === (vertical ? "ArrowDown" : "ArrowRight"))
+			next = tabs[(index + 1) % tabs.length];
+		else if (event.key === (vertical ? "ArrowUp" : "ArrowLeft"))
+			next = tabs[(index - 1 + tabs.length) % tabs.length];
+		else if (event.key === "Home") next = tabs[0];
+		else if (event.key === "End") next = tabs.at(-1);
+		else return;
+		next?.focus({ preventScroll: true });
+	}
+	event.preventDefault();
+	event.stopPropagation();
+}
 
 export function createMiddleClickCloseHandler(
 	getVisualTabs: () => VisualTab[],
@@ -237,6 +318,19 @@ export function DragTab(
 	return (
 		<div
 			style="z-index: 1;"
+			role="tab"
+			id={"tab-label-" + this.id}
+			aria-label={use(this.tab.title)}
+			aria-controls={"tab" + this.id}
+			aria-selected={use(this.active)}
+			aria-haspopup="menu"
+			tabIndex={use(this.active).map((active) => (active ? 0 : -1))}
+			on:focus={() => {
+				tabsService.activetab = this.tab;
+			}}
+			on:keydown={(event: KeyboardEvent) =>
+				tabKeyDown(this.root, event, this.tab, this.destroy)
+			}
 			class={use(this.tooltipHovered).map((hovered) =>
 				hovered ? `tab ${orientation} hovered` : `tab ${orientation}`
 			)}
@@ -292,6 +386,11 @@ export function DragTab(
 							<span>{use(this.tab.title)}</span>
 							<button
 								class="close"
+								type="button"
+								tabIndex={-1}
+								aria-label={use(this.tab.title).map(
+									(title) => `Close ${title}`
+								)}
 								on:click={(e: MouseEvent) => {
 									e.stopPropagation();
 									this.destroy();
@@ -343,6 +442,10 @@ DragTab.style = css`
 
 	:scope.vertical {
 		display: block;
+	}
+	:scope:focus-visible .main {
+		outline: 2px solid var(--tab_line);
+		outline-offset: -2px;
 	}
 
 	:global(*) > :scope:has(:hover) .hover-area {
@@ -551,6 +654,19 @@ export function VerticalPinTile(
 	return (
 		<div
 			class="pin"
+			role="tab"
+			id={"tab-label-" + this.tab.id}
+			aria-label={use(this.tab.title)}
+			aria-controls={"tab" + this.tab.id}
+			aria-selected={use(this.active)}
+			aria-haspopup="menu"
+			tabIndex={use(this.active).map((active) => (active ? 0 : -1))}
+			on:focus={() => {
+				tabsService.activetab = this.tab;
+			}}
+			on:keydown={(event: KeyboardEvent) =>
+				tabKeyDown(this.root, event, this.tab, this.destroy)
+			}
 			class:active={use(this.active)}
 			data-id={this.tab.id}
 			title={use(this.tab.title, this.tab.url).map(
@@ -606,6 +722,10 @@ VerticalPinTile.style = css`
 		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 
 		outline: 1px solid var(--popup_border);
+	}
+	:scope:focus-visible {
+		outline: 2px solid var(--tab_line);
+		outline-offset: -2px;
 	}
 
 	/* Lifted tile while being dragged in the pin grid. Grid items honor z-index

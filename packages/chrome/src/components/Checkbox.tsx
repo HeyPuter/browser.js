@@ -5,19 +5,25 @@ export function Checkbox(
 		value: boolean;
 		id?: string;
 		disabled?: boolean;
+		role?: string;
+		tabIndex?: number;
 		"on:change"?: (value: boolean) => void;
 	}>
 ) {
 	return (
-		<label>
+		<span>
 			<input
 				type="checkbox"
 				id={use(this.id)}
+				role={use(this.role)}
+				tabIndex={use(this.tabIndex)}
 				checked={use(this.value)}
 				disabled={use(this.disabled).map((v) => (v ? true : undefined))}
-				onChange={(e) => this["on:change"]?.(e.target.checked)}
+				on:change={(e: Event) =>
+					this["on:change"]?.((e.currentTarget as HTMLInputElement).checked)
+				}
 			></input>
-		</label>
+		</span>
 	);
 }
 
@@ -77,11 +83,17 @@ Checkbox.style = css`
 	}
 
 	input {
-		visibility: hidden;
+		opacity: 0;
 		display: block;
-		height: 0;
-		width: 0;
+		height: 100%;
+		width: 100%;
+		margin: 0;
+		inset: 0;
 		position: absolute;
-		overflow: hidden;
+		cursor: inherit;
+	}
+	:scope:has(input:focus-visible) {
+		outline: 2px solid var(--tab_line);
+		outline-offset: 2px;
 	}
 `;
