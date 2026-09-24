@@ -3,13 +3,14 @@ import { GlobalScope, ScramjetClient } from "@client/index";
 import {
 	Math_random,
 	Object_hasOwn,
+	Reflect_get,
 	Object_getPrototypeOf,
 	String_startsWith,
 	_URL,
 } from "@/shared/snapshot";
 import { Arguments, dictionaryReader, idlConverter } from "@client/webidl";
-import { incumbencyMode, rawCallSites } from "@/shared/incumbency";
-import { incumbentClient, realmForFrame } from "./incumbency";
+import { incumbencyMode } from "@/shared/incumbency";
+import { incumbentFor, interceptDepth } from "./incumbency";
 
 /**
  * https://html.spec.whatwg.org/multipage/nav-history-apis.html#windowpostmessageoptions
@@ -131,25 +132,17 @@ export default function (client: ScramjetClient, self: Self) {
 				// before anything below can run page code: converting the
 				// options runs getters, and a getter that posts a message of
 				// its own is not the caller of this one
-				const mode = incumbencyMode(client.context, client.url);
-				let sender: ScramjetClient | null | undefined;
-				if (mode === "pst") {
-					// there are 5 scramjet frames between a caller and
-					// rawCallSites() - rawCallSites, this body, invoke,
-					// attemptToCallHandler and the proxy's apply - 6 with the
-					// debug trampoline
-					const index = client.flagEnabled("debugTrampolines") ? 6 : 5;
-					const caller = rawCallSites()?.[index];
-					sender = caller && realmForFrame(client, caller)?.client;
-				} else if (mode === "stamp" || mode === "lazystamp") {
-					sender = incumbentClient(client);
-				} else {
+				let sender: ScramjetClient | null | undefined = incumbentFor(
+					client,
+					interceptDepth(client)
+				);
+				if (incumbencyMode(client.context, client.url) === "none") {
 					// `none` records no evidence. The payload's prototype is not
 					// evidence of the caller either, but it is all this mode has
 					sender = getLegacyRealm(args);
 				}
-				// nothing on the stack that the mode records: the backup
-				// incumbent settings object, which is not modelled yet
+				// no script on the stack and no bound sink running: nothing to
+				// answer with but the realm being called
 				sender ??= client;
 
 				const message = args[0];
@@ -192,6 +185,9 @@ export default function (client: ScramjetClient, self: Self) {
 				super.postMessage(envelope, "/", transfer);
 			}
 		});
+
+		// a bound `postMessage` carries its binder's incumbent
+		client.box.incumbentSinks.add(Reflect_get(self, "postMessage"));
 
 		/**
 		 * Step 3 of the posted task: "if the targetOrigin argument is not a

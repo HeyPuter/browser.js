@@ -129,7 +129,7 @@ export class SingletonBox {
 	// the page's function behind each wrapper event.ts puts in an `on*` slot
 	eventhandlers: _WeakMap<object, (...args: any) => any> = new _WeakMap();
 
-	unproxy: _Map<any, any> = new _Map([]);
+	unproxy: _WeakMap<object, any> = new _WeakMap();
 
 	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap([]);
 	socketstreammap: _WeakMap<WebSocketStream, FakeWebSocketStreamState> =
@@ -158,6 +158,19 @@ export class SingletonBox {
 	 * the page's on the stack.
 	 */
 	incumbent: Self | null = null;
+
+	/**
+	 * The backup incumbent settings object stack, innermost last. Shared for
+	 * the same reason {@link incumbent} is.
+	 * https://html.spec.whatwg.org/multipage/webappapis.html#backup-incumbent-settings-object-stack
+	 */
+	backupincumbents: ScramjetClient[] = [];
+
+	/**
+	 * The members that read the incumbent, as installed - see `installBind`
+	 * in `shared/incumbency.ts`.
+	 */
+	incumbentSinks: _WeakSet<object> = new _WeakSet();
 
 	constructor(public ownerclient: ScramjetClient) {}
 
