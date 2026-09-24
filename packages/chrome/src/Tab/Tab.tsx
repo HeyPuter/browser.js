@@ -177,6 +177,7 @@ export class Tab extends StatefulClass {
 							selected={
 								url.pathname.length > 1 ? url.pathname.slice(1) : "general"
 							}
+							search={url.searchParams.get("search") ?? ""}
 						/>
 					);
 					break;

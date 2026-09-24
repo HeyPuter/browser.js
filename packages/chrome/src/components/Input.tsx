@@ -4,6 +4,7 @@ export function Input(
 	this: FC<{
 		value: Pointer<string> | string;
 		label?: string;
+		"aria-label"?: string;
 		placeholder?: string;
 		type?: string;
 		autocomplete?: string;
@@ -22,7 +23,7 @@ export function Input(
 		<div class={`input-container ${this.class || ""}`}>
 			{this.label && <label>{this.label}</label>}
 			<input
-				aria-label={this.label}
+				aria-label={this["aria-label"] ?? this.label}
 				type={this.type || "text"}
 				value={use(this.value)}
 				placeholder={this.placeholder}
