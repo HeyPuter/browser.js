@@ -6,7 +6,10 @@ import {
 	TextEncoder_encode,
 	_URL,
 	_URLSearchParams,
+	_Uint8Array,
+	_Blob,
 	atob,
+	selfLocation,
 	String,
 	URL_createObjectURL,
 } from "../snapshot";
@@ -99,12 +102,12 @@ function dataToBlob(url: string) {
 	}
 	if (params.length) type += ";" + params.join(";");
 
-	let bytes: Uint8Array;
+	let bytes: Uint8Array<ArrayBuffer>;
 	if (isBase64) {
 		let base64 = data.replace(/\s/g, "");
 		base64 = base64.replace(/-/g, "+").replace(/_/g, "/");
 		const binString = atob(base64);
-		bytes = new Uint8Array(binString.length);
+		bytes = new _Uint8Array(binString.length) as Uint8Array<ArrayBuffer>;
 		for (let i = 0; i < binString.length; i++) {
 			bytes[i] = binString.charCodeAt(i);
 		}
@@ -118,7 +121,7 @@ function dataToBlob(url: string) {
 		bytes = TextEncoder_encode(decoded);
 	}
 
-	const blob = new Blob([bytes], { type });
+	const blob = new _Blob([bytes], { type });
 	const objectUrl = URL_createObjectURL(blob);
 	return { blob, objectUrl };
 }
@@ -166,7 +169,7 @@ export function rewriteUrl(
 		let base = meta.base.href;
 
 		if (base.startsWith("about:"))
-			base = unrewriteUrl(self.location.href, context); // jank!!!!! weird jank!!!
+			base = unrewriteUrl(selfLocation!.href, context); // jank!!!!! weird jank!!!
 		const realUrl = tryCanParseURL(url, base);
 		if (!realUrl) return url;
 
