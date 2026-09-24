@@ -79,6 +79,7 @@ impl NativeRewriter {
 					rewritefn: cfg.rewritefn.clone(),
 					metafn: cfg.metafn.clone(),
 					pushsourcemapfn: cfg.pushsourcemapfn.clone(),
+					registerrealmfn: cfg.registerrealmfn.clone(),
 
 					trysetfn: cfg.trysetfn.clone(),
 					selfid: cfg.selfid.clone(),
@@ -90,10 +91,12 @@ impl NativeRewriter {
 				Flags {
 					base: cfg.base.clone(),
 					sourcetag: cfg.sourcetag.clone(),
+					script_id: String::from("0"),
 					is_module: cfg.is_module,
 
 					capture_errors: cfg.capture_errors,
 					do_sourcemaps: cfg.do_sourcemaps,
+					inline_sourcemap: cfg.inline_sourcemap,
 					disable_computed_wrap: cfg.disable_computed_wrap,
 					destructure_rewrites: cfg.destructure_rewrites,
 

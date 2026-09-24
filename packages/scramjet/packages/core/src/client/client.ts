@@ -63,6 +63,8 @@ import {
 	String_startsWith,
 	String_trim,
 	String_split,
+	String_toLowerCase,
+	_RegExp,
 } from "@/shared/snapshot";
 import {
 	isConstructorMember,
@@ -255,6 +257,10 @@ export class ScramjetClient {
 	locationProxy: any;
 	indirectEval: any;
 	private readonly creatorOrigin: string | null;
+	/** the creator's {@link originKey}, for a document that inherits it */
+	private readonly creatorOriginKey: string | null;
+	/** whether this document's frame sandbox forces it into an opaque origin */
+	private readonly sandboxedOrigin: boolean;
 	serviceWorker: ServiceWorkerContainer;
 	bare: BareCompatibleClient;
 	/** builds errors a page cannot tell from the browser's own */
@@ -435,7 +441,10 @@ export class ScramjetClient {
 
 		// after `registerClient` and `context`, both of which it reads through,
 		// and before anything that could hand this window back to a page
-		this.creatorOrigin = this.captureCreatorOrigin();
+		const creator = this.captureCreator();
+		this.creatorOrigin = creator ? creator.siteOrigin : null;
+		this.creatorOriginKey = creator ? creator.originKey : null;
+		this.sandboxedOrigin = this.captureSandboxedOrigin();
 
 		this.bare = new BareCompatibleClient(init.transport);
 
@@ -810,7 +819,7 @@ export class ScramjetClient {
 	 *
 	 * https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-browsing-context
 	 */
-	private captureCreatorOrigin(): string | null {
+	private captureCreator(): ScramjetClient | null {
 		// a worker has neither relationship, and its URL is never about:blank
 		if (!iswindow) return null;
 
@@ -829,12 +838,82 @@ export class ScramjetClient {
 			// the creator's own creator origin was captured when *it* was
 			// constructed, so a chain of about:blank documents resolves in one
 			// step rather than a walk
-			return creatorClient.siteOrigin;
+			return creatorClient;
 		} catch {
 			// reading `parent` or `opener` threw, so the creator is cross-origin
 			// to the *proxy* itself and is outside the sandbox
 			return null;
 		}
+	}
+
+	/**
+	 * Whether the frame this document was loaded into is sandboxed without
+	 * `allow-same-origin`, which gives the document an opaque origin whatever
+	 * its URL says.
+	 *
+	 * The rewrite rule strips the real attribute - a sandboxed frame cannot run
+	 * the proxy - so the browser never gives the document the origin it is
+	 * owed, and the page's value has to be read back off the mirror. Read once,
+	 * like the creator: the flags are fixed when the document is created.
+	 *
+	 * https://html.spec.whatwg.org/multipage/browsers.html#sandboxed-origin-browsing-context-flag
+	 */
+	private captureSandboxedOrigin(): boolean {
+		if (!iswindow) return false;
+
+		try {
+			const frame = new this.native.window(this.global).frameElement;
+			if (!frame) return false;
+
+			const sandbox = this.attributes.get(frame, "sandbox");
+			if (sandbox === null) return false;
+
+			// an unordered set of ASCII-whitespace-separated, ASCII
+			// case-insensitive tokens
+			const tokens = String_split(
+				String_toLowerCase(sandbox),
+				new _RegExp("[\\t\\n\\f\\r ]+")
+			);
+			for (let i = 0; i < tokens.length; i++) {
+				if (tokens[i] === "allow-same-origin") return false;
+			}
+
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * This document's origin as `postMessage` compares it: the serialized
+	 * origin for a tuple origin, or for an opaque one a key unique to it -
+	 * shared only with the documents that inherit it. Compare these for
+	 * equality, and never show one to a page; {@link serializeOriginKey} is
+	 * what `MessageEvent.origin` says.
+	 *
+	 * Unlike {@link siteOrigin} it can say *opaque*: a sandboxed frame, a
+	 * `data:` document, and an about:blank with no creator scramjet knows each
+	 * get an origin equal to nothing but itself, not a shared "null" that would
+	 * match every other opaque document.
+	 *
+	 * https://html.spec.whatwg.org/multipage/browsers.html#concept-origin
+	 */
+	get originKey(): string {
+		if (this.sandboxedOrigin) return this.opaqueScope;
+
+		const url = this.url;
+		const href = String_split(url.href, "#")[0];
+		if (
+			href === "about:blank" ||
+			String_startsWith(href, "about:blank?") ||
+			href === "about:srcdoc"
+		) {
+			return this.creatorOriginKey ?? this.opaqueScope;
+		}
+
+		const origin = url.origin;
+
+		return origin === "null" ? this.opaqueScope : origin;
 	}
 
 	// below are the utilities for proxying and trapping dom APIs

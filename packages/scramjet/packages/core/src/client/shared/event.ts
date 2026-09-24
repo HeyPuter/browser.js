@@ -40,7 +40,9 @@ export default function (client: ScramjetClient, self: Self) {
 						Object_hasOwn(data, "$scramjet$messagetype")
 					) {
 						const cl = client.box.clientIds.get(data.$scramjet$clientid);
-						return cl.global;
+						// a sender whose client has since gone - its document
+						// navigated away - leaves nothing better than the native
+						if (cl) return cl.global;
 					}
 
 					return this.source;

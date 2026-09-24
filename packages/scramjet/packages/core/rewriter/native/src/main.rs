@@ -41,6 +41,8 @@ pub struct RewriterOptions {
 	metafn: String,
 	#[clap(long, default_value = "$pushsourcemap")]
 	pushsourcemapfn: String,
+	#[clap(long, default_value = "$registerrealm")]
+	registerrealmfn: String,
 
 	#[clap(long, default_value = "$tryset")]
 	trysetfn: String,
@@ -66,6 +68,8 @@ pub struct RewriterOptions {
 	capture_errors: bool,
 	#[clap(long, default_value_t = false)]
 	do_sourcemaps: bool,
+	#[clap(long, default_value_t = false)]
+	inline_sourcemap: bool,
 	#[clap(long, default_value_t = false)]
 	disable_computed_wrap: bool,
 	#[clap(long, default_value_t = false)]
