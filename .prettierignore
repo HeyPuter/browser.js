@@ -16,3 +16,6 @@ packages/scramjet/packages/core/tests/htmlparser/Parser.events.spec.ts
 packages/scramjet/packages/core/tests/htmlparser/Documents.spec.ts
 packages/scramjet/packages/core/tests/htmlparser/__fixtures__/
 packages/scramjet/packages/core/tests/htmlparser/__snapshots__/
+
+# vendored web-platform-tests, byte-for-byte from upstream
+packages/scramjet/packages/runway/src/tests/wpt/vendored/
