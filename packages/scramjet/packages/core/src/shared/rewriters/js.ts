@@ -51,7 +51,7 @@ function rewriteJsWasm(
 	}
 	// the one flag that is not a boolean, and the rewriter wants the mode this
 	// engine can actually do rather than the one that was configured
-	flagsobj["incumbency"] = incumbencyMode(context, meta.base);
+	flagsobj["incumbency"] = incumbencyMode(context, flagsUrl(meta));
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
 	flagsobj["scriptId"] = genScriptId();
 

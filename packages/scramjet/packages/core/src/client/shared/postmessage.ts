@@ -136,7 +136,7 @@ export default function (client: ScramjetClient, self: Self) {
 					client,
 					interceptDepth(client)
 				);
-				if (incumbencyMode(client.context, client.url) === "none") {
+				if (incumbencyMode(client.context, client.topUrl) === "none") {
 					// `none` records no evidence. The payload's prototype is not
 					// evidence of the caller either, but it is all this mode has
 					sender = getLegacyRealm(args);
