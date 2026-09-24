@@ -1,487 +1,360 @@
-// HTTP cache plugin for ScramjetFetchHandler.
-//
-// Backported from packages/scramjet/packages/controller/src/cache.ts. The
-// scramjet/controller version uses the `$scramjet.Plugin` global (because the
-// controller package itself runs against the scramjet IIFE bundle); chrome
-// imports through `@mercuryworkshop/scramjet/bundled` instead, so we pull
-// `Plugin` and friends from there directly.
-//
-// Service-worker `fetch` ignores the browser's HTTP cache, so without this
-// every navigation re-runs the full network fetch even for unchanged
-// resources. This plugin caches the **upstream** response (the BareResponse
-// as received from the network, BEFORE rewriteResponseHeaders / rewriteBody
-// run). On a hit we hand that same untouched response to the pipeline, which
-// then re-rewrites with the current Frame's prefix.
-//
-// Storing pre-rewrite means:
-//   - The cache is shared across Frames, Controllers, and page reloads --
-//     one Frame's hit serves another Frame's request because the stored
-//     bytes contain only the upstream's URLs, not any frame-bound prefix.
-//   - Redirect Location / Content-Location and Link headers come out of
-//     `rewriteResponseHeaders` correctly on each hit, because that runs
-//     on the cache-derived response just like a fresh one.
-//   - We don't skip the rewriter on hit; we only skip the network. That's
-//     where the win actually is for service-worker proxying.
-//
-// Implementation aims for RFC 9111 (HTTP caching) compliance for a
-// PRIVATE cache (browser-local, single-user):
-//
-//   - Only GET / HEAD are cached.
-//   - Cacheable status codes per RFC 9110 §15.1: 200 203 204 300 301 308
-//     404 405 410 414 501. Other statuses pass through. 206 is omitted
-//     because the Cache API spec (Service Workers §cache-put) rejects
-//     partial responses outright.
-//   - `Cache-Control: no-store` and `Vary: *` opt out.
-//   - Freshness:
-//       1. `Cache-Control: s-maxage` (private cache treats this same as
-//          max-age),
-//       2. `Cache-Control: max-age`,
-//       3. `Expires`,
-//       4. heuristic 10% × (Date - Last-Modified) per RFC 9111 §4.2.2.
-//   - `Cache-Control: no-cache` / `Pragma: no-cache` / `Cache-Control:
-//     immutable` are honoured.
-//   - `Vary` is honoured by storing one entry per (URL × selected-headers)
-//     pair via the underlying Cache API's built-in matching.
-//
-// 304 revalidation isn't handled here yet -- stale entries fall through to
-// a full refetch. Adding it cleanly requires a hook position that lets us
-// substitute the cached body AFTER the network 304 arrives but BEFORE
-// `rewriteBody` runs, without going through `rewriteBody` again. That can
-// come later.
-
+// Cache original upstream bytes, then run the normal rewrite pipeline on hits.
+// All tabs share this private HTTP cache; frame-specific rewritten URLs never
+// enter storage. Policy follows RFC 9111 and Fetch's request cache modes.
 import {
 	Plugin,
 	type ScramjetFetchHandler,
 	type ScramjetFetchRequest,
-	type ScramjetHeaders,
 } from "@mercuryworkshop/scramjet/bundled";
 import { BareResponse } from "@mercuryworkshop/proxy-transports";
+import {
+	canReuse,
+	initialAge,
+	parseCacheControl,
+	responseIsStorable,
+} from "./cachePolicy";
 
-export const CACHE_NAME = "scramjet-http-cache-v2";
-
-/** Header recording when this entry entered the cache (ms since epoch). */
+// v2 entries did not record corrected age and could contain empty HEAD bodies.
+export const CACHE_NAME = "scramjet-http-cache-v3";
 const STORED_AT_HEADER = "x-sj-cached-at";
+const INITIAL_AGE_HEADER = "x-sj-initial-age";
+const VARY_VALUES_HEADER = "x-sj-vary-values";
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+const CONDITIONAL_HEADERS = [
+	"if-match",
+	"if-none-match",
+	"if-modified-since",
+	"if-unmodified-since",
+	"if-range",
+];
 
-/**
- * Status codes RFC 9110 §15.1 marks as "cacheable by default", minus 206:
- * the Cache API rejects partial responses (cache.put throws TypeError on
- * any non-200/non-OK response with a Content-Range), so storing them is a
- * non-starter regardless of what HTTP allows.
- */
-const DEFAULT_CACHEABLE_STATUSES = new Set([
-	200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
-]);
-
-/**
- * Statuses for which the Fetch spec forbids a body. The Response constructor
- * throws TypeError if you pair any of these with a body -- even an empty
- * string or 0-byte buffer.
- */
-const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
-
-interface CacheControlDirectives {
-	"no-store"?: boolean;
-	"no-cache"?: boolean;
-	"must-revalidate"?: boolean;
-	"proxy-revalidate"?: boolean;
-	private?: boolean;
-	public?: boolean;
-	"max-age"?: number;
-	"s-maxage"?: number;
-	"stale-while-revalidate"?: number;
-	"stale-if-error"?: number;
-	immutable?: boolean;
+function keyFor(url: string): Request {
+	const canonical = new URL(url);
+	canonical.hash = "";
+	return new Request(
+		"https://sj-cache.invalid/" + encodeURIComponent(canonical.href)
+	);
 }
 
-function parseCacheControl(value: string | null): CacheControlDirectives {
-	const out: CacheControlDirectives = {};
-	if (!value) return out;
-	for (const raw of value.split(",")) {
-		const part = raw.trim();
-		if (!part) continue;
-		const eq = part.indexOf("=");
-		const name = (eq === -1 ? part : part.slice(0, eq))
-			.trim()
-			.toLowerCase() as keyof CacheControlDirectives;
-		if (eq === -1) {
-			(out as any)[name] = true;
-			continue;
-		}
-		let v = part.slice(eq + 1).trim();
-		if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-		if (
-			name === "max-age" ||
-			name === "s-maxage" ||
-			name === "stale-while-revalidate" ||
-			name === "stale-if-error"
-		) {
-			const n = parseInt(v, 10);
-			if (Number.isFinite(n) && n >= 0) (out as any)[name] = n;
-		} else {
-			(out as any)[name] = true;
-		}
+const ALL_VARIANTS = { ignoreSearch: true, ignoreVary: true };
+
+function matchesVariant(stored: Response, headers: Headers): boolean {
+	try {
+		const values: [string, string | null][] = JSON.parse(
+			stored.headers.get(VARY_VALUES_HEADER) ?? "null"
+		);
+		return (
+			Array.isArray(values) &&
+			values.every(([name, value]) => headers.get(name) === value)
+		);
+	} catch {
+		return false;
 	}
-	return out;
 }
 
-/**
- * RFC 9111 §4.2.1 freshness lifetime calculation, simplified for a private
- * cache (so s-maxage is treated identically to max-age).
- */
-function freshnessLifetimeSeconds(
-	headers: Headers,
-	cc: CacheControlDirectives,
-	dateMs: number
-): number | null {
-	if (cc["s-maxage"] !== undefined) return cc["s-maxage"];
-	if (cc["max-age"] !== undefined) return cc["max-age"];
-
-	const expires = headers.get("expires");
-	if (expires) {
-		const expMs = Date.parse(expires);
-		if (Number.isFinite(expMs)) {
-			return Math.max(0, (expMs - dateMs) / 1000);
-		}
-	}
-
-	const lastModified = headers.get("last-modified");
-	if (lastModified) {
-		const lmMs = Date.parse(lastModified);
-		if (Number.isFinite(lmMs) && lmMs <= dateMs) {
-			// RFC 9111 §4.2.2 heuristic: 10% of the time since Last-Modified.
-			return ((dateMs - lmMs) * 0.1) / 1000;
-		}
-	}
-
-	return null;
-}
-
-/** Current age (seconds) of a stored response per RFC 9111 §4.2.3. */
-function currentAgeSeconds(headers: Headers, storedAtMs: number): number {
-	const ageHeader = headers.get("age");
-	const initialAge = ageHeader ? parseInt(ageHeader, 10) || 0 : 0;
-	const residentTime = (Date.now() - storedAtMs) / 1000;
-	return initialAge + residentTime;
-}
-
-function isCacheableMethod(method: string): boolean {
-	return method === "GET" || method === "HEAD";
-}
-
-/**
- * Whether a response (status + Cache-Control + Vary) is allowed to be stored.
- * RFC 9110 §15.1 + RFC 9111 §3. `headers` is the upstream's raw response
- * headers, not yet through scramjet's response-header rewriter.
- */
-function responseIsStorable(
-	status: number,
-	headers: Headers,
-	method: string
-): boolean {
-	if (!isCacheableMethod(method)) return false;
-	if (!DEFAULT_CACHEABLE_STATUSES.has(status)) return false;
-
-	const cc = parseCacheControl(headers.get("cache-control"));
-	if (cc["no-store"]) return false;
-
-	// "Vary: *" means "never reusable".
-	const vary = headers.get("vary");
-	if (vary && vary.split(",").some((v) => v.trim() === "*")) return false;
-
-	return true;
-}
-
-/** Build a synthetic cache-key Request keyed by the *underlying* URL. */
-function buildCacheKeyRequest(
-	parsedUrl: string,
-	headers: ScramjetHeaders
-): Request {
-	const native = new Headers();
-	for (const [k, v] of headers.toRawHeaders()) {
-		try {
-			native.append(k, v);
-		} catch {}
-	}
-	const cacheKeyUrl =
-		"https://sj-cache.invalid/" + encodeURIComponent(parsedUrl);
-	return new Request(cacheKeyUrl, { method: "GET", headers: native });
-}
-
-/** Rebuild a Headers object from the BareResponse's rawHeaders array. */
-function nativeHeadersFromRaw(
-	raw: ReadonlyArray<readonly [string, string]>
-): Headers {
-	const h = new Headers();
-	for (const [k, v] of raw) {
-		try {
-			h.append(k, v);
-		} catch {
-			// some upstream headers (e.g. malformed Set-Cookie) are rejected
-			// by the native Headers; just drop them.
-		}
-	}
-	return h;
-}
-
-/** Strip our internal bookkeeping from a stored Response's headers. */
-function strippedHeadersFromStored(stored: Response): Headers {
-	const out = new Headers();
-	for (const [k, v] of stored.headers.entries()) {
-		if (k.toLowerCase() === STORED_AT_HEADER) continue;
-		try {
-			out.append(k, v);
-		} catch {}
-	}
-	return out;
-}
-
-/**
- * Turn an upstream BareResponse into a BareResponse that:
- *   - has the same headers/status/statusText
- *   - has its body replaced with a buffered ArrayBuffer (so the pipeline can
- *     read it again after we've consumed the original stream for the cache)
- * Returns the buffered bytes too so the caller can hand them off elsewhere.
- */
-async function rebuildBareResponseWithBuffer(
-	bare: BareResponse
-): Promise<{ replacement: BareResponse; bodyBuffer: ArrayBuffer | null }> {
-	const status = bare.status;
-	const isNullBody = NULL_BODY_STATUSES.has(status);
-
-	const headers = nativeHeadersFromRaw(bare.rawHeaders);
-
-	if (isNullBody) {
-		return {
-			replacement: BareResponse.fromNativeResponse(
-				new Response(null, {
-					status,
-					statusText: bare.statusText,
-					headers,
-				})
-			),
-			bodyBuffer: null,
-		};
-	}
-
-	const buf = await bare.arrayBuffer();
-	return {
-		replacement: BareResponse.fromNativeResponse(
-			new Response(buf, {
-				status,
-				statusText: bare.statusText,
-				headers,
-			})
+async function variantKey(
+	key: Request,
+	response: Headers,
+	request: Headers
+): Promise<Request> {
+	const names = [
+		...new Set(
+			(response.get("vary") ?? "")
+				.toLowerCase()
+				.split(",")
+				.map((name) => name.trim())
+				.filter(Boolean)
 		),
-		bodyBuffer: buf,
-	};
+	].sort();
+	const values = JSON.stringify(names.map((name) => [name, request.get(name)]));
+	response.set(VARY_VALUES_HEADER, values);
+	const digest = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(values)
+	);
+	const url = new URL(key.url);
+	url.searchParams.set(
+		"variant",
+		[...new Uint8Array(digest)]
+			.map((byte) => byte.toString(16).padStart(2, "0"))
+			.join("")
+	);
+	return new Request(url);
 }
 
-/**
- * Build a `Response` to put in the Cache API. Tags it with our internal
- * STORED_AT_HEADER so freshness can be computed on later lookups.
- */
-function buildStorableResponse(
-	body: ArrayBuffer | null,
-	status: number,
-	statusText: string,
-	rawHeaders: ReadonlyArray<readonly [string, string]>
-): Response {
-	const native = nativeHeadersFromRaw(rawHeaders);
-	native.set(STORED_AT_HEADER, String(Date.now()));
-	return new Response(NULL_BODY_STATUSES.has(status) ? null : body, {
-		status,
-		statusText,
-		headers: native,
-	});
+function responseHeaders(stored: Response): Headers {
+	const headers = new Headers(stored.headers);
+	headers.delete(STORED_AT_HEADER);
+	headers.delete(INITIAL_AGE_HEADER);
+	headers.delete(VARY_VALUES_HEADER);
+	// A cache hit must not reapply a cookie that the user/site has since changed.
+	headers.delete("set-cookie");
+	return headers;
 }
+
+type RequestState = {
+	key: Request;
+	headers: Headers;
+	started: number;
+	generation: number;
+	noStore: boolean;
+	cacheHit?: boolean;
+	revalidation?: { stored: Response; retry: () => Promise<BareResponse> };
+};
 
 export interface HttpCachePluginOptions {
-	/** Name of the underlying Cache API entry. Defaults to CACHE_NAME. */
 	cacheName?: string;
 }
 
-/**
- * RFC-9111-ish HTTP cache for ScramjetFetchHandler. Subclasses
- * `Plugin` (from scramjet/core) so it composes with the same hook plumbing
- * every other scramjet plugin uses; `install(target)` wires it onto a
- * Controller (or any object exposing a `fetchHandler`), and `bust()` drops
- * the underlying `caches` entry.
- *
- * One instance can be installed onto multiple Controllers -- the WeakMap of
- * "did this request come from cache?" book-keeping is per-instance, not
- * per-Controller, so nothing leaks across installs.
- */
+export class CacheMissError extends Error {
+	constructor() {
+		super("No matching response in the HTTP cache");
+	}
+}
+
 export class HttpCachePlugin extends Plugin {
 	readonly cacheName: string;
-
 	private cachePromise: Promise<Cache> | null = null;
-	// Marks requests whose `earlyResponse` we sourced from the cache, so the
-	// preresponse hook below knows not to re-store them. WeakMap keys are
-	// the request objects so entries clean themselves up automatically.
-	private cameFromCache = new WeakMap<ScramjetFetchRequest, true>();
+	private clearing: Promise<boolean> | null = null;
+	private generation = 0;
+	private requests = new WeakMap<ScramjetFetchRequest, RequestState>();
 
 	constructor(options: HttpCachePluginOptions = {}) {
 		super("scramjet-http-cache");
 		this.cacheName = options.cacheName ?? CACHE_NAME;
 	}
 
-	/** Lazy-open the underlying Cache. Memoized for the plugin's lifetime. */
 	private openCache(): Promise<Cache> {
-		if (!this.cachePromise) {
-			this.cachePromise = caches.open(this.cacheName);
-		}
-		return this.cachePromise;
+		if (this.clearing) return this.clearing.then(() => this.openCache());
+		return (this.cachePromise ??= caches.open(this.cacheName).catch((error) => {
+			this.cachePromise = null;
+			throw error;
+		}));
 	}
 
-	/**
-	 * Wire the cache up to a Controller (or anything exposing `fetchHandler`).
-	 * Safe to call multiple times across different Controllers.
-	 */
 	install(target: { fetchHandler: ScramjetFetchHandler }): void {
 		const hooks = target.fetchHandler.hooks.fetch;
-
-		// ----- request: cache lookup --------------------------------------
 		this.tap(hooks.request, async (ctx, props) => {
 			const req = ctx.request;
-			if (!isCacheableMethod(req.method)) return;
-			const reqCache = req.cache as string;
-			// Honour the request's own cache mode where it asks for fresh data.
-			if (reqCache === "no-store" || reqCache === "reload") return;
-			// Don't undo an earlyResponse another plugin already set.
+			const cacheOnly = req.cache === "only-if-cached";
 			if (props.earlyResponse) return;
-
-			const cache = await this.openCache();
-			const stored = await cache.match(
-				buildCacheKeyRequest(ctx.parsed.url.href, req.initialHeaders)
-			);
-			if (!stored) {
+			if (cacheOnly) {
+				const origin =
+					ctx.parsed.fetchInitiatorOrigin ?? ctx.parsed.clientUrl?.origin;
+				// Native same-origin checks compare proxy URLs. Preserve the
+				// original origin across cached redirects as required by Fetch.
+				if (req.mode !== "same-origin" || origin !== ctx.parsed.url.origin)
+					throw new CacheMissError();
+			}
+			// Vary compares the headers actually sent upstream, including cookies.
+			const headers = new Headers(props.init.headers);
+			const cc = parseCacheControl(headers.get("cache-control"));
+			const special =
+				headers.has("range") ||
+				CONDITIONAL_HEADERS.some((name) => headers.has(name));
+			const state: RequestState = {
+				key: keyFor(ctx.parsed.url.href),
+				headers,
+				started: Date.now(),
+				generation: this.generation,
+				noStore: req.cache === "no-store" || cc.has("no-store") || special,
+			};
+			this.requests.set(req, state);
+			if (
+				(req.method !== "GET" && req.method !== "HEAD") ||
+				state.noStore ||
+				req.cache === "reload"
+			) {
+				if (cacheOnly) throw new CacheMissError();
 				return;
 			}
-
-			const storedAt = parseInt(
-				stored.headers.get(STORED_AT_HEADER) ?? "0",
-				10
-			);
-			const cc = parseCacheControl(stored.headers.get("cache-control"));
-
-			const pragmaNoCache = (stored.headers.get("pragma") ?? "")
-				.toLowerCase()
-				.includes("no-cache");
-			const mustRevalidateBeforeUse =
-				cc["no-cache"] === true || pragmaNoCache || reqCache === "no-cache";
-
-			const dateMs = (() => {
-				const d = stored.headers.get("date");
-				if (d) {
-					const v = Date.parse(d);
-					if (Number.isFinite(v)) return v;
-				}
-				return storedAt || Date.now();
-			})();
-
-			const lifetime = freshnessLifetimeSeconds(stored.headers, cc, dateMs);
-			const age = currentAgeSeconds(stored.headers, storedAt);
-			const fresh =
-				!mustRevalidateBeforeUse && lifetime !== null && age < lifetime;
-
-			// `immutable` short-circuits the freshness check (RFC 8246)
-			// provided the client hasn't asked for a forced revalidation.
-			const immutable =
-				cc.immutable === true &&
-				reqCache !== "no-cache" &&
-				reqCache !== "reload";
-
-			if (!fresh && !immutable) {
-				// Stale; fall through to the network. (TODO: 304 revalidation.)
-				return;
-			}
-
-			// Build a BareResponse around the stored bytes/headers and hand
-			// it to doNetworkFetch via earlyResponse. The pipeline will then
-			// run rewriteResponseHeaders/rewriteBody/etc. as if we'd just
-			// fetched it.
-			const headers = strippedHeadersFromStored(stored);
-			// Recompute Age the consumer sees so it isn't stuck at storage
-			// time.
-			if (storedAt) {
-				headers.set("age", String(Math.floor((Date.now() - storedAt) / 1000)));
-			}
-
-			const isNullBody = NULL_BODY_STATUSES.has(stored.status);
-			const earlyBody = isNullBody ? null : await stored.arrayBuffer();
-
-			const earlyResponse = BareResponse.fromNativeResponse(
-				new Response(earlyBody, {
-					status: stored.status,
-					statusText: stored.statusText,
-					headers,
-				})
-			);
-
-			this.cameFromCache.set(req, true);
-			props.earlyResponse = earlyResponse;
-		});
-
-		// ----- preresponse: cache store -----------------------------------
-		this.tap(hooks.preresponse, async (ctx, props) => {
-			const req = ctx.request;
-			// Skip if this body came back via cache.match -- restoring it
-			// would just rewrite the same bytes with a fresh STORED_AT_HEADER
-			// (resetting the freshness clock).
-			if (this.cameFromCache.has(req)) {
-				this.cameFromCache.delete(req);
-				return;
-			}
-
-			if ((req.cache as string) === "no-store") return;
-			if (!isCacheableMethod(req.method)) return;
-
-			const headers = nativeHeadersFromRaw(props.response.rawHeaders);
-			if (!responseIsStorable(props.response.status, headers, req.method))
-				return;
-
-			// Drain the stream once and rebuild the BareResponse around the
-			// buffered copy so the rest of doHandleFetch can still read it.
-			const { replacement, bodyBuffer } = await rebuildBareResponseWithBuffer(
-				props.response
-			);
-			props.response = replacement;
-
-			const cacheKey = buildCacheKeyRequest(
-				ctx.parsed.url.href,
-				req.initialHeaders
-			);
-			const toStore = buildStorableResponse(
-				bodyBuffer,
-				props.response.status,
-				props.response.statusText,
-				props.response.rawHeaders
-			);
-
 			try {
 				const cache = await this.openCache();
-				await cache.put(cacheKey, toStore);
-			} catch (err) {
-				// Cache.put can fail on opaque or oddly-headered responses;
-				// don't let a cache write failure break the actual fetch.
-				console.warn("[scramjet-http-cache] cache.put failed:", err);
+				// Chromium's Cache.put replaces by URL; synthetic variant keys also
+				// avoid Request's forbidden-header filtering (notably Cookie).
+				const stored = [...(await cache.matchAll(state.key, ALL_VARIANTS))]
+					.reverse()
+					.find((entry) => matchesVariant(entry, headers));
+				if (!stored) {
+					if (cacheOnly) throw new CacheMissError();
+					return;
+				}
+				const received = Number(stored.headers.get(STORED_AT_HEADER));
+				const age =
+					Number(stored.headers.get(INITIAL_AGE_HEADER)) +
+					Math.max(0, (Date.now() - received) / 1000);
+				if (!canReuse(stored.headers, headers, req.cache, age, received)) {
+					if (cacheOnly) throw new CacheMissError();
+					const etag = stored.headers.get("etag");
+					const modified = stored.headers.get("last-modified");
+					if (req.method === "GET" && (etag || modified)) {
+						const originalInit = { ...props.init, headers: [...headers] };
+						state.revalidation = {
+							stored,
+							retry: () => ctx.client.fetch(props.url, originalInit),
+						};
+						const conditional = new Headers(headers);
+						if (etag) conditional.set("if-none-match", etag);
+						if (modified) conditional.set("if-modified-since", modified);
+						props.init.headers = [...conditional];
+					}
+					return;
+				}
+				const resultHeaders = responseHeaders(stored);
+				resultHeaders.set("age", String(Math.floor(age)));
+				props.earlyResponse = BareResponse.fromNativeResponse(
+					new Response(
+						req.method === "HEAD" || NULL_BODY_STATUSES.has(stored.status)
+							? null
+							: stored.body,
+						{
+							status: stored.status,
+							statusText: stored.statusText,
+							headers: resultHeaders,
+						}
+					)
+				);
+				state.cacheHit = true;
+			} catch (error) {
+				// Storage failures cannot turn an explicitly offline request into
+				// a network request. The controller forwards this as Response.error().
+				if (cacheOnly) throw new CacheMissError();
+				// Storage being unavailable must not turn a working network into an error.
+				console.warn("[scramjet-http-cache] lookup failed:", error);
+			}
+		});
+
+		this.tap(hooks.preresponse, async (ctx, props) => {
+			const req = ctx.request;
+			const state = this.requests.get(req);
+			this.requests.delete(req);
+			if (!state || state.cacheHit) return;
+			let received = Date.now();
+			if (state.revalidation && props.response.status === 304) {
+				const { stored, retry } = state.revalidation;
+				const update = new Headers(props.response.rawHeaders);
+				const etag = update.get("etag");
+				const modified = update.get("last-modified");
+				// RFC 9111 §4.3.4: a validator must identify the representation
+				// being refreshed. A mismatched 304 cannot supply a usable body.
+				const matches = etag
+					? etag.startsWith("W/")
+						? etag.slice(2) === stored.headers.get("etag")?.replace(/^W\//, "")
+						: etag === stored.headers.get("etag")
+					: modified !== null &&
+						modified === stored.headers.get("last-modified");
+				if (matches) {
+					const merged = responseHeaders(stored);
+					merged.delete("age");
+					merged.set("date", new Date(received).toUTCString());
+					for (const [name, value] of update) {
+						// §3.2: retain the stored body's length and decoded encoding.
+						if (
+							!["content-length", "content-encoding", "set-cookie"].includes(
+								name
+							)
+						)
+							merged.set(name, value);
+					}
+					for (const [name, value] of props.response.rawHeaders)
+						if (name.toLowerCase() === "set-cookie") merged.append(name, value);
+					props.response = BareResponse.fromNativeResponse(
+						new Response(stored.body, {
+							status: stored.status,
+							statusText: stored.statusText,
+							headers: merged,
+						})
+					);
+					// Native Response filters Set-Cookie. Preserve the fresh 304
+					// headers for the proxy's cookie processing, per Fetch's guard:
+					// https://fetch.spec.whatwg.org/#headers-validate
+					props.response.rawHeaders = [...merged];
+				} else {
+					props.response = await retry();
+					received = Date.now();
+				}
+			}
+			const response = props.response;
+			const headers = new Headers(response.rawHeaders);
+			// A concurrent clear prevents storage, but a pending conditional
+			// response still needs its body resolved for the active request.
+			if (state.generation !== this.generation) return;
+			try {
+				// RFC 9111 §4.4: successful unsafe methods invalidate every variant.
+				if (
+					!SAFE_METHODS.has(req.method) &&
+					response.status >= 200 &&
+					response.status < 400
+				) {
+					const cache = await this.openCache();
+					await cache.delete(state.key, ALL_VARIANTS);
+					for (const name of ["location", "content-location"]) {
+						const value = headers.get(name);
+						if (!value) continue;
+						try {
+							const related = new URL(value, ctx.parsed.url.href);
+							if (related.origin === ctx.parsed.url.origin)
+								await cache.delete(keyFor(related.href), ALL_VARIANTS);
+						} catch {
+							/* An invalid Location has no cache entry. */
+						}
+					}
+					return;
+				}
+				// RFC 9111 §4.3.5 permits invalidation after a network HEAD. Never
+				// replace a GET representation with HEAD's empty response body.
+				if (req.method === "HEAD") {
+					if (response.status === 200)
+						await (await this.openCache()).delete(state.key, ALL_VARIANTS);
+					return;
+				}
+				if (req.method !== "GET" || state.noStore) return;
+				if (!responseIsStorable(response.status, headers)) {
+					if (
+						headers.has("cache-control") &&
+						parseCacheControl(headers.get("cache-control")).has("no-store")
+					)
+						await (await this.openCache()).delete(state.key, ALL_VARIANTS);
+					return;
+				}
+				const body = NULL_BODY_STATUSES.has(response.status)
+					? null
+					: await response.clone().arrayBuffer();
+				if (state.generation !== this.generation) return;
+				headers.set(STORED_AT_HEADER, String(received));
+				headers.set(
+					INITIAL_AGE_HEADER,
+					String(initialAge(headers, state.started, received))
+				);
+				const cache = await this.openCache();
+				if (state.generation !== this.generation) return;
+				const key = await variantKey(state.key, headers, state.headers);
+				if (state.generation !== this.generation) return;
+				await cache.put(
+					key,
+					new Response(body, {
+						status: response.status,
+						statusText: response.statusText,
+						headers,
+					})
+				);
+			} catch (error) {
+				console.warn("[scramjet-http-cache] update failed:", error);
 			}
 		});
 	}
 
-	/**
-	 * Drop every entry in the HTTP cache. Returns whether the underlying
-	 * Cache existed and was deleted.
-	 */
 	async bust(): Promise<boolean> {
+		// In-flight responses from before a clear must not repopulate the cache.
+		this.generation++;
+		const deletion = caches.delete(this.cacheName);
+		this.cachePromise = null;
+		this.clearing = deletion;
 		try {
-			// Drop the memoized handle too; the next install will re-open
-			// against a fresh empty cache.
-			this.cachePromise = null;
-			return await caches.delete(this.cacheName);
-		} catch (err) {
-			console.error("[scramjet-http-cache] bust failed:", err);
-			return false;
+			return await deletion;
+		} finally {
+			if (this.clearing === deletion) this.clearing = null;
 		}
 	}
 }
