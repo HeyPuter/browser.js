@@ -1259,6 +1259,19 @@ return { apply, construct };
 		if (slot && slot.descriptor.value === native) {
 			this.installNative(slot, { value: proxy });
 		}
+
+		// a legacy alias - `WebKitMutationObserver` is `MutationObserver` - is
+		// the same interface object under another name, and left native it is
+		// the one name whose `prototype.constructor` is not itself
+		const names = Object_getOwnPropertyNames(this.global);
+		for (let i = 0; i < names.length; i++) {
+			if (names[i] === name) continue;
+			const descriptor = Object_getOwnPropertyDescriptor(this.global, names[i]);
+			if (!descriptor || descriptor.value !== native) continue;
+
+			const alias = this.resolveNative(this.global, names[i], names[i]);
+			if (alias) this.installNative(alias, { value: proxy });
+		}
 	}
 
 	Trap<T extends string>(name: T, handler: Trap<T>): void;
