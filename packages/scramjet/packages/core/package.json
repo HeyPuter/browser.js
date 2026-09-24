@@ -17,6 +17,7 @@
 		"format": "prettier --write .",
 		"lint": "eslint ./src/",
 		"lint:fix": "eslint ./src/ --fix",
+		"lint:wbg": "eslint --no-config-lookup -c tools/wbg/eslint.config.mjs --max-warnings 0 rewriter/wasm/out/wasm.js",
 		"test": "vitest run",
 		"prepack": "RELEASE=1 npm run rewriter:build && npm run build && cp ../../README.md ./README.md"
 	},

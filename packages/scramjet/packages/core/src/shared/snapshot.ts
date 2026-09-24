@@ -519,8 +519,15 @@ export type _Blob = Wrapped<Blob>;
 export function makeWrap<T extends object>(source: T): Wrapped<T> {
 	// Constructable builtins like Set/Map/URL need to retain their [[Construct]]
 	// behavior; cloning them into plain objects breaks `new _Set(...)`.
+	//
+	// The handler has no prototype: a proxy looks each trap up on its handler
+	// with [[Get]], so an ordinary `{}` would take `construct`, `get`, `apply`
+	// and the rest from the page's Object.prototype - and every `new _Set()`
+	// would be the page's to answer.
 	if (typeof source === "function") {
-		return new Proxy(source, {}) as Wrapped<T>;
+		return new Proxy(source, {
+			__proto__: null,
+		} as ProxyHandler<T>) as Wrapped<T>;
 	}
 
 	function getAllPropertyDescriptors(obj: object) {

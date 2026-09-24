@@ -17,8 +17,16 @@ if [ "${RELEASE:-0}" != "1" ]; then MODE="debug"; fi
 # shellcheck disable=SC2046
 SRC_HASH=$( (echo "MODE=${MODE}"; sha256sum $(find ../ -type f -not -path "*/\.*" -and \( -name "*.rs" -o -name "*.toml" -o -name "*.sh" -o -name "*.json" -o -name "*.md" \); echo Cargo.toml; echo build.sh) 2>/dev/null | sort -k2 | sha256sum ) | sha256sum | cut -d' ' -f1 ) || SRC_HASH="unknown"
 
-if [ -f out/.build-hash ] && [ -f ../../dist/scramjet.wasm ] && [ "$SRC_HASH" != "unknown" ] && grep -q "$SRC_HASH" out/.build-hash; then
+# wasm-bindgen writes its raw glue to out/wbg/; harden.mjs rewrites it onto
+# src/shared/rewriters/wbg-snapshot.ts and lints the result into out/. It runs
+# even when the wasm is up to date, since the hardening can change on its own
+harden() {
+	node ../../tools/wbg/harden.mjs out/wbg out
+}
+
+if [ -f out/.build-hash ] && [ -f ../../dist/scramjet.wasm ] && [ -f out/wbg/wasm.js ] && [ "$SRC_HASH" != "unknown" ] && grep -q "$SRC_HASH" out/.build-hash; then
   echo "Rewriter sources unchanged (hash $SRC_HASH); skipping rebuild."
+  harden
   exit 0
 fi
 
@@ -46,17 +54,12 @@ fi
 		-Z build-std=panic_abort,std -Z build-std-features=${STD_FEATURES} \
 		--no-default-features --features "$FEATURES"
 )
-wasm-bindgen --target web --out-dir out/ ../target/wasm32-unknown-unknown/release/wasm.wasm
-
-if [[ "$OSTYPE" == "darwin"* ]] || [[ "$OSTYPE" == "freebsd"* ]] || [[ "$OSTYPE" == "dragonfly"* ]]; then
-	sed -i '' 's/import.meta.url/""/g' out/wasm.js
-else
-	sed -i 's/import.meta.url/""/g' out/wasm.js
-fi
+wasm-bindgen --target web --out-dir out/wbg/ ../target/wasm32-unknown-unknown/release/wasm.wasm
+harden
 
 cd ../../
 
-wasm-snip rewriter/wasm/out/wasm_bg.wasm -o rewriter/wasm/out/wasm_snipped.wasm \
+wasm-snip rewriter/wasm/out/wbg/wasm_bg.wasm -o rewriter/wasm/out/wasm_snipped.wasm \
 	-p 'oxc_regular_expression::.*' \
 	'oxc_parser::ts::types::<impl oxc_parser::ParserImpl>::parse_non_array_type' \
 	'oxc_parser::ts::types::<impl oxc_parser::ParserImpl>::parse_ts_import_type' \
