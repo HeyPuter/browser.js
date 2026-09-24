@@ -20,6 +20,7 @@ export type Test = {
 	name: string;
 	port: number;
 	/** Override the proxy's incumbency mode for this test's navigation. */
+	debugTrampolines?: boolean;
 	incumbencyMode?: "pst" | "stamp" | "lazystamp" | "none";
 	/** URL-pattern overrides, applied only while this test runs. */
 	incumbencySiteFlags?: Record<string, NonNullable<Test["incumbencyMode"]>>;

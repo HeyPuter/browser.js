@@ -115,6 +115,7 @@ function check(val) {
 			rewritefn: String::from("$rewrite"),
 			metafn: String::from("$meta"),
 			pushsourcemapfn: String::from("$pushsourcemap"),
+			registerrealmfn: String::from("$registerrealm"),
 			trysetfn: String::from("$tryset"),
 			selfid: String::from("$self"),
 			templocid: String::from("$temploc"),
@@ -128,6 +129,7 @@ function check(val) {
 
 			capture_errors: false,
 			do_sourcemaps: false,
+			inline_sourcemap: false,
 			disable_computed_wrap: false,
 			destructure_rewrites: true,
 			incumbency: IncumbencyMode::None,

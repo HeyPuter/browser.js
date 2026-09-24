@@ -61,6 +61,7 @@ fn get_js_config(config: &Object) -> Result<Config> {
 		rewritefn: get_str(config, "rewritefn")?,
 		metafn: get_str(config, "metafn")?,
 		pushsourcemapfn: get_str(config, "pushsourcemapfn")?,
+		registerrealmfn: get_str(config, "registerrealmfn")?,
 
 		trysetfn: get_str(config, "trysetfn")?,
 		selfid: get_str(config, "selfid")?,
@@ -75,9 +76,11 @@ fn get_js_flags(obj: &Object, base: String, is_module: bool) -> Result<Flags> {
 	Ok(Flags {
 		base,
 		sourcetag: scramtag(),
+		script_id: get_str(obj, "scriptId")?,
 		is_module,
 
 		do_sourcemaps: get_bool(obj, "sourcemaps")?,
+		inline_sourcemap: get_bool(obj, "inlineSourcemap")?,
 		capture_errors: get_bool(obj, "captureErrors")?,
 		disable_computed_wrap: get_bool(obj, "disableComputedWrap")?,
 		destructure_rewrites: get_bool(obj, "destructureRewrites")?,

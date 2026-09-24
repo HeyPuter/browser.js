@@ -37,7 +37,7 @@ function getEnd(rewrite: Rewrite): number {
 	throw "unreachable";
 }
 
-function registerRewrites(
+export function registerRewrites(
 	client: ScramjetClient,
 	buf: string | Uint8Array,
 	tag: string
@@ -177,7 +177,7 @@ export const enabled = (client: ScramjetClient) =>
 	client.flagEnabled("sourcemaps");
 
 export default function (client: ScramjetClient, self: Self) {
-	// every script will push a sourcemap
+	// a script rewritten outside the client pushes its own sourcemap
 	Object_defineProperty(self, client.config.globals.pushsourcemapfn, {
 		value: (buf: string | Uint8Array, tag: string) => {
 			// const before = performance.now();

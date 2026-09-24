@@ -1,7 +1,6 @@
 import { ScramjetClient } from "@client/index";
 import { Object_defineProperty, Reflect_apply } from "@/shared/snapshot";
 import { CallSite, incumbencyMode, rawCallSites } from "@/shared/incumbency";
-import { isOwnScript } from "@client/nativeerror";
 
 /**
  * What one rewritten script has to be made to look like, and how a frame is
@@ -63,12 +62,11 @@ export default function (client: ScramjetClient, self: Self) {
 
 			if (mode !== "pst") return;
 
-			// this runs at the top of the script being registered, so the first
-			// frame that is not scramjet's own is that script. not a fixed
-			// index: eval'd code and `new Function` leave the calling script on
-			// the stack below it, which is what an index from either end grabs
-			const frames = rawCallSites();
-			const self = frames && firstPageFrame(client, frames);
+			// this runs at the top of the script being registered, which is
+			// the frame after rawCallSites() and this function. eval'd code and
+			// `new Function` are that frame too - the script that evaluated them
+			// is below it
+			const self = rawCallSites()?.[2];
 			const hash = self && self.getScriptHash?.();
 
 			// its hash is the key a later stack walk looks it up by, and nothing
@@ -80,28 +78,6 @@ export default function (client: ScramjetClient, self: Self) {
 		writable: false,
 		configurable: false,
 	});
-}
-
-/** the topmost frame that is not scramjet's own, i.e. whoever called in */
-export function firstPageFrame(
-	client: ScramjetClient,
-	frames: CallSite[]
-): CallSite | null {
-	for (let i = 0; i < frames.length; i++) {
-		let file: string | undefined;
-		try {
-			file = frames[i].getFileName?.();
-		} catch {
-			// a frame that will not name a file is not one of ours
-		}
-
-		// eval'd code has no filename at all, so it can never be the client
-		// bundle and is always a real caller
-		if (!file || !isOwnScript(file, client.config.maskedfiles))
-			return frames[i];
-	}
-
-	return null;
 }
 
 /**
