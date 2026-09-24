@@ -96,6 +96,8 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 		name: Atom<'data>,
 	},
 	SourceTag,
+	/// `expr` -> `cfg.stampfn(cfg.selfid, expr)`
+	Stamp,
 
 	// ;cfg.cleanrestfn(restids[0]); cfg.cleanrestfn(restid[1]);
 	CleanFunction {
@@ -343,6 +345,16 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 				smallvec![change!(span!(end), ShorthandObj { ident: name })]
 			}
 			Self::SourceTag => smallvec![change!(span, SourceTag)],
+			Self::Stamp => smallvec![
+				change!(span!(start), StampLeft),
+				change!(
+					span!(end),
+					ClosingParen {
+						semi: false,
+						replace: false
+					}
+				),
+			],
 			Self::Replace { text } => smallvec![change!(span, Replace { text })],
 			Self::Delete => smallvec![change!(span, Delete)],
 		}

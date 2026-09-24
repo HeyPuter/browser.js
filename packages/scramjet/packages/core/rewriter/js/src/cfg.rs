@@ -21,6 +21,8 @@ pub struct Config {
 	pub wrappropertybase: String,
 	pub wrappropertyfn: String,
 	pub callfn: String,
+	/// `stampfn(realm, value)`: record `realm` as the running one, then hand `value` back
+	pub stampfn: String,
 	pub cleanrestfn: String,
 	pub importfn: String,
 	pub rewritefn: String,

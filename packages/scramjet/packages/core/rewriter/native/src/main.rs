@@ -31,6 +31,8 @@ pub struct RewriterOptions {
 	wrappropertyfn: String,
 	#[clap(long, default_value = "$call")]
 	callfn: String,
+	#[clap(long, default_value = "$stamp")]
+	stampfn: String,
 	#[clap(long, default_value = "$clean")]
 	cleanrestfn: String,
 	#[clap(long, default_value = "$import")]

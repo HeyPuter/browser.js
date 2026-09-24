@@ -407,7 +407,7 @@ async function runTestOnHarness(
 ): Promise<TestResult> {
 	await syncRunwayCleartextHarness(page, test);
 	await page.evaluate(
-		({ mode, siteFlags, debugTrampolines }) => {
+		({ mode, siteFlags, debugTrampolines, backupIncumbency }) => {
 			const harness = window as any;
 			const config = harness.__runwayController?.scramjetConfig;
 			if (!config) return;
@@ -415,6 +415,7 @@ async function runTestOnHarness(
 				harness.__runwayIncumbencyDefaults = {
 					mode: config.flags.incumbency,
 					debugTrampolines: config.flags.debugTrampolines,
+					backupIncumbency: config.flags.backupIncumbency,
 					siteFlags: { ...config.siteFlags },
 				};
 			}
@@ -422,6 +423,8 @@ async function runTestOnHarness(
 			config.flags.incumbency = mode ?? defaults.mode;
 			config.flags.debugTrampolines =
 				debugTrampolines ?? defaults.debugTrampolines;
+			config.flags.backupIncumbency =
+				backupIncumbency ?? defaults.backupIncumbency;
 			config.siteFlags = { ...defaults.siteFlags };
 			for (const [pattern, incumbency] of Object.entries(siteFlags ?? {})) {
 				config.siteFlags[pattern] = {
@@ -434,6 +437,7 @@ async function runTestOnHarness(
 			mode: test.incumbencyMode,
 			siteFlags: test.incumbencySiteFlags,
 			debugTrampolines: test.debugTrampolines,
+			backupIncumbency: test.backupIncumbency,
 		}
 	);
 
@@ -638,6 +642,7 @@ async function runTestOnHarness(
 				if (!config || !defaults) return;
 				config.flags.incumbency = defaults.mode;
 				config.flags.debugTrampolines = defaults.debugTrampolines;
+				config.flags.backupIncumbency = defaults.backupIncumbency;
 				config.siteFlags = { ...defaults.siteFlags };
 			});
 	}

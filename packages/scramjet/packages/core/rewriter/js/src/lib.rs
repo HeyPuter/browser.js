@@ -11,6 +11,8 @@ use thiserror::Error;
 
 pub mod cfg;
 mod changes;
+#[path = "callbacks.generated.rs"]
+mod callbacks;
 mod rewrite;
 mod visitor;
 

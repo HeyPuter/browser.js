@@ -12,7 +12,7 @@ export * from "./htmlRules";
 export * from "./mime";
 export * from "./rewriters";
 
-/** the flags whose value is a boolean, which is all but `incumbency` */
+/** the flags whose value is a boolean, which is all but `incumbency` and `backupIncumbency` */
 export type BooleanFlag = {
 	[K in keyof ScramjetFlags]: ScramjetFlags[K] extends boolean ? K : never;
 }[keyof ScramjetFlags];

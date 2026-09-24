@@ -110,6 +110,7 @@ function check(val) {
 			wrappropertybase: String::from("$sj_"),
 			wrappropertyfn: String::from("$prop"),
 			callfn: String::from("$call"),
+			stampfn: String::from("$stamp"),
 			cleanrestfn: String::from("$clean"),
 			importfn: String::from("$import"),
 			rewritefn: String::from("$rewrite"),

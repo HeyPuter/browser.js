@@ -2,6 +2,13 @@ import { iswindow } from "@client/entry";
 import { Arguments, Returns } from "@client/webidl";
 import { ScramjetClient } from "@client/index";
 import {
+	backupIncumbencyMode,
+	callWithBackupIncumbent,
+	incumbentFor,
+	interceptDepth,
+	proxyDepth,
+} from "./incumbency";
+import {
 	readAddEventListenerOptions,
 	readEventListenerOptions,
 } from "@client/helpers";
@@ -204,7 +211,25 @@ export default function (client: ScramjetClient, self: Self) {
 		return wrapped;
 	};
 
-	function wraplistener(listener: (...args: any) => any) {
+	/**
+	 * The incumbent a listener is converted under, for `backupIncumbency:
+	 * "full"` - see `shared/callbacks.ts`, which these members are left out of
+	 * because they are intercepted here. `depth` is the frames of the member
+	 * whose body calls this, which is one more to look past.
+	 */
+	const conversionIncumbent = (depth: number) =>
+		backupIncumbencyMode(client) === "full"
+			? incumbentFor(client, depth + 1)
+			: null;
+
+	/**
+	 * `incumbent` is the one the listener was converted under, which it runs
+	 * with pushed onto the backup incumbent settings object stack.
+	 */
+	function wraplistener(
+		listener: (...args: any) => any,
+		incumbent: ScramjetClient | null
+	) {
 		return new Proxy(listener, {
 			apply(target, that, args) {
 				const realEvent: Event = args[0];
@@ -230,9 +255,9 @@ export default function (client: ScramjetClient, self: Self) {
 					args[0] = wrapEvent(realEvent, trustedProps);
 				}
 
-				const rv = Reflect_apply(target, that, args);
-
-				return rv;
+				return incumbent
+					? callWithBackupIncumbent(client, incumbent, target, that, args)
+					: Reflect_apply(target, that, args);
 			},
 		});
 	}
@@ -298,7 +323,8 @@ export default function (client: ScramjetClient, self: Self) {
 		target: EventTarget,
 		event: string,
 		callback: EventListenerOrEventListenerObject,
-		capture: boolean
+		capture: boolean,
+		incumbent: ScramjetClient | null
 	) => {
 		const wrappers = wrappersFor(target, listenerKey(event, capture), true)!;
 
@@ -308,7 +334,10 @@ export default function (client: ScramjetClient, self: Self) {
 		const proxiedCallback = wraplistener(
 			typeof callback === "function"
 				? (callback as (...args: any) => any)
-				: objectListener(callback)
+				: objectListener(callback),
+			// a duplicate registration is a no-op, so the first one's
+			// incumbent is the one that stays
+			incumbent
 		);
 		wrappers.set(callback, proxiedCallback);
 
@@ -365,6 +394,9 @@ export default function (client: ScramjetClient, self: Self) {
 				return super.addEventListener(type, callback, options);
 			}
 
+			// before the options are read, which can run page code
+			const incumbent = conversionIncumbent(interceptDepth(client));
+
 			// `(AddEventListenerOptions or boolean)`, where the boolean is just
 			// `capture`. The dictionary form is read once, by the shared reader
 			// in helpers.ts, because `capture` decides the listener's identity
@@ -375,7 +407,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 			return super.addEventListener(
 				type,
-				listenerFor(this, type, callback, init.capture),
+				listenerFor(this, type, callback, init.capture, incumbent),
 				init
 			);
 		}
@@ -502,7 +534,10 @@ export default function (client: ScramjetClient, self: Self) {
 					// ([LegacyTreatNonObjectAsNull]) and never calls it
 					if (typeof value !== "function") return ctx.set(value);
 
-					const wrapped = wraplistener(value);
+					const wrapped = wraplistener(
+						value,
+						conversionIncumbent(proxyDepth(client))
+					);
 					client.box.eventhandlers.set(wrapped, value);
 					ctx.set(wrapped);
 				},

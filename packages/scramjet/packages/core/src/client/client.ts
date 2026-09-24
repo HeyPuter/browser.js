@@ -1213,6 +1213,54 @@ return { apply, construct };
 		h.getOwnPropertyDescriptor = getOwnPropertyDescriptorHandler;
 		this.installNative(native, { value: proxy });
 	}
+	/**
+	 * Whether `key` has already been patched where it lives - on `target` or
+	 * up its prototype chain - by any of `Proxy`, `Trap` or `Intercept`. For a
+	 * patch that defers to an interceptor written for the member, and would
+	 * otherwise have `resolveNative` refuse it loudly.
+	 */
+	isPatched(target: any, key: string | symbol): boolean {
+		let owner = target;
+		while (owner) {
+			if (Object_getOwnPropertyDescriptor(owner, key)) {
+				return !!this.patched.get(owner)?.has(key);
+			}
+			owner = Object_getPrototypeOf(owner);
+		}
+
+		return false;
+	}
+
+	/**
+	 * `RawProxy` over the interface object `name` on the global, for a
+	 * `construct` handler.
+	 *
+	 * https://webidl.spec.whatwg.org/#interface-prototype-object - the
+	 * prototype's `constructor` is repointed at the proxy too, the way
+	 * `Intercept` does for a `@Constructor`, or `X.prototype.constructor === X`
+	 * is false for exactly the interfaces constructed through.
+	 */
+	ProxyInterfaceObject(name: string, handler: Proxy<any>): void {
+		const native = this.global[name];
+		if (typeof native !== "function") return;
+
+		this.RawProxy(this.global, name, handler, `new ${name}`);
+
+		const proxy = this.global[name];
+		if (proxy === native) return;
+
+		const slot =
+			native.prototype &&
+			this.resolveNative(
+				native.prototype,
+				"constructor",
+				`${name}.prototype.constructor`
+			);
+		if (slot && slot.descriptor.value === native) {
+			this.installNative(slot, { value: proxy });
+		}
+	}
+
 	Trap<T extends string>(name: T, handler: Trap<T>): void;
 	Trap<const T extends readonly string[]>(
 		name: T,

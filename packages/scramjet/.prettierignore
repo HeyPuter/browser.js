@@ -16,3 +16,6 @@ packages/core/tests/htmlparser/Parser.events.spec.ts
 packages/core/tests/htmlparser/Documents.spec.ts
 packages/core/tests/htmlparser/__fixtures__/
 packages/core/tests/htmlparser/__snapshots__/
+
+# generated from the Web IDL by packages/core/scripts/generate-callbacks.ts
+packages/core/src/client/callbacks.generated.ts

@@ -74,6 +74,7 @@ impl NativeRewriter {
 					wrappropertybase: cfg.wrappropertybase.clone(),
 					wrappropertyfn: cfg.wrappropertyfn.clone(),
 					callfn: cfg.callfn.clone(),
+					stampfn: cfg.stampfn.clone(),
 					cleanrestfn: cfg.cleanrestfn.clone(),
 					importfn: cfg.importfn.clone(),
 					rewritefn: cfg.rewritefn.clone(),

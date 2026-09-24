@@ -28,6 +28,14 @@ if (!process.env.CI) {
 	} catch {}
 }
 
+// the callback-member tables `client/shared/callbacks.ts` patches, expanded
+// from the Web IDL of every spec. Rewritten only when they change, so a build
+// with nothing new to expand touches nothing
+execSync(
+	"node --experimental-strip-types --no-warnings packages/core/scripts/generate-callbacks.ts",
+	{ cwd: __dirname, stdio: "inherit" }
+);
+
 function nodeExternals(
 	{ context, request }: ExternalItemFunctionData,
 	callback: (

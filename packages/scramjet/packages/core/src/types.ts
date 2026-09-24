@@ -38,6 +38,26 @@ export interface ScramjetVersionInfo {
  */
 export type IncumbencyMode = "pst" | "stamp" | "lazystamp" | "none";
 
+/**
+ * How the incumbent is found when no script of the page's is running - a
+ * callback the host invoked, which HTML answers from the backup incumbent
+ * settings object stack.
+ * https://html.spec.whatwg.org/multipage/webappapis.html#backup-incumbent-settings-object-stack
+ *
+ * - `full`  Every Web IDL member that takes a callback captures the incumbent
+ *           when it converts one, and the callback runs with it pushed. The
+ *           members are expanded from the IDL at build time; see
+ *           `client/shared/callbacks.ts`. Costs a patch per member and a
+ *           stack read per conversion.
+ * - `bind`  Only a bound incumbent-sensitive member carries an entry, the
+ *           incumbent of whoever bound it - which is the realm that converts
+ *           it, unless one realm binds and another hands it over. One hook,
+ *           on `Function.prototype.bind`.
+ * - `none`  Nothing is recorded, and a callback with no script of its own
+ *           answers with the realm whose member is being called.
+ */
+export type BackupIncumbencyMode = "full" | "bind" | "none";
+
 export type ScramjetFlags = {
 	syncxhr: boolean;
 	disableComputedWrap: boolean;
@@ -50,6 +70,7 @@ export type ScramjetFlags = {
 	debugTrampolines: boolean;
 	debugSourceURL: boolean;
 	incumbency: IncumbencyMode;
+	backupIncumbency: BackupIncumbencyMode;
 	encapsulateWorkers: boolean;
 };
 
@@ -59,6 +80,7 @@ export interface ScramjetConfig {
 		wrappropertybase: string;
 		wrappropertyfn: string;
 		callfn: string;
+		stampfn: string;
 		cleanrestfn: string;
 		importfn: string;
 		rewritefn: string;

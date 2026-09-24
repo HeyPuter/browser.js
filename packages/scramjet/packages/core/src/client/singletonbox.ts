@@ -1,7 +1,7 @@
 import { IncrementalHtmlRewriter } from "@/shared";
 import { ScramjetClient } from "./client";
 import { SourceMaps } from "./shared/sourcemaps";
-import { ScriptRealm } from "./shared/incumbency";
+import { BackupIncumbent, ScriptRealm } from "./shared/incumbency";
 import {
 	Object_getOwnPropertyNames,
 	Object_getOwnPropertyDescriptor,
@@ -159,18 +159,48 @@ export class SingletonBox {
 	 */
 	incumbent: Self | null = null;
 
+	/** When {@link incumbent} was last recorded, on the clock of {@link epoch}. */
+	incumbentEpoch = 0;
+
+	/**
+	 * A clock for ordering what the stamp modes record against the backup
+	 * incumbent settings object stack's entries: see `incumbentFor`.
+	 */
+	epoch = 0;
+
 	/**
 	 * The backup incumbent settings object stack, innermost last. Shared for
-	 * the same reason {@link incumbent} is.
+	 * the same reason {@link incumbent} is: one stack per event loop, and the
+	 * client tree is one.
 	 * https://html.spec.whatwg.org/multipage/webappapis.html#backup-incumbent-settings-object-stack
 	 */
-	backupincumbents: ScramjetClient[] = [];
+	backupincumbents: BackupIncumbent[] = [];
+
+	/**
+	 * The entry of the callback the host last ran, for the microtask
+	 * checkpoint after it - see `holdForCheckpoint` in `shared/incumbency.ts`.
+	 */
+	backupfloor: BackupIncumbent | null = null;
 
 	/**
 	 * The members that read the incumbent, as installed - see `installBind`
 	 * in `shared/incumbency.ts`.
 	 */
 	incumbentSinks: _WeakSet<object> = new _WeakSet();
+
+	/**
+	 * The page's callback behind each stand-in handed to the host in its
+	 * place, for the members that hand a callback back.
+	 */
+	callbackOriginals: _WeakMap<object, object> = new _WeakMap();
+
+	/**
+	 * For a listener pair - `addListener` / `removeListener` - the stand-in
+	 * registered for each callback on each receiver, so the removal finds it
+	 * and a second addition is the no-op it is natively.
+	 */
+	callbackRegistrations: _WeakMap<object, _WeakMap<object, object>> =
+		new _WeakMap();
 
 	constructor(public ownerclient: ScramjetClient) {}
 

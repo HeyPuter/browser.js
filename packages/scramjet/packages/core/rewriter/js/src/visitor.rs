@@ -4,7 +4,7 @@ use coverage_macro::coverage_checked;
 use oxc::{
 	allocator::{Allocator, StringBuilder},
 	ast::ast::{
-		AssignmentExpression, AssignmentTarget, AssignmentTargetMaybeDefault,
+		Argument, AssignmentExpression, AssignmentTarget, AssignmentTargetMaybeDefault,
 		AssignmentTargetProperty, AssignmentTargetPropertyIdentifier, BindingPattern,
 		BindingPatternKind, BindingProperty, CallExpression, ComputedMemberExpression,
 		DebuggerStatement, ExportAllDeclaration, ExportNamedDeclaration, Expression, ForStatement,
@@ -20,8 +20,14 @@ use oxc::{
 };
 
 use crate::{
+	callbacks::{CALLBACK_ATTRIBUTES, CALLBACK_CALLS, CALLBACK_CONSTRUCTORS},
 	cfg::{Config, Flags, IncumbencyMode, UrlRewriter}, changes::{CallReceiver, JsChanges}, rewrite::rewrite,
 };
+
+/// whether `name` is in one of the sorted lists in `callbacks.generated.rs`
+fn is_callback_name(list: &[&str], name: &str) -> bool {
+	list.binary_search(&name).is_ok()
+}
 
 // required stub markers
 macro_rules! audit_skip { ($($t:tt)*) => {}; }
@@ -65,6 +71,13 @@ where
 
 		self.jschanges
 			.add(rewrite!(url.span.shrink(1), Replace { text }));
+	}
+
+	/// Whether a callback conversion has its realm recorded: the stamp modes
+	/// have no stack to read it off when the incumbent is captured, so the
+	/// member is handed it just before.
+	fn stamps_conversions(&self) -> bool {
+		matches!(self.flags.incumbency, IncumbencyMode::Stamp | IncumbencyMode::LazyStamp)
 	}
 
 	fn rewrite_ident(&mut self, name: &Atom, span: Span) {
@@ -488,6 +501,26 @@ where
 
 	#[coverage_checked(NewExpression)]
 	fn visit_new_expression(&mut self, it: &NewExpression<'data>) {
+		// a constructor that converts a callback records the incumbent, so the
+		// stamp modes record the realm first - around the last argument, which
+		// is the last thing evaluated before the construct and adds none
+		if self.stamps_conversions() {
+			let name = match &it.callee {
+				Expression::Identifier(s) => Some(s.name.as_str()),
+				Expression::StaticMemberExpression(m) => Some(m.property.name.as_str()),
+				_ => None,
+			};
+			if let (Some(name), Some(last)) = (name, it.arguments.last()) {
+				if is_callback_name(CALLBACK_CONSTRUCTORS, name) {
+					let span = match last {
+						Argument::SpreadElement(s) => s.argument.span(),
+						_ => last.span(),
+					};
+					self.jschanges.add(rewrite!(span, Stamp));
+				}
+			}
+		}
+
 		match &it.callee {
 			Expression::StaticMemberExpression(_) | Expression::Identifier(_) => {
 				// new top(), new location.top(), etc
@@ -559,11 +592,15 @@ where
 			}
 		}
 
+		// `lazystamp` stamps what can reach an incumbent-sensitive member, and
+		// what converts a callback - which records the incumbent it will run
+		// under, and has to have its realm to record
+		let lazy = |name: &str| name == "postMessage" || is_callback_name(CALLBACK_CALLS, name);
 		let should_stamp = match &self.flags.incumbency {
 			IncumbencyMode::Stamp => true,
 			IncumbencyMode::LazyStamp => match &it.callee {
-				Expression::Identifier(s) => s.name == "postMessage",
-				Expression::StaticMemberExpression(m) => m.property.name == "postMessage",
+				Expression::Identifier(s) => lazy(&s.name),
+				Expression::StaticMemberExpression(m) => lazy(&m.property.name),
 				_ => false
 			}
 			_ => false,
@@ -970,6 +1007,16 @@ where
 
 	#[coverage_checked(AssignmentExpression)]
 	fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'data>) {
+		// an event handler attribute converts its callback when set: record the
+		// realm around the value, which is evaluated just before the setter runs
+		if self.stamps_conversions() {
+			if let AssignmentTarget::StaticMemberExpression(m) = &it.left {
+				if is_callback_name(CALLBACK_ATTRIBUTES, &m.property.name) {
+					self.jschanges.add(rewrite!(it.right.span(), Stamp));
+				}
+			}
+		}
+
 		match &it.left {
 			AssignmentTarget::AssignmentTargetIdentifier(s) => {
 				// location = ...

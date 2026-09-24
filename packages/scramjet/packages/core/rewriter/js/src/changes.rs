@@ -85,6 +85,8 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	},
 
 	CallFnPrelude,
+	/// insert `${cfg.stampfn}(${cfg.selfid},`
+	StampLeft,
 	/// replace span with `,${cfg.callfn}(${cfg.selfid},${cfg.tempreceiverid},${cfg.tempreceiverid}[`
 	CallFnLeft {
 		computed: bool,
@@ -380,6 +382,7 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 				"t))("
 			]),
 			Ty::OpeningParen => LL::insert(transforms!["("]),
+			Ty::StampLeft => LL::insert(transforms![&cfg.stampfn, "(", &cfg.selfid, ","]),
 			Ty::ClosingParen { semi, replace } => {
 				let vec = if semi {
 					transforms![");"]

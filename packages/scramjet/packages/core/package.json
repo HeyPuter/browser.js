@@ -13,7 +13,8 @@
 	},
 	"scripts": {
 		"build": "cd ../.. && rspack build --mode production",
-		"rewriter:build": "cd rewriter/wasm/ && bash build.sh && cd ../../",
+		"generate:callbacks": "node --experimental-strip-types --no-warnings scripts/generate-callbacks.ts",
+		"rewriter:build": "node --experimental-strip-types --no-warnings scripts/generate-callbacks.ts && cd rewriter/wasm/ && bash build.sh && cd ../../",
 		"format": "prettier --write .",
 		"lint": "eslint ./src/",
 		"lint:fix": "eslint ./src/ --fix",
@@ -54,10 +55,12 @@
 		"@types/trusted-types": "^2.0.7",
 		"@typescript-eslint/eslint-plugin": "8.62.0",
 		"@typescript-eslint/parser": "8.62.0",
+		"@webref/idl": "^3.84.0",
 		"eslint": "^10.1.0",
 		"tslib": "^2.8.1",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.11"
+		"vitest": "^4.1.11",
+		"webidl2": "^24.5.0"
 	},
 	"dependencies": {
 		"@mercuryworkshop/proxy-transports": "catalog:",
