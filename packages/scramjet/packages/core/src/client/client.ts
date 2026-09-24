@@ -786,6 +786,12 @@ export class ScramjetClient {
 	private captureSandboxedOrigin(): boolean {
 		if (!iswindow) return false;
 
+		// https://html.spec.whatwg.org/multipage/browsers.html#determining-the-creation-sandboxing-flags
+		// the parent document's active flags are inherited whatever the frame's
+		// own attribute says, and an `allow-same-origin` on it cannot lift them
+		const parent = this.parentFrame();
+		if (typeof parent === "object" && parent.sandboxedOrigin) return true;
+
 		try {
 			const frame = new this.native.window(this.global).frameElement;
 			if (!frame) return false;

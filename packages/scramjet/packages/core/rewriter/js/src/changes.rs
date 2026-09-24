@@ -24,16 +24,6 @@ macro_rules! change {
 }
 pub(crate) use change;
 
-/// what a callee that is not an ordinary member access is called with
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum CallReceiver {
-	/// a plain callee - `f()` - has no receiver
-	Undefined,
-	/// `super.m()` looks the method up on the home object but calls it with
-	/// the `this` the method already has
-	This,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum JsChangeType<'alloc: 'data, 'data> {
 	/// insert `${cfg.wrapfn}(`
@@ -84,30 +74,21 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 		op: AssignmentOperator,
 	},
 
-	CallFnPrelude,
-	/// replace span with `,${cfg.callfn}(${cfg.selfid},${cfg.tempreceiverid},${cfg.tempreceiverid}[`
-	CallFnLeft {
-		computed: bool,
+	/// replace span with `[${cfg.callfn}("${key}")]`, or `?.[` for an optional one
+	StampStaticKey {
+		key: &'alloc str,
 		optional: bool,
-		optional_call: bool,
 	},
-	CallFnRight {
-		computed: bool,
-		optional_call: bool,
-	},
-	/// replace span with `${cfg.callfn}(${cfg.selfid},${receiver},`
+	/// insert `${cfg.callfn}(`
+	StampKeyLeft,
+	/// insert `)`, outside anything else closing here
+	StampKeyRight,
+	/// replace span with `${cfg.callfn}(void 0,`, or park the callee: `(${cfg.tempcalleeid}=`
 	LiteralCallFnLeft {
-		receiver: CallReceiver,
 		optional_call: bool,
 	},
-	/// replace span with `,${cfg.tempcalleeid}==null?undefined:${cfg.callfn}(${cfg.selfid},${receiver},${cfg.tempcalleeid},`
-	LiteralCallFnRight {
-		receiver: CallReceiver,
-	},
-	/// replace span with `,${cfg.tempreceiverid}==null?undefined:(${cfg.tempreceiverid}=${cfg.tempreceiverid}.`
-	ChainGuard {
-		computed: bool,
-	},
+	/// replace span with `,${cfg.tempcalleeid}===null||${cfg.tempcalleeid}===void 0?void 0:${cfg.callfn}(void 0,${cfg.tempcalleeid},`
+	LiteralCallFnRight,
 	OpeningParen,
 	/// insert `)`
 	ClosingParen {
@@ -291,79 +272,35 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 			]),
 			Ty::ImportFn => LL::replace(transforms![&cfg.importfn, "(\"", &flags.base, "\","]),
 			Ty::MetaFn => LL::replace(transforms![&cfg.metafn, "(import.meta,\"", &flags.base, "\")"]),
-			Ty::CallFnPrelude => LL::replace(transforms!["(", &cfg.tempreceiverid, "="]),
-			Ty::CallFnLeft { computed, optional, optional_call } => {
-				let access: &str = if computed { "[" } else { "." };
-
-				// a `?.` on this link short circuits the call, so the lookup
-				// past the guard is an ordinary one: a method that is not
-				// there still throws, which is what the chain would have done.
-				// A `?.` on the call itself short circuits on the looked up
-				// value instead, so that has to be parked before the arguments
-				// are evaluated - `f?.(x)` never evaluates `x` when `f` is
-				// nullish
-				match (optional, optional_call) {
-					(false, false) => LL::replace(transforms![
-						",", &cfg.callfn, "(", &cfg.selfid, ",", &cfg.tempreceiverid, ",",
-						&cfg.tempreceiverid, access
-					]),
-					(true, false) => LL::replace(transforms![
-						",", &cfg.tempreceiverid, "==null?undefined:", &cfg.callfn, "(",
-						&cfg.selfid, ",", &cfg.tempreceiverid, ",", &cfg.tempreceiverid, access
-					]),
-					(false, true) => LL::replace(transforms![
-						",", &cfg.tempcalleeid, "=", &cfg.tempreceiverid, access
-					]),
-					(true, true) => LL::replace(transforms![
-						",", &cfg.tempreceiverid, "==null?undefined:(", &cfg.tempcalleeid, "=",
-						&cfg.tempreceiverid, access
-					]),
-				}
-			},
-			Ty::CallFnRight { computed, optional_call } => {
-				let close: &str = if computed { "]," } else { "," };
-
-				if optional_call {
-					LL::replace(transforms![
-						close, &cfg.tempcalleeid, "==null?undefined:", &cfg.callfn, "(",
-						&cfg.selfid, ",", &cfg.tempreceiverid, ",", &cfg.tempcalleeid, ","
-					])
-				} else {
-					LL::replace(transforms![close])
-				}
-			},
-			Ty::ChainGuard { computed } => LL::replace(transforms![
-				",", &cfg.tempreceiverid, "==null?undefined:(", &cfg.tempreceiverid, "=",
-				&cfg.tempreceiverid, if computed { "[" } else { "." }
+			Ty::StampStaticKey { key, optional } => LL::replace(transforms![
+				if optional { "?.[" } else { "[" },
+				&cfg.callfn,
+				"(\"",
+				key,
+				"\")]"
 			]),
-			Ty::LiteralCallFnLeft { receiver, optional_call } => {
+			Ty::StampKeyLeft => LL::insert(transforms![&cfg.callfn, "("]),
+			Ty::StampKeyRight => LL::insert(transforms![")"]),
+			// `void 0` rather than `undefined`, which a local binding can shadow
+			Ty::LiteralCallFnLeft { optional_call } => {
 				// a `?.` on the call short circuits on the callee itself, so
 				// it is parked before the arguments are evaluated
 				if optional_call {
 					LL::replace(transforms!["(", &cfg.tempcalleeid, "="])
 				} else {
-					LL::replace(transforms![
-						&cfg.callfn,
-						"(",
-						&cfg.selfid,
-						match receiver {
-							CallReceiver::Undefined => ",undefined,",
-							CallReceiver::This => ",this,",
-						}
-					])
+					LL::replace(transforms![&cfg.callfn, "(void 0,"])
 				}
 			}
-			Ty::LiteralCallFnRight { receiver } => LL::replace(transforms![
+			// nullish by identity, as `?.` is: `document.all == null` is true,
+			// but it is neither null nor undefined and `?.` calls it
+			Ty::LiteralCallFnRight => LL::replace(transforms![
 				",",
 				&cfg.tempcalleeid,
-				"==null?undefined:",
+				"===null||",
+				&cfg.tempcalleeid,
+				"===void 0?void 0:",
 				&cfg.callfn,
-				"(",
-				&cfg.selfid,
-				match receiver {
-					CallReceiver::Undefined => ",undefined,",
-					CallReceiver::This => ",this,",
-				},
+				"(void 0,",
 				&cfg.tempcalleeid,
 				","
 			]),
@@ -429,6 +366,15 @@ impl Ord for JsChange<'_, '_> {
 				(_, Ty::ScramErrFn { .. }) => Ordering::Greater,
 				(Ty::WrapFnRight { .. }, _) => Ordering::Less,
 				(_, Ty::WrapFnRight { .. }) => Ordering::Greater,
+				// a stamped key wraps the key whole, so it opens before anything
+				// else inserted where the key starts and closes after anything
+				// else inserted where it ends - `$prop` included - but still
+				// ahead of a replace that consumes text from there, like any
+				// insert
+				(Ty::StampKeyLeft, _) => Ordering::Less,
+				(_, Ty::StampKeyLeft) => Ordering::Greater,
+				(Ty::StampKeyRight, _) => if other.span.is_empty() { Ordering::Greater } else { Ordering::Less },
+				(_, Ty::StampKeyRight) => if self.span.is_empty() { Ordering::Less } else { Ordering::Greater },
 				// an insert at this position has to land before a replace that
 				// consumes text starting here, or the cursor moves past it and
 				// the insert can no longer be applied. Two rewrites meeting at

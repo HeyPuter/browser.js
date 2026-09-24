@@ -66,9 +66,7 @@ export interface ScramjetConfig {
 		pushsourcemapfn: string;
 		registerrealmfn: string;
 		trysetfn: string;
-		selfid: string;
 		templocid: string;
-		tempreceiverid: string;
 		tempcalleeid: string;
 		tempunusedid: string;
 	};

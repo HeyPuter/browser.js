@@ -29,9 +29,7 @@ pub struct Config {
 	pub registerrealmfn: String,
 
 	pub trysetfn: String,
-	pub selfid: String,
 	pub templocid: String,
-	pub tempreceiverid: String,
 	pub tempcalleeid: String,
 	pub tempunusedid: String,
 }

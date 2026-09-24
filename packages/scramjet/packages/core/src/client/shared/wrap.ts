@@ -57,24 +57,9 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 
 export const order = 4;
 export default function (client: ScramjetClient, self: GlobalThis) {
-	// a duplicate, unforgable reference to the global object, so rewrites do not have to worry about `self` being shadowed
-	Object_defineProperty(self, client.config.globals.selfid, {
-		value: self,
-		writable: false,
-		configurable: false,
-		enumerable: false,
-	});
-
-	// a temporary slot that $call can use to store the receiver
-	Object_defineProperty(self, client.config.globals.tempreceiverid, {
-		value: undefined,
-		writable: true,
-		configurable: false,
-		enumerable: false,
-	});
-
-	// the same, for the callee of an optional call, which has to be parked
-	// before the arguments are evaluated so that a nullish one can skip them
+	// a temporary slot that $call can use to park the callee of an optional
+	// call, which has to be looked up before the arguments are evaluated so
+	// that a nullish one can skip them
 	Object_defineProperty(self, client.config.globals.tempcalleeid, {
 		value: undefined,
 		writable: true,

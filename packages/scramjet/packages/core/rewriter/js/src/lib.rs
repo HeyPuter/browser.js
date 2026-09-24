@@ -67,24 +67,71 @@ fn prelude_boundary(program: &oxc::ast::ast::Program, js: &str) -> (u32, &'stati
 		return (end, if semi { "" } else { ";" });
 	}
 
-	if let Some(hashbang) = &program.hashbang {
-		// a hashbang comment runs to the end of its line, so the prelude goes
-		// after the line terminator that ends it
-		let end = hashbang.span.end as usize;
-		let rest = &js[end..];
-		let terminator = rest
-			.chars()
-			.next()
-			.filter(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
+	// a hashbang comment runs to the end of its line, so the prelude goes
+	// after the line terminator that ends it
+	let start = match &program.hashbang {
+		Some(hashbang) => match after_line(js, hashbang.span.end as usize) {
+			Some(next) => next,
+			None => return (hashbang.span.end, "\n"),
+		},
+		None => 0,
+	};
 
-		return match terminator {
-			Some('\r') if rest.as_bytes().get(1) == Some(&b'\n') => ((end + 2) as u32, ""),
-			Some(c) => ((end + c.len_utf8()) as u32, ""),
-			None => (end as u32, "\n"),
-		};
+	// so does each HTML-close comment starting a line, which is only one
+	// there: after the prelude it would read as `--` and `>`
+	// https://tc39.es/ecma262/#sec-html-like-comments
+	let mut start = start;
+	while let Some(end) = html_close_comment_end(js, start) {
+		match after_line(js, end) {
+			Some(next) => start = next,
+			None => return (js.len() as u32, "\n"),
+		}
 	}
 
-	(0, "")
+	(start as u32, "")
+}
+
+fn is_line_terminator(c: char) -> bool {
+	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+/// Just past the line terminator at `at`, or None at the end of the source.
+fn after_line(js: &str, at: usize) -> Option<usize> {
+	let rest = &js[at..];
+	let terminator = rest.chars().next().filter(|&c| is_line_terminator(c))?;
+
+	Some(if terminator == '\r' && rest.as_bytes().get(1) == Some(&b'\n') {
+		at + 2
+	} else {
+		at + terminator.len_utf8()
+	})
+}
+
+/// Where the HTML-close comment starting the line at `start` ends - the line
+/// terminator after it - if the line starts with one: whitespace and comments
+/// that stay on the line, then `-->`.
+fn html_close_comment_end(js: &str, start: usize) -> Option<usize> {
+	let mut at = start;
+	loop {
+		let rest = &js[at..];
+		let c = rest.chars().next()?;
+		if rest.starts_with("-->") {
+			let line = &js[at..];
+			return Some(at + line.find(is_line_terminator).unwrap_or(line.len()));
+		} else if rest.starts_with("/*") {
+			let close = rest[2..].find("*/")? + 4;
+			// a comment spanning lines ends this one, so what follows it
+			// starts a line of its own and the prelude does not come between
+			if rest[..close].contains(is_line_terminator) {
+				return None;
+			}
+			at += close;
+		} else if c.is_whitespace() && !is_line_terminator(c) {
+			at += c.len_utf8();
+		} else {
+			return None;
+		}
+	}
 }
 
 /// https://datatracker.ietf.org/doc/html/rfc4648#section-4
@@ -241,6 +288,9 @@ impl Rewriter {
 			config: &config,
 			rewriter: rewriter,
 			flags,
+
+			with_depth: 0,
+			chain_end: None,
 		};
 		visitor.visit_program(&parsed.program);
 		if let Some(error) = visitor.error {
@@ -256,7 +306,14 @@ impl Rewriter {
 
 		// spliced in after the rewrite rather than as one of its changes: it
 		// carries the sourcemap, which the rewrite is what produces
-		let prelude = build_prelude(&config, &visitor.flags, &sourcemap);
+		// an empty script is not run at all, and must stay empty so that it is
+		// not either: its element is only marked as started once it has text
+		// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+		let prelude = if js.is_empty() {
+			String::new()
+		} else {
+			build_prelude(&config, &visitor.flags, &sourcemap)
+		};
 		let js: Vec<'alloc, u8> = if prelude.is_empty() {
 			changed.source
 		} else {

@@ -125,6 +125,13 @@ export default function (client: ScramjetClient, self: Self) {
 		client.Intercept(class extends GlobalScope {
 			// https://html.spec.whatwg.org/multipage/web-messaging.html#window-post-message-steps
 			static postMessage(...args: any[]) {
+				// https://webidl.spec.whatwg.org/#dfn-create-operation-function
+				// the receiver is checked before any argument is converted, and
+				// converting the options runs getters. A global member gets no
+				// `checkReceiver` from `Intercept`, so the brand check is a side
+				// effect free native getter on the page's own receiver
+				new client.native.window(this).closed;
+
 				// too few arguments: the native throws the arity error itself
 				if (args.length === 0) return super.postMessage();
 

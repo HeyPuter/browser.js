@@ -117,9 +117,7 @@ function check(val) {
 			pushsourcemapfn: String::from("$pushsourcemap"),
 			registerrealmfn: String::from("$registerrealm"),
 			trysetfn: String::from("$tryset"),
-			selfid: String::from("$self"),
 			templocid: String::from("$temploc"),
-			tempreceiverid: String::from("$tempreceiver"),
 			tempcalleeid: String::from("$tempcallee"),
 			tempunusedid: String::from("$tempunused"),
 

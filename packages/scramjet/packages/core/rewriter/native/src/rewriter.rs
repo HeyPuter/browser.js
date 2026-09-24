@@ -82,9 +82,7 @@ impl NativeRewriter {
 					registerrealmfn: cfg.registerrealmfn.clone(),
 
 					trysetfn: cfg.trysetfn.clone(),
-					selfid: cfg.selfid.clone(),
 					templocid: cfg.templocid.clone(),
-					tempreceiverid: cfg.tempreceiverid.clone(),
 					tempcalleeid: cfg.tempcalleeid.clone(),
 					tempunusedid: cfg.tempunusedid.clone(),
 				},
