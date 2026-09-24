@@ -6,19 +6,7 @@ import { readFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { readFileSync } from "node:fs";
-import { writeFileSync, chmodSync } from "node:fs";
 import scramjetConfig, { tsloader } from "./packages/scramjet/rspack.config.ts";
-
-if (!process.env.CI) {
-	try {
-		writeFileSync(
-			".git/hooks/pre-commit",
-			"pnpm format\ngit update-index --again"
-		);
-		chmodSync(".git/hooks/pre-commit", 0o755);
-	} catch {}
-}
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -32,7 +20,7 @@ const cssloader = {
 	test: /\.css$/,
 	type: "asset/source",
 };
-const cdpConfig = defineConfig({
+export const cdpConfig = defineConfig({
 	name: "cdp",
 	entry: join(cdpdir, "src/index.ts"),
 	devtool: "source-map",
@@ -62,7 +50,7 @@ const cdpConfig = defineConfig({
 	},
 });
 
-const injectConfig = defineConfig({
+export const injectConfig = defineConfig({
 	name: "inject",
 	dependencies: process.env.SKIP_CORE
 		? []
@@ -94,6 +82,7 @@ const injectConfig = defineConfig({
 	},
 });
 
+// the full set is what the dev server watches; `cv` builds the pieces one by one
 export default [
 	...(process.env.SKIP_CORE ? [] : scramjetConfig),
 	cdpConfig,
