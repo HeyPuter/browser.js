@@ -1,5 +1,9 @@
 import { ScramjetClient } from "@client/index";
-import { Object_defineProperty, Reflect_apply } from "@/shared/snapshot";
+import {
+	Object_defineProperty,
+	Reflect_apply,
+	Reflect_construct,
+} from "@/shared/snapshot";
 import { CallSite, incumbencyMode, rawCallSites } from "@/shared/incumbency";
 
 /**
@@ -45,8 +49,144 @@ export function incumbentClient(client: ScramjetClient): ScramjetClient | null {
 	return (realm && client.box.globals.get(realm)) ?? null;
 }
 
+/**
+ * How many frames an `Intercept` member's body sits above its caller: the body
+ * itself, `invoke`, `attemptToCallHandler` and the proxy's `apply` - and the
+ * trampoline, with `debugTrampolines` on.
+ */
+export const interceptDepth = (client: ScramjetClient) =>
+	client.flagEnabled("debugTrampolines") ? 5 : 4;
+
+/**
+ * The same for a `client.Proxy` handler: the handler, the proxy's `apply`, and
+ * the trampoline between them with `debugTrampolines` on.
+ */
+const proxyDepth = (client: ScramjetClient) =>
+	client.flagEnabled("debugTrampolines") ? 3 : 2;
+
+/**
+ * The incumbent for the member whose body called this, `depth` frames above
+ * the page's call into it.
+ *
+ * https://html.spec.whatwg.org/multipage/webappapis.html#incumbent-settings-object
+ *
+ * The topmost script-having execution context's realm if there is one, judged
+ * by the frame at the fixed offset alone - under `pst`, whether it is a script
+ * that registered; under the stamp modes, the realm the last rewritten call
+ * recorded - and the backup incumbent settings object stack's top otherwise.
+ *
+ * Null in `none`, which records nothing, and when there is no answer at all.
+ */
+export function incumbentFor(
+	client: ScramjetClient,
+	depth: number
+): ScramjetClient | null {
+	const mode = incumbencyMode(client.context, client.url);
+
+	if (mode === "pst") {
+		// rawCallSites and this function, then the member's own frames
+		const caller = rawCallSites()?.[2 + depth];
+		const realm = caller && realmForFrame(client, caller);
+		if (realm) return realm.client;
+	} else if (mode === "stamp" || mode === "lazystamp") {
+		const incumbent = incumbentClient(client);
+		if (incumbent) return incumbent;
+	} else {
+		return null;
+	}
+
+	const stack = client.box.backupincumbents;
+
+	return stack.length ? stack[stack.length - 1] : null;
+}
+
+/**
+ * https://html.spec.whatwg.org/multipage/webappapis.html#prepare-to-run-a-callback
+ *
+ * The backup incumbent settings object stack is pushed when the host runs a
+ * callback, with the incumbent the callback was converted under - which is
+ * every API that takes one, and far too many to intercept. It only decides
+ * anything for a callback that puts no script of its own on the stack: a
+ * script-having one is its own incumbent. And the one such callback that can
+ * reach an incumbent-sensitive member is that member itself, bound.
+ *
+ * So the entry is recorded on the bound function instead, when it is made:
+ * binding a member in {@link SingletonBox.incumbentSinks} binds a stand-in
+ * that runs it with the incumbent of `bind`'s caller pushed. That is the
+ * converting realm whenever the realm that binds is the one that hands the
+ * result over, which is assumed - a function bound in one realm and handed to
+ * a host API by another answers with the first.
+ *
+ * It also answers where the spec would not ask the backup stack at all: a
+ * bound sink called directly by a script of *another* realm names the realm
+ * that bound it rather than the caller.
+ */
+function installBind(client: ScramjetClient) {
+	const box = client.box;
+
+	client.Proxy("Function.prototype.bind", {
+		apply(ctx) {
+			const target = ctx.this;
+			if (!box.incumbentSinks.has(target)) return;
+
+			const incumbent = incumbentFor(client, proxyDepth(client));
+			if (!incumbent) return;
+
+			const standIn: any = new Proxy(target as (...args: any[]) => any, {
+				apply(fn, that, args) {
+					return callWithBackupIncumbent(client, incumbent, fn, that, args);
+				},
+				construct(fn, args, newTarget) {
+					// a bound function constructed with itself as newTarget
+					// hands over its target, which is this stand-in
+					return Reflect_construct(
+						fn,
+						args,
+						newTarget === standIn ? fn : newTarget
+					);
+				},
+			});
+			box.unproxy.set(standIn, target);
+
+			ctx.this = standIn;
+		},
+	});
+}
+
+/**
+ * Run `fn` with `incumbent` on the backup incumbent settings object stack,
+ * and off it again however it exits. The stamp modes have no frames to look
+ * at, so it is also recorded as the last realm running; a rewritten call the
+ * callee makes records its own over it.
+ */
+function callWithBackupIncumbent(
+	client: ScramjetClient,
+	incumbent: ScramjetClient,
+	fn: (...args: any[]) => any,
+	that: any,
+	args: any[]
+) {
+	const box = client.box;
+	const stack = box.backupincumbents;
+	const depth = stack.length;
+	stack[depth] = incumbent;
+
+	const mode = incumbencyMode(client.context, client.url);
+	if (mode === "stamp" || mode === "lazystamp") {
+		box.incumbent = incumbent.global as Self;
+	}
+
+	try {
+		return Reflect_apply(fn, that, args);
+	} finally {
+		stack.length = depth;
+	}
+}
+
 export default function (client: ScramjetClient, self: Self) {
 	const mode = incumbencyMode(client.context, client.url);
+
+	installBind(client);
 
 	if (mode === "stamp" || mode === "lazystamp") {
 		installCallFn(client, self);
