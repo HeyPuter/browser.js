@@ -65,6 +65,7 @@ import {
 	settingsService,
 	tabsService,
 } from "..";
+import { dispositionFilename, isAttachment } from "../services/downloads";
 function findSequence(
 	top: Window,
 	target: Window,
@@ -490,7 +491,7 @@ export type RawDownload = {
 	filename: string | null;
 	url: string;
 	type: string;
-	body: BodyType;
+	body: BodyType | null;
 	length: number;
 };
 
@@ -500,17 +501,14 @@ function isDownload(
 ): boolean {
 	if (["document", "iframe"].includes(destination)) {
 		const header = responseHeaders.get("content-disposition");
-		if (header) {
-			if (header === "inline") {
-				return false; // force it to show in browser
-			} else {
-				return true;
-			}
-		} else {
-			const contentType = responseHeaders.get("content-type");
-			if (contentType && !isInlineDisplayableMimeType(contentType)) {
-				return true;
-			}
+		if (isAttachment(header)) return true;
+		const contentType = responseHeaders
+			.get("content-type")
+			?.split(";", 1)[0]
+			.trim()
+			.toLowerCase();
+		if (contentType && !isInlineDisplayableMimeType(contentType)) {
+			return true;
 		}
 	}
 
@@ -542,10 +540,14 @@ async function makeWasmResponse() {
 	};
 }
 
+type ChromeFetchResponse = Omit<ScramjetFetchResponse, "body"> & {
+	body: BodyType | null;
+};
+
 export async function handlefetch(
 	data: ScramjetFetchRequest,
 	controller: Controller
-): Promise<ScramjetFetchResponse> {
+): Promise<ChromeFetchResponse> {
 	// handle scramjet.all.js and scramjet.wasm.js requests
 	if (data.rawUrl.pathname === controller.prefix.pathname + virtualWasmPath) {
 		return await makeWasmResponse();
@@ -605,27 +607,26 @@ export async function handlefetch(
 		isDownload(fetchresponse.headers, data.rawDestination) &&
 		fetchresponse.status === 200
 	) {
-		let filename: string | null = null;
 		const disp = fetchresponse.headers.get("content-disposition");
-		if (typeof disp === "string") {
-			const filenameMatch = disp.match(/filename=["']?([^"';\n]*)["']?/i);
-			if (filenameMatch && filenameMatch[1]) {
-				filename = filenameMatch[1];
-			}
-		}
 		const length = fetchresponse.headers.get("content-length") || "0";
 
-		downloadsService.startDownload({
-			filename,
-			url: unrewriteUrl(data.rawUrl, { prefix: controller.prefix } as any),
+		void downloadsService.startDownload({
+			filename: dispositionFilename(disp),
+			url: unrewriteUrl(data.rawUrl, controller.fetchHandler.context),
 			type:
 				fetchresponse.headers.get("content-type") || "application/octet-stream",
 			length: parseInt(length),
 			body: fetchresponse.body,
 		});
 
-		// endless vortex reference
-		await new Promise(() => {});
+		// A download must not replace the current document or leave its
+		// navigation request pending forever.
+		return {
+			body: null,
+			status: 204,
+			statusText: "No Content",
+			headers: ScramjetHeaders.fromRawHeaders([]),
+		};
 	}
 
 	return fetchresponse;
