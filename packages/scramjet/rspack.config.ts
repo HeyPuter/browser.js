@@ -521,6 +521,11 @@ const typeGenConfig = defineConfig({
 	module: {
 		rules: [tsloader],
 	},
+	// this build exists only to drive declaration generation into a temp dir -
+	// nothing ships it, so its asset size is not a thing to report on
+	performance: {
+		hints: false,
+	},
 });
 
 // Load WASM for rewriter
