@@ -290,7 +290,7 @@ impl Rewriter {
 			flags,
 
 			with_depth: 0,
-			chain_end: None,
+			split_members: std::vec::Vec::new(),
 		};
 		visitor.visit_program(&parsed.program);
 		if let Some(error) = visitor.error {

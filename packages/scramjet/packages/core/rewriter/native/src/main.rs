@@ -48,6 +48,8 @@ pub struct RewriterOptions {
 	trysetfn: String,
 	#[clap(long, default_value = "$temploc")]
 	templocid: String,
+	#[clap(long, default_value = "$tempreceiver")]
+	tempreceiverid: String,
 	#[clap(long, default_value = "$tempcallee")]
 	tempcalleeid: String,
 	#[clap(long, default_value = "$tempunused")]

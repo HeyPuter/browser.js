@@ -118,6 +118,7 @@ function check(val) {
 			registerrealmfn: String::from("$registerrealm"),
 			trysetfn: String::from("$tryset"),
 			templocid: String::from("$temploc"),
+			tempreceiverid: String::from("$tempreceiver"),
 			tempcalleeid: String::from("$tempcallee"),
 			tempunusedid: String::from("$tempunused"),
 

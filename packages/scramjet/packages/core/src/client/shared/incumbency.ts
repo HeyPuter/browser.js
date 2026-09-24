@@ -239,20 +239,12 @@ export function realmForFrame(
 }
 
 /**
- * `callfn`, through which every call in a `stamp`-rewritten script records the
- * realm it is written in, in one of two shapes:
+ * `callfn`, which every call in a `stamp`-rewritten script goes through.
  *
- * - `a[$call("b")](...args)` for a member call, as its key is evaluated. It
- *   hands the key back, and the call goes ahead as the member call it was -
- *   receiver, `?.` and `super` included.
- * - `$call(void 0, f, ...args)` for any other, which makes the call itself.
- *
- * The first always passes exactly one argument and the second at least two.
- *
- * The realm is this one's, and not looked up: the name the rewriter emits
- * resolves in the realm the code is *running* in, so code `parent.eval`'d into
- * another realm reaches that realm's `$call`, which is the realm the browser
- * would call incumbent too.
+ * `$call(receiver, fn, ...args)`. The realm it records is this one's, and not
+ * passed in: the name the rewriter emits resolves in the realm the code is
+ * *running* in, so code `parent.eval`'d into another realm reaches that
+ * realm's `$call`, which is the realm the browser would call incumbent too.
  *
  * `lazystamp` narrows the rewrite to calls written as `postMessage` rather
  * than narrowing anything here - by the time a call reaches this function it
@@ -262,7 +254,7 @@ function installCallFn(client: ScramjetClient, self: Self) {
 	const box = client.box;
 
 	Object_defineProperty(self, client.config.globals.callfn, {
-		value: function (receiver: any, fn?: any, ...args: any[]) {
+		value: function (receiver: any, fn: any, ...args: any[]) {
 			// only the innermost call can be the incumbent, so there is nothing
 			// to keep a stack of, and nothing to put back afterwards either:
 			// the next rewritten call overwrites this before anything reads
@@ -272,9 +264,6 @@ function installCallFn(client: ScramjetClient, self: Self) {
 			// recorded. Restoring instead would answer a callback the host
 			// invoked with nothing at all
 			box.incumbent = self;
-
-			// a member call's key
-			if (arguments.length === 1) return receiver;
 
 			return Reflect_apply(fn, receiver, args);
 		},

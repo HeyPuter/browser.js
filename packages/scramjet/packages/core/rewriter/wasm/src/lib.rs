@@ -65,6 +65,7 @@ fn get_js_config(config: &Object) -> Result<Config> {
 
 		trysetfn: get_str(config, "trysetfn")?,
 		templocid: get_str(config, "templocid")?,
+		tempreceiverid: get_str(config, "tempreceiverid")?,
 		tempcalleeid: get_str(config, "tempcalleeid")?,
 		tempunusedid: get_str(config, "tempunusedid")?,
 	})
