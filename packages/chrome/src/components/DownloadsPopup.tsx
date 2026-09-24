@@ -1,8 +1,8 @@
-import { css, type FC } from "dreamland/core";
+import { css } from "dreamland/core";
 import { Icon } from "@components/Icon";
 import { closeMenu } from "@components/Menu";
-import { iconClose, iconFolder, iconOpen, iconPause } from "../icons";
-import { formatBytes } from "../util";
+import { iconClose, iconOpen } from "../icons";
+import { DownloadActions, DownloadStatus } from "./DownloadActions";
 import { INTERNAL_URL_PROTOCOL } from "../consts";
 import { Button } from "@components/Button";
 import { Favicon } from "@components/Favicon";
@@ -32,53 +32,19 @@ export function DownloadsPopup() {
 						</div>
 						<div class="contents">
 							<span>{b.filename}</span>
-							{use(b.progressbytes)
-								.and(
-									<span class="data">
-										{use(b.progressbytes).map((s) => formatBytes(s!))}/
-										{formatBytes(b.size)}
-									</span>
-								)
-								.or(<span class="data">{formatBytes(b.size)}</span>)}
+							<DownloadStatus entry={b} />
 						</div>
 						<div class="buttoniconcontainer">
-							{use(b.progress)
-								.and(
-									<>
-										<Button
-											variant="icon"
-											on:click={() => {
-												b.pause!();
-											}}
-										>
-											<Icon icon={iconPause}></Icon>
-										</Button>
-										<Button
-											variant="icon"
-											on:click={() => {
-												b.cancel!();
-											}}
-										>
-											<Icon icon={iconClose}></Icon>
-										</Button>
-									</>
-								)
-								.or(
-									<>
-										<Button variant="icon">
-											<Icon icon={iconFolder}></Icon>
-										</Button>
-										<Button variant="icon">
-											<Icon icon={iconOpen}></Icon>
-										</Button>
-									</>
-								)}
+							<DownloadActions entry={b} />
 						</div>
-						{use(b.progress).and(
-							<progress value={use(b.progress).map((p) => p || 0)} max="1">
-								50%
-							</progress>
-						)}
+						{use(b.progress)
+							.map((progress) => progress !== undefined)
+							.and(
+								<progress
+									value={use(b.progress).map((value) => value ?? 0)}
+									max="1"
+								/>
+							)}
 					</div>
 				))}
 			</div>

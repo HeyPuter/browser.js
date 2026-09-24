@@ -116,7 +116,9 @@ async function loadServices() {
 
 		profileService = new ProfileService(await kv.get(profile.storageKey));
 		registerSave(profileService, kv, profile.storageKey);
-		downloadsService = new DownloadsService();
+		const downloadsKey = `downloads-${profile.id}`;
+		downloadsService = new DownloadsService(await kv.get(downloadsKey));
+		registerSave(downloadsService, kv, downloadsKey);
 
 		const tabsKey = `tabs-${profile.id}`;
 		tabsService = new TabsService(await kv.get(tabsKey));
