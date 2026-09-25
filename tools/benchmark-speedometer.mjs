@@ -12,9 +12,8 @@ const express = require(
 const { chromium } = require(
 	path.join(root, "packages/scramjet/packages/runway/node_modules/playwright")
 );
-const { startHarness } = await import(
-	"../packages/scramjet/packages/runway/src/harness/scramjet/index.ts"
-);
+const { startHarness } =
+	await import("../packages/scramjet/packages/runway/src/harness/scramjet/index.ts");
 const speedometerRoot = process.env.SPEEDOMETER_ROOT ?? "/tmp/speedometer-3.1";
 const baselineRoot = process.env.PRE_IDL_ROOT ?? "/tmp/browserjs-preidl-bench";
 const iterations = Number(process.env.SPEEDOMETER_ITERATIONS ?? 10);
