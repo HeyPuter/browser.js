@@ -77,9 +77,18 @@ export default defineProject(import.meta.dirname, {
 			run: (ctx) => ctx.sh`node --no-warnings=ExperimentalWarning devserver.ts`,
 		},
 		format: {
-			desc: "prettier --write across the whole repo",
+			desc: "oxfmt across the whole repo, prettier for core's client/",
 			persistent: true,
-			run: (ctx) => ctx.sh`pnpm exec prettier --write . ${ctx.args}`,
+			run: async (ctx) => {
+				// oxfmt has no plugin API, so client/ -- the only code with
+				// `.Intercept(class ...)` calls for tools/prettier/intercept-hug.mjs to
+				// hug -- is excluded in .oxfmtrc.json and stays on prettier
+				const checking = ctx.args.some(
+					(a) => a === "--check" || a === "--list-different"
+				);
+				await ctx.sh`pnpm exec oxfmt ${ctx.args}`;
+				await ctx.sh`pnpm exec prettier --experimental-cli ${checking ? [] : ["--write"]} packages/scramjet/packages/core/src/client ${ctx.args}`;
+			},
 		},
 		lint: {
 			desc: "eslint across the whole repo",
