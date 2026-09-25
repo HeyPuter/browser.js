@@ -3,6 +3,7 @@ import {
 	Arguments,
 	Constructor,
 	idlDOMString,
+	idlUSVString,
 	Returns,
 	Type,
 } from "@client/webidl";
@@ -18,8 +19,15 @@ import {
 } from "@/shared/snapshot";
 
 /** The init members a string-input `fetch()` / `new Request()` reads, sorted. */
-const URL_INIT_MEMBERS = ["credentials", "headers", "mode"] as const;
-/** The only one anything else has to look at. */
+const URL_INIT_MEMBERS = [
+	"credentials",
+	"headers",
+	"mode",
+	"referrer",
+] as const;
+/** The only ones anything else has to look at. */
+const REQUEST_INIT_MEMBERS = ["headers", "referrer"] as const;
+/** The only one a `Response` has to look at. */
 const HEADERS_INIT_MEMBER = ["headers"] as const;
 
 /**
@@ -80,6 +88,35 @@ export default function (client: ScramjetClient, self: Self) {
 			: init;
 
 	/**
+	 * A `RequestInit.referrer` as the native constructor should see it.
+	 *
+	 * The native parses it against the proxy's URL and turns anything not
+	 * same-origin with the proxy into `about:client`, so the site's URL has to
+	 * be judged against the site's origin here and handed over as the proxy's.
+	 * The service worker reads it back off the request.
+	 *
+	 * https://fetch.spec.whatwg.org/#dom-request (the `referrer` steps)
+	 */
+	const rewriteReferrer = (referrer: string): string => {
+		if (referrer === "") return referrer;
+
+		let parsed: URL;
+		try {
+			parsed = new _URL(referrer, client.meta.base);
+		} catch {
+			// the native's TypeError to throw, parsing it against any base
+			return referrer;
+		}
+
+		if (parsed.protocol === "about:" && parsed.pathname === "client") {
+			return "about:client";
+		}
+		if (parsed.origin !== client.siteOrigin) return "about:client";
+
+		return client.rewriteUrl(parsed.href);
+	};
+
+	/**
 	 * A `RequestInit` / `ResponseInit` with the members named by `keys` read
 	 * exactly once, and a tagged `headers` swapped for the corrected view.
 	 *
@@ -131,6 +168,9 @@ export default function (client: ScramjetClient, self: Self) {
 		}
 		if (client.box.taggedHeaders.has(members.headers as Headers)) {
 			members.headers = toNativeHeaders(members.headers as Headers);
+		}
+		if (members.referrer !== undefined) {
+			members.referrer = rewriteReferrer(idlUSVString(members.referrer));
 		}
 
 		const view = new Proxy(init as object, {
@@ -254,7 +294,7 @@ export default function (client: ScramjetClient, self: Self) {
 		static async fetch(input: RequestInfo, requestInit?: RequestInit) {
 			const { init, members, seen } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+				typeof input === "string" ? URL_INIT_MEMBERS : REQUEST_INIT_MEMBERS
 			);
 			input =
 				typeof input === "string"
@@ -279,7 +319,7 @@ export default function (client: ScramjetClient, self: Self) {
 		static konstructor(input: RequestInfo, requestInit?: RequestInit) {
 			const { init, members } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+				typeof input === "string" ? URL_INIT_MEMBERS : REQUEST_INIT_MEMBERS
 			);
 			if (typeof input === "string") {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
@@ -298,6 +338,17 @@ export default function (client: ScramjetClient, self: Self) {
 			return String_startsWith(url, client.context.prefix.href)
 				? client.unrewriteUrl(url)
 				: url;
+		}
+
+		// the referrer init was handed to the native as a proxy URL, and one
+		// that is not (`about:client`, or none) is the same for the site
+		@Type("USVString")
+		get referrer() {
+			const referrer = super.referrer;
+
+			return String_startsWith(referrer, client.context.prefix.href)
+				? client.unrewriteUrl(referrer)
+				: referrer;
 		}
 	});
 	client.Intercept(class extends Response {

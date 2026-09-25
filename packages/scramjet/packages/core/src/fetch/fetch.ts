@@ -18,6 +18,7 @@ import { rewriteBody } from "./body";
 import { Tap } from "@/Tap";
 import {
 	computeFetchSite,
+	determineReferrer,
 	rewriteRequestHeaders,
 	attachCarriedHeaders,
 	rewriteResponseHeaders,
@@ -30,6 +31,7 @@ export async function doHandleFetch(
 	request: ScramjetFetchRequest
 ): Promise<ScramjetFetchResponse> {
 	const parsed = parseRequest(request, handler);
+	parsed.referrer = determineReferrer(handler, request, parsed);
 
 	if (isBlobOrDataUrl(parsed.url)) {
 		return handleBlobOrDataUrlFetch(handler, request, parsed);
@@ -71,16 +73,6 @@ export async function doHandleFetch(
 	// set-cookie needs to take the raw headers. after this, we can flatten the headers into a ScramjetHeaders object
 	await handleCookies(handler, request, parsed, response.rawHeaders);
 
-	if (isDocument(parsed)) {
-		// for document.referer
-		parsed.trackedClient?.history.push({
-			url: parsed.url.href,
-			refererPolicy: ScramjetHeaders.fromRawHeaders(response.rawHeaders).get(
-				"referrer-policy"
-			),
-		});
-	}
-
 	const responseHeaders = await rewriteResponseHeaders(
 		handler,
 		request,
@@ -90,7 +82,6 @@ export async function doHandleFetch(
 
 	if (isRedirect(response)) {
 		const location = new _URL(responseHeaders.get("location"));
-		const referer = newheaders.get("Referer");
 
 		// Compute the page (initiator) URL once. The initiator never changes
 		// through a redirect chain, so prefer the propagated `sj$io` value if
@@ -138,7 +129,16 @@ export async function doHandleFetch(
 			}
 		}
 
-		location.searchParams.set(QP.referrerSource, referer ?? "");
+		// the browser follows the redirect with the whole referrer, since in the
+		// proxy's URL space it has not left the origin. hand on the one this hop
+		// actually sent, which is all the next hop may start from
+		location.searchParams.set(QP.referrerSource, parsed.referrer ?? "");
+		if (isDocument(parsed)) {
+			location.searchParams.set(
+				QP.referrerPolicy,
+				parsed.initialReferrerPolicy ?? request.rawReferrerPolicy ?? ""
+			);
+		}
 		if (crossSiteRedirect) location.searchParams.set(QP.crossSiteRedirect, "1");
 		if (propagatedFetchSite)
 			location.searchParams.set(QP.fetchSite, propagatedFetchSite);
