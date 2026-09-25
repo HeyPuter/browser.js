@@ -39,13 +39,8 @@ jobs:
           rewriter-path: packages/scramjet/packages/core/rewriter
           github-token: ${{ github.token }}
 
-      - name: Pack Scramjet
-        run: pnpm pack
-        working-directory: packages/scramjet/packages/core
-
-      - name: Pack Scramjet Controller
-        run: pnpm pack
-        working-directory: packages/scramjet/packages/controller
+      - name: Build and pack Scramjet (release rewriter, core, controller, utils, bootstrap, create-proxy-app)
+        run: ./cv npm --yes
 
       - name: Upload Artifact (scramjet/core)
         uses: actions/upload-artifact@v4
@@ -103,8 +98,7 @@ jobs:
         working-directory: packages/scramjet/packages/core
 
       - name: Run package validation tests
-        run: pnpm test:package
-        working-directory: packages/scramjet
+        run: ./cv validate
 
   tests:
     name: Run Scramjet Tests
@@ -146,8 +140,7 @@ jobs:
         working-directory: packages/scramjet/packages/runway
 
       - name: Run Runway tests
-        run: OMIT_WPT=1 pnpm test --parallel 4
-        working-directory: packages/scramjet/packages/runway
+        run: OMIT_WPT=1 CV_PREBUILT=core,controller ./cv test --parallel 4
 
   rewritertests:
     name: Run Rewriter Tests
@@ -201,9 +194,6 @@ jobs:
           name: scramjet
           path: packages/scramjet/packages/core/dist
 
-      - name: Build Dreamland
-        run: pnpm build:dreamland
-
       # - name: Get Chii submodule commit hash
       #   id: chii-hash
       #   run: echo "hash=$(git submodule status chii | awk '{print $1}')" >> $GITHUB_OUTPUT
@@ -234,9 +224,15 @@ jobs:
       #     pnpm build
 
       - name: Build Frontend
-        run: |
-          SKIP_CORE=1 pnpm build
-          VITE_SENTRY_URL="https://js.sentry-cdn.com/89b0486bec1f3d54d07953d81a046161.min.js" VITE_PUTER_BRANDING=1 VITE_PUTER_WISP_PROMOTION=1 VITE_PLAUSIBLE_URL="https://plausible.io/js/pa-NRxWcAzajMavHo05JTRcw.js" VITE_ISOLATION_ORIGIN="https://puter.zone" pnpm build:chrome
+        # core's dist comes from the build job above, so the rust toolchain is not needed here
+        env:
+          CV_PREBUILT: core
+          VITE_SENTRY_URL: "https://js.sentry-cdn.com/89b0486bec1f3d54d07953d81a046161.min.js"
+          VITE_PUTER_BRANDING: "1"
+          VITE_PUTER_WISP_PROMOTION: "1"
+          VITE_PLAUSIBLE_URL: "https://plausible.io/js/pa-NRxWcAzajMavHo05JTRcw.js"
+          VITE_ISOLATION_ORIGIN: "https://puter.zone"
+        run: ./cv build chrome
 
       - name: Upload Artifact (frontend)
         uses: actions/upload-artifact@v4
