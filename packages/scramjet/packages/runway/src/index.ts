@@ -463,7 +463,7 @@ async function runTestOnHarness(
 	await resetTestFrame(page);
 	await syncRunwayCleartextHarness(page, test);
 	await page.evaluate(
-		({ mode, siteFlags, debugTrampolines }) => {
+		({ mode, debugTrampolines }) => {
 			const harness = window as any;
 			const config = harness.__runwayController?.scramjetConfig;
 			if (!config) return;
@@ -471,24 +471,15 @@ async function runTestOnHarness(
 				harness.__runwayIncumbencyDefaults = {
 					mode: config.flags.incumbency,
 					debugTrampolines: config.flags.debugTrampolines,
-					siteFlags: { ...config.siteFlags },
 				};
 			}
 			const defaults = harness.__runwayIncumbencyDefaults;
 			config.flags.incumbency = mode ?? defaults.mode;
 			config.flags.debugTrampolines =
 				debugTrampolines ?? defaults.debugTrampolines;
-			config.siteFlags = { ...defaults.siteFlags };
-			for (const [pattern, incumbency] of Object.entries(siteFlags ?? {})) {
-				config.siteFlags[pattern] = {
-					...config.siteFlags[pattern],
-					incumbency,
-				};
-			}
 		},
 		{
 			mode: test.incumbencyMode,
-			siteFlags: test.incumbencySiteFlags,
 			debugTrampolines: test.debugTrampolines,
 		}
 	);
@@ -694,7 +685,6 @@ async function runTestOnHarness(
 				if (!config || !defaults) return;
 				config.flags.incumbency = defaults.mode;
 				config.flags.debugTrampolines = defaults.debugTrampolines;
-				config.siteFlags = { ...defaults.siteFlags };
 			});
 	}
 }

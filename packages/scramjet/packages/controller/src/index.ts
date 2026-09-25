@@ -16,6 +16,7 @@ import {
 	type FetchHooks,
 	type ScramjetConfig,
 	type ScramjetContext,
+	type ScramjetFlags,
 	type ScramjetInterface,
 	type TrackedHistoryState,
 	Plugin,
@@ -210,6 +211,11 @@ type ControllerInit = {
 
 type FrameOptions = {
 	plugins: ManagedPlugin[];
+	/**
+	 * Overrides of the controller's flags for this frame, and for everything
+	 * loaded in it: its subframes and workers run with the same flags.
+	 */
+	flags?: Partial<ScramjetFlags>;
 };
 
 export class Controller {
@@ -711,6 +717,11 @@ function yieldGetInjectScripts(
 export class Frame {
 	id: string;
 	prefix: string;
+	/**
+	 * The controller's config with this frame's flags applied. A frame with its
+	 * own flags takes a copy when it is created.
+	 */
+	scramjetConfig: ScramjetConfig;
 	fetchHandler: ScramjetFetchHandler;
 	hooks: {
 		fetch: FetchHooks;
@@ -720,13 +731,13 @@ export class Frame {
 
 	get context(): ScramjetContext {
 		return {
-			config: this.controller.scramjetConfig,
+			config: this.scramjetConfig,
 			prefix: new URL(this.prefix, location.href),
 			cookieJar: this.controller.cookieJar,
 			interface: {
 				getInjectScripts: yieldGetInjectScripts(
 					this.controller.config,
-					this.controller.scramjetConfig,
+					this.scramjetConfig,
 					new URL(this.prefix, location.href),
 					this.controller.cookieJar,
 					this.controller.config.codec.encode,
@@ -746,7 +757,7 @@ export class Frame {
 						setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 						delete self.WASM;
 
-						const sjconfig = ${JSON.stringify(this.controller.scramjetConfig)};
+						const sjconfig = ${JSON.stringify(this.scramjetConfig)};
 						const prefix = new URL("${this.prefix}", location.href);
 
 						const context = {
@@ -784,6 +795,14 @@ export class Frame {
 	) {
 		this.id = makeId();
 		this.prefix = this.controller.prefix + this.id + "/";
+		// without overrides the frame shares the controller's config, so changes
+		// to it still reach the frame
+		this.scramjetConfig = options.flags
+			? {
+					...controller.scramjetConfig,
+					flags: { ...controller.scramjetConfig.flags, ...options.flags },
+				}
+			: controller.scramjetConfig;
 
 		this.fetchHandler = new ScramjetFetchHandler({
 			crossOriginIsolated: self.crossOriginIsolated,
