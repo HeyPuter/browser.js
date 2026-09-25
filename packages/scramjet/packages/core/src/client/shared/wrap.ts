@@ -2,7 +2,13 @@ import { iswindow } from "@client/entry";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
-import { Object_defineProperty } from "@/shared/snapshot";
+import {
+	Object_defineProperty,
+	Object_keys,
+	Array_filter,
+	drain,
+	String_startsWith,
+} from "@/shared/snapshot";
 
 export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 	let wrappedParent: Window | null = null;
@@ -190,5 +196,40 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		},
 		writable: false,
 		configurable: false,
+	});
+
+	// Hide the shim's own globals from key enumeration.
+	//
+	// They are defined non-enumerable, so `Object.keys` and `for-in` already
+	// miss them -- but `getOwnPropertyNames` and `Reflect.ownKeys` report
+	// non-enumerable properties too, and walking the global is the first thing
+	// a fingerprinter does. A page reading
+	// `Object.getOwnPropertyNames(window)` got `$scramjet`,
+	// `$scramjetController`, `$scramjet$rewrite` and the rest back by name,
+	// and `Object.prototype` handed over `$scramjet__location` and its
+	// siblings -- none of which exist on any browser.
+	//
+	// `$scramjet` prefixes every one of them, and a page that has its own is
+	// already broken under a proxy that claims the name.
+	const isShimName = (k: unknown) =>
+		typeof k === "string" && String_startsWith(k, "$scramjet");
+
+	client.Proxy(["Object.getOwnPropertyNames", "Reflect.ownKeys"], {
+		apply(ctx) {
+			const keys = ctx.call() as (string | symbol)[];
+
+			return ctx.return(Array_filter(keys, (k) => !isShimName(k)));
+		},
+	});
+
+	client.Proxy("Object.getOwnPropertyDescriptors", {
+		apply(ctx) {
+			const descs = ctx.call() as Record<string, unknown>;
+			for (const k of drain(Object_keys(descs))) {
+				if (isShimName(k)) delete descs[k];
+			}
+
+			return ctx.return(descs);
+		},
 	});
 }
