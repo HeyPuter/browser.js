@@ -12,8 +12,40 @@ import {
 	ScramjetFetchRequest,
 } from ".";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
-import { _URL, _Set } from "@/shared/snapshot";
+import {
+	_URL,
+	_Set,
+	ArrayBuffer_isView,
+	ArrayBuffer_prototype_byteLength,
+	Blob_prototype_size,
+	Reflect_apply,
+	String,
+	TextEncoder_encode,
+} from "@/shared/snapshot";
 import { createReferrerString } from "./util";
+import { applyClientHints, clientHintsAllowed } from "./clienthints";
+
+/** A body's length in BYTES, or null when only the transport can know. */
+function bodyLength(body: unknown): number | null {
+	if (body === null || body === undefined) return null;
+	if (typeof body === "string") return TextEncoder_encode(body).length;
+	if (ArrayBuffer_isView(body)) return body.byteLength;
+	// the byteLength and size getters read the internal slots, so they tell a
+	// buffer or a Blob apart without `instanceof`, whatever realm it came from
+	try {
+		return Reflect_apply(ArrayBuffer_prototype_byteLength, body, []);
+	} catch {
+		// not an ArrayBuffer
+	}
+	try {
+		return Reflect_apply(Blob_prototype_size, body, []);
+	} catch {
+		// not a Blob
+	}
+
+	// A stream. Chromium sends no `content-length` for one either.
+	return null;
+}
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -137,10 +169,39 @@ export function rewriteRequestHeaders(
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");
 
+	// The browser's own referrer, when it gave a full one, outranks
+	// `rawClientUrl` -- because it is the only correctly TIMED answer.
+	//
+	// Blink fixes a request's referrer when the request is CREATED.
+	// `rawClientUrl` is `client.url`, read by `await clients.get()` inside the
+	// fetch handler, which runs afterwards. Any same-document URL change in
+	// that window -- a `history.replaceState` -- silently rewrites the Referer
+	// of a request that was already on its way.
+	//
+	// Measured on rateyourmusic, where it costs the challenge: the interstitial
+	// replaceStates itself to `/?__cf_chl_rt_tk=<token>`, loads
+	// `orchestrate/chl_page/v1`, and replaceStates the token back off. A
+	// direct load's request carries
+	// `referer: https://example.com/?__cf_chl_rt_tk=...` where the proxied one
+	// carried a bare `https://example.com/` -- the token gone, on the one
+	// request whose response carries the served challenge configuration. No
+	// request is ever made for a URL holding that token, so it only ever
+	// exists in place.
+	//
+	// Only when it is a full URL under the prefix. A policy that trims the
+	// referrer to an origin gives something that does not unrewrite to a target
+	// URL at all, and there `rawClientUrl` is still the better answer -- so the
+	// old order is kept for every case except the one it gets wrong.
+	const timedReferrer =
+		request.rawReferrer &&
+		request.rawReferrer.startsWith(handler.context.prefix.href)
+			? new _URL(request.rawReferrer)
+			: undefined;
 	const rawOriginUrl =
 		parsed.referrerSourceUrl !== undefined
 			? parsed.referrerSourceUrl
-			: request.rawClientUrl ||
+			: timedReferrer ||
+				request.rawClientUrl ||
 				(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
 	const originUrl =
 		rawOriginUrl &&
@@ -152,7 +213,29 @@ export function rewriteRequestHeaders(
 		rawOriginUrl &&
 		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
 	) {
-		headers.set("Origin", originUrl.origin);
+		// https://fetch.spec.whatwg.org/#origin-header
+		//
+		// "If request's method is neither GET nor HEAD, or request's mode is
+		// websocket or cors" -- a plain GET for a script, an image or a
+		// document carries no Origin at all. This was setting one on every
+		// request that had an initiator under the prefix, so the proxy
+		// announced an origin where a browser announces nothing.
+		//
+		// Measured at the wire against a direct Chromium load of the same page:
+		// three URLs -- `orchestrate/chl_page/v1`, `favicon.ico` and the
+		// Turnstile widget -- carried an `origin` header through the proxy and
+		// no Origin at all direct. All plain GETs.
+		//
+		// `computeFetchMode` rather than `request.mode`, for the reason the
+		// Sec-Fetch-Mode comment below gives: the service worker reports the
+		// mode against the PROXY's URL space.
+		const method = (request.method || "GET").toUpperCase();
+		const originMode = computeFetchMode(request, parsed);
+		if (method !== "GET" && method !== "HEAD") {
+			headers.set("Origin", originUrl.origin);
+		} else if (originMode === "cors" || originMode === "websocket") {
+			headers.set("Origin", originUrl.origin);
+		}
 
 		const referer = createReferrerString(
 			originUrl,
@@ -174,6 +257,26 @@ export function rewriteRequestHeaders(
 	}
 
 	applyFetchMetadataHeaders(headers, request, parsed, handler);
+	// After everything else, and keyed on the TARGET origin: the browser put
+	// the low-entropy three on this request for the PROXY's origin, and the
+	// high-entropy ones are owed to whoever asked for them by name.
+	applyClientHints(
+		headers,
+		parsed.url,
+		clientHintsAllowed(parsed.url, parsed.fetchInitiatorOrigin)
+	);
+
+	// How long the body is, when that is knowable.
+	//
+	// The transport frames a length of its own once it is handed bytes rather
+	// than a stream (see `controller/src/sw.ts`), but it appends the header
+	// where Chromium leads with it. Setting it here puts it through
+	// `toRawHeaders`, which orders it against the measured table.
+	//
+	// A ReadableStream is the one case with no answer, and it is also the one
+	// case Chromium has no answer for either: that is when it uses chunked.
+	const len = bodyLength(request.body);
+	if (len !== null) headers.set("content-length", String(len));
 
 	return headers;
 }
@@ -234,10 +337,12 @@ function applyFetchMetadataHeaders(
 	// and fall back to a destination-based default for everything else.
 	headers.set("Sec-Fetch-Mode", computeFetchMode(request, parsed));
 
+	let emulatedTopLevel = false;
 	if (parsed.destination === "iframe") {
 		if (!parsed.isIframe) {
 			// emulate a top-level navigation
 			headers.set("Sec-Fetch-Dest", "document");
+			emulatedTopLevel = true;
 		} else {
 			headers.set("Sec-Fetch-Dest", "iframe");
 		}
@@ -261,6 +366,26 @@ function applyFetchMetadataHeaders(
 		request.initialHeaders.get("sec-fetch-user") === "?1"
 	) {
 		headers.set("Sec-Fetch-User", "?1");
+	} else if (emulatedTopLevel && site === "none") {
+		// The Dest emulation two blocks up is only half of the lie. Measured
+		// against Chromium 155, a browser attaches `Sec-Fetch-User` to a
+		// navigation if and only if
+		// transient user activation is live -- the same frame, the same URL,
+		// navigated from a click sends `?1` and navigated from a timer six
+		// seconds later does not.
+		//
+		// `Sec-Fetch-Site: none` means browser-initiated: a typed URL, a
+		// bookmark, a new tab. Every way of producing one is a user acting, so
+		// Chrome never sends this combination without `?1`, and claiming
+		// `Dest: document` + `Mode: navigate` + `Site: none` while withholding
+		// it produces a request no browser makes. That is worse than either
+		// lie alone, because it is the ENTRY navigation -- the request an
+		// anti-bot decides on before a line of the page's JavaScript runs.
+		//
+		// Only here. A scripted `location.href` inside the guest computes a
+		// real site of same-origin or cross-site, takes neither branch, and
+		// keeps correctly saying nothing.
+		headers.set("Sec-Fetch-User", "?1");
 	}
 
 	// Sec-Fetch-Storage-Access: per https://privacycg.github.io/storage-access-headers/.
@@ -275,6 +400,68 @@ function applyFetchMetadataHeaders(
 	if (site === "cross-site" && requestIncludesCredentials(request, parsed)) {
 		headers.set("Sec-Fetch-Storage-Access", "none");
 	}
+
+	applyPriorityHeader(headers, parsed, emulatedTopLevel);
+
+	// No `accept-encoding`: it is the transport's to send, because the
+	// transport is what decodes the response. Chromium offers `gzip, deflate,
+	// br, zstd`, but a server takes whichever it likes best, and a transport
+	// offered an encoding it cannot decode fails the request outright -
+	// libcurl answers zstd with "Unrecognized or bad HTTP Content or
+	// Transfer-Encoding".
+}
+
+/**
+ * RFC 9218 extensible priorities, as Chrome sends them.
+ *
+ * Measured against Chromium 155 over HTTP/2, one page pulling one of each kind
+ * against a throwaway h2 server. The numbers are recorded here because this is
+ * where they are used:
+ *
+ *   document   u=0, i      iframe   u=0, i      style  u=0
+ *   script     u=1         font     u=1         fetch  u=1, i
+ *   image      u=2, i      favicon  u=1, i
+ *   script defer/async     (no header at all)
+ *   image from `new Image()` after parse      `i`
+ *
+ * The default is `u=3, i=0`, and Chrome omits whatever matches it -- which is
+ * why a deferred script sends nothing and a late image sends `i` alone.
+ *
+ * Only the destinations whose value does not depend on something a service
+ * worker cannot see. `script` and `image` are deliberately absent: the same
+ * destination is `u=1` or nothing depending on `defer`/`async`, and `u=2, i`
+ * or `i` depending on whether the parser or a script asked for it, and neither
+ * distinction survives into `event.request`. Guessing one of the two would
+ * replace "header missing" with "header wrong", which is the same size of
+ * difference and harder to find later.
+ *
+ * Sent regardless of protocol because the protocol is not known here -- ALPN
+ * settles it inside the transport, long after this. A browser sends none on
+ * HTTP/1.1, so there it is one header more than Chromium's; only the transport
+ * learns the protocol, so dropping it there is the transport's to do.
+ */
+function applyPriorityHeader(
+	headers: ScramjetHeaders,
+	parsed: ScramjetFetchParsed,
+	emulatedTopLevel: boolean
+) {
+	// An iframe the proxy is presenting as a top-level document is still
+	// `u=0, i` -- measured, a real iframe and a real document agree on this
+	// one -- so the emulation costs nothing here.
+	void emulatedTopLevel;
+
+	const priority = {
+		document: "u=0, i",
+		iframe: "u=0, i",
+		frame: "u=0, i",
+		embed: "u=0, i",
+		object: "u=0, i",
+		style: "u=0",
+		font: "u=1",
+		empty: "u=1, i",
+	}[parsed.destination || "empty"];
+
+	if (priority) headers.set("Priority", priority);
 }
 
 /**

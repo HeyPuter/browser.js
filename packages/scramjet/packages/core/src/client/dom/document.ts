@@ -1,6 +1,7 @@
 import { IncrementalHtmlRewriter, rewriteHtml } from "@rewriters/html";
-import { rewriteBlob } from "@rewriters/url";
+import { rewriteBlob, unrewriteUrl } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
+import { SCRAMJETCLIENT } from "@/symbols";
 import {
 	Array_join,
 	String,
@@ -167,6 +168,47 @@ export default function (client: ScramjetClient, self: Self) {
 		return url;
 	};
 
+	/** A referrer the browser recorded, as a guest URL - or null if it is none. */
+	const guestUrl = (referrer: string): _URL | null => {
+		try {
+			return new _URL(unrewriteUrl(referrer, client.context));
+		} catch {
+			return null;
+		}
+	};
+
+	/** The document's real origin - the proxy's - or "" where it is opaque. */
+	const proxyOrigin = (): string => {
+		try {
+			return client.global.location.origin;
+		} catch {
+			return "";
+		}
+	};
+
+	/**
+	 * A subframe's referrer, from the document that created it; null for a
+	 * frame with no creator in reach. A parent that cannot be reached is a
+	 * cross-origin one, and the platform reports no referrer for that either.
+	 */
+	const creatorReferrer = (): string | null => {
+		try {
+			const global = client.global as unknown as Window;
+			const parentWindow = global.parent;
+			if (!parentWindow || parentWindow === global) return null;
+			const parentClient = parentWindow[SCRAMJETCLIENT];
+			if (!parentClient) return null;
+
+			return createReferrerString(
+				parentClient.url,
+				client.url,
+				client.meta.referrerPolicy ?? null
+			);
+		} catch {
+			return null;
+		}
+	};
+
 	client.Intercept(class extends Document {
 		/**
 		 * https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain
@@ -243,16 +285,76 @@ export default function (client: ScramjetClient, self: Self) {
 			// live one's history says
 			if (!super.defaultView) return "";
 
-			if (!client.history) return "";
-			if (client.history.length < 2) return "";
-			const lastState = client.history[client.history.length - 2];
-			const referrerURL = new _URL(lastState.url);
+			// Initial blank documents copy the creator's URL without applying
+			// referrer policy. The native value also preserves creation-time
+			// state when the parent later changes its URL with history.replaceState.
+			// https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-browsing-context
+			if (super.URL === "about:blank") {
+				const referrer = super.referrer;
+				if (String_startsWith(referrer, client.context.prefix.href)) {
+					return unrewriteUrl(referrer, client.context);
+				}
+				// A creator outside the proxy must not disclose the proxy's own URL.
+				return referrer === "about:blank" ? referrer : "";
+			}
 
-			return createReferrerString(
-				referrerURL,
-				client.url,
-				lastState.refererPolicy
-			);
+			// The browser supplies the referrer URL; scramjet applies the policy.
+			//
+			// Each half is wrong alone. `client.history` records document FETCHES,
+			// so it cannot see a document whose URL the History API changed --
+			// and Cloudflare's interstitial moves itself to
+			// `/?__cf_chl_tk=<token>` before navigating, which is why the token
+			// was being dropped (145 characters in a browser against 26 here).
+			// The browser knows that URL, because it sent it as `Referer`.
+			//
+			// But the browser applied the policy to the PROXIED origins, where
+			// everything is localhost:4500 and therefore same-origin. For the
+			// Turnstile widget -- genuinely cross-origin to the page it is in --
+			// that turns a `same-origin` policy's "" into the embedder's URL.
+			// Measured against a direct load: "" there, the embedding page's
+			// URL through the proxy.
+			//
+			// So take the URL from the browser and judge it against the REAL
+			// origins, which is what `createReferrerString` is for.
+			const current = client.history?.[client.history.length - 1];
+			if (current && current.referrer) {
+				const real = guestUrl(current.referrer);
+				// A referrer that does not unrewrite to a guest url belongs to
+				// the embedding application, and handing that to the guest
+				// discloses the proxy. Falling through is right: the proxy
+				// cannot vouch for it.
+				const chromeOrigin = proxyOrigin();
+				const ours =
+					!!real &&
+					!(chromeOrigin && String_startsWith(real.href, chromeOrigin)) &&
+					!String_startsWith(real.pathname, client.context.prefix.pathname);
+				if (ours) {
+					return createReferrerString(
+						real,
+						client.url,
+						current.refererPolicy ?? client.meta.referrerPolicy ?? null
+					);
+				}
+			}
+
+			if (client.history && client.history.length >= 2) {
+				const lastState = client.history[client.history.length - 2];
+				const referrerURL = new _URL(lastState.url);
+
+				return createReferrerString(
+					referrerURL,
+					client.url,
+					lastState.refererPolicy
+				);
+			}
+
+			// A subframe's referrer is the document that CREATED it, not a
+			// previous navigation inside it -- and a frame usually has none,
+			// which is why the history path above answers "" for every iframe.
+			// Cloudflare's Turnstile widget reads `document.referrer` from
+			// inside its own frame and got "" where a browser gives it the
+			// embedding page.
+			return creatorReferrer() ?? "";
 		}
 	});
 
