@@ -118,8 +118,28 @@ export class TextLayer {
 		return new this.client.native.CharacterData(node).data;
 	}
 
+	/**
+	 * Write `node`'s data for scramjet's own bookkeeping - the rewritten whole,
+	 * a blanked or restored node - where no MutationObserver can see it. What
+	 * the page is owed a record for is queued by {@link echo}.
+	 */
 	private writeData(node: CharacterData, text: string): void {
+		this.client.box.mutations.hide(this.client, node, () => {
+			new this.client.native.CharacterData(node).data = text;
+		});
+	}
+
+	/** Write `node`'s data as the page's own change, which observers see. */
+	private writeVisible(node: CharacterData, text: string): void {
 		new this.client.native.CharacterData(node).data = text;
+	}
+
+	/**
+	 * Queue the characterData record a change to `node` makes natively, with
+	 * `old` - the page's text before it - as its old value.
+	 */
+	private echo(node: CharacterData, old: string): void {
+		this.client.box.mutations.echo(this.client, node, old);
 	}
 
 	/** Whether `element` is a script or a style, in HTML or in SVG. */
@@ -416,14 +436,19 @@ export class TextLayer {
 			// record left over from a script this node used to live in would
 			// answer for it forever
 			this.sources.delete(node);
-			this.writeData(node, text);
+			this.writeVisible(node, text);
 
 			return;
 		}
 
 		this.adopt(owner);
+		const old = this.data(node);
 		this.sources.set(node, text);
 		this.sync(owner);
+		// https://dom.spec.whatwg.org/#concept-cd-replace queues a record for
+		// the node the page changed, changed or not - where the document's
+		// only write was to the first child, if it wrote at all
+		this.echo(node, old);
 	}
 
 	/**
@@ -456,16 +481,27 @@ export class TextLayer {
 			const node = child as CharacterData;
 			let merged = this.data(node);
 			if (merged === "") {
-				this.sources.delete(node);
 				nElement.removeChild(node);
+				// it may be the first child, holding the rewritten whole
+				this.restore(node);
 				child = next;
 				continue;
 			}
+			// Blink's order, merge by merge: an empty sibling is removed; a
+			// non-empty one is appended - one characterData record, with the
+			// data before it - and then removed
 			while (next && this.type(next) === TEXT_NODE) {
 				const following = this.nextSibling(next);
-				merged += this.data(next as CharacterData);
-				this.sources.delete(next as CharacterData);
+				const tail = this.data(next as CharacterData);
+				if (tail !== "") {
+					const before = merged;
+					merged += tail;
+					this.sources.set(node, merged);
+					this.echo(node, before);
+				}
 				nElement.removeChild(next);
+				// out of the script, it answers with its own text again
+				this.restore(next as CharacterData);
 				next = following;
 			}
 			this.sources.set(node, merged);
@@ -510,8 +546,9 @@ export class TextLayer {
 		const what = this.type(original);
 		if (what === TEXT_NODE || what === CDATA_SECTION_NODE) {
 			const page = this.data(original as CharacterData);
+			// a fresh node nothing can be observing yet
 			if (page !== this.rawData(clone as CharacterData)) {
-				this.writeData(clone as CharacterData, page);
+				this.writeVisible(clone as CharacterData, page);
 			}
 
 			return;
@@ -730,8 +767,10 @@ export class TextLayer {
 		if (!nElement.isConnected) return;
 
 		const probe = this.createText(element, "");
-		nElement.appendChild(probe);
-		nElement.removeChild(probe);
+		this.client.box.mutations.hide(this.client, probe, () => {
+			nElement.appendChild(probe);
+			nElement.removeChild(probe);
+		});
 	}
 
 	/**
@@ -887,6 +926,9 @@ export class TextLayer {
 		this.sources.set(tail, String_substring(value, offset));
 		this.sources.set(node, String_substring(value, 0, offset));
 
+		// Blink truncates the node first and inserts the tail after, so its
+		// characterData record comes before the childList one
+		this.echo(node, value);
 		new this.client.native.CharacterData(node).after(tail);
 		this.sync(owner);
 

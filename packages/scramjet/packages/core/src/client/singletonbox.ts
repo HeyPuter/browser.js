@@ -14,6 +14,7 @@ import {
 } from "@/shared/snapshot";
 import { FakeWebSocketState } from "./shared/requests/WebSocket";
 import { FakeWebSocketStreamState } from "./shared/requests/WebSocketStream";
+import { MutationLayer } from "./mutations";
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
@@ -135,6 +136,13 @@ export class SingletonBox {
 	eventhandlers: _WeakMap<object, (...args: any) => any> = new _WeakMap();
 
 	unproxy: _WeakMap<object, any> = new _WeakMap();
+
+	/**
+	 * What every MutationObserver in the box is allowed to see - see
+	 * `client/mutations.ts`. Shared because a node can be observed from any
+	 * frame, and a write in one has to be hidden from all of them.
+	 */
+	mutations: MutationLayer = new MutationLayer();
 
 	socketmap: _WeakMap<WebSocket, FakeWebSocketState> = new _WeakMap();
 	socketstreammap: _WeakMap<WebSocketStream, FakeWebSocketStreamState> =

@@ -251,6 +251,10 @@ export interface IDLNamedTypes {
 	CookieStoreDeleteOptions: CookieStoreDeleteOptions;
 	EventSourceInit: EventSourceInit;
 	FontFaceDescriptors: FontFaceDescriptors;
+	MutationObserverInit: MutationObserverInit;
+
+	// --- callback functions ---------------------------------------------
+	MutationCallback: MutationCallback;
 }
 
 // ---------------------------------------------------------------------------

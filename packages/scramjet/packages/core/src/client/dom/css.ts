@@ -38,9 +38,21 @@ export default function (client: ScramjetClient, self: Self) {
 		const owner = client.box.inlineStyleOwners.get(declaration);
 		if (!owner) return;
 
+		// only when it changes: every attribute write queues a mutation record,
+		// and an unchanged CSSOM write queues none natively. An observer that
+		// re-applies a style from its callback would otherwise never settle
 		const current = attrs.raw.get(owner, "style");
-		if (current === null) attrs.raw.remove(owner, STYLE_MIRROR);
-		else attrs.raw.set(owner, STYLE_MIRROR, unrewrite(current));
+		if (current === null) {
+			if (attrs.raw.has(owner, STYLE_MIRROR)) {
+				attrs.raw.remove(owner, STYLE_MIRROR);
+			}
+
+			return;
+		}
+		const visible = unrewrite(current);
+		if (attrs.raw.get(owner, STYLE_MIRROR) !== visible) {
+			attrs.raw.set(owner, STYLE_MIRROR, visible);
+		}
 	};
 
 	// https://drafts.csswg.org/cssom/#the-cssstyledeclaration-interface

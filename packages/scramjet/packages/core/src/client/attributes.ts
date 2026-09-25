@@ -19,13 +19,14 @@
  * attributes, and the text layer for a script's source. Nothing reads
  * `scramjet-attr-` by hand.
  *
- * Known hole: a MutationObserver sees the document, not this layer. One
+ * A MutationObserver sees the document, not this layer: one
  * `setAttribute("src", ...)` is two records - the mirror's, under its
- * `scramjet-attr-` name, and the real attribute's - with rewritten values in
- * `oldValue`, and a stripped attribute's change shows up under the mirror's
- * name alone. Hiding them means wrapping every observer's callback and
- * `takeRecords` to filter and rename records, and to recover old values the
- * document never held.
+ * `scramjet-attr-` name, and the real attribute's, with the rewritten value in
+ * `oldValue` - and a stripped attribute's change shows up under the mirror's
+ * name alone. `client/mutations.ts` folds them back into the page's record on
+ * delivery, which relies on a mirror's write and its attribute's being
+ * adjacent: write them back to back, and hide a write the page did not ask
+ * for with `box.mutations.hideAll`.
  */
 
 import type { ScramjetClient } from "@client/index";
@@ -362,7 +363,13 @@ export class AttributeLayer {
 		// re-rewritten, from the page's own value, whenever that changes
 		if (qualifiedName === "http-equiv" && this.localName(element) === "meta") {
 			const content = this.get(element, "content");
-			if (content !== null) this.set(element, "content", content);
+			// the page changed `http-equiv`, not `content`, and no observer may
+			// see the rewrite
+			if (content !== null) {
+				this.client.box.mutations.hideAll(() =>
+					this.set(element, "content", content)
+				);
+			}
 		}
 
 		// A script's block type controls whether its child text is code, data, or

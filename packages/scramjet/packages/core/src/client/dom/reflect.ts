@@ -1450,10 +1450,15 @@ export default function (client: ScramjetClient, self: Self) {
 			}
 
 			// the attribute the getter reads is the one written: an existing
-			// XLink href keeps its prefix, and no plain one appears beside it
+			// XLink href keeps its prefix, and no plain one appears beside it.
+			// Blink writes an animated property's content attribute lazily,
+			// the next time it is read, and queues no mutation record for it -
+			// so neither may this
 			const xlink = svgXlinkHref(owner);
-			if (xlink) attrs.setVisibleValue(xlink, String(value));
-			else attrs.set(owner, "href", String(value));
+			client.box.mutations.hideAll(() => {
+				if (xlink) attrs.setVisibleValue(xlink, String(value));
+				else attrs.set(owner, "href", String(value));
+			});
 		}
 
 		// no setter - an animated value is the animation's to write

@@ -505,6 +505,12 @@ export type _Map<K, V> = Wrapped<Map<K, V>>;
 export const _WeakSet = makeWrap(globalThis.WeakSet);
 export type _WeakSet<T extends WeakKey> = Wrapped<WeakSet<T>>;
 export const _WeakMap = makeWrap(globalThis.WeakMap);
+export const _WeakRef = makeWrap(globalThis.WeakRef);
+export type _WeakRef<T extends WeakKey> = Wrapped<WeakRef<T>>;
+/** `deref`, off the prototype as it was: a page can replace `WeakRef.prototype.deref`. */
+export const WeakRef_deref = Function_prototype_call.bind(
+	globalThis.WeakRef.prototype.deref
+) as <T extends WeakKey>(ref: WeakRef<T>) => T | undefined;
 // only the *key* is weakly held, so the value takes no constraint
 export type _WeakMap<K extends WeakKey, V> = Wrapped<WeakMap<K, V>>;
 export const _Uint8Array = makeWrap(globalThis.Uint8Array);
