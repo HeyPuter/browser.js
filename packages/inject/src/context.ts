@@ -27,7 +27,7 @@ function makeContextId(): string {
 	return "context-" + Math.random().toString(36).substring(2, 10);
 }
 
-function findSequence(
+export function findSequence(
 	top: Window,
 	target: Window,
 	path: FrameSequence = []
@@ -145,13 +145,9 @@ export class ExecutionContextWrapper {
 				prefix: new URL(this.init.prefix),
 			},
 			transport,
-			hookSubcontext: (frameself, frame) => {
-				if (!frame) {
-					throw new Error(
-						"hookSubcontext was called, but a frame null was passed. It shouldn't be possible for a window.open to happen here"
-					);
-				}
-
+			// `frame` is absent for a window the page opened - a spare tab frame
+			// it claimed in emulators/windowopen.ts
+			hookSubcontext: (frameself, _frame) => {
 				// recalculate chromeframe's sequence just in case
 				const newseq = findSequence(top!, chromeframe);
 				if (!newseq) {

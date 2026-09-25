@@ -59,6 +59,19 @@ export type Chromebound = {
 		},
 	];
 	registerFrameContext: [{ id: string }];
+	/**
+	 * The page claimed a spare frame (chrome/src/proxy/spares.ts) with
+	 * window.open and already holds its WindowProxy; the chrome makes it a tab.
+	 * `url` is the unrewritten URL it is navigating to, if any.
+	 */
+	/** A tab's page called window.close(); the chrome decides if it may. */
+	closewindow: [{}];
+	adoptwindow: [
+		{
+			sequence: FrameSequence;
+			url?: string;
+		},
+	];
 	newtab: [
 		{
 			url: string;

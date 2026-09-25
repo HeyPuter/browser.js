@@ -91,6 +91,26 @@ export class TabsService extends Service {
 		return tab;
 	}
 
+	/** A tab around a frame that already exists - see proxy/spares.ts. */
+	adoptTab(
+		opener: Tab | null,
+		url: URL,
+		adopt: ConstructorParameters<typeof Tab>[2]
+	) {
+		let tab = new Tab({ url }, undefined, adopt);
+		this.own(tab);
+		pushTab(tab);
+		let index = opener ? this.tabs.indexOf(opener) : -1;
+		if (index === -1) this.tabs = [...this.tabs, tab];
+		else {
+			this.tabs.splice(index + 1, 0, tab);
+			this.tabs = this.tabs;
+		}
+		this.activetab = tab;
+		this.markDirty();
+		return tab;
+	}
+
 	newTabRight(ref: Tab, url?: URL) {
 		let tab = new Tab({ url });
 		this.own(tab);

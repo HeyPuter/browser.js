@@ -4,8 +4,13 @@ import { Controller, controllerForURL } from "./Controller";
 export class ProxyFrame {
 	frame: HTMLIFrameElement;
 	controller: Controller | null = null;
-	constructor() {
-		this.frame = document.createElement("iframe");
+	constructor(adopt?: { frame: HTMLIFrameElement; controller: Controller }) {
+		if (adopt) {
+			this.frame = adopt.frame;
+			this.controller = adopt.controller;
+		} else {
+			this.frame = document.createElement("iframe");
+		}
 	}
 
 	async go(url: URL) {

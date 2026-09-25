@@ -33,7 +33,7 @@ export function Shell(this: FC<{}>) {
 
 		const [lock, unlock] = requestUnfocusFrames();
 
-		this.root.appendChild(
+		const container = (
 			<div
 				class="container"
 				data-tab={tab.id}
@@ -41,10 +41,7 @@ export function Shell(this: FC<{}>) {
 				class:active={use(tabsService.activetab).map((t) => t === tab)}
 				class:showframe={use(tab.internalpage).map((t) => !t)}
 			>
-				<div class="mainframecontainer">
-					{use(tab.internalpage)}
-					{tab.frame.frame}
-				</div>
+				<div class="mainframecontainer">{use(tab.internalpage)}</div>
 				<div
 					class="devtools"
 					class:active={use(tab.devtoolsOpen)}
@@ -69,7 +66,17 @@ export function Shell(this: FC<{}>) {
 				</div>
 				<progress value={use(tab.loadProgress)}></progress>
 			</div>
-		);
+		) as HTMLElement;
+		this.root.appendChild(container);
+
+		const frameContainer = container.querySelector(".mainframecontainer")!;
+		if (tab.frame.frame.isConnected) {
+			// an adopted spare (proxy/spares.ts) - a plain append would detach
+			// it, discarding the browsing context the opener already holds
+			(frameContainer as any).moveBefore(tab.frame.frame, null);
+		} else {
+			frameContainer.appendChild(tab.frame.frame);
+		}
 	});
 	popTab.listen((tab) => {
 		const container = this.root.querySelector(`[data-tab="${tab.id}"]`);

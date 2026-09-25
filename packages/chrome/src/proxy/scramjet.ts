@@ -59,6 +59,7 @@ import type {
 	WebSocketMessage,
 } from "../../../scramjet/packages/controller/src/types";
 import { getTheme } from "../themes";
+import { adoptSpare, ensureSpares } from "./spares";
 import {
 	downloadsService,
 	profileService,
@@ -101,6 +102,8 @@ class ProxyFrameContext {
 			{
 				load: async ({ url, sequence }) => {
 					this.windowproxy = reduceSequence(sequence);
+					// this origin can now window.open, so keep a frame ready for it
+					if (isIsolated) ensureSpares(this.controller);
 					tab =
 						tabsService.tabs.find(
 							(t) => t.frame.frame.contentWindow === this.windowproxy
@@ -176,6 +179,20 @@ class ProxyFrameContext {
 						},
 						[],
 					];
+				},
+				adoptwindow: async ({ sequence, url }) => {
+					const win = reduceSequence(sequence);
+					const adopted = win && adoptSpare(win);
+					if (!adopted) throw new Error("adoptwindow: not a spare frame");
+					tabsService.adoptTab(
+						tab,
+						url ? new URL(url) : new URL("about:blank"),
+						adopted
+					);
+				},
+				closewindow: async () => {
+					// https://html.spec.whatwg.org/multipage/nav-history-apis.html#script-closable
+					if (tab && tab.scriptClosable) tabsService.destroyTab(tab);
 				},
 				registerFrameContext: async ({ id: childId }) => {
 					contexts.push(new ProxyFrameContext(this.controller, childId));

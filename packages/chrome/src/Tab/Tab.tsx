@@ -37,6 +37,8 @@ export class Tab extends StatefulClass {
 
 	icon: string | null = null;
 	justCreated: boolean = true;
+	/** Opened by a page's window.open, so the page may close it again. */
+	scriptClosable: boolean = false;
 
 	history: History;
 
@@ -56,13 +58,18 @@ export class Tab extends StatefulClass {
 	waitForInit: Promise<void>;
 	private initResolve!: () => void;
 
-	constructor(init: Partial<Tab>, history?: SerializedHistory) {
+	constructor(
+		init: Partial<Tab>,
+		history?: SerializedHistory,
+		adopt?: ConstructorParameters<typeof ProxyFrame>[0]
+	) {
 		super();
 		Object.assign(this, init);
 		this.url ??= new URL(`${INTERNAL_URL_PROTOCOL}//newtab`);
 		this.id ??= uuid("tab-");
 
-		this.frame = new ProxyFrame();
+		this.frame = new ProxyFrame(adopt);
+		if (adopt) this.scriptClosable = true;
 		this.history = new History(this, history);
 		this.own(this.history);
 		this.waitForInit = new Promise((resolve) => {
@@ -89,6 +96,11 @@ export class Tab extends StatefulClass {
 						}
 					});
 				}
+			} else if (adopt) {
+				// a frame the page already opened and is navigating itself: record
+				// the entry without navigating, and let its first load land on it
+				this.history.push(this.url, undefined, null, false);
+				this.history.justTriggeredNavigation = true;
 			} else {
 				// was just created
 				this.history.push(this.url, undefined);

@@ -13,6 +13,7 @@ import {
 	type ScramjetFetchRequest,
 } from "@mercuryworkshop/scramjet/bundled";
 import { HttpCachePlugin } from "./cache";
+import { ensureSpares } from "./spares";
 
 export function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
@@ -302,13 +303,16 @@ export async function controllerForURL(url: URL): Promise<Controller> {
 		const controllerId = makeId();
 		let prefix = new URL(baseurl.origin + basePrefix + controllerId + "/");
 
-		controller = new Controller(
+		const isolated = new Controller(
 			prefix,
 			controllerId,
 			frame.contentWindow!,
 			rootdomain
 		);
-		controllers.push(controller);
+		controller = isolated;
+		controllers.push(isolated);
+		// ready before this origin's first page can call window.open
+		isolated.wait().then(() => ensureSpares(isolated));
 	} else {
 		if (nonIsolatedController) {
 			return nonIsolatedController;

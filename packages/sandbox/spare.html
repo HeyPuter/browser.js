@@ -1,0 +1,8 @@
+<!doctype html>
+<title>spare</title>
+<script>
+	// a spare tab frame (see chrome/src/proxy/spares.ts). Become an about:blank
+	// that inherits this origin, so a page that claims it with window.open sees
+	// what a fresh popup would have
+	location.replace("about:blank");
+</script>
