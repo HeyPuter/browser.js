@@ -83,6 +83,10 @@ export const Number_toString = Function_prototype_call.bind(
 	globalThis.Number.prototype.toString
 ) as (n: number, radix?: number) => string;
 
+export const Function_toString = Function_prototype_call.bind(
+	globalThis.Function.prototype.toString
+) as (fn: (...args: any[]) => any) => string;
+
 export const BigInt = globalThis.BigInt;
 export const BigInt_asIntN = globalThis.BigInt.asIntN;
 export const BigInt_asUintN = globalThis.BigInt.asUintN;

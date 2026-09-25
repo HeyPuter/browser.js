@@ -108,6 +108,14 @@ export type ScramjetClientInit = {
 	) => Promise<void>;
 	shouldBlockMessageEvent?: (ev: MessageEvent) => boolean;
 	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
+	/**
+	 * Hooks a window `window.open` just opened. Optional: without it the window
+	 * goes through `hookSubcontext`, running this realm's code. An embedder that
+	 * can evaluate its own copy of scramjet into the window (see
+	 * `bundleSource`) should, so the popup keeps working once its opener
+	 * navigates away.
+	 */
+	hookOpenedWindow?: (self: Self) => ScramjetClient;
 	initHeaders: RawHeaders;
 	history: TrackedHistoryState[];
 };
