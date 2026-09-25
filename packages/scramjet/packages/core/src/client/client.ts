@@ -1644,18 +1644,30 @@ return { apply, construct };
 	 * page's `_top` and `_parent` targets are rewritten to. Null when there is
 	 * no frame element to be seen.
 	 */
+	/**
+	 * The name `_top` and `_parent` are rewritten to when they mean this frame.
+	 *
+	 * A target is resolved by browsing-context name, so this has to be the name
+	 * the browser knows the frame by: the window's, not the frame element's
+	 * attribute. The two start out equal - the controller sets both - but
+	 * `window.name` is the page's to assign, and assigning it renames the
+	 * browsing context without touching the attribute. Reading the attribute
+	 * then hands the browser a name no frame has, and it opens a new window
+	 * under that name instead of navigating this one.
+	 */
 	frameName(): string | null {
-		const frame = new this.native.window(this.global).frameElement;
-		if (!frame) return null;
-		if (!frame.name) {
+		const global = new this.native.window(this.global);
+		if (!global.frameElement) return null;
+		const name = global.name;
+		if (!name) {
 			dbg.error(
-				"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
+				"frameName: this frame has no name, so `_top` and `_parent` cannot be targeted"
 			);
 
 			return null;
 		}
 
-		return frame.name;
+		return name;
 	}
 
 	/**
