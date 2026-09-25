@@ -24,7 +24,7 @@ function $injectLoad(init: InjectScramjetInit) {
 		const existing = (globalThis as any)[SCRAMJETCLIENT] as ScramjetClient;
 		existing.syncDocumentInit({
 			initHeaders: init.initHeaders,
-			history: init.history,
+			referrer: init.referrer,
 			cookies: init.cookies,
 		});
 		return;

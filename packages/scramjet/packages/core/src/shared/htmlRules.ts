@@ -131,7 +131,6 @@ export const htmlRules: {
 					topUrl: meta.topUrl,
 					topFrameName: meta.topFrameName,
 					parentFrameName: meta.parentFrameName,
-					referrerPolicy: meta.referrerPolicy,
 				},
 				{
 					loadScripts: true,
