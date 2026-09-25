@@ -8,18 +8,8 @@
 	"license": "AGPL-3.0-only",
 	"packageManager": "pnpm@10.12.1",
 	"scripts": {
-		"build": "rspack build",
-		"build:dreamland": "cd external/dreamlandjs && pnpm build",
-		"build:chrome": "cd packages/chrome && pnpm build",
-		"rewriter:build": "cd packages/scramjet/packages/core && pnpm run rewriter:build",
-		"dev": "node --no-warnings=ExperimentalWarning devserver.ts",
-		"eslint": "node scripts/eslint-cli.mjs",
-		"lint": "pnpm eslint .",
-		"watch": "rspack build --watch",
-		"format": "prettier --write .",
-		"preinstall": "npx only-allow pnpm",
-		"ii": "pnpm install && pnpm -C packages/scramjet install",
-		"runway": "pnpm -C packages/scramjet/packages/runway"
+		"cv": "node --no-warnings=ExperimentalWarning packages/scramjet/packages/cv/main.ts",
+		"preinstall": "npx only-allow pnpm"
 	},
 	"pnpm": {
 		"overrides": {

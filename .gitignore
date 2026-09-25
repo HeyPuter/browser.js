@@ -1,4 +1,6 @@
 node_modules
+# fetched by ./cv at a pinned commit (see cv.ts)
+external/dreamlandjs/
 dist
 playwright-report
 test-results
