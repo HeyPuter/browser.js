@@ -5,7 +5,6 @@
 		"cssurls-cssom-write-serialization",
 		"cssurls-cssrule-style-property",
 		"domattr-attributes-namednodemap",
-		"domattr-integrity-property",
 		"domattr-mutationobserver-records",
 		"domattr-shadow-innerhtml-urls",
 		"elurls-anchor-component-setters",
@@ -126,6 +125,9 @@
 		"incumbent-window-open-settimeout-cb-eval",
 		"incumbent-window-open-srcdoc",
 		"incumbent-window-open-three-realm",
+		"integrity-css-selectors",
+		"integrity-mutation-observer",
+		"integrity-xpath",
 		"location-ancestororigins",
 		"location-own-property-names",
 		"longtail-api-document-domain-getter-brand",
@@ -263,7 +265,6 @@
 		"wsfidelity-connection-refused",
 		"wsfidelity-protocol-negotiated",
 		"wsfidelity-stream-connection-refused",
-		"elementlayer-review112-import-map-integrity",
 		"elementlayer-review112-mutation-observer-attribute-records"
 	]
 }
