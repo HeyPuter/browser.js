@@ -332,16 +332,48 @@ const createGenericConfig = (options: Partial<RspackOptions>) => {
 	);
 };
 
+/**
+ * Wraps a bundle in `(function <name>() { ... })();` so code inside it can read
+ * its own source back with `Function.prototype.toString` - how a copy of it is
+ * evaluated into a window it hooks (see core's `src/client/bundle.ts`). The
+ * wrapper puts a line of its own above the bundle, so the sourcemap still
+ * lines up.
+ */
+const bundleWrapper = (name: string, test: RegExp) => [
+	new rspack.BannerPlugin({
+		banner: `(function ${name}() {`,
+		raw: true,
+		entryOnly: true,
+		test,
+	}),
+	new rspack.BannerPlugin({
+		banner: "})();",
+		raw: true,
+		footer: true,
+		entryOnly: true,
+		test,
+	}),
+];
+
 type ScramjetBuildConfig = {
 	entry: RspackOptions["entry"];
 	output: RspackOptions["output"];
 	rewriterWasm: string;
 	extraConfig?: Partial<RspackOptions>;
 	name: string;
+	/** an iife build that should be able to evaluate copies of itself */
+	selfSource?: boolean;
 };
 // Common configuration options for scramjet builds
 const createScramjetConfig = (options: ScramjetBuildConfig) => {
-	const { entry, output, rewriterWasm, extraConfig = {}, name } = options;
+	const {
+		entry,
+		output,
+		rewriterWasm,
+		extraConfig = {},
+		name,
+		selfSource,
+	} = options;
 
 	return createGenericConfig({
 		name,
@@ -387,6 +419,7 @@ const createScramjetConfig = (options: ScramjetBuildConfig) => {
 			new rspack.DefinePlugin({
 				BUILDDATE: JSON.stringify(new Date().toISOString()),
 			}),
+			...(selfSource ? bundleWrapper("__scramjetBundle", /\.js$/) : []),
 		],
 		target: "webworker",
 		ignoreWarnings: [
@@ -418,6 +451,7 @@ const iifeConfig = createScramjetConfig({
 			name: "self.$scramjet",
 		},
 	},
+	selfSource: true,
 	rewriterWasm: "undefined",
 	extraConfig: {
 		performance: {
@@ -441,6 +475,7 @@ const iifeBundledConfig = createScramjetConfig({
 			name: "self.$scramjet",
 		},
 	},
+	selfSource: true,
 	rewriterWasm: JSON.stringify(wasmB64),
 	extraConfig: {
 		performance: {
@@ -555,7 +590,15 @@ const controllerConfig = createGenericConfig({
 	dependencies: ["scramjet-esmodule"],
 	entry: {
 		api: join(controllerdir, "src/index.ts"),
-		inject: join(controllerdir, "src/inject.ts"),
+		// assigned to `self` rather than declared: `bundleWrapper` puts the
+		// bundle in a function, where a `var` would stay local to it
+		inject: {
+			import: join(controllerdir, "src/inject.ts"),
+			library: {
+				type: "assign",
+				name: "self.$scramjetController",
+			},
+		},
 		sw: join(controllerdir, "src/sw.ts"),
 	},
 	output: {
@@ -570,6 +613,7 @@ const controllerConfig = createGenericConfig({
 	target: "web",
 	plugins: [
 		controllerVersionDefines,
+		...bundleWrapper("__controllerInjectBundle", /controller\.inject\.js$/),
 		new ExternalStubPlugin({
 			bundleFilename: "controller.api.js",
 			stubFilename: "controller-external.mjs",

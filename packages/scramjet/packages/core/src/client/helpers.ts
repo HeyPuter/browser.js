@@ -48,7 +48,9 @@ export function openWindowSteps(
 
 	// i don't believe it's possible for a just-opened window to already have scramjet loaded but guard just in case
 	if (!(SCRAMJETCLIENT in realwin)) {
-		client.init.hookSubcontext(realwin as Self);
+		if (client.init.hookOpenedWindow)
+			client.init.hookOpenedWindow(realwin as Self);
+		else client.init.hookSubcontext(realwin as Self);
 	}
 
 	return realwin;

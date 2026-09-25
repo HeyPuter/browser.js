@@ -1,4 +1,5 @@
 export * from "./client";
+export * from "./bundle";
 export * from "./entry";
 export * from "./events";
 export * from "./helpers";
