@@ -35,16 +35,25 @@
 import type { ScramjetClient } from "@client/index";
 import { HTML_NAMESPACE, SCRIPT_SOURCE_ATTRIBUTE } from "@client/attributes";
 import {
+	IMPORTMAP_BASE_ATTRIBUTE,
+	INERT_IMPORTMAP_ATTRIBUTE,
+} from "@rewriters/html";
+import {
 	getScriptBlockTypeString,
 	isModuleScriptType,
 	isScriptType,
 } from "@/shared/mime";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
-import { rewriteImportMap } from "@rewriters/importmap";
+import {
+	type ImportMapState,
+	parseImportMaps,
+	rewriteImportMap,
+} from "@rewriters/importmap";
 import { base64Decode, bytesToBase64 } from "@/shared/util";
 import {
 	_WeakMap,
+	_WeakSet,
 	String_substring,
 	String_toLowerCase,
 	TextEncoder_encode,
@@ -68,13 +77,24 @@ type InsertionCommit = { done(): void; undo(): void };
 /** The text primitives, bound to one client - `client.text`, built in its constructor. */
 export class TextLayer {
 	/**
-	 * The import maps the document has registered, in registration order, and
-	 * the source each was registered with. The browser reads a map once, when
-	 * the script is prepared - rewriting its text afterwards changes nothing -
-	 * so neither may the resolver in `client/shared/import.ts`.
+	 * The import maps the document has registered, in registration order: the
+	 * source each was registered with, and the base URL its relative URLs
+	 * resolve against. The browser reads a map once, when the script is
+	 * prepared - rewriting its text or moving the base afterwards changes
+	 * nothing - so neither may the resolver in `client/shared/import.ts`.
 	 */
-	private readonly importMaps: Element[] = [];
-	private readonly importMapSources = new _WeakMap<Element, string>();
+	private readonly importMaps: { source: string; base: string }[] = [];
+	private readonly registered = new _WeakSet<Element>();
+	/** {@link importMaps}, merged - kept until another map registers. */
+	private importMapCache: ImportMapState | null = null;
+	/**
+	 * Scripts {@link importMapState} need not look at again: every one the
+	 * browser has already prepared, which makes it too late to register.
+	 */
+	private readonly scanned = new _WeakSet<Element>();
+	/** The document's live `script` collection, and the document it is of. */
+	private scripts: HTMLCollectionOf<Element> | null = null;
+	private scriptsOf: Document | null = null;
 
 	constructor(private readonly client: ScramjetClient) {}
 
@@ -345,6 +365,8 @@ export class TextLayer {
 		if (children.length > 0 && this.rawData(children[0]) !== rewritten) {
 			this.writeData(children[0], rewritten);
 		}
+		// an empty map that just got something in it was prepared by the write
+		this.noteImportMap(element);
 	}
 
 	/**
@@ -354,9 +376,13 @@ export class TextLayer {
 	 * text of a script, since the text it had is the text that counts.
 	 */
 	noteImportMap(element: Element): void {
-		if (this.importMapSources.has(element)) return;
+		if (this.registered.has(element)) return;
 		if (this.kind(element) !== "script") return;
 		if (String_toLowerCase(this.scriptBlockType(element)) !== "importmap") {
+			return;
+		}
+		// put down by `innerHTML` or a relative, and never going to run
+		if (this.attrs.raw.get(element, INERT_IMPORTMAP_ATTRIBUTE) !== null) {
 			return;
 		}
 		if (!new this.client.native.Node(element).isConnected) return;
@@ -364,28 +390,57 @@ export class TextLayer {
 		const source = this.source(element);
 		if (source === "") return;
 
-		this.importMapSources.set(element, source);
-		this.importMaps[this.importMaps.length] = element;
+		// a map that came through the HTML rewriter says what the base was
+		// where it stood in the markup; one registering now resolves against
+		// the base the document has now
+		const base =
+			this.attrs.raw.get(element, IMPORTMAP_BASE_ATTRIBUTE) ??
+			this.client.meta.base.href;
+
+		this.registered.add(element);
+		this.importMaps[this.importMaps.length] = { source, base };
+		this.importMapCache = null;
 	}
 
 	/**
-	 * The sources of every import map `document` has registered, in order.
-	 * A map the parser put down, or one inserted since the last look, is
+	 * Every import map `document` has registered, merged - or null when it has
+	 * none. A map the parser put down, or one inserted since the last look, is
 	 * picked up here - its text has not changed since, or it would have been
 	 * noted then.
 	 */
-	registeredImportMaps(document: Document): string[] {
-		const found: NodeListOf<Element> = new this.client.native.Document(
-			document
-		).querySelectorAll("script[type=importmap i]");
-		for (let i = 0; i < found.length; i++) this.noteImportMap(found[i]);
-
-		const out: string[] = [];
-		for (let i = 0; i < this.importMaps.length; i++) {
-			out[i] = this.importMapSources.get(this.importMaps[i])!;
+	importMapState(document: Document): ImportMapState | null {
+		if (this.scriptsOf !== document) {
+			// live, so that looking again costs nothing until the tree changes
+			this.scripts = new this.client.native.Document(
+				document
+			).getElementsByTagName("script");
+			this.scriptsOf = document;
 		}
 
-		return out;
+		const scripts = this.scripts!;
+		for (let i = 0; i < scripts.length; i++) {
+			const script = scripts[i];
+			if (this.scanned.has(script)) continue;
+
+			this.noteImportMap(script);
+			// a script with nothing in it has not been prepared yet: what is
+			// put in it later can still make it an import map, which the
+			// member doing it notes
+			if (
+				this.registered.has(script) ||
+				new this.client.native.Node(script).firstChild !== null ||
+				this.attrs.raw.get(script, "src") !== null
+			) {
+				this.scanned.add(script);
+			}
+		}
+
+		if (this.importMaps.length === 0) return null;
+		if (!this.importMapCache) {
+			this.importMapCache = parseImportMaps(this.importMaps);
+		}
+
+		return this.importMapCache;
 	}
 
 	/** Replace the child text content of `element`, rewriting it. */
@@ -404,6 +459,7 @@ export class TextLayer {
 
 		const child = this.firstChild(element);
 		if (child) this.sources.set(child as CharacterData, text);
+		this.noteImportMap(element);
 	}
 
 	/** Replace one node's data, rewriting the element it belongs to. */
@@ -842,7 +898,12 @@ export class TextLayer {
 		insert: () => T
 	): T {
 		const commit = this.insertion(parent, nodes);
-		if (!commit) return insert();
+		if (!commit) {
+			const result = insert();
+			this.noteInserted(nodes);
+
+			return result;
+		}
 
 		let result: T;
 		try {
@@ -852,8 +913,27 @@ export class TextLayer {
 			throw err;
 		}
 		commit.done();
+		this.noteInserted(nodes);
 
 		return result;
+	}
+
+	/**
+	 * Register any import map among `nodes`, just inserted: an insertion into
+	 * the document is when the browser registers one, against the base URL
+	 * the document has at that moment. One deeper in an inserted subtree is
+	 * left to {@link importMapState} to find.
+	 */
+	private noteInserted(nodes: readonly unknown[]): void {
+		for (let i = 0; i < nodes.length; i++) {
+			const node = nodes[i];
+			if (typeof node !== "object" || node === null) continue;
+			if (!this.isNode(node)) continue;
+			if (this.type(node as Node) !== ELEMENT_NODE) continue;
+			if (this.attrs.localName(node as Element) !== "script") continue;
+
+			this.noteImportMap(node as Element);
+		}
 	}
 
 	/**

@@ -184,6 +184,26 @@ export function rewriteUrl(
 			return url;
 		}
 
+		// a module script's URL is its key in the module map, so every way of
+		// reaching the same module has to produce the same one: `import()`, an
+		// import map entry, a `<script type=module src>` and the static imports
+		// the wasm rewriter writes (`rewriter/wasm/src/jsr.rs`). That rules out
+		// anything that depends on who is asking - the importer's origin or
+		// top-level frame - and the service worker gets both from the client
+		// the request came from instead. The fragment is part of the key too,
+		// and goes through the codec with the rest, as it does in a static one.
+		if (options?.isModule && !options.destination) {
+			const params = new _URLSearchParams();
+			params.set(QP.isModule, "module");
+
+			return (
+				context.prefix.href +
+				context.interface.codecEncode(realUrl.href) +
+				"?" +
+				params.toString()
+			);
+		}
+
 		const encodedHash = context.interface.codecEncode(realUrl.hash.slice(1));
 		const realHash = encodedHash
 			? "#" + encodedHash

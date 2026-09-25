@@ -53,6 +53,23 @@ export type ForeignContext = "svg" | "math" | "html";
  */
 export const SCRIPT_SOURCE_ATTRIBUTE = "scramjet-attr_script-source";
 
+/**
+ * On an import map that markup put down with its scripts inert - `innerHTML`
+ * and its relatives - which the browser never registers, however it is moved
+ * afterwards. An attribute, since the flag that makes it so ("already
+ * started") is copied onto a clone, and so is an attribute.
+ *
+ * https://html.spec.whatwg.org/multipage/scripting.html#already-started
+ */
+export const INERT_IMPORTMAP_ATTRIBUTE = "scramjet-attr_inert-importmap";
+
+/**
+ * On an import map out of the rewriter, the base URL where it stood in the
+ * markup - what the browser resolves it against when it registers it, which
+ * for a map the parser put down is before any script could move the base.
+ */
+export const IMPORTMAP_BASE_ATTRIBUTE = "scramjet-attr_importmap-base";
+
 /** The name the mirror of `attr` is kept under. */
 const mirrorName = (attr: string) => `scramjet-attr-${attr}`;
 
@@ -117,6 +134,9 @@ export type HtmlContext = {
 	// `DOMParser`'s HTML parser has scripting disabled, which changes how it
 	// treats `noscript` content.
 	scriptingEnabled?: boolean;
+	// the markup is going in through `innerHTML` or one of its relatives, whose
+	// scripts are marked as already started and never run
+	inertScripts?: boolean;
 	history?: TrackedHistoryState[];
 };
 
@@ -238,7 +258,7 @@ function rewriteHtmlInner(
 		},
 		undefined
 	);
-	traverseParsedHtml(root, context, meta);
+	traverseParsedHtml(root, context, meta, !!htmlcontext.inertScripts);
 
 	let htmlRoot: Element | undefined;
 	let headElement: Element | undefined;
@@ -387,6 +407,13 @@ export function unrewriteHtml(
 					delete attribs[key];
 					continue;
 				}
+				if (
+					lower === INERT_IMPORTMAP_ATTRIBUTE ||
+					lower === IMPORTMAP_BASE_ATTRIBUTE
+				) {
+					delete attribs[key];
+					continue;
+				}
 
 				if (String_startsWith(lower, "scramjet-attr-")) {
 					attribs[String_slice(key, "scramjet-attr-".length)] = attribs[key];
@@ -422,10 +449,11 @@ export function unrewriteHtml(
 function traverseParsedHtml(
 	node: AnyNode,
 	context: ScramjetContext,
-	meta: URLMeta
+	meta: URLMeta,
+	inert: boolean
 ): AnyNode {
 	if (node.type !== ElementType.Tag) {
-		if ("children" in node) traverseChildren(node, context, meta);
+		if ("children" in node) traverseChildren(node, context, meta, inert);
 
 		return node;
 	}
@@ -497,10 +525,25 @@ function traverseParsedHtml(
 		hasText
 	) {
 		try {
-			text.data = rewriteImportMap(text.data, context, meta);
+			const rewritten = rewriteImportMap(text.data, context, meta);
+			// kept the way a script's is: it is what reading the map back
+			// gives the page, and what the client resolves `import()` with
+			attribs[SCRIPT_SOURCE_ATTRIBUTE] = bytesToBase64(
+				TextEncoder_encode(text.data)
+			);
+			attribs[IMPORTMAP_BASE_ATTRIBUTE] = meta.base.href;
+			text.data = rewritten;
 		} catch (e) {
 			dbg.error("Failed to parse importmap JSON:", e);
 		}
+	}
+	if (
+		inert &&
+		node.name === "script" &&
+		attribs.type !== undefined &&
+		String_toLowerCase(attribs.type) === "importmap"
+	) {
+		attribs[INERT_IMPORTMAP_ATTRIBUTE] = "";
 	}
 	if (node.name === "script" && hasText) {
 		const scriptBlockType = getScriptBlockTypeString(
@@ -536,7 +579,7 @@ function traverseParsedHtml(
 		// `htmlRules`, the same one a script's write goes through
 	}
 
-	traverseChildren(node, context, meta);
+	traverseChildren(node, context, meta, inert);
 
 	return node;
 }
@@ -544,11 +587,12 @@ function traverseParsedHtml(
 function traverseChildren(
 	node: Document | Element | CDATA,
 	context: ScramjetContext,
-	meta: URLMeta
+	meta: URLMeta,
+	inert: boolean
 ) {
 	for (let index = 0; index < node.children.length; index++) {
 		const child = node.children[index];
-		const rewritten = traverseParsedHtml(child, context, meta);
+		const rewritten = traverseParsedHtml(child, context, meta, inert);
 		if (rewritten !== child) node.replaceChild(index, rewritten as ChildNode);
 	}
 }

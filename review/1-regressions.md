@@ -50,7 +50,7 @@ Confirmed end to end in real browser.js builds of main and develop (devserver pl
 5. **Popups opened with `window.open(url)` believe their top page is `about:blank`.** The popup's client is built while it's still the initial blank document and caches that as its `topUrl` (34e8d51f). So:
    - every URL it rewrites (`import()`, fetch, images, iframes, workers) carries `$top=about:blank`;
    - a module imported both statically and via `import()` runs twice (count 2 on develop, 1 on main);
-   - site flags for the popup's site are read for `about:blank`, so `siteFlags` entries are ignored.
+   - site flags for the popup's site are read for `about:blank`, so `siteFlags` entries are ignored. (Fixed for flags since 56980546: `topUrl` isn't cached, and the client's flag cache is now keyed on the top-level hostname. Flags depend on nothing else, so the cache only changes when the reused window moves from `about:blank`, which has no host, to the real site.)
 
    This hits OAuth, payment and print popups wherever popups are real windows. `window.open("")` followed by `location.href = url` is unaffected.
    Still failing on 9ea38938 (`count:2`, `$top=about:blank`).

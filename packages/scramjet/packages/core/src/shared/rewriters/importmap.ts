@@ -27,6 +27,7 @@ import {
 	String_endsWith,
 	String_startsWith,
 	String_substring,
+	_Set,
 	_URL,
 } from "@/shared/snapshot";
 
@@ -205,7 +206,7 @@ export type ImportMapState = {
 export type ImportMapResolution = _URL | "blocked" | null;
 
 /** https://html.spec.whatwg.org/multipage/webappapis.html#resolving-a-url-like-module-specifier */
-function urlLike(specifier: string, base: string | _URL): _URL | null {
+export function urlLike(specifier: string, base: string | _URL): _URL | null {
 	const relative =
 		String_startsWith(specifier, "/") ||
 		String_startsWith(specifier, "./") ||
@@ -219,18 +220,30 @@ function urlLike(specifier: string, base: string | _URL): _URL | null {
 
 /**
  * Descending code unit order, which puts every key before the keys it is a
- * prefix of. By hand: `Array.prototype.sort` is the page's to replace.
+ * prefix of. By hand: `Array.prototype.sort` is the page's to replace. A
+ * merge sort, since a map can have thousands of entries.
  */
 function sortDescending<T>(items: T[], key: (item: T) => string): T[] {
-	for (let i = 1; i < items.length; i++) {
-		const item = items[i];
-		let j = i - 1;
-		while (j >= 0 && key(items[j]) < key(item)) {
-			items[j + 1] = items[j];
-			j--;
+	let from = items;
+	let to: T[] = [];
+	for (let width = 1; width < items.length; width *= 2) {
+		for (let lo = 0; lo < items.length; lo += 2 * width) {
+			const mid = lo + width < items.length ? lo + width : items.length;
+			const hi = lo + 2 * width < items.length ? lo + 2 * width : items.length;
+			let i = lo;
+			let j = mid;
+			for (let k = lo; k < hi; k++) {
+				to[k] =
+					i < mid && (j >= hi || key(from[i]) >= key(from[j]))
+						? from[i++]
+						: from[j++];
+			}
 		}
-		items[j + 1] = item;
+		const swap = from;
+		from = to;
+		to = swap;
 	}
+	for (let i = 0; i < items.length && from !== items; i++) items[i] = from[i];
 
 	return items;
 }
@@ -241,6 +254,9 @@ function normalizeSpecifierMap(
 	base: string | _URL,
 	into: NormalizedSpecifierMap
 ) {
+	const seen = new _Set<string>();
+	for (let j = 0; j < into.length; j++) seen.add(into[j].key);
+
 	const keys = Object_keys(map);
 	for (let i = 0; i < keys.length; i++) {
 		if (keys[i] === "") continue;
@@ -248,11 +264,8 @@ function normalizeSpecifierMap(
 		const key = asURL ? asURL.href : keys[i];
 		// merged in registration order, and a later map cannot override an
 		// entry an earlier one already has
-		let seen = false;
-		for (let j = 0; j < into.length; j++) {
-			if (into[j].key === key) seen = true;
-		}
-		if (seen) continue;
+		if (seen.has(key)) continue;
+		seen.add(key);
 
 		const value = map[keys[i]];
 		let address = typeof value === "string" ? urlLike(value, base) : null;
@@ -269,21 +282,21 @@ function normalizeSpecifierMap(
 }
 
 /**
- * The import maps in `sources` - each the JSON a page wrote, in the order the
- * document registered them - merged into one, first registration winning.
- * A map that does not parse is skipped, the way the browser reports and
- * ignores it.
+ * The import maps in `sources` - each the JSON a page wrote and the base URL
+ * it registered with, in the order the document registered them - merged
+ * into one, first registration winning. A map that does not parse is
+ * skipped, the way the browser reports and ignores it.
  */
 export function parseImportMaps(
-	sources: string[],
-	base: string | _URL
+	sources: { source: string; base: string }[]
 ): ImportMapState {
 	const state: ImportMapState = { imports: [], scopes: [] };
 
 	for (let i = 0; i < sources.length; i++) {
+		const base = sources[i].base;
 		let map: any;
 		try {
-			map = JSON_parse(sources[i]);
+			map = JSON_parse(sources[i].source);
 		} catch {
 			continue;
 		}

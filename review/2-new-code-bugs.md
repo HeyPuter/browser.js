@@ -21,6 +21,7 @@ These are problems in code develop added or rewrote, where main was no better (o
 
 6. **The rewriter and the client pick the incumbency mode independently.** If `siteFlags` make them disagree, every script calls an undefined `$scramjet$registerrealm` and dies. Default flags are safe; the fix is a `typeof` guard in the prelude, or always defining the global.
    CONFIRMED through the stale-`$top` path (bucket 1 #16 and #19). An iframe's `target=_top` link to a page that a siteFlags `incumbency` override matches gives `$scramjet$registerrealm is not defined`, and none of that page's scripts run. Repro: [a6/qa.ts](../packages/scramjet/packages/runway/src/tests/review/a6/qa.ts) :: `rv6-qa-modemismatch-stale-top`
+   Update: `siteFlags` keys are now hostname patterns (`example.com`, `*.example.com`, `*`) matched against the top-level frame's hostname only. Path, query, fragment and `pushState` can no longer make the two sides disagree. The only way left is a `$top` naming another host: a `_top` link from an iframe to a different host still carries the old top's `$top`, so the service worker uses the old host's flags and the new page's client uses its own. The repro now links across hosts (`linkframe.example` to `pagec.example`).
 
 7. **Named SharedWorkers still see the scoped name** (`"<origin>@name"`). develop's new `SharedWorkerGlobalScope.prototype.name` interceptor never takes effect, because `name` is an own property of the worker global.
    CONFIRMED (same on main for named workers). Repro: [a5/workers.ts](../packages/scramjet/packages/runway/src/tests/review/a5/workers.ts) :: `rv5-sharedworker-string-name`, `-dict-name`, `-blob`
@@ -130,6 +131,7 @@ These are problems in code develop added or rewrote, where main was no better (o
 
 38. **`pushState` alone can flip the rewriter's incumbency mode away from the client's** when a `siteFlags` pattern matches one route and not another, so scripts lose `$scramjet$registerrealm`. This is the same mechanism as the mode-mismatch item.
     PLAUSIBLE (code reading).
+    Obsolete: `siteFlags` now match only the top-level frame's hostname, and `pushState` can't change the host, so no route can pick different flags from another.
 
 39. **Cloned OPFS root handles reveal the per-site directory name.** develop disguises the root's `name` as `""` only for the exact handle object it returned, so a clone (posted to or from a worker, or stored in IndexedDB) shows `http%3A%2F%2Fsite`.
     CONFIRMED. Repro: [a20/opfs.ts](../packages/scramjet/packages/runway/src/tests/review/a20/opfs.ts) :: `rv20-opfs-handles`

@@ -133,6 +133,7 @@ export default function (client: ScramjetClient, self: Self) {
 				inline: true,
 				source: client.url.href,
 				apisource: "Document.parseHTMLUnsafe",
+				inertScripts: true,
 			});
 
 			// forwarded rather than dropped: the declaration named one argument

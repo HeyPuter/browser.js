@@ -1,5 +1,6 @@
 import { rewriteJs } from "@rewriters/js";
 import { ScramjetClient, ProxyCtx, Proxy } from "@client/index";
+import { callerMeta } from "@client/shared/import";
 
 function rewriteFunction<T extends string, U extends "construct" | "apply">(
 	ctx: ProxyCtx<T, U>,
@@ -14,7 +15,7 @@ function rewriteFunction<T extends string, U extends "construct" | "apply">(
 		`return ${stringifiedFunction}`,
 		"(function proxy)",
 		client.context,
-		client.meta,
+		callerMeta(client, stringifiedFunction),
 		false,
 		client
 	);

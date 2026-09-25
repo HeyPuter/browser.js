@@ -1,5 +1,6 @@
 import { rewriteJs } from "@rewriters/js";
 import { ScramjetClient } from "@client/index";
+import { callerMeta } from "@client/shared/import";
 import { Object_defineProperty, String } from "@/shared/snapshot";
 
 export default function (client: ScramjetClient, self: Self) {
@@ -16,7 +17,7 @@ export default function (client: ScramjetClient, self: Self) {
 				js,
 				"(direct eval proxy)",
 				client.context,
-				client.meta,
+				callerMeta(client, js),
 				false,
 				client
 			);
@@ -43,7 +44,7 @@ export function createIndirectEval(client: ScramjetClient) {
 					js,
 					"(indirect eval proxy)",
 					client.context,
-					client.meta,
+					callerMeta(client, js),
 					false,
 					client
 				) as string

@@ -102,6 +102,7 @@ export default function (client: ScramjetClient, _self: Self) {
 			source: client.url.href,
 			apisource,
 			foreignContext,
+			inertScripts: true,
 		});
 
 	const serialize = (html: string, foreignContext: ForeignContext) =>
@@ -401,6 +402,7 @@ export default function (client: ScramjetClient, _self: Self) {
 					inline: true,
 					source: client.url.href,
 					apisource: "DOMParser.prototype.parseFromString",
+					inertScripts: true,
 					...(isHtml ? { scriptingEnabled: false } : { xmlMode: true }),
 				}),
 				type

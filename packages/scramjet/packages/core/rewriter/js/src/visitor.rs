@@ -110,6 +110,22 @@ where
 			.add(rewrite!(url.span.shrink(1), Replace { text }));
 	}
 
+	/// A static import's or re-export's module specifier: rewritten when it is
+	/// a URL, and left alone when it is bare - which only an import map can
+	/// resolve, against the specifier exactly as the page wrote it.
+	///
+	/// https://html.spec.whatwg.org/multipage/webappapis.html#resolving-a-url-like-module-specifier
+	fn rewrite_specifier(&mut self, source: &StringLiteral<'data>) {
+		let str = source.value.as_str();
+		if str.starts_with("/")
+			|| str.starts_with("./")
+			|| str.starts_with("../")
+			|| str.contains(":")
+		{
+			self.rewrite_url(source, true);
+		}
+	}
+
 	fn rewrite_ident(&mut self, name: &Atom, span: Span) {
 		if UNSAFE_GLOBALS.contains(&name.as_str()) {
 			self.jschanges.add(rewrite!(span, WrapFn { enclose: true }));
@@ -762,14 +778,7 @@ where
 
 	#[coverage_checked(ImportDeclaration)]
 	fn visit_import_declaration(&mut self, it: &ImportDeclaration<'data>) {
-		let str = it.source.to_string();
-		if str.contains(":")
-			|| str.starts_with("/")
-			|| str.starts_with(".")
-			|| str.starts_with("..")
-		{
-			self.rewrite_url(&it.source, true);
-		}
+		self.rewrite_specifier(&it.source);
 		walk::walk_import_declaration(self, it);
 	}
 	#[coverage_checked(ImportExpression)]
@@ -783,12 +792,12 @@ where
 
 	#[coverage_checked(ExportAllDeclaration)]
 	fn visit_export_all_declaration(&mut self, it: &ExportAllDeclaration<'data>) {
-		self.rewrite_url(&it.source, true);
+		self.rewrite_specifier(&it.source);
 	}
 	#[coverage_checked(ExportNamedDeclaration)]
 	fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'data>) {
 		if let Some(source) = &it.source {
-			self.rewrite_url(source, true);
+			self.rewrite_specifier(source);
 		}
 		// the declaration body is normal code and must be rewritten, we just can't touch the
 		// specifiers below since those are binding names, not references
