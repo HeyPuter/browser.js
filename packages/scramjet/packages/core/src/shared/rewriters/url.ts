@@ -27,7 +27,6 @@ import {
 export type NavigationType = "user" | "link" | "location";
 
 export type RewriteUrlOptions = {
-	referrerPolicy?: string;
 	isModule?: boolean;
 	navigateType?: NavigationType;
 	topFrame?: string;
@@ -52,7 +51,6 @@ export type URLMeta = {
 	rawUrl?: string;
 	topFrameName?: string;
 	parentFrameName?: string;
-	referrerPolicy?: string;
 };
 
 /**
@@ -294,9 +292,6 @@ export function rewriteUrl(
 
 		const paramsInit = new _URLSearchParams();
 
-		const referrerPolicy =
-			!options?.isModule && (options?.referrerPolicy ?? meta.referrerPolicy);
-		if (referrerPolicy) paramsInit.set(QP.referrerPolicy, referrerPolicy);
 		if (options?.isModule) paramsInit.set(QP.isModule, "module");
 		if (options?.topFrame) paramsInit.set(QP.topFrame, options.topFrame);
 		if (options?.parentFrame)
