@@ -764,14 +764,52 @@ function tweakSection<K extends TweakKey>(key: K) {
 }
 
 export function SettingsPage(
-	this: FC<{ tab: Tab; selected: string }, { searchQuery: string }>
+	this: FC<
+		{ tab: Tab; selected: string; search?: string },
+		{ searchQuery: string; matches: number }
+	>
 ) {
-	this.searchQuery = "";
+	this.searchQuery = this.search ?? "";
+	this.matches = 0;
+	const filter = () => {
+		if (!this.root.isConnected) return;
+		const query = this.searchQuery.trim().toLocaleLowerCase();
+		const words = query.split(/\s+/).filter(Boolean);
+		let matches = 0;
+		for (const tab of this.root.querySelectorAll<HTMLElement>(
+			".settings-tab"
+		)) {
+			let visible = false;
+			for (const section of tab.querySelectorAll<HTMLElement>(
+				".setting-section"
+			)) {
+				const text = section.textContent?.toLocaleLowerCase() ?? "";
+				section.hidden = !words.every((word) => text.includes(word));
+				if (!section.hidden) {
+					visible = true;
+					matches++;
+				}
+			}
+			tab.hidden = !visible;
+		}
+		this.matches = matches;
+		const url = new URL(this.tab.url);
+		if (this.searchQuery) url.searchParams.set("search", this.searchQuery);
+		else url.searchParams.delete("search");
+		if (url.href !== this.tab.url.href)
+			this.tab.history.replace(url, this.tab.title, null, false);
+	};
+	this.cx.mount = () => queueMicrotask(filter);
+	use(this.searchQuery).listen(() => queueMicrotask(filter));
 
 	const button = (id: string, icon: IconDescription, name: string) => {
 		return (
-			<div
+			<button
+				type="button"
 				class="nav-button"
+				aria-current={use(this.selected).map((selected) =>
+					selected === id ? "page" : undefined
+				)}
 				class:active={use(this.selected).map((s) => s === id)}
 				on:click={() => {
 					this.selected = id;
@@ -782,13 +820,9 @@ export function SettingsPage(
 			>
 				<Icon icon={icon} />
 				<span>{name}</span>
-			</div>
+			</button>
 		);
 	};
-
-	use(this.selected).listen((s) => {
-		console.log("Selected settings category:", s);
-	});
 
 	return (
 		<div class="settings-page">
@@ -806,17 +840,36 @@ export function SettingsPage(
 			</div>
 			<div class="content">
 				<div class="search-container">
-					<Input placeholder="Find in Settings" value={use(this.searchQuery)} />
+					<Input
+						type="search"
+						aria-label="Find in Settings"
+						placeholder="Find in Settings"
+						value={use(this.searchQuery)}
+						on:keydown={(event: KeyboardEvent) => {
+							if (event.key === "Escape" && this.searchQuery) {
+								this.searchQuery = "";
+								event.preventDefault();
+								event.stopPropagation();
+							}
+						}}
+					/>
 				</div>
 				<div class="settings-content">
 					<h1>
-						{use(this.selected).map(
-							(s) => s.charAt(0).toUpperCase() + s.slice(1)
+						{use(this.selected, this.searchQuery).map(([s, query]) =>
+							query.trim()
+								? "Search results"
+								: s.charAt(0).toUpperCase() + s.slice(1)
 						)}
 					</h1>
+					{use(this.searchQuery, this.matches).map(([query, count]) =>
+						query.trim() && !count ? (
+							<p role="status">No settings found.</p>
+						) : null
+					)}
 					{/* General Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "general" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "general" || query.trim() ? (
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
@@ -909,8 +962,8 @@ export function SettingsPage(
 					)}
 
 					{/* Appearance Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "appearance" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "appearance" || query.trim() ? (
 							<div class="settings-tab">
 								{/* <section class="setting-section">
 									<div class="section-header">
@@ -1165,8 +1218,8 @@ export function SettingsPage(
 					)}
 
 					{/* Themes Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "themes" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "themes" || query.trim() ? (
 							<div class="settings-tab">
 								{themeSection(
 									"dark",
@@ -1183,8 +1236,8 @@ export function SettingsPage(
 					)}
 
 					{/* Search Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "search" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "search" || query.trim() ? (
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
@@ -1237,8 +1290,8 @@ export function SettingsPage(
 					)}
 
 					{/* Privacy Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "privacy" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "privacy" || query.trim() ? (
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header">
@@ -1363,8 +1416,8 @@ export function SettingsPage(
 					)}
 
 					{/* About Tab */}
-					{use(this.selected).map((selected) =>
-						selected === "about" ? (
+					{use(this.selected, this.searchQuery).map(([selected, query]) =>
+						selected === "about" || query.trim() ? (
 							<div class="settings-tab">
 								<section class="setting-section">
 									<div class="section-header"></div>
@@ -1491,7 +1544,15 @@ SettingsPage.style = css`
 		gap: 0.25rem;
 	}
 
+	[hidden] {
+		display: none !important;
+	}
 	.nav-button {
+		font: inherit;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
 		display: flex;
 		align-items: center;
 		gap: var(--space-lg);
