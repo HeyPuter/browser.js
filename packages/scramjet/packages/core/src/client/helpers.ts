@@ -34,14 +34,11 @@ export function openWindowSteps(
 	// rewrite. Anything else is.
 	const href = url === undefined || url === "" ? url : client.rewriteUrl(url);
 
-	if (target !== undefined && target !== null) {
-		if (target === "_top" || target === "_unfencedTop") {
-			target = client.meta.topFrameName;
-		}
-		if (target === "_parent") {
-			target = client.meta.parentFrameName;
-		}
-	}
+	// the argument is a DOMString by the time it gets here; absent, it is
+	// "_blank", which is left alone like every name but the ones the targets
+	// layer knows. Resolved against the window whose `open` was called, which
+	// is the one the steps run for
+	if (target !== undefined) target = client.targets.rewrite(target);
 
 	const realwin = nativeOpen(href, target, features);
 	if (!realwin) return realwin;
@@ -51,7 +48,29 @@ export function openWindowSteps(
 		client.init.hookSubcontext(realwin as Self);
 	}
 
+	// a new top-level window: a link in it may name this tree's top-level,
+	// which has to be able to tell it when that name changes
+	trackPopup(client, realwin);
+
 	return realwin;
+}
+
+/**
+ * Record `win` against the emulated top-level of `client`'s tree, if it is a
+ * popup and not a frame of the tree itself.
+ */
+export function trackPopup(client: ScramjetClient, win: Window) {
+	const root = client.emulatedRoot();
+	if (!root) return;
+	try {
+		// `window.open` can hand back a frame of the tree, by name or keyword
+		if (new client.native.window(win).parent !== win) return;
+	} catch {
+		return;
+	}
+	const popups = root.frameName!.popups;
+	for (let i = 0; i < popups.length; i++) if (popups[i] === win) return;
+	popups[popups.length] = win;
 }
 
 /* eslint-disable quotes -- an IDL member declaration reads as spec text, and

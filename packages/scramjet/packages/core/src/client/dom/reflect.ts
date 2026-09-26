@@ -778,6 +778,20 @@ export default function (client: ScramjetClient, self: Self) {
 
 			set(this, "formaction", value);
 		}
+
+		@Type("DOMString")
+		get formTarget(): string {
+			void super.type;
+
+			return reflect(this, "formtarget");
+		}
+
+		@Type("DOMString")
+		set formTarget(value: string) {
+			void super.type;
+
+			set(this, "formtarget", value);
+		}
 	});
 
 	client.Intercept(class extends HTMLButtonElement {
@@ -793,6 +807,20 @@ export default function (client: ScramjetClient, self: Self) {
 			void super.type;
 
 			set(this, "formaction", value);
+		}
+
+		@Type("DOMString")
+		get formTarget(): string {
+			void super.type;
+
+			return reflect(this, "formtarget");
+		}
+
+		@Type("DOMString")
+		set formTarget(value: string) {
+			void super.type;
+
+			set(this, "formtarget", value);
 		}
 	});
 
@@ -1424,10 +1452,25 @@ export default function (client: ScramjetClient, self: Self) {
 		return attrs.get(element, "href");
 	};
 
+	// an SVG hyperlink's `target` is an SVGAnimatedString over the attribute
+	// the targets rule rewrites
+	// https://svgwg.org/svg2-draft/linking.html#__svg__SVGAElement__target
+	client.Trap("SVGAElement.prototype.target", {
+		get(ctx) {
+			const animated = ctx.get() as SVGAnimatedString;
+			// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
+			if (animated) client.box.svgTargets.set(animated, ctx.this);
+
+			return animated;
+		},
+	});
+
 	client.Intercept(class extends SVGAnimatedString {
 		@Type("DOMString")
 		get baseVal(): string {
 			const native = super.baseVal;
+			const target = client.box.svgTargets.get(this);
+			if (target) return attrs.get(target, "target") ?? "";
 			const owner = client.box.svgHrefs.get(this);
 			// className and target are SVGAnimatedStrings too, and neither is a
 			// URL - only the ones recorded above are
@@ -1441,6 +1484,13 @@ export default function (client: ScramjetClient, self: Self) {
 		@Type("DOMString")
 		set baseVal(value: string) {
 			void super.baseVal;
+
+			const target = client.box.svgTargets.get(this);
+			if (target) {
+				attrs.set(target, "target", String(value));
+
+				return;
+			}
 
 			const owner = client.box.svgHrefs.get(this);
 			if (!owner) {
@@ -1460,6 +1510,8 @@ export default function (client: ScramjetClient, self: Self) {
 		@Type("DOMString")
 		get animVal(): string {
 			const native = super.animVal;
+			const target = client.box.svgTargets.get(this);
+			if (target) return attrs.get(target, "target") ?? "";
 			const owner = client.box.svgHrefs.get(this);
 			if (!owner) return native;
 

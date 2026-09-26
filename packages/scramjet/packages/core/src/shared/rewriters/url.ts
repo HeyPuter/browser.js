@@ -24,8 +24,6 @@ export type RewriteUrlOptions = {
 	referrerPolicy?: string;
 	isModule?: boolean;
 	navigateType?: NavigationType;
-	topFrame?: string;
-	parentFrame?: string;
 	isIframe?: string;
 	mode?: string;
 	credentials?: string;
@@ -41,8 +39,13 @@ export type URLMeta = {
 	 * another site all run with the flags of the page they are part of.
 	 */
 	topUrl?: _URL;
-	topFrameName?: string;
-	parentFrameName?: string;
+	/**
+	 * What a `target` or `formtarget` attribute is written into the document
+	 * as - see `shared/targets.ts`. Unset leaves every target alone, which is
+	 * right for a real top-level document, where the keywords already mean
+	 * what the site means by them.
+	 */
+	rewriteTarget?: (value: string) => string;
 	referrerPolicy?: string;
 };
 
@@ -197,9 +200,6 @@ export function rewriteUrl(
 			!options?.isModule && (options?.referrerPolicy ?? meta.referrerPolicy);
 		if (referrerPolicy) paramsInit.set(QP.referrerPolicy, referrerPolicy);
 		if (options?.isModule) paramsInit.set(QP.isModule, "module");
-		if (options?.topFrame) paramsInit.set(QP.topFrame, options.topFrame);
-		if (options?.parentFrame)
-			paramsInit.set(QP.parentFrame, options.parentFrame);
 		if (options?.isIframe) paramsInit.set(QP.isIframe, options.isIframe);
 		// only where the service worker could not work it out from the client
 		// that made the request: a frame or a worker, which becomes its own

@@ -163,7 +163,11 @@ class RemoteTransport implements ProxyTransport {
 	}
 }
 
-const sw = navigator.serviceWorker.controller;
+// optional: this bundle also loads into a window whose client is already
+// installed - one reached before its first document replaced about:blank -
+// and the client has taken `serviceWorker` off the navigator there. `load`
+// only needs it for a window that has no client yet
+const sw = navigator.serviceWorker?.controller;
 
 type Init = {
 	config: Config;
@@ -201,13 +205,6 @@ export function load(init: Init) {
 	setWasm(wasm);
 
 	new ExecutionContextWrapper(globalThis, init);
-}
-
-function createFrameId() {
-	return `${Array(8)
-		.fill(0)
-		.map(() => Math.floor(Math.random() * 36).toString(36))
-		.join("")}`;
 }
 
 class ExecutionContextWrapper {
@@ -290,9 +287,6 @@ class ExecutionContextWrapper {
 
 	injectScramjet() {
 		const frame = this.global.frameElement as HTMLIFrameElement | null;
-		if (frame && !frame.name) {
-			window.name = frame.name = createFrameId();
-		}
 		let controllerFrame = frame?.[CONTROLLERFRAME];
 		let isTopLevel = true;
 		if (!controllerFrame) {

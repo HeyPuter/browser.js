@@ -2,6 +2,7 @@ import { rewriteCss } from "@rewriters/css";
 import { rewriteHtml, rewriteSrcset } from "@rewriters/html";
 import { rewriteUrl, unrewriteBlob, URLMeta } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
+import { placeholderTarget } from "./targets";
 import { parseDeclarativeRefresh } from "./refresh";
 import { _URL } from "./snapshot";
 
@@ -71,8 +72,6 @@ export const htmlRules: {
 	{
 		fn: (value, context, meta) => {
 			const url = rewriteUrl(value, context, meta, {
-				topFrame: meta.topFrameName,
-				parentFrame: meta.parentFrameName,
 				isIframe: "1",
 			});
 
@@ -129,8 +128,9 @@ export const htmlRules: {
 					origin: new _URL(meta.origin.origin),
 					base: new _URL(meta.origin.origin),
 					topUrl: meta.topUrl,
-					topFrameName: meta.topFrameName,
-					parentFrameName: meta.parentFrameName,
+					// the srcdoc document is a child navigable whatever this one
+					// is, and its own client puts the real targets in place
+					rewriteTarget: placeholderTarget,
 					referrerPolicy: meta.referrerPolicy,
 				},
 				{
@@ -149,13 +149,13 @@ export const htmlRules: {
 		style: "*",
 	},
 	{
-		fn: (value, context, meta) => {
-			if (value === "_top" || value === "_unfencedTop")
-				return meta.topFrameName;
-			else if (value === "_parent") return meta.parentFrameName;
-			else return value;
-		},
-		target: ["a", "base"],
+		// https://html.spec.whatwg.org/multipage/document-sequences.html#the-rules-for-choosing-a-navigable -
+		// everything that names a navigable to navigate. `a` is SVG's too,
+		// which has the same attribute
+		fn: (value, _context, meta) =>
+			meta.rewriteTarget ? meta.rewriteTarget(value) : value,
+		target: ["a", "area", "base", "form"],
+		formtarget: ["button", "input"],
 	},
 	{
 		// svg elements with an href property

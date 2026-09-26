@@ -65,6 +65,8 @@ export interface ScramjetConfig {
 		metafn: string;
 		pushsourcemapfn: string;
 		registerrealmfn: string;
+		/** Called by the script the HTML rewriter puts after a navigation target - see `client/targets.ts`. */
+		targetfn: string;
 		trysetfn: string;
 		templocid: string;
 		tempreceiverid: string;

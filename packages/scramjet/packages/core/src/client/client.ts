@@ -26,6 +26,8 @@ import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
 import { AttributeLayer } from "./attributes";
 import { TextLayer } from "./text";
+import { TargetLayer } from "./targets";
+import { TopFrameName } from "./framename";
 import { ScramjetConfig } from "@/types";
 import { Tap } from "@/Tap";
 import {
@@ -434,6 +436,7 @@ export class ScramjetClient {
 		this.errors = new NativeErrors(global as Self);
 		this.attributes = new AttributeLayer(this);
 		this.text = new TextLayer(this);
+		this.targets = new TargetLayer(this);
 
 		this.box.registerClient(this, global as Self);
 
@@ -489,25 +492,10 @@ export class ScramjetClient {
 
 				return client.url;
 			},
-			get topFrameName() {
-				if (!iswindow)
-					throw new Error("topFrameName was called from a worker?");
-				if (client.parentFrame() === "top") return null;
-
-				return client.topmostClient().frameName();
-			},
-			get parentFrameName() {
-				if (!iswindow)
-					throw new Error("parentFrameName was called from a worker?");
-
-				const parent = client.parentFrame();
-				if (parent === "top" || parent === "unreachable") return null;
-				// a parent outside the sandbox is the embedder, and the frame it
-				// made for us is the one targets name
-				if (parent === "foreign") return client.frameName();
-
-				return parent.frameName();
-			},
+			// a worker has no navigable, so nothing to target from
+			rewriteTarget: iswindow
+				? (value: string) => client.targets.rewrite(value)
+				: undefined,
 			get referrerPolicy(): string | undefined {
 				if (client.initHeaders && client.initHeaders.has("referrer-policy")) {
 					return client.initHeaders.get("referrer-policy");
@@ -1641,23 +1629,37 @@ return { apply, construct };
 	}
 
 	/**
-	 * The name of the frame element holding this window, which is what the
-	 * page's `_top` and `_parent` targets are rewritten to. Null when there is
-	 * no frame element to be seen.
+	 * Whether this window is the emulated top-level traversable: the site's
+	 * top document, really a frame in an embedder that is not the proxy's -
+	 * a `ScramjetFrame`, or a tab in the browser UI. Fixed for the window's
+	 * lifetime, since a navigable's parent never changes.
 	 */
-	frameName(): string | null {
-		const frame = new this.native.window(this.global).frameElement;
-		if (!frame) return null;
-		if (!frame.name) {
-			dbg.error(
-				"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
-			);
-
-			return null;
+	get isEmulatedTop(): boolean {
+		if (this.cachedIsEmulatedTop === undefined) {
+			const parent = iswindow ? this.parentFrame() : "top";
+			this.cachedIsEmulatedTop =
+				parent === "foreign" || parent === "unreachable";
 		}
 
-		return frame.name;
+		return this.cachedIsEmulatedTop;
 	}
+	private cachedIsEmulatedTop: boolean | undefined;
+
+	/**
+	 * The emulated top-level of the tree this window is in, or null when the
+	 * tree is a real top-level one - a popup, or scramjet loaded top-level.
+	 */
+	emulatedRoot(): ScramjetClient | null {
+		const root = this.topmostClient();
+
+		return root.isEmulatedTop && root.frameName ? root : null;
+	}
+
+	/** Navigation targets as this document's DOM holds them - see `targets.ts`. */
+	targets: TargetLayer;
+
+	/** The page's name for this window, if it is the emulated top-level - see `framename.ts`. */
+	frameName: TopFrameName | null = null;
 
 	/**
 	 * The URL of the top-level frame this client belongs to, which its flags

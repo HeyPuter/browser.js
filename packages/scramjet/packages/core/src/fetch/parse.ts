@@ -6,6 +6,7 @@ import {
 	Error,
 } from "@/shared/snapshot";
 import { unrewriteUrl, URLMeta } from "@rewriters/url";
+import { isNestedDestination, placeholderTarget } from "@/shared/targets";
 import {
 	ScramjetFetchHandler,
 	ScramjetFetchParsed,
@@ -17,8 +18,6 @@ export const QP = {
 	referrerPolicy: "$rfp",
 	referrerSource: "$rfs",
 	isModule: "$module",
-	topFrame: "$tf",
-	parentFrame: "$pf",
 	isIframe: "$iframe",
 	topUrl: "$top",
 	mode: "$mode",
@@ -206,8 +205,12 @@ export function parseRequest(
 		origin: url,
 		base: url,
 		topUrl: resolveTopUrl(request, params, url, handler),
-		topFrameName: params.topFrame,
-		parentFrameName: params.parentFrame,
+		// a document loaded into a child navigable cannot be told where in the
+		// tree that navigable is, so it gets the placeholder and its client
+		// finishes the job
+		rewriteTarget: isNestedDestination(destination)
+			? placeholderTarget
+			: undefined,
 		referrerPolicy: params.referrerPolicy,
 	};
 

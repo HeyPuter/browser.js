@@ -8,9 +8,12 @@ import {
 	Element,
 	ElementType,
 	Parser,
+	type ParentNode,
+	Text,
 	parseDocument,
 	render,
 } from "@/shared/htmlparser";
+import { TARGET_ATTRIBUTES, targetMayNeedClient } from "@/shared/targets";
 import { type NullArray, nullArray } from "@/shared/htmlparser/safe";
 import { URLMeta, rewriteUrl } from "@rewriters/url";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
@@ -28,6 +31,7 @@ import {
 	Object_keys,
 	TextEncoder_encode,
 	Array_indexOf,
+	Array_push,
 	String_slice,
 	String_startsWith,
 	String_toLowerCase,
@@ -239,6 +243,10 @@ function rewriteHtmlInner(
 		undefined
 	);
 	traverseParsedHtml(root, context, meta);
+	// only in markup the browser will parse as a document of its own - the
+	// client writes the answer itself for everything a script inserts
+	if (htmlcontext.loadScripts)
+		addTargetScripts(root, context.config.globals.targetfn);
 
 	let htmlRoot: Element | undefined;
 	let headElement: Element | undefined;
@@ -417,6 +425,126 @@ export function unrewriteHtml(
 	traverse(root);
 
 	return render(root);
+}
+
+/** Elements a script cannot be parsed into, or would not run in. */
+const NO_TARGET_SCRIPTS = [
+	// inert: its scripts never run, and its content is settled when it is
+	// inserted. A declarative shadow root's are settled from outside it
+	"template",
+	// raw text in a browser with scripting on, so a script here is text
+	"noscript",
+	"noembed",
+	"noframes",
+	"script",
+	"style",
+	"textarea",
+	"title",
+	"xmp",
+	"iframe",
+	"plaintext",
+];
+
+/** The target elements that are void, whose script has to follow them instead. */
+const VOID_TARGETS = ["area", "base", "input"];
+
+/**
+ * Put a script straight after every navigation target in `parent` whose value
+ * only the document's client can settle - see `client/targets.ts` for what the
+ * script does. Right after the start tag, so it runs before anything that
+ * could use the attribute: the parser runs an inline script as soon as it has
+ * it, and nothing else of the page's can run between the two.
+ *
+ * A declarative shadow root is the exception. A script inside one runs, but
+ * with no `currentScript` to find its place by, so none goes in: one script
+ * after the outermost shadow host settles every target in its shadow trees.
+ */
+function addTargetScripts(parent: ParentNode, fn: string) {
+	const children = parent.children;
+	let changed = false;
+	const out: ChildNode[] = [];
+
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
+		Array_push(out, child);
+		if (child.type !== ElementType.Tag) {
+			if ("children" in child) addTargetScripts(child, fn);
+			continue;
+		}
+		if (Array_indexOf(NO_TARGET_SCRIPTS, child.name) !== -1) continue;
+
+		if (needsTargetScript(child)) {
+			const script = targetScript(fn, "");
+			if (Array_indexOf(VOID_TARGETS, child.name) !== -1) {
+				Array_push(out, script);
+				changed = true;
+			} else {
+				child.prepend([script]);
+			}
+		}
+
+		if (hostsTargets(child)) {
+			Array_push(out, targetScript(fn, "1"));
+			changed = true;
+		}
+
+		addTargetScripts(child, fn);
+	}
+
+	if (!changed) return;
+	for (let index = 0; index < out.length; index++) {
+		out[index].parent = parent;
+		children[index] = out[index];
+	}
+}
+
+function targetScript(fn: string, argument: string): Element {
+	return new Element("script", {}, [new Text(fn + "(" + argument + ")")]);
+}
+
+function isShadowTemplate(node: ChildNode): node is Element {
+	return (
+		node.type === ElementType.Tag &&
+		node.name === "template" &&
+		node.attribs.shadowrootmode !== undefined
+	);
+}
+
+/** Whether `element` hosts a declarative shadow root with a target in it that needs settling. */
+function hostsTargets(element: Element): boolean {
+	const children = element.children;
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
+		if (isShadowTemplate(child) && subtreeNeedsTargetScript(child)) return true;
+	}
+
+	return false;
+}
+
+function subtreeNeedsTargetScript(node: ParentNode): boolean {
+	const children = node.children;
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
+		if (child.type !== ElementType.Tag) {
+			if ("children" in child && subtreeNeedsTargetScript(child)) return true;
+			continue;
+		}
+		if (needsTargetScript(child)) return true;
+		if (subtreeNeedsTargetScript(child)) return true;
+	}
+
+	return false;
+}
+
+function needsTargetScript(element: Element): boolean {
+	for (let i = 0; i < TARGET_ATTRIBUTES.length; i++) {
+		const { name, tags } = TARGET_ATTRIBUTES[i];
+		if (Array_indexOf(tags, element.name) === -1) continue;
+		const value = element.attribs[mirrorName(name)];
+		if (value !== undefined && targetMayNeedClient(value)) return true;
+	}
+
+	return false;
 }
 
 function traverseParsedHtml(

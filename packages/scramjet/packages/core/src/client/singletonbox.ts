@@ -125,6 +125,12 @@ export class SingletonBox {
 	 */
 	svgHrefs: _WeakMap<SVGAnimatedString, Element> = new _WeakMap();
 
+	/**
+	 * The same, for an SVG hyperlink's `target`, which the targets rule
+	 * rewrites like an HTML one's. See `client/targets.ts`.
+	 */
+	svgTargets: _WeakMap<SVGAnimatedString, Element> = new _WeakMap();
+
 	// real events that we're wrapping in event.ts
 	wrappedEvents: _WeakMap<Event, Event> = new _WeakMap();
 	// the reverse: the real event behind each stand-in event.ts hands out

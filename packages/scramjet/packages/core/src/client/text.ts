@@ -32,6 +32,7 @@
  * script's `innerHTML` is its source) and `dom/fragments.ts` (ranges).
  */
 
+import { TargetLayer } from "./targets";
 import type { ScramjetClient } from "@client/index";
 import { HTML_NAMESPACE, SCRIPT_SOURCE_ATTRIBUTE } from "@client/attributes";
 import {
@@ -841,17 +842,27 @@ export class TextLayer {
 		nodes: readonly unknown[],
 		insert: () => T
 	): T {
-		const commit = this.insertion(parent, nodes);
-		if (!commit) return insert();
+		// navigation targets moved in whole - a template's clone, an adopted
+		// node - are settled for the document they land in. See `targets.ts`
+		const targets = this.client.targets
+			? this.client.targets.collect(nodes)
+			: null;
 
+		const commit = this.insertion(parent, nodes);
 		let result: T;
-		try {
+		if (!commit) {
 			result = insert();
-		} catch (err) {
-			commit.undo();
-			throw err;
+		} else {
+			try {
+				result = insert();
+			} catch (err) {
+				commit.undo();
+				throw err;
+			}
+			commit.done();
 		}
-		commit.done();
+
+		if (targets) TargetLayer.inserted(targets, this.client);
 
 		return result;
 	}
