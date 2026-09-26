@@ -8,6 +8,8 @@ import { setContextMenu } from "@components/Menu";
 import {
 	createMiddleClickCloseHandler,
 	DragTab,
+	retireTab,
+	retainTabFocus,
 } from "@components/TabStrip/DragTab";
 import { requestUnfocusFrames } from "@components/Shell";
 import { easing } from "../../easing";
@@ -316,6 +318,7 @@ export function TabStrip(
 	};
 
 	use(this.tabs).listen(() => {
+		retainTabFocus(this.root);
 		let newvisualtabs: VisualTab[] = [];
 		let opening = false;
 
@@ -369,6 +372,7 @@ export function TabStrip(
 			if (!newvisualtabs.includes(vtab)) {
 				let indexof = this.visualtabs.indexOf(vtab);
 				vtab.closing = true;
+				retireTab(vtab.root);
 				newvisualtabs.splice(indexof, 0, vtab);
 				// Close-tab animation: collapses tab width to 0 before removal from DOM list.
 				let anim = vtab.root.animate(
@@ -437,6 +441,9 @@ export function TabStrip(
 	return (
 		<div
 			id="tabstrip"
+			role="tablist"
+			aria-label="Browser tabs"
+			aria-orientation="horizontal"
 			class:inline={this.inline ?? false}
 			on:auxclick={createMiddleClickCloseHandler(
 				() => this.visualtabs,
@@ -454,7 +461,11 @@ export function TabStrip(
 					e.stopPropagation();
 				}}
 			>
-				<OmnibarButton icon={iconAdd} click={this.addTab}></OmnibarButton>
+				<OmnibarButton
+					icon={iconAdd}
+					tooltip="New tab"
+					click={this.addTab}
+				></OmnibarButton>
 			</div>
 			<div class="extra right" this={use(this.rightEl)}></div>
 			<TabHoverCard hoveredTab={use(this.currentlyHovered)} />

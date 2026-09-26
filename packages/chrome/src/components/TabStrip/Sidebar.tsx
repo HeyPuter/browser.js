@@ -4,6 +4,8 @@ import {
 	createMiddleClickCloseHandler,
 	DragTab,
 	VerticalPinTile,
+	retireTab,
+	retainTabFocus,
 } from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
@@ -328,6 +330,7 @@ export function Sidebar(
 	};
 
 	use(this.tabs).listen(() => {
+		retainTabFocus(this.root);
 		let newvisualtabs: VisualTab[] = [];
 
 		// Both sidebar layouts render pinned tabs in the Arc-style grid
@@ -389,6 +392,7 @@ export function Sidebar(
 			if (!newvisualtabs.includes(vtab)) {
 				let indexof = this.visualtabs.indexOf(vtab);
 				vtab.closing = true;
+				retireTab(vtab.root);
 				newvisualtabs.splice(indexof, 0, vtab);
 				let anim = vtab.root.animate(
 					[
@@ -458,6 +462,9 @@ export function Sidebar(
 	return (
 		<div
 			id="tabstrip"
+			role="tablist"
+			aria-label="Browser tabs"
+			aria-orientation="vertical"
 			this={use(this.container)}
 			on:auxclick={createMiddleClickCloseHandler(
 				() => this.visualtabs,
@@ -473,7 +480,12 @@ export function Sidebar(
 			</div>
 			{use(this.visualtabs).mapEach((tab) => tab.root)}
 			<div class="extra after" this={use(this.afterEl)}>
-				<button class="new-tab" on:click={this.addTab}>
+				<button
+					class="new-tab"
+					aria-label="New tab"
+					title="New tab"
+					on:click={this.addTab}
+				>
 					<Icon icon={iconAdd} />
 				</button>
 			</div>
@@ -795,7 +807,10 @@ export function VerticalPinList(
 	use(this.tabs).listen((tabs) => {
 		const pinned = new Set(tabs.filter((tab) => tab.pinned));
 		for (const tab of [...tiles.keys()]) {
-			if (!pinned.has(tab)) tiles.delete(tab);
+			if (!pinned.has(tab)) {
+				retireTab(tiles.get(tab)!);
+				tiles.delete(tab);
+			}
 		}
 	});
 
