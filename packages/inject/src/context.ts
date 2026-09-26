@@ -171,7 +171,9 @@ export class ExecutionContextWrapper {
 					codecDecode: this.init.codecDecode,
 					// TODO: what should be the behavior here? is inheriting correct?
 					initHeaders: this.init.initHeaders,
-					history: this.init.history,
+					// a frame hooked before the proxy serves it anything keeps the
+					// browser's referrer, not this document's
+					referrer: undefined,
 				});
 
 				return context.client;
@@ -186,7 +188,7 @@ export class ExecutionContextWrapper {
 				});
 			},
 			initHeaders: this.init.initHeaders,
-			history: this.init.history,
+			referrer: this.init.referrer,
 		});
 		this.client.hook();
 	}

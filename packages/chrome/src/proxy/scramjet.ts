@@ -347,7 +347,6 @@ export function createFetchHandler(controller: Controller) {
 		contexts.push(frameContext);
 
 		const initHeaders = htmlcontext.headers ?? [];
-		const history = htmlcontext.history ?? [];
 
 		const injected = `
 			$injectLoad({
@@ -360,7 +359,7 @@ export function createFetchHandler(controller: Controller) {
 				codecDecode: ${codecDecode.toString()},
 				prefix: "${controller.prefix.href}",
 				initHeaders: ${JSON.stringify(initHeaders)},
-				history: ${JSON.stringify(history)},
+				referrer: ${JSON.stringify(htmlcontext.referrer)},
 			});
 			document.querySelectorAll("script[scramjet-injected]").forEach(script => script.remove());
 		`;

@@ -4,7 +4,6 @@ import {
 	ScramjetFetchHandler,
 	ScramjetFetchParsed,
 	ScramjetFetchRequest,
-	ScramjetFetchTrackedClient,
 } from ".";
 
 export const QP = {
@@ -102,16 +101,6 @@ export function parseRequest(
 		url.searchParams.set(key, value);
 	}
 
-	const clientId = request.clientId;
-	let trackedClient: ScramjetFetchTrackedClient | undefined;
-	if (clientId) {
-		trackedClient = handler.trackedClients.get(clientId);
-		if (!trackedClient) {
-			trackedClient = new ScramjetFetchTrackedClient(clientId);
-			handler.trackedClients.set(clientId, trackedClient);
-		}
-	}
-
 	const referrerSourceUrl =
 		params.referrerSource === undefined
 			? undefined
@@ -140,16 +129,14 @@ export function parseRequest(
 		base: url,
 		topFrameName: params.topFrame,
 		parentFrameName: params.parentFrame,
-		referrerPolicy: params.referrerPolicy,
 	};
 
 	const parsed: ScramjetFetchParsed = {
 		meta,
 		url,
 		isModule: params.isModule === "module" || isUnmarkedModule(request, params),
-		referrerPolicy: params.referrerPolicy,
 		referrerSourceUrl,
-		trackedClient,
+		initialReferrerPolicy: params.referrerPolicy,
 		hadExtraParams,
 		crossSiteRedirect: params.crossSiteRedirect === "1",
 		fetchSiteState,
