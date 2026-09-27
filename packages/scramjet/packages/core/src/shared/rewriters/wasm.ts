@@ -19,6 +19,23 @@ export function setWasm(u8: Uint8Array | ArrayBuffer) {
 	wasm_u8 = ArrayBuffer_isView(u8) ? u8 : new _Uint8Array(u8);
 }
 
+/**
+ * Rewrite with another realm's rewriter rather than instantiating one here. A
+ * copy of the bundle evaluated into a popup (see `bundleSource`) takes its
+ * opener's: every call into it is synchronous, so it keeps working after the
+ * opener's document is gone, and the popup skips decoding and compiling the
+ * wasm again.
+ */
+let adopted: typeof getRewriter | undefined;
+export function adoptRewriter(from: typeof getRewriter) {
+	adopted = from;
+}
+
+/** Whether `getRewriter` has something to rewrite with. */
+export function hasRewriter(): boolean {
+	return !!(adopted || wasm_u8);
+}
+
 const MAGIC = "\0asm".split("").map((x) => x.charCodeAt(0));
 
 function initWasm() {
@@ -42,6 +59,8 @@ export function getRewriter(
 	context: ScramjetContext,
 	meta: URLMeta
 ): [Rewriter, () => void] {
+	if (adopted) return adopted(context, meta);
+
 	initWasm();
 
 	let obj: RewriterBox;
