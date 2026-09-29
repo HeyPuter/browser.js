@@ -109,6 +109,17 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	/**
+	 * What the native left undone when handed a view from {@link readInit}:
+	 * the page's `referrer`, as a string, and whether `window` was `null` and
+	 * `referrerPolicy` given at all.
+	 */
+	type PendingReferrer = {
+		referrer?: string;
+		noWindow?: boolean;
+		policy?: boolean;
+	};
+
+	/**
 	 * A `RequestInit` / `ResponseInit` with the members named by `keys` read
 	 * exactly once, and a tagged `headers` swapped for the corrected view.
 	 *
@@ -122,22 +133,32 @@ export default function (client: ScramjetClient, self: Self) {
 	 * So the native is handed a view that answers the members read here from
 	 * what they read as, and sends every other `[[Get]]` to the page's object
 	 * with the page's object as the receiver, which is what keeps a platform
-	 * getter's brand check passing. `mode` and `credentials` go through
-	 * `ToString` here too, so the native converts a primitive and runs no page
-	 * code a second time. What this cannot keep is WebIDL's lexicographic
-	 * order: these members are read before the native reads the rest.
+	 * getter's brand check passing. The view is not a proxy *of* the page's
+	 * object: a frozen one's members could then only ever read as they are,
+	 * and a proxy that answers otherwise throws. `mode` and `credentials` go
+	 * through `ToString` here too, so the native converts a primitive and runs
+	 * no page code a second time. What this cannot keep is WebIDL's
+	 * lexicographic order: these members are read before the native reads the
+	 * rest.
 	 *
 	 * `referrer`, which nothing here needs to know ahead of the native, is not
-	 * one of them. With `referrer` set it is converted and rewritten as the
-	 * native reads it, so it keeps its place in that order, and a throwing
-	 * `body` getter still stops it from being read at all.
+	 * one of them. With `referrer` set it is read and converted where the
+	 * native reads it, so it keeps its place in that order - but it is only
+	 * resolved once the whole dictionary has been read, as the constructor
+	 * steps do, since a later member's getter can still move `<base>`. So the
+	 * native sees none, and {@link settleReferrer} hands it over afterwards.
 	 */
 	const readInit = <T>(
 		init: T,
 		keys: readonly string[],
 		referrer = false
-	): { init: T; members: Record<string, unknown> } => {
+	): {
+		init: T;
+		members: Record<string, unknown>;
+		pending: PendingReferrer;
+	} => {
 		const members: Record<string, unknown> = Object_create(null);
+		const pending: PendingReferrer = Object_create(null);
 
 		// undefined and null are the empty dictionary and anything else that is
 		// not an object is the native's TypeError to raise, so neither has a
@@ -146,7 +167,7 @@ export default function (client: ScramjetClient, self: Self) {
 			init === null ||
 			(typeof init !== "object" && typeof init !== "function")
 		) {
-			return { init, members };
+			return { init, members, pending };
 		}
 
 		for (const key of drain(keys)) {
@@ -161,20 +182,66 @@ export default function (client: ScramjetClient, self: Self) {
 			members.headers = toNativeHeaders(members.headers as Headers);
 		}
 
-		const view = new Proxy(init as object, {
-			get: (target, key) => {
+		const view = new Proxy(Object_create(null), {
+			get: (_, key) => {
 				if (key in members) return members[key as string];
 
-				const value = Reflect_get(target, key, target);
-				if (referrer && key === "referrer" && value !== undefined) {
-					return rewriteReferrer(idlUSVString(value));
-				}
+				const value = Reflect_get(init as object, key, init);
+				if (!referrer) return value;
 
-				return value;
+				if (key === "window" && value === null) pending.noWindow = true;
+				if (key === "referrerPolicy" && value !== undefined) {
+					pending.policy = true;
+				}
+				if (key !== "referrer" || value === undefined) return value;
+
+				const string = idlUSVString(value);
+				// nothing to resolve in an empty one, and one that parses against
+				// no base is the native's TypeError to throw, where it throws it
+				if (string === "" || !tryParse(string)) return string;
+
+				pending.referrer = string;
+				return undefined;
 			},
 		});
 
-		return { init: view as T, members };
+		return { init: view as T, members, pending };
+	};
+
+	const tryParse = (url: string): boolean => {
+		try {
+			new _URL(url, client.meta.base);
+			return true;
+		} catch {
+			return false;
+		}
+	};
+
+	/**
+	 * `request` with the referrer {@link readInit} held back from the native.
+	 *
+	 * Rebuilt from `request` with only `referrer` - and the `referrerPolicy`
+	 * and `window` that any non-empty init resets - which copies everything
+	 * else across, the body included. `request` is never handed to the page,
+	 * so its body being taken does not matter. Nor is what the native reset or
+	 * not in building it: an init of nothing but `referrer` read as empty
+	 * there, and this one is not.
+	 */
+	const settleReferrer = <R extends Request>(
+		request: R,
+		pending: PendingReferrer,
+		Ctor: new (input: RequestInfo, init?: RequestInit) => R
+	): R => {
+		if (pending.referrer === undefined) return request;
+
+		const init: RequestInit = Object_create(null);
+		init.referrer = rewriteReferrer(pending.referrer);
+		if (pending.policy) {
+			init.referrerPolicy = new client.native.Request(request).referrerPolicy;
+		}
+		if (pending.noWindow) init.window = null;
+
+		return new Ctor(request, init);
 	};
 
 	/**
@@ -232,7 +299,7 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments("(Request or USVString)", "optional RequestInit")
 		@Returns("Promise<Response>")
 		static async fetch(input: RequestInfo, requestInit?: RequestInit) {
-			const { init, members } = readInit(
+			const { init, members, pending } = readInit(
 				requestInit,
 				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
 				true
@@ -244,7 +311,21 @@ export default function (client: ScramjetClient, self: Self) {
 
 			// through `this` rather than a saved global, so the native's own
 			// receiver check still sees what the page called it on
-			const response = await new client.native.window(this).fetch(input, init);
+			const nativeThis = new client.native.window(this);
+			// the referrer is only settled once the init has been read, so a
+			// fetch with one is a Request first, as `fetch()` itself does it
+			// https://fetch.spec.whatwg.org/#dom-global-fetch
+			let response: Response;
+			if (init === undefined || init === null) {
+				response = await nativeThis.fetch(input, init);
+			} else {
+				const request = settleReferrer(
+					new nativeGlobal.Request(input, init),
+					pending,
+					nativeGlobal.Request
+				);
+				response = await nativeThis.fetch(request);
+			}
 			client.box.taggedResponses.add(response);
 
 			return response;
@@ -254,7 +335,7 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends Request {
 		@Constructor("(Request or USVString)", "optional RequestInit")
 		static konstructor(input: RequestInfo, requestInit?: RequestInit) {
-			const { init, members } = readInit(
+			const { init, members, pending } = readInit(
 				requestInit,
 				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
 				true
@@ -263,7 +344,7 @@ export default function (client: ScramjetClient, self: Self) {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
 			}
 
-			return new this(input, init);
+			return settleReferrer(new this(input, init), pending, this);
 		}
 
 		@Type("USVString")

@@ -11,6 +11,8 @@ import { createWrapFn } from "@client/shared/wrap";
 import { LifecycleHooks } from "@client/events";
 import {
 	frozenBaseUrl,
+	MAX_REFERRER_LENGTH,
+	referrerFallback,
 	rewriteUrl,
 	RewriteUrlOptions,
 	unrewriteUrl,
@@ -593,6 +595,13 @@ export class ScramjetClient {
 			 * href parsed against the fallback base URL. One the browser ignores
 			 * leaves the fallback in place (see `frozenBaseUrl`).
 			 */
+			get referrerFallback() {
+				// the length first, which spares every short URL the unrewrite
+				const href = client.global.location.href;
+				if (href.length <= MAX_REFERRER_LENGTH) return undefined;
+
+				return referrerFallback(href, client.url);
+			},
 			get base() {
 				const fallback = client.fallbackBaseUrl();
 				if (iswindow) {
