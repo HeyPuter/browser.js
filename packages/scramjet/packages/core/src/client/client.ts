@@ -11,6 +11,8 @@ import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
 import { LifecycleHooks } from "@client/events";
 import {
+	MAX_REFERRER_LENGTH,
+	referrerFallback,
 	rewriteUrl,
 	RewriteUrlOptions,
 	unrewriteUrl,
@@ -478,6 +480,13 @@ export class ScramjetClient {
 			},
 			get topUrl() {
 				return client.topUrl;
+			},
+			get referrerFallback() {
+				// the length first, which spares every short URL the unrewrite
+				const href = client.global.location.href;
+				if (href.length <= MAX_REFERRER_LENGTH) return undefined;
+
+				return referrerFallback(href, client.url);
 			},
 			get base() {
 				if (iswindow) {

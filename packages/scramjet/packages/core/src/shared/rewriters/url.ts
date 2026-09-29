@@ -42,7 +42,48 @@ export type URLMeta = {
 	topUrl?: _URL;
 	topFrameName?: string;
 	parentFrameName?: string;
+	/** Stamped on every URL rewritten here as `$rff`, see {@link referrerFallback}. */
+	referrerFallback?: string;
 };
+
+/** Longer referrers are cut down to their origin, as Chrome does. */
+export const MAX_REFERRER_LENGTH = 4096;
+
+/**
+ * The site's URL for `source`, when the browser will send the proxy's URL for
+ * it as nothing but an origin for its length alone.
+ *
+ * The browser measures the referrer it sends - the proxy's URL, prefix, codec
+ * and query and all - where the site's browser would have measured the site's
+ * own. Past the limit, what reaches the service worker is the proxy's origin,
+ * and the path is gone. So the requests made from such a source carry its URL
+ * for the service worker to take the referrer from instead. Nothing needs it
+ * when the site's URL is over the limit too: then its origin is all that is
+ * sent either way.
+ *
+ * https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+ * (step 6, as Chrome sets the limit)
+ */
+export function referrerFallback(
+	proxyHref: string,
+	source: URL
+): string | undefined {
+	// the fragment is never part of the referrer
+	const hash = proxyHref.indexOf("#");
+	const measured = hash === -1 ? proxyHref.length : hash;
+	if (measured <= MAX_REFERRER_LENGTH) return undefined;
+	if (source.protocol !== "http:" && source.protocol !== "https:") {
+		return undefined;
+	}
+
+	const stripped = new _URL(source.href);
+	stripped.username = "";
+	stripped.password = "";
+	stripped.hash = "";
+	if (stripped.href.length > MAX_REFERRER_LENGTH) return undefined;
+
+	return stripped.href;
+}
 
 function isWorkerDestination(destination?: RequestDestination) {
 	return destination === "worker" || destination === "sharedworker";
@@ -217,6 +258,8 @@ export function rewriteUrl(
 		if (meta.origin.origin !== context.prefix.origin) {
 			paramsInit.set(QP.initiatorOrigin, meta.origin.origin);
 		}
+		const fallback = meta.referrerFallback;
+		if (fallback) paramsInit.set(QP.referrerFallback, fallback);
 
 		let paramstring = "";
 		if (paramsInit.toString()) paramstring = "?" + paramsInit.toString();

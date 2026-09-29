@@ -249,6 +249,8 @@
 		"referrer-about-blank-iframe",
 		"referrer-about-blank-iframe-inherits-policy",
 		"referrer-document-written-frame",
+		"referrer-module-import-map-cross-origin",
+		"referrer-module-no-referrer-dynamic-import",
 		"referrer-module-worker",
 		"referrer-parent-sets-child-location",
 		"wpt-referrer-policy-generic-inheritance-iframe-inheritance-about-blank-html",

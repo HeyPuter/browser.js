@@ -183,9 +183,11 @@ function referrerSource(
 		client && (client.protocol === "http:" || client.protocol === "https:");
 
 	if (raw.href === raw.origin + "/") {
-		// cut down to an origin, by the policy or for being too long. the
+		// cut down to an origin, by the policy or for being too long - maybe
+		// too long only as the proxy's URL, which the page then said. the
 		// client's URL cannot stand in for a long one: the browser does not
 		// keep it up with pushState
+		if (parsed.referrerFallback) return parsed.referrerFallback;
 		if (parsed.fetchInitiatorOrigin) {
 			try {
 				return new _URL(parsed.fetchInitiatorOrigin + "/");

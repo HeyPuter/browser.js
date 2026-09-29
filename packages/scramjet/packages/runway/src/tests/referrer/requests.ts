@@ -446,4 +446,124 @@ export default [
 		await expectRef(dep, workerUrl, "a static import in the module worker");
 		`,
 	}),
+	referrerTest({
+		name: "referrer-init-frozen",
+		js: `
+		const init = Object.freeze({ referrer: "/custom" });
+		assertEqual(new Request("/x", init).referrer, MAIN + "/custom", "a frozen init");
+		const id = uid("frozen");
+		await fetch(rurl(MAIN, id), Object.freeze({ referrer: "/custom", mode: "cors", credentials: "include" }));
+		await expectRef(id, MAIN + "/custom", "fetch with a frozen init");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-referrer-keeps-the-rest",
+		js: `
+		class Sub extends Request {}
+		const sub = new Sub("/x", { referrer: "/r" });
+		assertEqual(sub instanceof Sub, true, "a subclass stays one");
+		assertEqual(sub.referrer, MAIN + "/r", "a subclass's referrer");
+
+		const controller = new AbortController();
+		const r = new Request("/x", {
+			method: "POST", body: "abc", referrer: "/r", referrerPolicy: "origin",
+			cache: "no-store", credentials: "omit", mode: "same-origin", redirect: "manual",
+			integrity: "sha256-abc", keepalive: true, headers: { "x-a": "1" },
+			signal: controller.signal, window: null,
+		});
+		assertEqual(r.url, MAIN + "/x", "url");
+		assertEqual(r.referrer, MAIN + "/r", "referrer");
+		const got = [r.method, r.referrerPolicy, r.cache, r.credentials, r.mode, r.redirect, r.integrity, r.keepalive, r.headers.get("x-a")].join();
+		assertEqual(got, "POST,origin,no-store,omit,same-origin,manual,sha256-abc,true,1", "the other members");
+		assertEqual(await r.text(), "abc", "the body");
+		controller.abort("why");
+		assertEqual(r.signal.aborted && r.signal.reason, "why", "the signal");
+
+		const copy = new Request(new Request("/x", { referrerPolicy: "no-referrer" }), { referrer: "/r" });
+		assertEqual(copy.referrerPolicy, "", "an init resets the copied policy");
+		assertEqual(copy.referrer, MAIN + "/r", "a copy's referrer");
+
+		const id = uid("post");
+		await fetch(rurl(MAIN, id), { method: "POST", body: "abc", referrer: "/posted" });
+		await expectRef(id, MAIN + "/posted", "fetch with a body");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-base-changed-during-conversion",
+		js: `
+		const base = document.createElement("base");
+		base.href = "/before/";
+		document.head.append(base);
+		const request = new Request("/x", {
+			referrer: "relative",
+			get signal() {
+				base.href = "/after/";
+				return undefined;
+			},
+		});
+		assertEqual(request.referrer, MAIN + "/after/relative", "resolved once the whole init is read");
+		base.href = "/before/";
+		const id = uid("late");
+		await fetch(rurl(MAIN, id), {
+			referrer: "relative",
+			get signal() {
+				base.href = "/after/";
+				return undefined;
+			},
+		});
+		await expectRef(id, MAIN + "/after/relative", "fetch, resolved once the whole init is read");
+		base.remove();
+		`,
+	}),
+	// a URL under the 4096 character limit is sent whole, however long the
+	// proxy's own URL for it
+	referrerTest({
+		name: "referrer-long-document-url",
+		js: `
+		const doc = uid("longdoc"), inner = uid("inner");
+		const js = "fetch(" + JSON.stringify(rurl(MAIN, inner)) + ").then(() => parent.postMessage({ __ref: " + JSON.stringify(doc) + ", href: location.href }, '*'));";
+		const pad = "p".repeat(4050 - durl(MAIN, doc, { js, pad: "" }).length);
+		const url = durl(MAIN, doc, { js, pad });
+		assertEqual(url.length, 4050, "the document's URL length");
+		const report = msg(doc, 2);
+		makeFrame({ src: url });
+		await report;
+		await expectRef(inner, url, "a same-origin fetch from the long document");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-long-pushed-url",
+		js: `
+		const inner = uid("inner");
+		const url = MAIN + "/page/main.html?q=1&pad=";
+		history.pushState(null, "", url + "p".repeat(4050 - url.length));
+		assertEqual(location.href.length, 4050, "the pushed URL's length");
+		await fetch(rurl(MAIN, inner));
+		await expectRef(inner, location.href, "a same-origin fetch after pushState");
+		history.replaceState(null, "", PAGE);
+		`,
+	}),
+	referrerTest({
+		name: "referrer-module-no-referrer-dynamic-import",
+		js: `
+		const dyn = uid("dyn"), done = uid("done");
+		const body = "await import(" + JSON.stringify(rurl(MAIN, dyn, { body: "export default 1;" }, ".js")) + "); window.__dynDone = true;";
+		await loadEl("script", { type: "module", referrerpolicy: "no-referrer", src: rurl(MAIN, uid("mod"), { body }, ".js") });
+		await expectRef(dyn, null, "a dynamic import keeps the script element's policy");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-module-import-map-cross-origin",
+		pageHeaders: { "Referrer-Policy": "origin" },
+		js: `
+		const map = document.createElement("script");
+		map.type = "importmap";
+		map.textContent = JSON.stringify({ imports: { "pfx/": ALT + "/r/" } });
+		document.head.append(map);
+		const dep = uid("dep");
+		const modUrl = rurl(ALT, uid("mod"), { body: "import " + JSON.stringify("pfx/" + dep + ".js") + ";" }, ".js");
+		await loadEl("script", { type: "module", src: modUrl });
+		await expectRef(dep, ALT + "/", "the importing module's origin");
+		`,
+	}),
 ];
