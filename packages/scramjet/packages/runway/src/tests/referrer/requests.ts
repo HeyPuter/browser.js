@@ -163,6 +163,43 @@ export default [
 		`,
 	}),
 
+	referrerTest({
+		name: "referrer-init-referrer-resolves-against-base",
+		js: `
+		// the API base URL of a Window is its document's base URL, <base> and all
+		const base = document.createElement("base");
+		base.href = "/assets/";
+		document.head.append(base);
+		const id = uid("base");
+		assertEqual(new Request("/x", { referrer: "relative" }).referrer, MAIN + "/assets/relative", "Request against <base>");
+		await fetch(rurl(MAIN, id), { referrer: "relative" });
+		await expectRef(id, MAIN + "/assets/relative", "fetch against <base>");
+		base.remove();
+		assertEqual(new Request("/x", { referrer: "relative" }).referrer, MAIN + "/page/relative", "document URL once <base> is gone");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-referrer-conversion-order",
+		js: `
+		const order = [];
+		const init = {
+			get body() { order.push("body"); throw new Error("body"); },
+			get referrer() { order.push("referrer"); return "/r"; },
+		};
+		const result = await attempt(() => new Request("/x", init));
+		assertEqual(result, "threw Error", "the body getter's error");
+		assertEqual(order.join(), "body", "referrer is not read past a throwing body");
+
+		const read = [];
+		new Request("/x", {
+			get body() { read.push("body"); },
+			get cache() { read.push("cache"); },
+			get referrer() { read.push("referrer"); return { toString() { read.push("toString"); return "/r"; } }; },
+			get referrerPolicy() { read.push("referrerPolicy"); },
+		});
+		assertEqual(read.join(), "body,cache,referrer,toString,referrerPolicy", "referrer is read and converted in dictionary order");
+		`,
+	}),
 	// Request objects
 	referrerTest({
 		name: "referrer-request-object",

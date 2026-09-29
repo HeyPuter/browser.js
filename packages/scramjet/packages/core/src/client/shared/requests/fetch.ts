@@ -18,15 +18,8 @@ import {
 } from "@/shared/snapshot";
 
 /** The init members a string-input `fetch()` / `new Request()` reads, sorted. */
-const URL_INIT_MEMBERS = [
-	"credentials",
-	"headers",
-	"mode",
-	"referrer",
-] as const;
-/** The only ones anything else has to look at. */
-const REQUEST_INIT_MEMBERS = ["headers", "referrer"] as const;
-/** The only one a `Response` has to look at. */
+const URL_INIT_MEMBERS = ["credentials", "headers", "mode"] as const;
+/** The only one anything else has to look at. */
 const HEADERS_INIT_MEMBER = ["headers"] as const;
 
 /**
@@ -133,10 +126,16 @@ export default function (client: ScramjetClient, self: Self) {
 	 * `ToString` here too, so the native converts a primitive and runs no page
 	 * code a second time. What this cannot keep is WebIDL's lexicographic
 	 * order: these members are read before the native reads the rest.
+	 *
+	 * `referrer`, which nothing here needs to know ahead of the native, is not
+	 * one of them. With `referrer` set it is converted and rewritten as the
+	 * native reads it, so it keeps its place in that order, and a throwing
+	 * `body` getter still stops it from being read at all.
 	 */
 	const readInit = <T>(
 		init: T,
-		keys: readonly string[]
+		keys: readonly string[],
+		referrer = false
 	): { init: T; members: Record<string, unknown> } => {
 		const members: Record<string, unknown> = Object_create(null);
 
@@ -161,15 +160,18 @@ export default function (client: ScramjetClient, self: Self) {
 		if (client.box.taggedHeaders.has(members.headers as Headers)) {
 			members.headers = toNativeHeaders(members.headers as Headers);
 		}
-		if (members.referrer !== undefined) {
-			members.referrer = rewriteReferrer(idlUSVString(members.referrer));
-		}
 
 		const view = new Proxy(init as object, {
-			get: (target, key) =>
-				key in members
-					? members[key as string]
-					: Reflect_get(target, key, target),
+			get: (target, key) => {
+				if (key in members) return members[key as string];
+
+				const value = Reflect_get(target, key, target);
+				if (referrer && key === "referrer" && value !== undefined) {
+					return rewriteReferrer(idlUSVString(value));
+				}
+
+				return value;
+			},
 		});
 
 		return { init: view as T, members };
@@ -232,7 +234,8 @@ export default function (client: ScramjetClient, self: Self) {
 		static async fetch(input: RequestInfo, requestInit?: RequestInit) {
 			const { init, members } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : REQUEST_INIT_MEMBERS
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
+				true
 			);
 			input =
 				typeof input === "string"
@@ -253,7 +256,8 @@ export default function (client: ScramjetClient, self: Self) {
 		static konstructor(input: RequestInfo, requestInit?: RequestInit) {
 			const { init, members } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : REQUEST_INIT_MEMBERS
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
+				true
 			);
 			if (typeof input === "string") {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
