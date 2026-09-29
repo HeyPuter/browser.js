@@ -589,19 +589,28 @@ export class ScramjetClient {
 			get origin() {
 				return client.url;
 			},
+			get referrerFallback(): string | undefined {
+				// the length first, which spares every short URL the unrewrite
+				const href = client.global.location.href;
+				// a srcdoc document's referrer is the document it is in
+				// https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+				if (href === "about:srcdoc") {
+					const parent = client.parentFrame();
+
+					return typeof parent === "object"
+						? parent.meta.referrerFallback
+						: undefined;
+				}
+				if (href.length <= MAX_REFERRER_LENGTH) return undefined;
+
+				return referrerFallback(href, client.url);
+			},
 			/**
 			 * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url -
 			 * the frozen base URL of the first base element with an href: that
 			 * href parsed against the fallback base URL. One the browser ignores
 			 * leaves the fallback in place (see `frozenBaseUrl`).
 			 */
-			get referrerFallback() {
-				// the length first, which spares every short URL the unrewrite
-				const href = client.global.location.href;
-				if (href.length <= MAX_REFERRER_LENGTH) return undefined;
-
-				return referrerFallback(href, client.url);
-			},
 			get base() {
 				const fallback = client.fallbackBaseUrl();
 				if (iswindow) {

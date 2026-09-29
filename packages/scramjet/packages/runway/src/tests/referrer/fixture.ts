@@ -30,8 +30,9 @@ import type { Test } from "../../testcommon.ts";
  * - `/doc/<id>` records the same way and serves a document that posts
  *   `{ __ref: id, referrer: document.referrer, ... }` to its opener or parent,
  *   after running `?js=`. `?head=` goes into its head, `?rp=` as above.
- * - `/seen?id=<id>` answers `{ found, referer, count }`, `referer` being null
- *   when the request had no Referer header.
+ * - `/seen?id=<id>` answers `{ found, referer, count, scramjetHeaders }`,
+ *   `referer` being null when the request had no Referer header and
+ *   `scramjetHeaders` naming any `x-scramjet-` header that reached the site.
  * - `/lib.js` the page-side helpers, see {@link LIB}.
  */
 
@@ -232,7 +233,10 @@ function listen(server: http.Server): Promise<number> {
 export function referrerTest(props: ReferrerTestProps): Test {
 	const servers: http.Server[] = [];
 	const sockets = new Set<Socket>();
-	const seen = new Map<string, { referer: string | null; count: number }>();
+	const seen = new Map<
+		string,
+		{ referer: string | null; count: number; scramjetHeaders: string[] }
+	>();
 
 	const test: Test = {
 		name: props.name,
@@ -273,7 +277,14 @@ export function referrerTest(props: ReferrerTestProps): Test {
 
 				const record = (id: string) => {
 					const prev = seen.get(id);
-					seen.set(id, { referer, count: (prev?.count ?? 0) + 1 });
+					seen.set(id, {
+						referer,
+						count: (prev?.count ?? 0) + 1,
+						// anything of the proxy's own that reached the site
+						scramjetHeaders: Object.keys(req.headers).filter((name) =>
+							name.startsWith("x-scramjet-")
+						),
+					});
 				};
 
 				if (url.pathname === "/page/main.html") {
@@ -305,6 +316,7 @@ export function referrerTest(props: ReferrerTestProps): Test {
 							found: !!entry,
 							referer: entry?.referer ?? null,
 							count: entry?.count ?? 0,
+							scramjetHeaders: entry?.scramjetHeaders ?? [],
 						})
 					);
 					return;

@@ -14,6 +14,7 @@ import {
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
 import { createReferrerString, DEFAULT_REFERRER_POLICY } from "./util";
+import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -249,6 +250,7 @@ export function rewriteRequestHeaders(
 
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");
+	headers.delete(REFERRER_FALLBACK_HEADER);
 
 	const rawOriginUrl =
 		parsed.referrerSourceUrl !== undefined
