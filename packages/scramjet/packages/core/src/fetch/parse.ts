@@ -87,6 +87,40 @@ function parseReferrerFallback(
 		return undefined;
 	}
 }
+
+/**
+ * The referrer the page put in {@link REFERRER_FALLBACK_HEADER}, `null` for
+ * none at all, or `undefined` for no header - or one that cannot be believed.
+ *
+ * The page's own `fetch()` writes it, for a referrer that is the page or one
+ * of its choosing, and a page's referrer is always of its own origin. But any
+ * page can write any header, so it is only taken when it is: the client is the
+ * one thing about the request the page cannot write.
+ */
+function headerReferrerFallback(
+	request: ScramjetFetchRequest,
+	handler: ScramjetFetchHandler
+): _URL | null | undefined {
+	const header = request.initialHeaders.get(REFERRER_FALLBACK_HEADER);
+	if (header === null) return undefined;
+	// saying there is none can only ever take away
+	if (header === "") return null;
+
+	const fallback = parseReferrerFallback(header);
+	if (!fallback || !request.rawClientUrl) return undefined;
+	let client: _URL;
+	try {
+		client = new _URL(unrewriteUrl(request.rawClientUrl, handler.context));
+	} catch {
+		return undefined;
+	}
+	if (client.protocol !== "http:" && client.protocol !== "https:") {
+		return undefined;
+	}
+
+	return fallback.origin === client.origin ? fallback : undefined;
+}
+
 export function parseRequest(
 	request: ScramjetFetchRequest,
 	handler: ScramjetFetchHandler
@@ -136,6 +170,8 @@ export function parseRequest(
 		(params.destination as RequestDestination | undefined) ||
 		request.rawDestination;
 
+	const fromHeader = headerReferrerFallback(request, handler);
+
 	const meta: URLMeta = {
 		origin: url,
 		base: url,
@@ -161,10 +197,10 @@ export function parseRequest(
 		crossSiteRedirect: params.crossSiteRedirect === "1",
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
-		referrerFallback: parseReferrerFallback(
-			request.initialHeaders.get(REFERRER_FALLBACK_HEADER) ??
-				params.referrerFallback
-		),
+		referrerFallback:
+			fromHeader === undefined
+				? parseReferrerFallback(params.referrerFallback)
+				: (fromHeader ?? undefined),
 		// TODO: should really just be a boolean
 		fetchCredentialsInclude: params.credentials === "include",
 		fetchMode,

@@ -645,6 +645,57 @@ export default [
 		`,
 	}),
 	referrerTest({
+		name: "referrer-fallback-header-not-forgeable",
+		js: `
+		const id = uid("forged");
+		await fetch(rurl(MAIN, id), {
+			headers: { "x-scramjet-referrer-fallback": "https://foreign.example/secret" },
+			referrerPolicy: "origin",
+		});
+		await expectRef(id, MAIN + "/", "a page-written fallback header");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-fetch-captures-state-at-call",
+		js: `
+		const moved = uid("moved"), policy = uid("policy");
+		const pending = fetch(rurl(MAIN, moved), {});
+		history.pushState(null, "", "/moved?after");
+		await pending;
+		history.replaceState(null, "", PAGE);
+		await expectRef(moved, PAGE, "the URL at the call");
+
+		const meta = document.createElement("meta");
+		meta.name = "referrer";
+		meta.content = "no-referrer";
+		document.head.append(meta);
+		const hidden = fetch(rurl(MAIN, policy), {});
+		meta.content = "unsafe-url";
+		await hidden;
+		meta.remove();
+		await expectRef(policy, null, "the policy at the call");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-reads-new-target-once",
+		js: `
+		for (const init of [{}, { referrer: "/r" }]) {
+			let reads = 0;
+			const newTarget = new Proxy(function () {}, {
+				get(target, key) {
+					if (key === "prototype") {
+						reads++;
+						return Request.prototype;
+					}
+					return Reflect.get(target, key);
+				},
+			});
+			Reflect.construct(Request, ["/x", init], newTarget);
+			assertEqual(reads, 1, "newTarget.prototype reads with " + JSON.stringify(init));
+		}
+		`,
+	}),
+	referrerTest({
 		name: "referrer-long-pushed-url",
 		js: `
 		const inner = uid("inner");

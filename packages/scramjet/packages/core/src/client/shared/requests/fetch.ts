@@ -283,33 +283,28 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	/**
-	 * A Request whose URL is the site's rather than the proxy's, rebuilt against
-	 * the proxy URL.
+	 * The proxy URL a Request whose URL is the site's rather than the proxy's
+	 * has to be rebuilt at, or null for one that is fine as it is.
 	 *
 	 * Anything built through our own constructor is already rewritten, but not
 	 * every Request comes from there: a `cache.keys()` entry is keyed by the real
 	 * URL by design, and one handed over from another realm never passed through
 	 * us at all. Fetching either as-is goes straight at the origin and fails.
 	 */
-	const rewriteRequestObject = async (request: Request): Promise<Request> => {
-		const n = new client.native.Request(request);
+	const proxyUrlFor = (n: Request): string | null => {
 		const url: string = n.url;
 
-		if (String_startsWith(url, client.context.prefix.href)) return request;
+		if (String_startsWith(url, client.context.prefix.href)) return null;
 		if (!String_startsWith(url, "http:") && !String_startsWith(url, "https:")) {
-			return request;
+			return null;
 		}
 		// a disturbed body is the native's to refuse, with its own TypeError
-		if (n.bodyUsed) return request;
+		if (n.bodyUsed) return null;
 
-		return copyRequest(
-			request,
-			n,
-			client.rewriteUrl(url, {
-				mode: n.mode === "navigate" ? "cors" : n.mode,
-				credentials: n.credentials === "include" ? "include" : undefined,
-			})
-		);
+		return client.rewriteUrl(url, {
+			mode: n.mode === "navigate" ? "cors" : n.mode,
+			credentials: n.credentials === "include" ? "include" : undefined,
+		});
 	};
 
 	/**
@@ -362,12 +357,12 @@ export default function (client: ScramjetClient, self: Self) {
 	 * place. `owned` is a request the page never sees, which can be given the
 	 * header itself; a page's is copied first, which takes its body the way
 	 * sending it does. A `no-cors` request cannot carry the header, and has its
-	 * URL restamped instead.
+	 * URL restamped instead, and this is that URL for the caller to copy it to.
 	 */
-	const withReferrerFallback = async (
+	const withReferrerFallback = (
 		request: Request,
 		owned: boolean
-	): Promise<Request> => {
+	): Request | string => {
 		const n = new client.native.Request(request);
 		const referrer: string = n.referrer;
 
@@ -396,7 +391,7 @@ export default function (client: ScramjetClient, self: Self) {
 			if (fallback) url.searchParams.set(QP.referrerFallback, fallback);
 			else url.searchParams.delete(QP.referrerFallback);
 
-			return copyRequest(request, n, url.href);
+			return url.href;
 		}
 
 		const sent = owned ? request : new nativeGlobal.Request(request);
@@ -419,34 +414,62 @@ export default function (client: ScramjetClient, self: Self) {
 				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
 				{ execute: "fetch", on: iswindow ? "Window" : "WorkerGlobalScope" }
 			);
-			const page = input;
-			input =
-				typeof input === "string"
-					? client.rewriteUrl(input, rewriteUrlOptionsForFetch(members))
-					: await rewriteRequestObject(input);
-
 			// through `this` rather than a saved global, so the native's own
 			// receiver check still sees what the page called it on
 			const nativeThis = new client.native.window(this);
+
+			// nothing of the page's, nor of its URL and policy, can change
+			// before the native has the request: it takes the referrer and policy
+			// it will send as it is called. so there is nothing asynchronous on
+			// the way, save the copy of a body only the rarest requests need
+			let request: Request;
+			let owned = true;
+			if (typeof input === "string") {
+				const url = client.rewriteUrl(
+					input,
+					rewriteUrlOptionsForFetch(members)
+				);
+				// nothing to settle nor to correct, and sent exactly as it was
+				if (init === undefined || init === null) {
+					const response = await nativeThis.fetch(url, init);
+					client.box.taggedResponses.add(response);
+
+					return response;
+				}
+				request = new nativeGlobal.Request(url, init);
+			} else {
+				const n = new client.native.Request(input);
+				const url = proxyUrlFor(n);
+				if (url === null) {
+					request = input;
+					owned = false;
+				} else {
+					request = await copyRequest(input, n, url);
+					// an aborted one is not copied, and still the page's
+					owned = request !== input;
+				}
+				if (init !== undefined && init !== null) {
+					request = new nativeGlobal.Request(request, init);
+					owned = true;
+				}
+			}
 			// the referrer is only settled once the init has been read, so a
 			// fetch with one is a Request first, as `fetch()` itself does it
 			// https://fetch.spec.whatwg.org/#dom-global-fetch
-			let response: Response;
-			if (init === undefined || init === null) {
-				if (typeof input !== "string") {
-					input = await withReferrerFallback(input, input !== page);
-				}
-				response = await nativeThis.fetch(input, init);
+			request = settleReferrer(request, pending, nativeGlobal.Request);
+
+			const corrected = withReferrerFallback(request, owned);
+			if (typeof corrected === "string") {
+				request = await copyRequest(
+					request,
+					new client.native.Request(request),
+					corrected
+				);
 			} else {
-				const request = settleReferrer(
-					new nativeGlobal.Request(input, init),
-					pending,
-					nativeGlobal.Request
-				);
-				response = await nativeThis.fetch(
-					await withReferrerFallback(request, true)
-				);
+				request = corrected;
 			}
+
+			const response: Response = await nativeThis.fetch(request);
 			client.box.taggedResponses.add(response);
 
 			return response;
@@ -465,7 +488,16 @@ export default function (client: ScramjetClient, self: Self) {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
 			}
 
-			return settleReferrer(new this(input, init), pending, this);
+			// built by the native first, so that what only the page's own
+			// constructor adds - reading `newTarget.prototype` for one - happens
+			// once, in whichever construction is the last
+			const request = new nativeGlobal.Request(input, init);
+			if (pending.resolved !== undefined) {
+				return settleReferrer(request, pending, this);
+			}
+			if (this === nativeGlobal.Request) return request;
+
+			return new this(request);
 		}
 
 		@Type("USVString")

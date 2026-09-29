@@ -30,9 +30,10 @@ import type { Test } from "../../testcommon.ts";
  * - `/doc/<id>` records the same way and serves a document that posts
  *   `{ __ref: id, referrer: document.referrer, ... }` to its opener or parent,
  *   after running `?js=`. `?head=` goes into its head, `?rp=` as above.
- * - `/seen?id=<id>` answers `{ found, referer, count, scramjetHeaders }`,
- *   `referer` being null when the request had no Referer header and
- *   `scramjetHeaders` naming any `x-scramjet-` header that reached the site.
+ * - `/seen?id=<id>` answers `{ found, referer, count, scramjetHeaders,
+ *   cookie, origin }`, `referer` being null when the request had no Referer
+ *   header, `scramjetHeaders` naming any `x-scramjet-` header that reached the
+ *   site, and `cookie` and `origin` the headers of those names, or null.
  * - `/lib.js` the page-side helpers, see {@link LIB}.
  */
 
@@ -101,6 +102,12 @@ async function seen(id, timeout = 8000) {
 		await sleep(40);
 	}
 	throw new Error("the request for " + id + " never arrived");
+}
+
+/** Everything \`/seen\` recorded for \`id\`, once it arrives. */
+async function seenAll(id) {
+	await seen(id);
+	return (await fetch("/seen" + qs({ id }), { cache: "no-store" })).json();
 }
 
 async function expectRef(id, expected, label) {
@@ -235,7 +242,13 @@ export function referrerTest(props: ReferrerTestProps): Test {
 	const sockets = new Set<Socket>();
 	const seen = new Map<
 		string,
-		{ referer: string | null; count: number; scramjetHeaders: string[] }
+		{
+			referer: string | null;
+			count: number;
+			scramjetHeaders: string[];
+			cookie: string | null;
+			origin: string | null;
+		}
 	>();
 
 	const test: Test = {
@@ -284,6 +297,8 @@ export function referrerTest(props: ReferrerTestProps): Test {
 						scramjetHeaders: Object.keys(req.headers).filter((name) =>
 							name.startsWith("x-scramjet-")
 						),
+						cookie: req.headers.cookie ?? null,
+						origin: req.headers.origin ?? null,
 					});
 				};
 
@@ -317,6 +332,8 @@ export function referrerTest(props: ReferrerTestProps): Test {
 							referer: entry?.referer ?? null,
 							count: entry?.count ?? 0,
 							scramjetHeaders: entry?.scramjetHeaders ?? [],
+							cookie: entry?.cookie ?? null,
+							origin: entry?.origin ?? null,
 						})
 					);
 					return;
