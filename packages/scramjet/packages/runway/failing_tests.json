@@ -178,6 +178,8 @@
 		"shadowing-var-location-function-ctor",
 		"shadowing-var-location-multi-declarator",
 		"shadowing-var-location-nested-block",
+		"standin-event-getter-on-prototype",
+		"standin-storage-area-identity",
 		"storage-event-child-frame",
 		"storage-event-parent-listens",
 		"stylesheets-constructable-url-readback",
