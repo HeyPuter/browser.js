@@ -156,6 +156,67 @@ export default [
 		assertEqual(data.referrer, MAIN + "/", "GET form document.referrer");
 		`,
 	}),
+	// SameSite and Origin are the initiator's, which a referrer policy never
+	// hides from the browser
+	referrerTest({
+		name: "referrer-policy-samesite-cookies",
+		js: `
+		document.cookie = "strict=1; SameSite=Strict; path=/";
+		document.cookie = "lax=1; SameSite=Lax; path=/";
+		const cookiesOf = async (id) => (await seenAll(id)).cookie || "";
+
+		// a cross-site document under no-referrer framing this site
+		const inner = uid("inner"), outer = uid("outer");
+		const js = "const f = document.createElement('iframe'); f.src = " + JSON.stringify(durl(MAIN, inner)) + "; document.body.append(f); window.__noReport = true;";
+		makeFrame({ src: durl(XSITE, outer, { rp: "no-referrer", js }) });
+		const cross = await cookiesOf(inner);
+		assertEqual(cross.includes("strict=1"), false, "no Strict cookie on a cross-site frame's navigation");
+
+		// this site framing itself under origin
+		const same = uid("same");
+		const report = msg(same);
+		makeFrame({ src: durl(MAIN, same) });
+		await report;
+		assertEqual((await cookiesOf(same)).includes("strict=1"), true, "a Strict cookie on a same-origin frame's navigation");
+
+		document.cookie = "strict=; Max-Age=0; path=/";
+		document.cookie = "lax=; Max-Age=0; path=/";
+		`,
+		pageHeaders: { "Referrer-Policy": "origin" },
+	}),
+	referrerTest({
+		name: "referrer-policy-origin-header",
+		js: `
+		makeFrame({ name: "post-target" });
+		const post = async (target, policy) => {
+			const id = uid("post");
+			const holder = document.createElement("div");
+			holder.innerHTML = "<form target='post-target' method='post'><input name='field' value='v'></form>";
+			const form = holder.firstChild;
+			form.action = durl(target, id);
+			if (policy) form.setAttribute("referrerpolicy", policy);
+			document.body.append(holder);
+			const report = msg(id);
+			form.submit();
+			await report;
+			holder.remove();
+			return (await seenAll(id)).origin;
+		};
+		const got = {};
+		for (const [target, policy] of [[MAIN, "origin"], [MAIN, "strict-origin"], [MAIN, "no-referrer"], [ALT, "same-origin"], [ALT, "no-referrer"], [MAIN, ""]]) {
+			got[(target === MAIN ? "same " : "cross ") + policy] = String(await post(target, policy)).replace(MAIN, "MAIN");
+		}
+		for (const [target, policy] of [[ALT, "no-referrer"], [MAIN, "no-referrer"], [ALT, "same-origin"]]) {
+			const id = uid("fetch");
+			await fetch(rurl(target, id), { method: "POST", body: "x", referrerPolicy: policy });
+			got["fetch " + (target === MAIN ? "same " : "cross ") + policy] = String((await seenAll(id)).origin).replace(MAIN, "MAIN");
+		}
+		// Chrome sends the page's origin whatever the policy, never "null"
+		for (const [label, origin] of Object.entries(got)) {
+			assertEqual(origin, "MAIN", "Origin for a " + label + " POST");
+		}
+		`,
+	}),
 	referrerTest({
 		name: "referrer-form-rel-noreferrer",
 		js: `
