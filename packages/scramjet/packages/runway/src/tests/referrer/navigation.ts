@@ -139,6 +139,23 @@ export default [
 		}
 		`,
 	}),
+	// a GET form's fields reach the service worker as a query it folds into
+	// the URL with a redirect of its own, which the referrer has to survive
+	referrerTest({
+		name: "referrer-form-get-cross-origin-origin-policy",
+		js: `
+		const next = uid("next"), from = uid("from");
+		const js = "const f = document.createElement('form'); f.method = 'get';" +
+			"f.innerHTML = \\"<input name='field' value='v'>\\";" +
+			"f.action = " + JSON.stringify(durl(ALT, next)) + ";" +
+			"document.body.append(f); f.submit(); window.__noReport = true;";
+		const report = msg(next);
+		makeFrame({ src: durl(MAIN, from, { rp: "origin", js }) });
+		const data = await report;
+		assertEqual(await seen(next), MAIN + "/", "GET form Referer");
+		assertEqual(data.referrer, MAIN + "/", "GET form document.referrer");
+		`,
+	}),
 	referrerTest({
 		name: "referrer-form-rel-noreferrer",
 		js: `

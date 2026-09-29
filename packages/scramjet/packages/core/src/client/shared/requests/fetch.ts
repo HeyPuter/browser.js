@@ -8,6 +8,8 @@ import {
 	Type,
 } from "@client/webidl";
 import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
+import { QP } from "@/fetch/parse";
+import { MAX_REFERRER_LENGTH, referrerFallback } from "@rewriters/url";
 import {
 	Object_create,
 	Reflect_apply,
@@ -264,6 +266,19 @@ export default function (client: ScramjetClient, self: Self) {
 		// a disturbed body is the native's to refuse, with its own TypeError
 		if (n.bodyUsed) return request;
 
+		return copyRequest(
+			n,
+			client.rewriteUrl(url, {
+				mode: n.mode === "navigate" ? "cors" : n.mode,
+				credentials: n.credentials === "include" ? "include" : undefined,
+			})
+		);
+	};
+
+	/**
+	 * `request` - read through the native, as `n` - at another URL.
+	 */
+	const copyRequest = async (n: Request, url: string): Promise<Request> => {
 		const init: RequestInit = {
 			method: n.method,
 			headers: n.headers,
@@ -284,13 +299,40 @@ export default function (client: ScramjetClient, self: Self) {
 		// Firefox does not support at all
 		if (n.body !== null) init.body = await n.blob();
 
-		return new nativeGlobal.Request(
-			client.rewriteUrl(url, {
-				mode: n.mode === "navigate" ? "cors" : n.mode,
-				credentials: n.credentials === "include" ? "include" : undefined,
-			}),
-			init
+		return new nativeGlobal.Request(url, init);
+	};
+
+	/**
+	 * `request`, or a copy whose URL says what its referrer is, when the
+	 * browser would send that as nothing but an origin for the length of the
+	 * proxy's URL for it alone.
+	 *
+	 * The URL a page's requests are stamped with names the page as the
+	 * referrer (see `referrerFallback`), which is not the one sent when the
+	 * page chose another. Only `fetch()` can send a request with one of its
+	 * choosing, and does so asynchronously, so this is where the copy can be
+	 * made with its body read in full.
+	 */
+	const stampLongReferrer = async (request: Request): Promise<Request> => {
+		const n = new client.native.Request(request);
+		const referrer: string = n.referrer;
+		// the length first, which spares every other request the unrewrite
+		if (referrer.length <= MAX_REFERRER_LENGTH) return request;
+		if (!String_startsWith(referrer, client.context.prefix.href)) {
+			return request;
+		}
+		if (n.bodyUsed) return request;
+
+		const fallback = referrerFallback(
+			referrer,
+			new _URL(client.unrewriteUrl(referrer))
 		);
+		if (!fallback) return request;
+
+		const url = new _URL(n.url);
+		url.searchParams.set(QP.referrerFallback, fallback);
+
+		return copyRequest(n, url.href);
 	};
 
 	client.Intercept(class extends GlobalScope {
@@ -317,6 +359,7 @@ export default function (client: ScramjetClient, self: Self) {
 			// https://fetch.spec.whatwg.org/#dom-global-fetch
 			let response: Response;
 			if (init === undefined || init === null) {
+				if (typeof input !== "string") input = await stampLongReferrer(input);
 				response = await nativeThis.fetch(input, init);
 			} else {
 				const request = settleReferrer(
@@ -324,7 +367,7 @@ export default function (client: ScramjetClient, self: Self) {
 					pending,
 					nativeGlobal.Request
 				);
-				response = await nativeThis.fetch(request);
+				response = await nativeThis.fetch(await stampLongReferrer(request));
 			}
 			client.box.taggedResponses.add(response);
 
