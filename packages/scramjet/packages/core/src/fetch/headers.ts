@@ -252,27 +252,16 @@ export function rewriteRequestHeaders(
 	headers.delete("Referer");
 	headers.delete(REFERRER_FALLBACK_HEADER);
 
-	const rawOriginUrl =
-		parsed.referrerSourceUrl !== undefined
-			? parsed.referrerSourceUrl
-			: request.rawClientUrl ||
-				(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
-	const originUrl =
-		rawOriginUrl &&
-		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
-			? new _URL(unrewriteUrl(rawOriginUrl, handler.context))
-			: rawOriginUrl;
-
-	if (
-		rawOriginUrl &&
-		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
-	) {
-		headers.set("Origin", originUrl.origin);
-	}
+	// Origin and the SameSite context are the initiator's, which no referrer
+	// policy hides: the referrer is the wrong place to look for it, since its
+	// policy is free to cut it down to the proxy's origin or drop it. Chrome
+	// sends that origin whatever the policy, never "null" for one
+	const initiator = resolveFetchInitiatorUrl(request, parsed, handler);
+	if (initiator) headers.set("Origin", initiator.origin);
 
 	if (parsed.referrer) headers.set("Referer", parsed.referrer);
 
-	const sameSiteContext = computeSameSiteContext(request, parsed, originUrl);
+	const sameSiteContext = computeSameSiteContext(request, parsed, initiator);
 	const cookies = handler.context.cookieJar.getCookies(
 		parsed.url,
 		false,
