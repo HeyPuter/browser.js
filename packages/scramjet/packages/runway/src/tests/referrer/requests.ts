@@ -532,6 +532,25 @@ export default [
 		`,
 	}),
 	referrerTest({
+		name: "referrer-long-init-referrer",
+		js: `
+		const long = MAIN + "/long?pad=" + "p".repeat(4050 - (MAIN + "/long?pad=").length);
+		assertEqual(long.length, 4050, "the referrer's length");
+		const direct = uid("direct"), req = uid("req"), cloned = uid("cloned");
+		await fetch(rurl(MAIN, direct), { referrer: long });
+		await fetch(new Request(rurl(MAIN, req), { referrer: long }));
+		await fetch(new Request(rurl(MAIN, cloned), { method: "POST", body: "b", referrer: long }).clone());
+		await expectRef(direct, long, "fetch with a long referrer");
+		await expectRef(req, long, "a Request with a long referrer");
+		await expectRef(cloned, long, "a cloned Request with a long referrer and a body");
+
+		const over = MAIN + "/over?pad=" + "p".repeat(4100);
+		const cut = uid("cut");
+		await fetch(rurl(MAIN, cut), { referrer: over });
+		await expectRef(cut, MAIN + "/", "a referrer over the limit is its origin");
+		`,
+	}),
+	referrerTest({
 		name: "referrer-long-pushed-url",
 		js: `
 		const inner = uid("inner");
