@@ -551,6 +551,100 @@ export default [
 		`,
 	}),
 	referrerTest({
+		name: "referrer-init-aborted-stream-long-referrer",
+		js: `
+		const long = MAIN + "/long?pad=" + "p".repeat(4050 - (MAIN + "/long?pad=").length);
+		const controller = new AbortController();
+		controller.abort();
+		const result = await Promise.race([
+			attempt(() => fetch(rurl(MAIN, uid("a")), { method: "POST", body: new ReadableStream({}), duplex: "half", signal: controller.signal, referrer: long })),
+			sleep(3000).then(() => "hung"),
+		]);
+		assertEqual(result, "threw AbortError", "an aborted fetch with a long referrer and an open stream");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-invalid-after-conversion-keeps-body",
+		js: `
+		const base = document.createElement("base");
+		base.href = "/ok/";
+		document.head.append(base);
+		const blobUrl = URL.createObjectURL(new Blob(["x"]));
+		const input = new Request(MAIN + "/x", { method: "POST", body: "abc" });
+		const result = await attempt(() => new Request(input, {
+			referrer: "relative",
+			get signal() { base.href = blobUrl; return undefined; },
+		}));
+		assertEqual(result, "threw TypeError", "a referrer <base> made invalid");
+		assertEqual(input.bodyUsed, false, "the input's body is left alone");
+		assertEqual(await input.text(), "abc", "the input's body");
+
+		base.href = blobUrl;
+		const late = new Request(MAIN + "/x", {
+			referrer: "relative",
+			get signal() { base.href = "/after/"; return undefined; },
+		});
+		assertEqual(late.referrer, MAIN + "/after/relative", "a referrer <base> made valid");
+		base.remove();
+		`,
+	}),
+	referrerTest({
+		name: "referrer-long-page-oversized-init-referrer",
+		js: `
+		const url = MAIN + "/page/main.html?q=1&pad=";
+		history.pushState(null, "", url + "p".repeat(4050 - url.length));
+		const over = MAIN + "/over?pad=" + "p".repeat(4100);
+		const cors = uid("cors"), nocors = uid("nocors");
+		await fetch(rurl(MAIN, cors), { referrer: over });
+		await fetch(rurl(MAIN, nocors), { referrer: over, mode: "no-cors" });
+		await expectRef(cors, MAIN + "/", "an oversized referrer from a long page");
+		await expectRef(nocors, MAIN + "/", "an oversized no-cors referrer from a long page");
+		history.replaceState(null, "", PAGE);
+		`,
+	}),
+	referrerTest({
+		name: "referrer-saved-request-after-history-change",
+		js: `
+		const url = MAIN + "/page/main.html?q=1&pad=";
+		const longA = url + "a".repeat(4050 - url.length), longB = url + "b".repeat(4050 - url.length);
+		const fromLong = uid("fromlong"), fromShort = uid("fromshort"), nocors = uid("nocors"), back = uid("back");
+
+		history.replaceState(null, "", PAGE);
+		const shortReq = new Request(rurl(MAIN, fromShort));
+		history.pushState(null, "", longA);
+		const longReq = new Request(rurl(MAIN, fromLong));
+		const noCorsReq = new Request(rurl(MAIN, nocors), { mode: "no-cors" });
+		const backReq = new Request(rurl(MAIN, back));
+		history.pushState(null, "", longB);
+		await fetch(longReq);
+		await fetch(shortReq);
+		await fetch(noCorsReq);
+		await expectRef(fromLong, longB, "made at one long URL, sent from another");
+		await expectRef(fromShort, longB, "made at a short URL, sent from a long one");
+		await expectRef(nocors, longB, "a no-cors Request made at one long URL, sent from another");
+		const leaked = await (await fetch("/seen" + qs({ id: fromLong }), { cache: "no-store" })).json();
+		assertEqual(leaked.scramjetHeaders.join(), "", "no header of the proxy's reaches the site");
+		history.replaceState(null, "", PAGE);
+		await fetch(backReq);
+		await expectRef(back, PAGE, "made at a long URL, sent from a short one");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-long-parent-srcdoc",
+		js: `
+		const doc = uid("longdoc"), img = uid("img"), fet = uid("fet");
+		const js = "const f = document.createElement('iframe');" +
+			"f.srcdoc = " + JSON.stringify("<img src='" + rurl(MAIN, img, {}, ".png") + "'>") + ";" +
+			"f.onload = () => f.contentWindow.fetch(" + JSON.stringify(rurl(MAIN, fet)) + ");" +
+			"document.body.append(f);";
+		const pad = "p".repeat(4050 - durl(MAIN, doc, { js, pad: "" }).length);
+		const url = durl(MAIN, doc, { js, pad });
+		makeFrame({ src: url });
+		await expectRef(img, url, "an image in the srcdoc of a long document");
+		await expectRef(fet, url, "a fetch from the srcdoc of a long document");
+		`,
+	}),
+	referrerTest({
 		name: "referrer-long-pushed-url",
 		js: `
 		const inner = uid("inner");

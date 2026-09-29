@@ -481,9 +481,18 @@ export class ScramjetClient {
 			get topUrl() {
 				return client.topUrl;
 			},
-			get referrerFallback() {
+			get referrerFallback(): string | undefined {
 				// the length first, which spares every short URL the unrewrite
 				const href = client.global.location.href;
+				// a srcdoc document's referrer is the document it is in
+				// https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+				if (href === "about:srcdoc") {
+					const parent = client.parentFrame();
+
+					return typeof parent === "object"
+						? parent.meta.referrerFallback
+						: undefined;
+				}
 				if (href.length <= MAX_REFERRER_LENGTH) return undefined;
 
 				return referrerFallback(href, client.url);

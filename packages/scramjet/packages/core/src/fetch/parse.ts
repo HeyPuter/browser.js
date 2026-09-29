@@ -6,6 +6,7 @@ import {
 	Error,
 } from "@/shared/snapshot";
 import { referrerFallback, unrewriteUrl, URLMeta } from "@rewriters/url";
+import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
 import {
 	ScramjetFetchHandler,
 	ScramjetFetchParsed,
@@ -143,7 +144,9 @@ function resolveTopUrl(
 	return url;
 }
 
-function parseReferrerFallback(href: string | undefined): _URL | undefined {
+function parseReferrerFallback(
+	href: string | null | undefined
+): _URL | undefined {
 	if (!href) return undefined;
 	try {
 		return new _URL(href);
@@ -221,7 +224,10 @@ export function parseRequest(
 		crossSiteRedirect: params.crossSiteRedirect === "1",
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
-		referrerFallback: parseReferrerFallback(params.referrerFallback),
+		referrerFallback: parseReferrerFallback(
+			request.initialHeaders.get(REFERRER_FALLBACK_HEADER) ??
+				params.referrerFallback
+		),
 		// TODO: should really just be a boolean
 		fetchCredentialsInclude: params.credentials === "include",
 		fetchMode,

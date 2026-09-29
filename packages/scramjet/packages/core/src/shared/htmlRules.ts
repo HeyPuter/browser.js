@@ -131,6 +131,8 @@ export const htmlRules: {
 					topUrl: meta.topUrl,
 					topFrameName: meta.topFrameName,
 					parentFrameName: meta.parentFrameName,
+					// its referrer is the document it is in, which is this one
+					referrerFallback: meta.referrerFallback,
 				},
 				{
 					loadScripts: true,
