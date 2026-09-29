@@ -11,7 +11,12 @@ import {
 	ScramjetFetchResponse,
 } from ".";
 import { rewriteUrl, unrewriteBlob, unrewriteUrl } from "@rewriters/url";
-import { QP, parseRequest } from "./parse";
+import {
+	QP,
+	type QueryParamKey,
+	parseQueryParams,
+	parseRequest,
+} from "./parse";
 import { ScramjetHeaders } from "@/shared";
 import { isDocument, isRedirect, normalizeContentType } from "./util";
 import { rewriteBody } from "./body";
@@ -24,7 +29,7 @@ import {
 	rewriteResponseHeaders,
 	worstFetchSite,
 } from "./headers";
-import { _URL, URL_revokeObjectURL } from "@/shared/snapshot";
+import { Object_keys, _URL, URL_revokeObjectURL } from "@/shared/snapshot";
 
 export async function doHandleFetch(
 	handler: ScramjetFetchHandler,
@@ -52,14 +57,25 @@ export async function doHandleFetch(
 	}
 
 	if (parsed.hadExtraParams && isDocument(parsed)) {
-		// the same navigation over again, whose referrer is not this document
-		const location = rewriteUrl(parsed.url, handler.context, {
-			...parsed.meta,
-			referrerFallback: undefined,
-		});
-		if (location !== request.rawUrl.href) {
+		// the same navigation over again, with the form's fields folded into the
+		// URL. its parameters are the ones it came with, not ones worked out
+		// from this document, which is only the destination; and the browser
+		// follows it with the referrer it sent here, which this hop has already
+		// made sense of and the next could not - the fields took the place of
+		// whatever the page stamped on the form's URL
+		const location = new _URL(
+			rewriteUrl(parsed.url, handler.context, parsed.meta)
+		);
+		location.search = "";
+		const { params } = parseQueryParams(request.rawUrl.searchParams);
+		for (const key of Object_keys(params) as QueryParamKey[]) {
+			location.searchParams.set(QP[key], params[key]!);
+		}
+		location.searchParams.set(QP.referrerSource, parsed.referrer ?? "");
+
+		if (location.href !== request.rawUrl.href) {
 			const responseHeaders = new ScramjetHeaders();
-			responseHeaders.set("location", location);
+			responseHeaders.set("location", location.href);
 			return {
 				body: "",
 				headers: responseHeaders,
