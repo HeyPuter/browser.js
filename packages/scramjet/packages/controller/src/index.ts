@@ -18,7 +18,6 @@ import {
 	type ScramjetContext,
 	type ScramjetFlags,
 	type ScramjetInterface,
-	type TrackedHistoryState,
 	Plugin,
 } from "@mercuryworkshop/scramjet";
 import { CONTROLLERFRAME } from "./symbols";
@@ -319,6 +318,7 @@ export class Controller {
 						: undefined,
 					rawUrl: new URL(data.rawUrl),
 					rawReferrer: data.rawReferrer,
+					rawReferrerPolicy: data.rawReferrerPolicy,
 					rawDestination: data.destination,
 					method: data.method,
 					mode: data.mode,
@@ -705,7 +705,7 @@ function yieldGetInjectScripts(
 						codecEncode: ${codecEncode.toString()},
 						codecDecode: ${codecDecode.toString()},
 						initHeaders: ${JSON.stringify(htmlcontext.headers ?? [])},
-						history: ${JSON.stringify(htmlcontext.history ?? [])},
+						referrer: ${JSON.stringify(htmlcontext.referrer)},
 					})
 				`)
 			),

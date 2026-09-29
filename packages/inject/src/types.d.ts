@@ -1,7 +1,4 @@
-import {
-	ScramjetInterface,
-	TrackedHistoryState,
-} from "@mercuryworkshop/scramjet/bundled";
+import { ScramjetInterface } from "@mercuryworkshop/scramjet/bundled";
 import type { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import type { ThemeDefinition } from "../../chrome/src/themes";
 export type FrameSequence = number[];
@@ -133,5 +130,6 @@ export type InjectScramjetInit = {
 	codecEncode: ScramjetInterface["codecEncode"];
 	codecDecode: ScramjetInterface["codecDecode"];
 	initHeaders: RawHeaders;
-	history: TrackedHistoryState[];
+	/** document.referrer, for a document the proxy served. */
+	referrer?: string;
 };

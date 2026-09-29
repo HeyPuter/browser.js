@@ -56,6 +56,7 @@ export class Controller {
 						? new URL(data.rawClientUrl)
 						: undefined,
 					rawReferrer: data.rawReferrer,
+					rawReferrerPolicy: data.rawReferrerPolicy,
 					method: data.method,
 					initialHeaders: headers,
 					body: data.body,
