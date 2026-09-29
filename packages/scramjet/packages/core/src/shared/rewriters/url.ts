@@ -11,13 +11,19 @@ import {
 	atob,
 	selfLocation,
 	String,
+	String_charCodeAt,
+	String_indexOf,
 	String_startsWith,
+	String_substring,
 	URL_createObjectURL,
 } from "../snapshot";
 
 // user: manually triggered navigation
-// link: link clicked by the user. still user initiated, but doesn't wipe
-// location: location = ...
+// link: the href of a hyperlink, followed when it is activated
+// location: location = ..., and everything else a script navigates with
+//
+// Any of them marks the URL as one a document navigates to, which is what
+// lets a fragment navigation stay in the document - see `rewriteUrl`.
 export type NavigationType = "user" | "link" | "location";
 
 export type RewriteUrlOptions = {
@@ -35,10 +41,99 @@ export type RewriteUrlOptions = {
 export type URLMeta = {
 	origin: _URL;
 	base: _URL;
+	/**
+	 * The URL the browser has for the document `origin` is the URL of: the
+	 * proxy URL it was loaded from, or the one a history entry has since moved
+	 * it to. Only a document has one.
+	 *
+	 * It is what a navigation to that same document has to go to, rather than
+	 * to a freshly rewritten URL - see `rewriteUrl`.
+	 */
+	rawUrl?: string;
 	topFrameName?: string;
 	parentFrameName?: string;
 	referrerPolicy?: string;
 };
+
+/**
+ * A serialized URL split at its fragment: everything before the `#`, and the
+ * fragment with its `#` - or null when there is none.
+ *
+ * Null and empty are different fragments: `page#` has one, and navigating to
+ * it scrolls to the top without leaving the document, where `page` reloads.
+ * `URL.hash` answers "" for both, so the serialization is read instead. The
+ * serializer percent-encodes a `#` anywhere else, so the first one is the
+ * delimiter.
+ */
+export function splitFragment(href: string): [string, string | null] {
+	const index = String_indexOf(href, "#");
+	if (index === -1) return [href, null];
+
+	return [String_substring(href, 0, index), String_substring(href, index)];
+}
+
+/**
+ * Whether `url`, as written, is a fragment-only URL like `#top`: one that
+ * names a part of the document it appears in, whatever that document's URL.
+ *
+ * The URL parser strips leading C0 controls and spaces, and tabs and newlines
+ * anywhere, so `" #top"` is one too.
+ */
+export function isFragmentOnly(url: string): boolean {
+	for (let i = 0; i < url.length; i++) {
+		const c = String_charCodeAt(url, i);
+		if (c <= 0x20) continue;
+
+		return c === 0x23;
+	}
+
+	return false;
+}
+
+/**
+ * The proxy URL a navigation to `url` goes to when it stays in the document
+ * `meta` describes, or null when it leaves it.
+ *
+ * https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate -
+ * whether a navigation is to a fragment, and whether it replaces the current
+ * history entry, both turn on the target URL *equalling the document's URL*,
+ * with or without fragments. The browser makes that comparison on the real
+ * URLs, and a freshly rewritten one almost never equals the document's: it
+ * carries the query parameters of whoever is navigating now (`$io`, `$rfp`,
+ * ...), and the document's carries those of whoever loaded it. So `#x` would
+ * reload the page instead of scrolling, and a navigation to the page's own
+ * URL would push an entry instead of replacing one.
+ *
+ * Built on the document's own URL instead, the two compare exactly as the
+ * site's URLs do, and the browser applies its own rules to them.
+ */
+function sameDocumentUrl(
+	withoutFragment: string,
+	fragment: string | null,
+	meta: URLMeta
+): string | null {
+	if (meta.rawUrl === undefined) return null;
+	if (splitFragment(meta.origin.href)[0] !== withoutFragment) return null;
+
+	return splitFragment(meta.rawUrl)[0] + (fragment ?? "");
+}
+
+/**
+ * https://html.spec.whatwg.org/multipage/semantics.html#set-the-frozen-base-url -
+ * a base element's href parsed against the document's fallback base URL, or
+ * null when it does not set a base URL at all: it does not parse, or it is a
+ * `data:` or `javascript:` URL, which the browser ignores.
+ */
+export function frozenBaseUrl(
+	href: string,
+	fallback: string | URL
+): _URL | null {
+	const url = tryCanParseURL(href, fallback);
+	if (!url || url.protocol === "data:" || url.protocol === "javascript:")
+		return null;
+
+	return url;
+}
 
 function tryCanParseURL(url: string, origin?: string | URL): _URL | null {
 	try {
@@ -48,6 +143,15 @@ function tryCanParseURL(url: string, origin?: string | URL): _URL | null {
 	}
 }
 
+/**
+ * Everything in a blob URL after its origin. The fragment is not part of the
+ * blob's identity, but it is part of the URL: a media fragment (`#t=10`) seeks
+ * the video, and `#page=2` opens a PDF on its second page.
+ */
+function blobTail(blob: _URL): string {
+	return String_substring(blob.href, blob.origin.length);
+}
+
 export function rewriteBlob(
 	url: string,
 	context: ScramjetContext,
@@ -55,7 +159,7 @@ export function rewriteBlob(
 ) {
 	const blob = new _URL(url.substring("blob:".length));
 
-	return "blob:" + meta.origin.origin + blob.pathname;
+	return "blob:" + meta.origin.origin + blobTail(blob);
 }
 
 export function unrewriteBlob(
@@ -65,7 +169,7 @@ export function unrewriteBlob(
 ) {
 	const blob = new _URL(url.substring("blob:".length));
 
-	return "blob:" + context.prefix.origin + blob.pathname;
+	return "blob:" + context.prefix.origin + blobTail(blob);
 }
 
 function dataToBlob(url: string) {
@@ -173,12 +277,17 @@ export function rewriteUrl(
 			return url;
 		}
 
-		const encodedHash = context.interface.codecEncode(realUrl.hash.slice(1));
-		const realHash = encodedHash
-			? "#" + encodedHash
-			: realUrl.href.endsWith("#")
-				? "#"
-				: "";
+		// the fragment is never sent anywhere, so it stays as it is rather than
+		// going through the codec: the browser reads it off the real URL to
+		// scroll to an element, match `:target`, find a text fragment, and
+		// answer `location.hash` - all of which need the site's own fragment
+		const [withoutFragment, fragment] = splitFragment(realUrl.href);
+
+		if (options?.navigateType) {
+			const same = sameDocumentUrl(withoutFragment, fragment, meta);
+			if (same !== null) return same;
+		}
+
 		realUrl.hash = "";
 
 		const paramsInit = new _URLSearchParams();
@@ -210,9 +319,48 @@ export function rewriteUrl(
 			context.prefix.href +
 			context.interface.codecEncode(realUrl.href) +
 			paramstring +
-			realHash
+			(fragment ?? "")
 		);
 	}
+}
+
+/**
+ * The real URL a document moves to when its URL changes without anything
+ * being loaded - `history.pushState` and `replaceState` - given a `url` that
+ * the document can have its URL rewritten to.
+ *
+ * A URL that differs from the document's only in its fragment is the
+ * document's real URL with that fragment, for the same reason a fragment
+ * navigation is (see `sameDocumentUrl`): the entries it makes then compare
+ * with it, and with each other, exactly as the site's do.
+ *
+ * Any other URL keeps the query parameters of the real one. They describe how
+ * the document was requested - as a frame, by whom, under which referrer
+ * policy - and a reload of the new entry is a request for the same document
+ * in the same place. A freshly rewritten URL would describe a navigation made
+ * by the page itself, so a frame that called `pushState` would reload as a
+ * top-level document.
+ */
+export function rewriteHistoryUrl(
+	url: URL,
+	context: ScramjetContext,
+	meta: URLMeta
+): string {
+	const [withoutFragment, fragment] = splitFragment(url.href);
+	if (meta.rawUrl === undefined) return rewriteUrl(url, context, meta);
+
+	const same = sameDocumentUrl(withoutFragment, fragment, meta);
+	if (same !== null) return same;
+
+	// a scheme with no proxy URL, which only ever differs in its fragment
+	if (url.protocol !== "http:" && url.protocol !== "https:") return url.href;
+
+	return (
+		context.prefix.href +
+		context.interface.codecEncode(withoutFragment) +
+		new _URL(meta.rawUrl).search +
+		(fragment ?? "")
+	);
 }
 
 export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
@@ -246,19 +394,15 @@ export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 			dbg.error("unrewriteurl: unexpected url", url);
 			return url;
 		}
-		const decodedHash = context.interface.codecDecode(realUrl.hash.slice(1));
-		const realHash = decodedHash
-			? "#" + decodedHash
-			: realUrl.href.endsWith("#")
-				? "#"
-				: "";
+		// as it was written - see `rewriteUrl`
+		const fragment = splitFragment(realUrl.href)[1];
 		realUrl.hash = "";
 		realUrl.search = "";
 
 		return (
 			context.interface.codecDecode(
 				realUrl.href.slice(context.prefix.href.length)
-			) + realHash
+			) + (fragment ?? "")
 		);
 	} else if (url == "") {
 		return url;

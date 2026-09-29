@@ -24,7 +24,7 @@
 
 import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type, idlUSVString } from "@client/webidl";
-import { unrewriteUrl } from "@rewriters/url";
+import { frozenBaseUrl, unrewriteUrl } from "@rewriters/url";
 import { XLINK_NAMESPACE } from "@client/attributes";
 import {
 	String,
@@ -159,11 +159,7 @@ export default function (client: ScramjetClient, self: Self) {
 		const href = attrs.get(base, "href");
 		if (!href) return fallback;
 
-		try {
-			return new _URL(href, fallback).href;
-		} catch {
-			return fallback;
-		}
+		return frozenBaseUrl(href, fallback)?.href ?? fallback;
 	};
 
 	/** "encoding-parse and serialize a URL", against the site's base. */
