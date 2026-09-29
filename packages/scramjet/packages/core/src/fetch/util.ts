@@ -2,6 +2,7 @@ import { isHtmlMimeType, ScramjetHeaders } from "@/shared";
 import { BareResponse } from "@mercuryworkshop/proxy-transports";
 import { ScramjetFetchParsed } from ".";
 import { _Set, _URL } from "@/shared/snapshot";
+import { MAX_REFERRER_LENGTH } from "@rewriters/url";
 
 export function normalizeContentType(
 	parsed: ScramjetFetchParsed,
@@ -37,9 +38,6 @@ const REFERRER_POLICIES = new _Set([
 
 /** The policy a request falls back to when nothing sets one. */
 export const DEFAULT_REFERRER_POLICY = "strict-origin-when-cross-origin";
-
-/** Longer referrers are cut down to their origin, as Chrome does. */
-const MAX_REFERRER_LENGTH = 4096;
 
 /**
  * The Referer a request for `resource` sends when it comes from `source`

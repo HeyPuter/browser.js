@@ -1,5 +1,5 @@
 import { Object_entries, Object_keys, _URL, Error } from "@/shared/snapshot";
-import { unrewriteUrl, URLMeta } from "@rewriters/url";
+import { referrerFallback, unrewriteUrl, URLMeta } from "@rewriters/url";
 import {
 	ScramjetFetchHandler,
 	ScramjetFetchParsed,
@@ -9,6 +9,7 @@ import {
 export const QP = {
 	referrerPolicy: "$rfp",
 	referrerSource: "$rfs",
+	referrerFallback: "$rff",
 	isModule: "$module",
 	topFrame: "$tf",
 	parentFrame: "$pf",
@@ -75,6 +76,14 @@ function isUnmarkedModule(
 	return request.rawDestination === "script" && request.mode === "cors";
 }
 
+function parseReferrerFallback(href: string | undefined): _URL | undefined {
+	if (!href) return undefined;
+	try {
+		return new _URL(href);
+	} catch {
+		return undefined;
+	}
+}
 export function parseRequest(
 	request: ScramjetFetchRequest,
 	handler: ScramjetFetchHandler
@@ -135,6 +144,8 @@ export function parseRequest(
 				: undefined,
 		topFrameName: params.topFrame,
 		parentFrameName: params.parentFrame,
+		// what this response goes on to request has it as the referrer
+		referrerFallback: referrerFallback(request.rawUrl.href, url),
 	};
 
 	const parsed: ScramjetFetchParsed = {
@@ -147,6 +158,7 @@ export function parseRequest(
 		crossSiteRedirect: params.crossSiteRedirect === "1",
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
+		referrerFallback: parseReferrerFallback(params.referrerFallback),
 		// TODO: should really just be a boolean
 		fetchCredentialsInclude: params.credentials === "include",
 		fetchMode,

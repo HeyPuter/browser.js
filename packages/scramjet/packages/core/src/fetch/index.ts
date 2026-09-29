@@ -46,6 +46,8 @@ export interface ScramjetFetchParsed {
 	 * every hop before this one (null for none). Absent on a first request.
 	 */
 	referrerSourceUrl?: _URL | null;
+	/** The `$rff` it was stamped with, see `referrerFallback`. */
+	referrerFallback?: _URL;
 	/**
 	 * The referrer policy a navigation started out with, handed on through its
 	 * redirects: Chrome puts the Referer of the last hop through it for
