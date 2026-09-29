@@ -41,7 +41,8 @@ function rewriteJsWasm(
 	context: ScramjetContext,
 	meta: URLMeta,
 	isModule: boolean,
-	inlineSourcemap: boolean
+	inlineSourcemap: boolean,
+	handlerPrelude = ""
 ): RewriterResult {
 	const [rewriter, ret] = getRewriter(context, meta);
 
@@ -54,6 +55,7 @@ function rewriteJsWasm(
 	flagsobj["incumbency"] = incumbencyMode(context);
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
 	flagsobj["scriptId"] = genScriptId();
+	flagsobj["handlerPrelude"] = handlerPrelude;
 
 	try {
 		let out: JsRewriterOutput;
@@ -122,10 +124,20 @@ export function rewriteJs(
 	 * with it - the map goes in the script's prelude, and the script hands it
 	 * to its client itself when it runs.
 	 */
-	client?: ScramjetClient
+	client?: ScramjetClient,
+	/** see {@link eventHandlerPrelude} */
+	handlerPrelude = ""
 ): string | Uint8Array {
 	try {
-		const res = rewriteJsWasm(js, url, context, meta, isModule, !client);
+		const res = rewriteJsWasm(
+			js,
+			url,
+			context,
+			meta,
+			isModule,
+			!client,
+			handlerPrelude
+		);
 
 		if (client && flagEnabled("sourcemaps", context)) {
 			registerRewrites(client, res.map, res.tag);

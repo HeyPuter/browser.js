@@ -514,7 +514,10 @@ function traverseParsedHtml(
 				value,
 				`(inline ${attr} on element)`,
 				context,
-				meta
+				meta,
+				false,
+				undefined,
+				eventHandlerPrelude(context, node.name, attr)
 			) as string;
 		}
 	}
@@ -616,6 +619,45 @@ export function rewriteSrcset(
  * set when a page writes one through `setAttribute` - a name that is rewritten
  * at parse time and not at run time is a hole, not an optimisation.
  */
+/**
+ * The window's handlers for the events a listener is handed a stand-in for
+ * (see `client/shared/event.ts`): the only content attributes a trusted one
+ * of them ever reaches, and only on these elements, which hold the window's
+ * handlers.
+ */
+const standInHandlers = ["onmessage", "onhashchange", "onstorage"];
+const windowHandlerElements = ["body", "frameset"];
+
+/**
+ * What an event handler content attribute's body runs first, so that its
+ * `event` is the same stand-in a listener would have been handed - or
+ * nothing at all when a listener would never have seen it.
+ *
+ * The browser compiles the attribute as a function of `event` and calls it
+ * with the real event itself, past every listener wrapper scramjet has. So
+ * the stand-in has to be made from inside: `event` is rebound to it before a
+ * line of the page's code runs. The function answers itself for an event to
+ * drop, since a falsy value is one a handler can be given. Only on the
+ * elements where it is `event`: an SVG element's handler calls it `evt`, and
+ * an assignment there would replace `window.event`.
+ */
+export function eventHandlerPrelude(
+	context: ScramjetContext,
+	element: string,
+	attribute: string
+): string {
+	if (
+		Array_indexOf(windowHandlerElements, element) === -1 ||
+		Array_indexOf(standInHandlers, attribute) === -1
+	) {
+		return "";
+	}
+
+	const standin = context.config.globals.standinfn;
+
+	return `if((event=${standin}(event))===${standin})return;`;
+}
+
 export const eventAttributes = [
 	"onbeforexrselect",
 	"onabort",

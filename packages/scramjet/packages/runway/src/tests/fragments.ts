@@ -574,6 +574,32 @@ export default [
 	// --- events ---------------------------------------------------------------
 
 	fragmentTest({
+		name: "fragment-hashchange-event",
+		js: `
+			if (!noReload()) return;
+			const e = await new Promise((r) => {
+				addEventListener("hashchange", r, { once: true });
+				location.hash = "ev";
+			});
+			const own = (url) => url.slice(location.origin.length);
+			assertConsistent("urls", [own(e.oldURL), own(e.newURL)]);
+			assertEqual(e.newURL, location.href, "newURL is the page's URL");
+			const d = (name) => Object.getOwnPropertyDescriptor(HashChangeEvent.prototype, name).get.call(e);
+			assertConsistent("prototype getters", [own(d("oldURL")), own(d("newURL"))]);
+			assertConsistent("instance", [e instanceof HashChangeEvent, e.constructor === HashChangeEvent, Object.prototype.toString.call(e), e.isTrusted]);
+			const copy = new HashChangeEvent("hashchange", e);
+			assertConsistent("copy", [own(copy.oldURL), own(copy.newURL), copy.isTrusted]);
+			const made = new HashChangeEvent("x", { oldURL: "a", newURL: "b" });
+			assertConsistent("made", [made.oldURL, made.newURL]);
+			let redispatched = null;
+			const t = new EventTarget();
+			t.addEventListener("hashchange", (ev) => (redispatched = ev === copy));
+			t.dispatchEvent(copy);
+			assertConsistent("redispatched", redispatched);
+		`,
+	}),
+
+	fragmentTest({
 		name: "fragment-hashchange-getter-shape",
 		js: `
 			const shape = (name) => {
@@ -602,6 +628,48 @@ export default [
 			// a page's own event keeps whatever it was given, proxy-looking or not
 			const odd = new HashChangeEvent("hashchange", { oldURL: "/x/y", newURL: "not a url" });
 			assertConsistent("page-made", [odd.oldURL, odd.newURL]);
+		`,
+	}),
+
+	fragmentTest({
+		name: "fragment-hashchange-event-frames",
+		routes: {
+			"/child": `<script>
+				window.seen = [];
+				const own = (url) => url.replace(location.origin, "O");
+				addEventListener("hashchange", (e) => {
+					seen.push(["listener", own(e.oldURL), own(e.newURL), e instanceof HashChangeEvent]);
+					window.lastEvent = e;
+				});
+				onhashchange = (e) => seen.push(["property", own(e.newURL)]);
+				addEventListener("DOMContentLoaded", () => document.body.setAttribute("onhashchange", "seen.push(['attribute', event.newURL.replace(location.origin, 'O')])"));
+			</script>`,
+		},
+		js: `
+			const own = (url) => url.replace(location.origin, "O");
+			const f = document.createElement("iframe");
+			f.src = "/child";
+			document.body.append(f);
+			await new Promise((r) => (f.onload = r));
+			const w = f.contentWindow;
+			w.location.hash = "c";
+			await until(() => w.seen.length >= 2);
+			await sleep(50);
+			assertConsistent("child", w.seen);
+			// this realm's getter, handed the child realm's event
+			const get = Object.getOwnPropertyDescriptor(HashChangeEvent.prototype, "newURL").get;
+			assertConsistent("cross-realm getter", own(get.call(w.lastEvent)));
+			assertConsistent("child getter", own(Object.getOwnPropertyDescriptor(w.HashChangeEvent.prototype, "newURL").get.call(w.lastEvent)));
+
+			// an about:blank frame's URLs are not proxy URLs at all
+			const blank = document.createElement("iframe");
+			document.body.append(blank);
+			const b = blank.contentWindow;
+			const ev = await new Promise((r) => {
+				b.addEventListener("hashchange", r, { once: true });
+				b.location.hash = "blank";
+			});
+			assertConsistent("about:blank", [ev.oldURL, ev.newURL]);
 		`,
 	}),
 

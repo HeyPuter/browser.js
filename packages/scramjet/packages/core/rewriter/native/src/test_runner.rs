@@ -131,6 +131,7 @@ function check(val) {
 			inline_sourcemap: false,
 			disable_computed_wrap: false,
 			destructure_rewrites: true,
+			handler_prelude: String::new(),
 			incumbency: IncumbencyMode::None,
 		};
 
