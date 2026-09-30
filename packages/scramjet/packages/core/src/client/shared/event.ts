@@ -233,7 +233,8 @@ export default function (client: ScramjetClient, self: Self) {
 					args[0] = wrapEvent(realEvent, trustedProps);
 				}
 
-				const rv = Reflect_apply(target, that, args);
+				// a listener is called with the real current target as its `this`
+				const rv = Reflect_apply(target, client.pageValue(that), args);
 
 				return rv;
 			},

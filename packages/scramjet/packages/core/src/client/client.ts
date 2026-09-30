@@ -1957,6 +1957,22 @@ return { apply, construct };
 		}
 	}
 
+	/**
+	 * `ppsc`: what the page holds in place of `v` - the proxy of a window or a
+	 * document, this realm's or another frame's - or `v` itself. For a value a
+	 * native hands to page code without a member of its own to trap, such as
+	 * the receiver of an event listener.
+	 */
+	pageValue(v: any): any {
+		if (!this.globalProxy || typeof v !== "object" || v === null) return v;
+
+		return (
+			this.box.globals.get(v)?.globalProxy ??
+			this.box.documents.get(v)?.documentProxy ??
+			v
+		);
+	}
+
 	rewriteUrl(url: string | URL, options?: RewriteUrlOptions): string {
 		return rewriteUrl(url, this.context, this.meta, options);
 	}
