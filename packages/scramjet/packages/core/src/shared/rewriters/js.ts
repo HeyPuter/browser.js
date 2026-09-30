@@ -1,4 +1,4 @@
-import { flagEnabled, ScramjetContext } from "@/shared";
+import { flagEnabled, flagValue, ScramjetContext } from "@/shared";
 import { URLMeta } from "@rewriters/url";
 
 import { getRewriter, JsRewriterOutput } from "@rewriters/wasm";
@@ -49,9 +49,10 @@ function rewriteJsWasm(
 	for (const flag of Object_keys(context.config.flags)) {
 		flagsobj[flag] = flagEnabled(flag as any, context);
 	}
-	// the one flag that is not a boolean, and the rewriter wants the mode this
-	// engine can actually do rather than the one that was configured
+	// the flags that are not booleans; for incumbency the rewriter wants the
+	// mode this engine can actually do rather than the one that was configured
 	flagsobj["incumbency"] = incumbencyMode(context);
+	flagsobj["jsRewriter"] = flagValue("jsRewriter", context);
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
 	flagsobj["scriptId"] = genScriptId();
 

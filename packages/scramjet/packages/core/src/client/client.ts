@@ -8,6 +8,7 @@ import { IFACE_NAME } from "@client/iface";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
+import { createDocumentProxy, createGlobalProxy } from "@client/global";
 import { LifecycleHooks } from "@client/events";
 import {
 	rewriteUrl,
@@ -17,6 +18,7 @@ import {
 } from "@rewriters/url";
 import {
 	flagEnabled,
+	flagValue,
 	BooleanFlag,
 	HtmlRewriterHooks,
 	ScramjetContext,
@@ -274,6 +276,13 @@ type Slot = {
 	callable?: any;
 	getter?: any;
 	setter?: any;
+	/**
+	 * Patched with no layers on it at all, so that a call still reaches
+	 * {@link ScramjetClient.fixReceiver}. Without this a slot with nothing
+	 * layered on it is left as the native, and a call made on a proxy never
+	 * reaches the dispatch that would put its receiver right.
+	 */
+	forced?: boolean;
 	/** `Intercept` declared a half the native attribute does not have */
 	addsGet?: boolean;
 	addsSet?: boolean;
@@ -359,6 +368,10 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
 export const GlobalScope = class {} as unknown as typeof Window;
 
 export class ScramjetClient {
+	/** `ppsc` only: what every reference to the global object is rewritten into */
+	globalProxy: typeof globalThis | null = null;
+	/** `ppsc` only, and only in a window: the same for the document */
+	documentProxy: Document | null = null;
 	locationProxy: any;
 	indirectEval: any;
 	private readonly creatorOrigin: string | null;
@@ -376,6 +389,19 @@ export class ScramjetClient {
 	meta: URLMeta;
 
 	box: SingletonBox;
+
+	/**
+	 * `ppsc` only: the receiver a call should have been made with, for one made
+	 * on the global or document proxy.
+	 *
+	 * A native checks its receiver's internal slots, which a `Proxy` has none
+	 * of, so every member reached through one of those proxies would be an
+	 * "Illegal invocation". More than half of what the IDL names needs nothing
+	 * else done to it, and giving each of those a layer of its own cost a `ctx`
+	 * and three closures per call for one identity test. It happens here
+	 * instead, once, ahead of whatever layers the member does have.
+	 */
+	fixReceiver: ((that: any) => any) | null = null;
 
 	/** The attribute layer: every attribute read and write goes through it. */
 	attributes: AttributeLayer;
@@ -555,6 +581,10 @@ export class ScramjetClient {
 		}
 
 		this.indirectEval = createIndirectEval(this);
+		if (flagValue("jsRewriter", this.context) !== "dpsc") {
+			this.globalProxy = createGlobalProxy(this, global as never);
+			if (iswindow) this.documentProxy = createDocumentProxy(this, global);
+		}
 		this.wrapfn = createWrapFn(this, global);
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const client = this;
@@ -1183,7 +1213,12 @@ return { apply, construct };
 			if (slot.traps[i].set) trapsSet = true;
 		}
 
-		if (slot.calls.length > 0 || base?.value || base?.construct) {
+		if (
+			slot.calls.length > 0 ||
+			slot.forced ||
+			base?.value ||
+			base?.construct
+		) {
 			this.callableFor(slot);
 		}
 
@@ -1290,6 +1325,7 @@ return { apply, construct };
 	}
 
 	private dispatchApply(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.value;
 		const run = (that: any, a: any[]) =>
 			this.applyLayer(slot, slot.calls.length - 1, that, a);
@@ -1415,6 +1451,7 @@ return { apply, construct };
 	}
 
 	private dispatchGet(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.get;
 		const run = (that: any) => this.getLayer(slot, slot.traps.length - 1, that);
 
@@ -1446,6 +1483,7 @@ return { apply, construct };
 	}
 
 	private dispatchSet(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.set;
 		const run = (that: any, a: any[]) =>
 			this.setLayer(slot, slot.traps.length - 1, that, a[0]);
@@ -1479,6 +1517,26 @@ return { apply, construct };
 		};
 
 		return ctx;
+	}
+
+	/**
+	 * Patch the method `prop` reached from `target` without layering anything
+	 * on it.
+	 *
+	 * For a member that needs nothing but {@link fixReceiver}, which the slot
+	 * runs on its own: the member still has to be patched for a call on it to
+	 * reach the slot at all, but it needs no handler.
+	 */
+	Patch(target: any, prop: string, debugname?: string) {
+		if (!target) return;
+		if (!prop) return;
+
+		const slot = this.slotFor(target, prop, debugname ?? prop);
+		if (!slot) return;
+		if (typeof slot.native.value !== "function") return;
+
+		slot.forced = true;
+		this.render(slot);
 	}
 
 	/**

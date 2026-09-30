@@ -40,15 +40,56 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 		wrappedTop = current;
 	}
 
+	// `ppsc` hands the page a window only as its proxy, and that has to hold for
+	// the pretend parent and top too. Handing back the real one both leaks it
+	// and breaks the usual walk to the top - `while (w !== w.parent) w =
+	// w.parent` - which never sees the two agree: the proxy of a window is not
+	// the window.
+	if (client.globalProxy) {
+		const proxyOf = (w: any) => {
+			if (w === self) return client.globalProxy;
+			try {
+				return w?.[SCRAMJETCLIENT]?.globalProxy ?? w;
+			} catch {
+				return w;
+			}
+		};
+		wrappedParent = proxyOf(wrappedParent);
+		wrappedTop = proxyOf(wrappedTop);
+	}
+
+	// Under `ppsc` this is called on whatever a site hands it - a function's
+	// `this`, a local that only sometimes holds the window - rather than only on
+	// a global, so it is compared against values read once. `location`,
+	// `parent`, `top` and `document` are accessors, and reading all four on
+	// every call was the whole cost of the call: 312ms of its own and 236ms in
+	// the getters over five iterations of TodoMVC-React-Redux. None of them
+	// changes for the life of a window.
+	const realLocation = self.location;
+	const realDocument = iswindow ? (self as Self).document : null;
+	const realParent = iswindow ? self.parent : null;
+	const realTop = iswindow ? self.top : null;
+
 	return function (identifier: any) {
-		if (identifier === self.location) return client.locationProxy;
+		// nothing that is not an object can be one of them
+		if (
+			identifier === null ||
+			(typeof identifier !== "object" && typeof identifier !== "function")
+		)
+			return identifier;
+		// `ppsc` wraps references to the global object itself, which `dpsc` never does
+		if (client.globalProxy) {
+			if (identifier === self) return client.globalProxy;
+			if (identifier === realDocument) return client.documentProxy;
+		}
+		if (identifier === realLocation) return client.locationProxy;
 		if (identifier === self.eval) {
 			return client.indirectEval;
 		}
 		if (iswindow) {
-			if (identifier === self.parent) {
+			if (identifier === realParent) {
 				return wrappedParent;
-			} else if (identifier === self.top) {
+			} else if (identifier === realTop) {
 				return wrappedTop;
 			}
 		}
@@ -77,6 +118,34 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 
 	Object_defineProperty(self, client.config.globals.wrapfn, {
 		value: client.wrapfn,
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
+	// `ppsc`: what a function's `this` is compared against before it is
+	// wrapped. Fixed, so the engine can treat both as constants. A worker has
+	// no document, and is given something no `this` can be.
+	Object_defineProperty(self, client.config.globals.rawwindowid, {
+		value: self,
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
+	Object_defineProperty(self, client.config.globals.rawdocumentid, {
+		value: iswindow ? (self as Self).document : {},
+		writable: false,
+		configurable: false,
+		enumerable: false,
+	});
+	// `ppsc`: the real object behind one of this realm's proxies, for the twin
+	// kept beside a local that holds the proxy, which its safe uses read
+	Object_defineProperty(self, client.config.globals.unwrapfn, {
+		value: function (v: any) {
+			if (v === client.globalProxy && v) return self;
+			if (v === client.documentProxy && v) return (self as Self).document;
+
+			return v;
+		},
 		writable: false,
 		configurable: false,
 		enumerable: false,
