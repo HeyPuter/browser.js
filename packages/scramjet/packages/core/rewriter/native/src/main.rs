@@ -16,8 +16,10 @@ use oxc::{
 };
 use rewriter::NativeRewriter;
 
+mod elide_diff;
 mod rewriter;
 mod test_runner;
+mod verify;
 
 #[derive(Parser)]
 pub struct RewriterOptions {
@@ -112,6 +114,26 @@ pub enum Cli {
 		#[clap(flatten)]
 		config: RewriterOptions,
 	},
+	/// Rewrite scripts with every rewriter, checking each output still parses
+	Verify {
+		/// files, or directories searched for .js/.mjs files
+		paths: Vec<PathBuf>,
+		#[clap(long, default_value_t = 8)]
+		threads: usize,
+		#[clap(long, default_value_t = false)]
+		ppsc_wrap_this: bool,
+	},
+}
+
+fn scripts(path: PathBuf, out: &mut Vec<PathBuf>) {
+	if path.is_dir() {
+		let Ok(entries) = fs::read_dir(&path) else { return };
+		for entry in entries.flatten() {
+			scripts(entry.path(), out);
+		}
+	} else if path.extension().is_some_and(|e| e == "js" || e == "mjs") {
+		out.push(path);
+	}
 }
 
 fn main() -> Result<()> {
@@ -182,6 +204,20 @@ fn main() -> Result<()> {
 			println!("iterations: {cnt}");
 			println!("total time: {duration:?}");
 			println!("avg time: {:?}", duration / cnt);
+		}
+		Cli::Verify {
+			paths,
+			threads,
+			ppsc_wrap_this,
+		} => {
+			let mut files = Vec::new();
+			for path in paths {
+				scripts(path, &mut files);
+			}
+			files.sort();
+			if !verify::run(&files, threads, ppsc_wrap_this) {
+				anyhow::bail!("some rewrites did not parse");
+			}
 		}
 	}
 
