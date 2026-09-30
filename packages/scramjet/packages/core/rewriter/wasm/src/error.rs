@@ -1,6 +1,6 @@
 use std::cell::BorrowMutError;
 
-use js::{RewriterError as JsRewriterError, cfg::InvalidIncumbencyMode};
+use js::{RewriterError as JsRewriterError, cfg::{InvalidIncumbencyMode, InvalidJsRewriter}};
 use js_sys::Error;
 use thiserror::Error;
 use wasm_bindgen::{JsError, JsValue};
@@ -23,6 +23,8 @@ pub enum RewriterError {
 	Not(&'static str, &'static str),
 	#[error("{0}: {1}")]
 	Incumbency(&'static str, #[source] InvalidIncumbencyMode),
+	#[error("{0}: {1}")]
+	JsRewriterMode(&'static str, #[source] InvalidJsRewriter),
 }
 
 impl From<JsValue> for RewriterError {

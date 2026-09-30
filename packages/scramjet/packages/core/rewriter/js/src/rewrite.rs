@@ -125,6 +125,15 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 	Replace {
 		text: &'alloc str,
 	},
+	/// insert `text` at an empty span
+	Insert {
+		text: &'alloc str,
+	},
+	/// insert `text` at an empty span, ahead of anything else inserted there: a declaration a
+	/// body's first statement has to come after
+	Prelude {
+		text: &'alloc str,
+	},
 	Delete,
 }
 
@@ -354,6 +363,8 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			Self::SourceTag => smallvec![change!(span, SourceTag)],
 			Self::OptionalLink { opener } => smallvec![change!(span, Replace { text: opener })],
 			Self::Replace { text } => smallvec![change!(span, Replace { text })],
+			Self::Insert { text } => smallvec![change!(span, Insert { text })],
+			Self::Prelude { text } => smallvec![change!(span, Prelude { text })],
 			Self::Delete => smallvec![change!(span, Delete)],
 		}
 	}

@@ -40,6 +40,12 @@ fn get_incumbency(obj: &JsValue, k: &'static str) -> Result<IncumbencyMode> {
 		.map_err(|e| RewriterError::Incumbency(k, e))
 }
 
+fn get_js_rewriter(obj: &JsValue, k: &'static str) -> Result<js::cfg::JsRewriter> {
+	get_str(obj, k)?
+		.parse()
+		.map_err(|e| RewriterError::JsRewriterMode(k, e))
+}
+
 fn set_obj(obj: &Object, k: &str, v: &JsValue) -> Result<()> {
 	if Reflect::set(&obj.into(), &k.into(), v)? {
 		Ok(())
@@ -68,6 +74,11 @@ fn get_js_config(config: &Object) -> Result<Config> {
 		tempreceiverid: get_str(config, "tempreceiverid")?,
 		tempcalleeid: get_str(config, "tempcalleeid")?,
 		tempunusedid: get_str(config, "tempunusedid")?,
+		unwrapfn: get_str(config, "unwrapfn")?,
+		realsuffix: get_str(config, "realsuffix")?,
+		tempthisid: get_str(config, "tempthisid")?,
+		rawwindowid: get_str(config, "rawwindowid")?,
+		rawdocumentid: get_str(config, "rawdocumentid")?,
 	})
 }
 
@@ -85,6 +96,8 @@ fn get_js_flags(obj: &Object, base: String, is_module: bool) -> Result<Flags> {
 		destructure_rewrites: get_bool(obj, "destructureRewrites")?,
 
 		incumbency: get_incumbency(obj, "incumbency")?,
+		js_rewriter: get_js_rewriter(obj, "jsRewriter")?,
+		ppsc_wrap_this: get_bool(obj, "ppscWrapThis")?,
 	})
 }
 

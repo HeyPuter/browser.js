@@ -11,10 +11,11 @@ use thiserror::Error;
 
 pub mod cfg;
 mod changes;
+mod ppsc;
 mod rewrite;
 mod visitor;
 
-use cfg::{Config, Flags, IncumbencyMode, UrlRewriter};
+use cfg::{Config, Flags, IncumbencyMode, JsRewriter, UrlRewriter};
 use changes::JsChanges;
 use visitor::Visitor;
 
@@ -280,25 +281,55 @@ impl Rewriter {
 
 		let jschanges = self.take_changes(alloc)?;
 
-		let mut visitor = Visitor {
-			alloc,
-			jschanges,
-			error: None,
+		let (mut jschanges, flags, error) = match flags.js_rewriter {
+			JsRewriter::Dpsc => {
+				let mut visitor = Visitor {
+					alloc,
+					jschanges,
+					error: None,
 
-			config: &config,
-			rewriter: rewriter,
-			flags,
+					config: &config,
+					rewriter,
+					flags,
 
-			with_depth: 0,
-			split_members: std::vec::Vec::new(),
+					with_depth: 0,
+					split_members: std::vec::Vec::new(),
+				};
+				visitor.visit_program(&parsed.program);
+				(visitor.jschanges, visitor.flags, visitor.error)
+			}
+			JsRewriter::Ppsc | JsRewriter::PpscHybrid => {
+				// what the proxy can be left out of needs every binding resolved, which the
+				// visitor then only has to look up
+				let semantic = oxc::semantic::SemanticBuilder::new().build(&parsed.program);
+				let elision = ppsc::elide::analyze(
+					&parsed.program,
+					&semantic.semantic,
+					ppsc::elide::Options {
+						hybrid: flags.js_rewriter == JsRewriter::PpscHybrid,
+						wrap_this: flags.ppsc_wrap_this,
+					},
+				);
+				let mut visitor = ppsc::Visitor {
+					alloc,
+					jschanges,
+					error: None,
+
+					config: &config,
+					rewriter,
+					flags,
+
+					elision,
+				};
+				visitor.visit_program(&parsed.program);
+				(visitor.jschanges, visitor.flags, visitor.error)
+			}
 		};
-		visitor.visit_program(&parsed.program);
-		if let Some(error) = visitor.error {
+		if let Some(error) = error {
 			return Err(RewriterError::Url(error));
 		}
-		let mut jschanges = visitor.jschanges;
 
-		let changed = jschanges.perform(js, &config, &visitor.flags)?;
+		let changed = jschanges.perform(js, &config, &flags)?;
 
 		self.put_changes(jschanges)?;
 
@@ -312,7 +343,7 @@ impl Rewriter {
 		let prelude = if js.is_empty() {
 			String::new()
 		} else {
-			build_prelude(&config, &visitor.flags, &sourcemap)
+			build_prelude(&config, &flags, &sourcemap)
 		};
 		let js: Vec<'alloc, u8> = if prelude.is_empty() {
 			changed.source
@@ -331,7 +362,7 @@ impl Rewriter {
 			js,
 			sourcemap,
 			errors: parsed.errors,
-			flags: visitor.flags,
+			flags,
 		})
 	}
 }

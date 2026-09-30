@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use js::cfg::IncumbencyMode;
+use js::cfg::{IncumbencyMode, JsRewriter};
 use oxc::{
 	allocator::{Allocator, StringBuilder},
 	diagnostics::NamedSource,
@@ -54,6 +54,16 @@ pub struct RewriterOptions {
 	tempcalleeid: String,
 	#[clap(long, default_value = "$tempunused")]
 	tempunusedid: String,
+	#[clap(long, default_value = "$scramjet$unwrap")]
+	unwrapfn: String,
+	#[clap(long, default_value = "$scramjet$r")]
+	realsuffix: String,
+	#[clap(long, default_value = "$scramjet$t")]
+	tempthisid: String,
+	#[clap(long, default_value = "$scramjet$rw")]
+	rawwindowid: String,
+	#[clap(long, default_value = "$scramjet$rd")]
+	rawdocumentid: String,
 
 	#[clap(long, default_value = "https://google.com/glorngle/si.js")]
 	base: String,
@@ -74,6 +84,10 @@ pub struct RewriterOptions {
 	destructure_rewrites: bool,
 	#[clap(long, default_value = "none")]
 	incumbency: IncumbencyMode,
+	#[clap(long, default_value = "ppsc-hybrid")]
+	js_rewriter: JsRewriter,
+	#[clap(long, default_value_t = false)]
+	ppsc_wrap_this: bool,
 }
 
 impl Default for RewriterOptions {

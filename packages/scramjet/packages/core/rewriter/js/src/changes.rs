@@ -146,6 +146,14 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	Replace {
 		text: &'alloc str,
 	},
+	/// insert text
+	Insert {
+		text: &'alloc str,
+	},
+	/// insert text, before anything else inserted at the same place
+	Prelude {
+		text: &'alloc str,
+	},
 	/// replace span with ""
 	Delete,
 	// ;cfg.cleanrestfn(restids[0]); cfg.cleanrestfn(restids[1]);
@@ -426,6 +434,7 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 				}
 			}
 			Ty::Replace { text } => LL::replace(transforms![text]),
+			Ty::Insert { text } | Ty::Prelude { text } => LL::insert(transforms![text]),
 			Ty::Delete => LL::replace(transforms![]),
 		}
 	}
@@ -443,6 +452,10 @@ impl Ord for JsChange<'_, '_> {
 
 		match self.span.start.cmp(&other.span.start) {
 			Ordering::Equal => match (&self.ty, &other.ty) {
+				// a declaration at the start of a body: whatever the body's first statement is
+				// rewritten into has to come after it
+				(Ty::Prelude { .. }, _) => Ordering::Less,
+				(_, Ty::Prelude { .. }) => Ordering::Greater,
 				(Ty::CleanFunction { .. }, _) => Ordering::Less,
 				(Ty::ScramErrFn { .. }, _) => Ordering::Less,
 				(_, Ty::ScramErrFn { .. }) => Ordering::Greater,
