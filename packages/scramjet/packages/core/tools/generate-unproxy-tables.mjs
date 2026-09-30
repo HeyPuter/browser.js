@@ -50,6 +50,10 @@ const KIND_BY_TYPE = {
 	Node: "d",
 };
 
+// typedef name -> its idlType, so `MessageEventSource` classifies as the
+// `(WindowProxy or MessagePort or ServiceWorker)` it names. Filled below.
+const typedefs = new Map();
+
 /**
  * Walks an IDL idlType node (argument-type / attribute-type / return-type /
  * dictionary-type / etc) and returns "w" | "d" | null based on whether the
@@ -76,6 +80,7 @@ function classifyType(t) {
 	}
 
 	if (typeof t.idlType === "string") {
+		if (typedefs.has(t.idlType)) return classifyType(typedefs.get(t.idlType));
 		return KIND_BY_TYPE[t.idlType] ?? null;
 	}
 
@@ -95,7 +100,9 @@ function leafTypeNames(t) {
 	if (t.generic && Array.isArray(t.idlType)) {
 		return t.idlType.flatMap(leafTypeNames);
 	}
-	return typeof t.idlType === "string" ? [t.idlType] : [];
+	if (typeof t.idlType !== "string") return [];
+	if (typedefs.has(t.idlType)) return leafTypeNames(typedefs.get(t.idlType));
+	return [t.idlType];
 }
 
 // ----- Definition collection -------------------------------------------------
@@ -131,6 +138,9 @@ for (const list of Object.values(all)) {
 			case "includes":
 				if (!includes.has(def.target)) includes.set(def.target, []);
 				includes.get(def.target).push(def.includes);
+				break;
+			case "typedef":
+				typedefs.set(def.name, def.idlType);
 				break;
 		}
 	}
