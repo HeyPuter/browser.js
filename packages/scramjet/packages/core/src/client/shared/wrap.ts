@@ -4,6 +4,21 @@ import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
 import { Object_defineProperty } from "@/shared/snapshot";
 
+/** What `location op= rhs` computes, for the compound assignments that are arithmetic */
+const ARITHMETIC: Record<string, (a: any, b: any) => any> = {
+	"-=": (a, b) => a - b,
+	"*=": (a, b) => a * b,
+	"/=": (a, b) => a / b,
+	"%=": (a, b) => a % b,
+	"**=": (a, b) => a ** b,
+	"<<=": (a, b) => a << b,
+	">>=": (a, b) => a >> b,
+	">>>=": (a, b) => a >>> b,
+	"&=": (a, b) => a & b,
+	"|=": (a, b) => a | b,
+	"^=": (a, b) => a ^ b,
+};
+
 export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 	let wrappedParent: Window | null = null;
 	let wrappedTop: Window | null = null;
@@ -250,12 +265,35 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	// we have to use an IIFE to avoid duplicating side-effects in the getter
 	Object_defineProperty(self, client.config.globals.trysetfn, {
 		value: function (lhs: any, op: string, rhs: any) {
-			if (client.box.locations.has(lhs)) {
-				lhs.href = rhs;
-				return true;
-			}
+			// a real `Location`, this realm's or another frame's, navigates through the location
+			// proxy of the client that owns it: setting `lhs.href` itself would navigate the frame
+			// to the URL unrewritten. Anything else - a local named `location` - is the caller's
+			// to assign.
+			const owner = client.box.locations.get(lhs);
+			if (!owner) return false;
 
-			return false;
+			const proxy = owner.locationProxy;
+			switch (op) {
+				// a `Location` is an object, so these never assign
+				case "||=":
+				case "??=":
+					return true;
+				case "=":
+				case "&&=":
+					proxy.href = rhs;
+					return true;
+				case "+=":
+					proxy.href = proxy.href + rhs;
+					return true;
+				default: {
+					// the arithmetic ones, on the URL the page is meant to see: a number or NaN,
+					// which navigates somewhere relative, the same as unproxied
+					const apply = ARITHMETIC[op];
+					if (!apply) return false;
+					proxy.href = apply(proxy.href, rhs);
+					return true;
+				}
+			}
 		},
 		writable: false,
 		configurable: false,
