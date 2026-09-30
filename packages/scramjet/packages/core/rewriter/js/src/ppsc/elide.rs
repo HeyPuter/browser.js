@@ -440,6 +440,10 @@ impl<'a> Ctx<'_, 'a> {
 					done!(u);
 				}
 				AstKind::ComputedMemberExpression(m) if m.object.span() == child => match &m.expression {
+					// `window["0"]` is the same frame as `window[0]`
+					Expression::StringLiteral(s) if kind & W != 0 && is_array_index(&s.value) => {
+						done!(Use::Unsafe)
+					}
 					Expression::StringLiteral(s) => {
 						let u = Self::member(kind, s.value.as_str(), pid);
 						if self.renamable(&u, s.value.as_str(), pid) {
@@ -1170,6 +1174,11 @@ fn is_arrow_body(nodes: &AstNodes, statement: NodeId) -> bool {
 	let body = nodes.parent_id(statement);
 	matches!(nodes.kind(body), AstKind::FunctionBody(_))
 		&& matches!(nodes.parent_kind(body), AstKind::ArrowFunctionExpression(f) if f.expression)
+}
+
+/// Whether `key` names an array index, which on a window is a frame: `"0"`, never `"01"` or `"-0"`.
+fn is_array_index(key: &str) -> bool {
+	key.parse::<u32>().is_ok_and(|i| i != u32::MAX && i.to_string() == key)
 }
 
 /// The span of the optional chain `id` is part of, if it is part of one.
