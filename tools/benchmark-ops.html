@@ -276,6 +276,36 @@
 				}
 			);
 
+			G = "events";
+			bench(
+				G,
+				"event.target",
+				function () {
+					var e = new Event("zz");
+					host.dispatchEvent(e);
+					return e;
+				},
+				function (e, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = e.target;
+					return v;
+				}
+			);
+			bench(
+				G,
+				"dispatch to a listener reading target",
+				function () {
+					var seen = 0;
+					host.addEventListener("yy", function (e) {
+						if (e.target === host) seen++;
+					});
+					return new Event("yy");
+				},
+				function (e, n) {
+					for (var i = 0; i < n; i++) host.dispatchEvent(e);
+				}
+			);
+
 			G = "dom";
 			bench(G, "build a 200 node tree", null, function (_, n) {
 				for (var i = 0; i < n; i++) {

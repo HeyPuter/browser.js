@@ -43,12 +43,35 @@ const webrefVersion = (() => {
 //     legitimately receive a Document through. The most common one is `Node`
 //     -- Document inherits from Node, so any IDL declaration with type Node
 //     can carry a Document at runtime and must be (un)wrapped.
+//   - "*" is either: an `EventTarget` - `event.target`, `relatedTarget` - can
+//     be the window or the document, and only the value can say which.
 const KIND_BY_TYPE = {
 	Window: "w",
 	WindowProxy: "w",
 	Document: "d",
 	Node: "d",
+	EventTarget: "*",
 };
+
+// the generics whose value is a list of the type, which is wrapped element by
+// element: `composedPath()` is a `sequence<EventTarget>`
+const LIST_GENERICS = new Set(["sequence", "FrozenArray", "ObservableArray"]);
+
+/**
+ * What a return or attribute value needs wrapping as: a kind, a list of one
+ * (`"*[]"`), or a promise of one (`"Promise<w>"`). Only the outermost generic
+ * counts; anything nested deeper is a kind of its own the runtime does not
+ * reach into.
+ */
+function classifyValue(t) {
+	if (t && t.generic && Array.isArray(t.idlType)) {
+		const kind = classifyType(t.idlType[0]);
+		if (!kind) return null;
+		if (LIST_GENERICS.has(t.generic)) return `${kind}[]`;
+		if (t.generic === "Promise") return `Promise<${kind}>`;
+	}
+	return classifyType(t);
+}
 
 // typedef name -> its idlType, so `MessageEventSource` classifies as the
 // `(WindowProxy or MessagePort or ServiceWorker)` it names. Filled below.
@@ -290,7 +313,7 @@ function recordAttribute(owner, member, isStatic, kind, readonly) {
 		return;
 	}
 	// If conflicting kinds, fall back to "*" (probe at runtime).
-	if (entry.kind !== kind) entry.kind = "*";
+	if (entry.kind !== kind) entry.kind = mergeKinds([entry.kind, kind]);
 	// readonly only stays true if every overload says readonly.
 	entry.readonly = entry.readonly && readonly;
 }
@@ -346,7 +369,7 @@ function walkOwner(ownerName, kind /* "interface" | "namespace" */) {
 		if (member.type === "operation") {
 			if (!member.name) continue; // skip stringifier / indexed getter / etc.
 			const argSelectors = classifyArgs(member.arguments);
-			const returnKind = classifyType(member.idlType);
+			const returnKind = classifyValue(member.idlType);
 			// Always emit when the owner is one of the proxied globals --
 			// we still need to install the apply hook to swap `this`. For
 			// other owners, only emit when the signature actually touches
@@ -376,7 +399,7 @@ function walkOwner(ownerName, kind /* "interface" | "namespace" */) {
 		}
 
 		if (member.type === "attribute") {
-			const direct = classifyType(member.idlType);
+			const direct = classifyValue(member.idlType);
 			if (!direct) continue;
 			if (shouldSkipAttribute(ownerName, member.name)) continue;
 			recordAttribute(
@@ -418,7 +441,14 @@ function formatSelector(sel) {
 function formatReturnKind(kinds) {
 	if (kinds.size === 0) return JSON.stringify("");
 	if (kinds.size === 1) return JSON.stringify([...kinds][0]);
-	return JSON.stringify("*"); // mixed -> probe at runtime
+	return JSON.stringify(mergeKinds([...kinds])); // mixed -> probe at runtime
+}
+
+/** Overloads that disagree: the value is probed, in whatever shape they share. */
+function mergeKinds(kinds) {
+	const shape = (k) => k.replace(/[wd*]/, "#");
+	const shapes = new Set(kinds.map(shape));
+	return shapes.size === 1 ? [...shapes][0].replace("#", "*") : "*";
 }
 
 const opLines = opEntries.map((e) => {
@@ -443,9 +473,15 @@ const body = `${banner}
 /**
  * Single character proxy "kind" tag:
  *   "w" -> Window/WindowProxy   "d" -> Document
- *   "*" -> overload disagrees, probe the value at runtime
+ *   "*" -> either (an EventTarget, or overloads that disagree): probe the value
  */
 export type ProxyKind = "w" | "d" | "*";
+
+/**
+ * What a returned or read value is wrapped as: one of a kind, a list of them
+ * wrapped element by element, or a promise of one.
+ */
+export type ValueKind = ProxyKind | \`\${ProxyKind}[]\` | \`Promise<\${ProxyKind}>\`;
 
 /**
  * Selector for a Window/Document value reachable from an operation argument.
@@ -455,7 +491,7 @@ export type ProxyKind = "w" | "d" | "*";
  */
 export type ArgSelector = readonly [
 	argIdx: number,
-	kind: "w" | "d",
+	kind: ProxyKind,
 	...path: string[],
 ];
 
@@ -475,7 +511,7 @@ export type OpEntry = readonly [
 	isStatic: boolean,
 	isCtor: boolean,
 	argSelectors: readonly ArgSelector[],
-	returnKind: ProxyKind | "",
+	returnKind: ValueKind | "",
 ];
 
 /**
@@ -488,7 +524,7 @@ export type AttrEntry = readonly [
 	owner: string,
 	member: string,
 	isStatic: boolean,
-	kind: ProxyKind,
+	kind: ValueKind,
 	readonly: boolean,
 ];
 

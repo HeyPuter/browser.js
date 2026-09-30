@@ -25,12 +25,20 @@
 import type { ScramjetClient } from "@client/client";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { flagValue } from "@/shared";
-import { _Set } from "@/shared/snapshot";
+import {
+	_Set,
+	_WeakMap,
+	Array_isArray,
+	Object_freeze,
+	Object_isFrozen,
+	Promise_then,
+} from "@/shared/snapshot";
 import {
 	OPERATIONS,
 	ATTRIBUTES,
 	type ArgSelector,
 	type ProxyKind,
+	type ValueKind,
 } from "../unproxy.generated";
 
 // we do not want to override a member derived from a prototype until that
@@ -90,6 +98,55 @@ function proxyValue(v: any, kind: ProxyKind, client: ScramjetClient): any {
 	} catch {}
 
 	return v;
+}
+
+/**
+ * The copies handed out for a frozen list that held a window or a document, so
+ * that reading the same list twice gives the same list, as it does natively.
+ */
+const frozenCopies = new _WeakMap<object, object>();
+
+/**
+ * {@link proxyValue} for a value of any shape the IDL describes: a list is
+ * wrapped element by element - in place when the member made it fresh, as
+ * `composedPath()` does, and as a copy when it is frozen - and a promise once
+ * it settles.
+ */
+function proxyShaped(v: any, kind: ValueKind, client: ScramjetClient): any {
+	if (v == null) return v;
+	if (kind.length === 1) return proxyValue(v, kind as ProxyKind, client);
+
+	if (kind.startsWith("Promise<")) {
+		const inner = kind[8] as ProxyKind;
+		return Promise_then(v, (x: any) => proxyValue(x, inner, client));
+	}
+
+	const inner = kind[0] as ProxyKind;
+	if (!Array_isArray(v)) return v;
+	// most lists hold neither, and are handed back untouched
+	let first = -1;
+	for (let i = 0; i < v.length; i++) {
+		if (proxyValue(v[i], inner, client) !== v[i]) {
+			first = i;
+			break;
+		}
+	}
+	if (first < 0) return v;
+
+	if (!Object_isFrozen(v)) {
+		for (let i = first; i < v.length; i++)
+			v[i] = proxyValue(v[i], inner, client);
+		return v;
+	}
+	let copy = frozenCopies.get(v);
+	if (!copy) {
+		const out: any[] = [];
+		for (let i = 0; i < v.length; i++)
+			out.push(proxyValue(v[i], inner, client));
+		copy = Object_freeze(out);
+		frozenCopies.set(v, copy);
+	}
+	return copy;
 }
 
 /**
@@ -231,7 +288,9 @@ export default function (client: ScramjetClient, self: Self) {
 					if (wrapsArgs) unproxyArgs(ctx.args as any[], argSelectors, client);
 
 					if (wrapsReturn) {
-						ctx.return(proxyValue(ctx.call(), returnKind as ProxyKind, client));
+						ctx.return(
+							proxyShaped(ctx.call(), returnKind as ValueKind, client)
+						);
 					}
 				},
 			},
@@ -260,7 +319,7 @@ export default function (client: ScramjetClient, self: Self) {
 			set?: (ctx: any, v: any) => void;
 		} = {
 			get(ctx) {
-				return proxyValue(ctx.get(), kind as ProxyKind, client);
+				return proxyShaped(ctx.get(), kind, client);
 			},
 		};
 		if (!readonly) {

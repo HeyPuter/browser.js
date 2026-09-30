@@ -5,9 +5,15 @@
 /**
  * Single character proxy "kind" tag:
  *   "w" -> Window/WindowProxy   "d" -> Document
- *   "*" -> overload disagrees, probe the value at runtime
+ *   "*" -> either (an EventTarget, or overloads that disagree): probe the value
  */
 export type ProxyKind = "w" | "d" | "*";
+
+/**
+ * What a returned or read value is wrapped as: one of a kind, a list of them
+ * wrapped element by element, or a promise of one.
+ */
+export type ValueKind = ProxyKind | `${ProxyKind}[]` | `Promise<${ProxyKind}>`;
 
 /**
  * Selector for a Window/Document value reachable from an operation argument.
@@ -17,7 +23,7 @@ export type ProxyKind = "w" | "d" | "*";
  */
 export type ArgSelector = readonly [
 	argIdx: number,
-	kind: "w" | "d",
+	kind: ProxyKind,
 	...path: string[],
 ];
 
@@ -37,7 +43,7 @@ export type OpEntry = readonly [
 	isStatic: boolean,
 	isCtor: boolean,
 	argSelectors: readonly ArgSelector[],
-	returnKind: ProxyKind | "",
+	returnKind: ValueKind | "",
 ];
 
 /**
@@ -50,7 +56,7 @@ export type AttrEntry = readonly [
 	owner: string,
 	member: string,
 	isStatic: boolean,
-	kind: ProxyKind,
+	kind: ValueKind,
 	readonly: boolean,
 ];
 
@@ -169,19 +175,29 @@ export const OPERATIONS: readonly OpEntry[] = [
 	],
 	["DocumentFragment", "prepend", false, false, [[0, "d"]], ""],
 	["DocumentFragment", "replaceChildren", false, false, [[0, "d"]], ""],
-	["DocumentPictureInPicture", "requestWindow", false, false, [], "w"],
+	["DocumentPictureInPicture", "requestWindow", false, false, [], "Promise<w>"],
 	["DocumentPictureInPictureEvent", "", false, true, [[1, "w", "window"]], ""],
 	["DocumentType", "after", false, false, [[0, "d"]], ""],
 	["DocumentType", "before", false, false, [[0, "d"]], ""],
 	["DocumentType", "replaceWith", false, false, [[0, "d"]], ""],
-	["DragEvent", "", false, true, [[1, "w", "view"]], ""],
+	[
+		"DragEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
 	["Element", "after", false, false, [[0, "d"]], ""],
 	["Element", "append", false, false, [[0, "d"]], ""],
 	["Element", "before", false, false, [[0, "d"]], ""],
 	["Element", "convertPointFromNode", false, false, [[1, "d"]], ""],
 	["Element", "convertQuadFromNode", false, false, [[1, "d"]], ""],
 	["Element", "convertRectFromNode", false, false, [[1, "d"]], ""],
-	["Element", "focusableAreas", false, false, [], "d"],
+	["Element", "focusableAreas", false, false, [], "d[]"],
 	["Element", "getBoxQuads", false, false, [[0, "d", "relativeTo"]], ""],
 	["Element", "getSpatialNavigationContainer", false, false, [], "d"],
 	[
@@ -209,15 +225,26 @@ export const OPERATIONS: readonly OpEntry[] = [
 		],
 		"d",
 	],
+	["Event", "composedPath", false, false, [], "*[]"],
 	["EventTarget", "addEventListener", false, false, [], ""],
 	["EventTarget", "dispatchEvent", false, false, [], ""],
 	["EventTarget", "removeEventListener", false, false, [], ""],
 	["EventTarget", "when", false, false, [], ""],
-	["FocusEvent", "", false, true, [[1, "w", "view"]], ""],
+	[
+		"FocusEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
 	["HTMLEmbedElement", "getSVGDocument", false, false, [], "d"],
 	["HTMLIFrameElement", "getSVGDocument", false, false, [], "d"],
 	["HTMLObjectElement", "getSVGDocument", false, false, [], "d"],
-	["HTMLSlotElement", "assignedNodes", false, false, [], "d"],
+	["HTMLSlotElement", "assignedNodes", false, false, [], "d[]"],
 	["InputEvent", "", false, true, [[1, "w", "view"]], ""],
 	["IntersectionObserver", "", false, true, [[1, "d", "root"]], ""],
 	["KeyboardEvent", "", false, true, [[1, "w", "view"]], ""],
@@ -225,12 +252,42 @@ export const OPERATIONS: readonly OpEntry[] = [
 	["MessageEvent", "", false, true, [[1, "w", "source"]], ""],
 	["MessageEvent", "initMessageEvent", false, false, [[6, "w"]], ""],
 	["ModelContext", "executeTool", false, false, [[0, "w", "window"]], ""],
-	["MouseEvent", "", false, true, [[1, "w", "view"]], ""],
-	["MouseEvent", "initMouseEvent", false, false, [[3, "w"]], ""],
+	[
+		"MouseEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
+	[
+		"MouseEvent",
+		"initMouseEvent",
+		false,
+		false,
+		[
+			[3, "w"],
+			[14, "*"],
+		],
+		"",
+	],
 	["MutationObserver", "observe", false, false, [[0, "d"]], ""],
-	["NamedFlow", "getContent", false, false, [], "d"],
+	["NamedFlow", "getContent", false, false, [], "d[]"],
 	["NamedFlow", "getRegionsByContent", false, false, [[0, "d"]], ""],
-	["NavigationEvent", "", false, true, [[1, "w", "view"]], ""],
+	[
+		"NavigationEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
 	["Node", "appendChild", false, false, [[0, "d"]], "d"],
 	["Node", "cloneNode", false, false, [], "d"],
 	["Node", "compareDocumentPosition", false, false, [[0, "d"]], ""],
@@ -270,7 +327,17 @@ export const OPERATIONS: readonly OpEntry[] = [
 	["NodeIterator", "nextNode", false, false, [], "d"],
 	["NodeIterator", "previousNode", false, false, [], "d"],
 	["NodeList", "item", false, false, [], "d"],
-	["PointerEvent", "", false, true, [[1, "w", "view"]], ""],
+	[
+		"PointerEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
 	["Range", "comparePoint", false, false, [[0, "d"]], ""],
 	["Range", "insertNode", false, false, [[0, "d"]], ""],
 	["Range", "intersectsNode", false, false, [[0, "d"]], ""],
@@ -330,6 +397,7 @@ export const OPERATIONS: readonly OpEntry[] = [
 	["Text", "getBoxQuads", false, false, [[0, "d", "relativeTo"]], ""],
 	["TextEvent", "initTextEvent", false, false, [[3, "w"]], ""],
 	["TimeEvent", "initTimeEvent", false, false, [[1, "w"]], ""],
+	["Touch", "", false, true, [[0, "*", "target"]], ""],
 	["TouchEvent", "", false, true, [[1, "w", "view"]], ""],
 	["TreeWalker", "firstChild", false, false, [], "d"],
 	["TreeWalker", "lastChild", false, false, [], "d"],
@@ -340,7 +408,17 @@ export const OPERATIONS: readonly OpEntry[] = [
 	["TreeWalker", "previousSibling", false, false, [], "d"],
 	["UIEvent", "", false, true, [[1, "w", "view"]], ""],
 	["UIEvent", "initUIEvent", false, false, [[3, "w"]], ""],
-	["WheelEvent", "", false, true, [[1, "w", "view"]], ""],
+	[
+		"WheelEvent",
+		"",
+		false,
+		true,
+		[
+			[1, "w", "view"],
+			[1, "*", "relatedTarget"],
+		],
+		"",
+	],
 	["Window", "alert", false, false, [], ""],
 	["Window", "atob", false, false, [], ""],
 	["Window", "blur", false, false, [], ""],
@@ -431,6 +509,10 @@ export const ATTRIBUTES: readonly AttrEntry[] = [
 	["CaretPosition", "offsetNode", false, "d", true],
 	["DocumentPictureInPicture", "window", false, "w", true],
 	["DocumentPictureInPictureEvent", "window", false, "w", true],
+	["Event", "currentTarget", false, "*", true],
+	["Event", "srcElement", false, "*", true],
+	["Event", "target", false, "*", true],
+	["FocusEvent", "relatedTarget", false, "*", true],
 	["HTMLFrameElement", "contentDocument", false, "d", true],
 	["HTMLFrameElement", "contentWindow", false, "w", true],
 	["HTMLIFrameElement", "contentDocument", false, "d", true],
@@ -440,9 +522,11 @@ export const ATTRIBUTES: readonly AttrEntry[] = [
 	["IntersectionObserver", "root", false, "d", true],
 	["LayoutShiftAttribution", "node", false, "d", true],
 	["MessageEvent", "source", false, "w", true],
+	["MouseEvent", "relatedTarget", false, "*", true],
 	["MutationRecord", "nextSibling", false, "d", true],
 	["MutationRecord", "previousSibling", false, "d", true],
 	["MutationRecord", "target", false, "d", true],
+	["NavigationEvent", "relatedTarget", false, "*", true],
 	["Node", "firstChild", false, "d", true],
 	["Node", "lastChild", false, "d", true],
 	["Node", "nextSibling", false, "d", true],
@@ -459,6 +543,7 @@ export const ATTRIBUTES: readonly AttrEntry[] = [
 	["SnapEvent", "snapTargetBlock", false, "d", true],
 	["SnapEvent", "snapTargetInline", false, "d", true],
 	["TimeEvent", "view", false, "w", true],
+	["Touch", "target", false, "*", true],
 	["TreeWalker", "currentNode", false, "d", false],
 	["TreeWalker", "root", false, "d", true],
 	["UIEvent", "view", false, "w", true],
