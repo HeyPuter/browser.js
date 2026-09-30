@@ -20,7 +20,7 @@ mod test {
 
 	use boa_engine::{Context, Source};
 	use clap::Parser;
-	use js::cfg::JsRewriter;
+	use js::cfg::{IncumbencyMode, JsRewriter};
 
 	use crate::{RewriterOptions, rewriter::NativeRewriter};
 
@@ -63,6 +63,9 @@ function $scramjet$unwrap(v) { return v === PW ? RW : v === PD ? RD : v }
 var $scramjet$rw = RW, $scramjet$rd = RD;
 function $rewrite(s) { return s }
 function $tryset() { return false }
+var $temploc, $tempunused, $tempreceiver, $tempcallee;
+// `incumbency: stamp` routes every call through here
+function $call(r, f) { return f.apply(r, Array.prototype.slice.call(arguments, 2)) }
 ["location", "parent", "top", "eval"].forEach(function (n) {
 	Object.defineProperty(Object.prototype, "$sj_" + n, {
 		get: function () { if (n === "location") return this === RW || this === RD ? SL : this.location; return $wrap(this[n]) },
@@ -97,10 +100,18 @@ function T(name, fn) {
 		Ok(v.to_string(&mut ctx).unwrap().to_std_string_escaped())
 	}
 
-	fn rewrite(src: &str, js_rewriter: JsRewriter, wrap_this: bool) -> Result<String, String> {
+	#[derive(Clone, Copy, Debug)]
+	struct Mode {
+		js_rewriter: JsRewriter,
+		wrap_this: bool,
+		incumbency: IncumbencyMode,
+	}
+
+	fn rewrite(src: &str, mode: Mode) -> Result<String, String> {
 		let mut opts = RewriterOptions::parse_from(std::iter::empty::<std::ffi::OsString>());
-		opts.js_rewriter = js_rewriter;
-		opts.ppsc_wrap_this = wrap_this;
+		opts.js_rewriter = mode.js_rewriter;
+		opts.ppsc_wrap_this = mode.wrap_this;
+		opts.incumbency = mode.incumbency;
 		let rw = NativeRewriter::new(&opts);
 		let out = rw.rewrite(src, &opts).map_err(|e| format!("rewrite: {e}"))?;
 		Ok(String::from_utf8(out.js.to_vec()).unwrap())
@@ -135,7 +146,7 @@ function T(name, fn) {
 	}
 
 	/// Runs every case of every `.js` file in `dir`; returns the tally, printing what differs.
-	fn check_dir(dir: &Path, js_rewriter: JsRewriter, wrap_this: bool) -> Tally {
+	fn check_dir(dir: &Path, mode: Mode) -> Tally {
 		let mut t = Tally::default();
 		let mut files: Vec<_> = fs::read_dir(dir)
 			.unwrap()
@@ -149,7 +160,7 @@ function T(name, fn) {
 				// boa has panics of its own on a few shapes; those say nothing about the rewrite
 				let outcome = std::panic::catch_unwind(|| {
 					let expected = run(&src, AS_WRITTEN)?;
-					let got = run(&rewrite(&src, js_rewriter, wrap_this)?, REWRITTEN)?;
+					let got = run(&rewrite(&src, mode)?, REWRITTEN)?;
 					Ok::<_, String>((expected, got))
 				});
 				match outcome {
@@ -188,36 +199,42 @@ function T(name, fn) {
 		// generated cases that read a `this` through an unwrapped receiver
 		let this_extra = std::env::var("ELIDE_DIFF_THIS").ok();
 		let mut failed = false;
-		for js_rewriter in [JsRewriter::Ppsc, JsRewriter::PpscHybrid] {
-			for wrap_this in [false, true] {
-				let label = format!("{js_rewriter:?}, wrap_this {wrap_this}");
-				for dir in &dirs {
-					let t = check_dir(dir, js_rewriter, wrap_this);
-					println!(
-						"elide_diff [{label}] {}: {} cases, {} diffs, {} leaks, {} errors, {} leaks closed",
-						dir.display(),
-						t.cases,
-						t.diffs,
-						t.leaks,
-						t.errors,
-						t.fixed
-					);
-					failed |= t.diffs + t.leaks + t.errors > 0;
-				}
-				for dir in std::iter::once(root.join("this")).chain(this_extra.iter().map(Into::into)) {
-					let t = check_dir(&dir, js_rewriter, wrap_this);
-					println!(
-						"elide_diff [{label}] {}: {} cases, {} differ",
-						dir.display(),
-						t.cases,
-						t.diffs + t.leaks + t.errors
-					);
-					failed |= wrap_this && t.diffs + t.leaks + t.errors > 0;
-				}
-				// the known limits, printed for the record
-				let t = check_dir(&root.join("limits"), js_rewriter, wrap_this);
-				println!("elide_diff [{label}] limits: {} cases, {} differ", t.cases, t.diffs + t.leaks);
+		// stamping rewrites every call, which is a shape of its own for the elision to survive
+		let modes = [JsRewriter::Ppsc, JsRewriter::PpscHybrid].into_iter().flat_map(|js_rewriter| {
+			[false, true].into_iter().flat_map(move |wrap_this| {
+				[IncumbencyMode::None, IncumbencyMode::Stamp]
+					.into_iter()
+					.map(move |incumbency| Mode { js_rewriter, wrap_this, incumbency })
+			})
+		});
+		for mode in modes {
+			let label = format!("{:?}, wrap_this {}, {:?}", mode.js_rewriter, mode.wrap_this, mode.incumbency);
+			for dir in &dirs {
+				let t = check_dir(dir, mode);
+				println!(
+					"elide_diff [{label}] {}: {} cases, {} diffs, {} leaks, {} errors, {} leaks closed",
+					dir.display(),
+					t.cases,
+					t.diffs,
+					t.leaks,
+					t.errors,
+					t.fixed
+				);
+				failed |= t.diffs + t.leaks + t.errors > 0;
 			}
+			for dir in std::iter::once(root.join("this")).chain(this_extra.iter().map(Into::into)) {
+				let t = check_dir(&dir, mode);
+				println!(
+					"elide_diff [{label}] {}: {} cases, {} differ",
+					dir.display(),
+					t.cases,
+					t.diffs + t.leaks + t.errors
+				);
+				failed |= mode.wrap_this && t.diffs + t.leaks + t.errors > 0;
+			}
+			// the known limits, printed for the record
+			let t = check_dir(&root.join("limits"), mode);
+			println!("elide_diff [{label}] limits: {} cases, {} differ", t.cases, t.diffs + t.leaks);
 		}
 		assert!(!failed, "elision changed what a program sees; see the output above");
 	}

@@ -154,6 +154,10 @@ pub enum JsChangeType<'alloc: 'data, 'data> {
 	Prelude {
 		text: &'alloc str,
 	},
+	/// insert text, after anything else inserted at the same place
+	Trailer {
+		text: &'alloc str,
+	},
 	/// replace span with ""
 	Delete,
 	// ;cfg.cleanrestfn(restids[0]); cfg.cleanrestfn(restids[1]);
@@ -434,7 +438,9 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 				}
 			}
 			Ty::Replace { text } => LL::replace(transforms![text]),
-			Ty::Insert { text } | Ty::Prelude { text } => LL::insert(transforms![text]),
+			Ty::Insert { text } | Ty::Prelude { text } | Ty::Trailer { text } => {
+				LL::insert(transforms![text])
+			}
 			Ty::Delete => LL::replace(transforms![]),
 		}
 	}
@@ -443,6 +449,12 @@ impl<'alloc: 'data, 'data> Transform<'data> for JsChange<'alloc, 'data> {
 impl PartialOrd for JsChange<'_, '_> {
 	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
 		Some(self.cmp(other))
+	}
+}
+
+impl JsChangeType<'_, '_> {
+	fn trails(&self) -> bool {
+		matches!(self, Self::Trailer { .. } | Self::CleanVariableDeclaration { .. })
 	}
 }
 
@@ -456,6 +468,17 @@ impl Ord for JsChange<'_, '_> {
 				// rewritten into has to come after it
 				(Ty::Prelude { .. }, _) => Ordering::Less,
 				(_, Ty::Prelude { .. }) => Ordering::Greater,
+				// what follows an expression that ends here - a declarator after its initializer,
+				// the end of a wrapper around an assignment - comes after whatever else the
+				// expression is rewritten into here, which the visitor adds later. It is still an
+				// insert, so it goes before a replace starting here (see below)
+				(a, b) if a.trails() && b.trails() => Ordering::Equal,
+				(a, _) if a.trails() => {
+					if other.span.is_empty() { Ordering::Greater } else { Ordering::Less }
+				}
+				(_, b) if b.trails() => {
+					if self.span.is_empty() { Ordering::Less } else { Ordering::Greater }
+				}
 				(Ty::CleanFunction { .. }, _) => Ordering::Less,
 				(Ty::ScramErrFn { .. }, _) => Ordering::Less,
 				(_, Ty::ScramErrFn { .. }) => Ordering::Greater,

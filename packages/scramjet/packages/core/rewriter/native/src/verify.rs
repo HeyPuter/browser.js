@@ -11,7 +11,7 @@ use std::{
 	time::Instant,
 };
 
-use js::cfg::JsRewriter;
+use js::cfg::{IncumbencyMode, JsRewriter};
 use oxc::{
 	allocator::Allocator,
 	parser::{ParseOptions, Parser},
@@ -51,7 +51,7 @@ struct Totals {
 	skipped: usize,
 }
 
-fn one(path: &Path, wrap_this: bool, totals: &Mutex<Totals>) {
+fn one(path: &Path, wrap_this: bool, incumbency: IncumbencyMode, totals: &Mutex<Totals>) {
 	let Ok(src) = std::fs::read_to_string(path) else { return };
 	// a file that does not parse to begin with says nothing about the rewrite
 	let module = match (parses(&src, false), parses(&src, true)) {
@@ -71,6 +71,7 @@ fn one(path: &Path, wrap_this: bool, totals: &Mutex<Totals>) {
 		cfg.destructure_rewrites = true;
 		cfg.js_rewriter = *js_rewriter;
 		cfg.ppsc_wrap_this = wrap_this;
+		cfg.incumbency = incumbency;
 		let rewriter = NativeRewriter::new(&cfg);
 		let t = Instant::now();
 		let out = rewriter.rewrite(&src, &cfg);
@@ -91,14 +92,14 @@ fn one(path: &Path, wrap_this: bool, totals: &Mutex<Totals>) {
 	}
 }
 
-pub fn run(files: &[PathBuf], threads: usize, wrap_this: bool) -> bool {
+pub fn run(files: &[PathBuf], threads: usize, wrap_this: bool, incumbency: IncumbencyMode) -> bool {
 	let next = AtomicUsize::new(0);
 	let totals = Mutex::new(Totals::default());
 	std::thread::scope(|s| {
 		for _ in 0..threads.max(1) {
 			s.spawn(|| {
 				while let Some(f) = files.get(next.fetch_add(1, Ordering::Relaxed)) {
-					one(f, wrap_this, &totals);
+					one(f, wrap_this, incumbency, &totals);
 				}
 			});
 		}

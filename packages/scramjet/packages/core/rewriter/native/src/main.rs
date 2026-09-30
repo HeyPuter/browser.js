@@ -122,6 +122,8 @@ pub enum Cli {
 		threads: usize,
 		#[clap(long, default_value_t = false)]
 		ppsc_wrap_this: bool,
+		#[clap(long, default_value = "none")]
+		incumbency: IncumbencyMode,
 	},
 }
 
@@ -209,13 +211,14 @@ fn main() -> Result<()> {
 			paths,
 			threads,
 			ppsc_wrap_this,
+			incumbency,
 		} => {
 			let mut files = Vec::new();
 			for path in paths {
 				scripts(path, &mut files);
 			}
 			files.sort();
-			if !verify::run(&files, threads, ppsc_wrap_this) {
+			if !verify::run(&files, threads, ppsc_wrap_this, incumbency) {
 				anyhow::bail!("some rewrites did not parse");
 			}
 		}

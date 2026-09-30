@@ -13,6 +13,7 @@ pub mod cfg;
 mod changes;
 mod ppsc;
 mod rewrite;
+mod stamp;
 mod visitor;
 
 use cfg::{Config, Flags, IncumbencyMode, JsRewriter, UrlRewriter};
@@ -292,8 +293,7 @@ impl Rewriter {
 					rewriter,
 					flags,
 
-					with_depth: 0,
-					split_members: std::vec::Vec::new(),
+					stamp: Default::default(),
 				};
 				visitor.visit_program(&parsed.program);
 				(visitor.jschanges, visitor.flags, visitor.error)
@@ -320,6 +320,7 @@ impl Rewriter {
 					flags,
 
 					elision,
+					stamp: Default::default(),
 				};
 				visitor.visit_program(&parsed.program);
 				(visitor.jschanges, visitor.flags, visitor.error)

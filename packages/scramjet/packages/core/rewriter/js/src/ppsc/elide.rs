@@ -1134,6 +1134,14 @@ fn twin_site(sym: SymbolId, ctx: &Ctx) -> Option<TwinSite> {
 	let decl = s.symbol_declaration(sym);
 	let (decl, visible) = match nodes.kind(decl) {
 		AstKind::VariableDeclarator(v) => {
+			// `for (let d of xs)` takes a single binding, which there is no room beside, and the
+			// loop writes it every iteration without a reference the twin could follow
+			if matches!(
+				nodes.parent_kind(nodes.parent_id(decl)),
+				AstKind::ForInStatement(_) | AstKind::ForOfStatement(_)
+			) {
+				return None;
+			}
 			// the twin is visible wherever the local is: the declaration's own scope
 			let scope = nodes.get_node(decl).scope_id();
 			(TwinDecl::After(v.span.end), nodes.kind(s.get_node_id(scope)).span())

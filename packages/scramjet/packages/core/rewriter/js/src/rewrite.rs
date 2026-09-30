@@ -134,6 +134,11 @@ pub(crate) enum RewriteType<'alloc: 'data, 'data> {
 	Prelude {
 		text: &'alloc str,
 	},
+	/// insert `text` at an empty span, after anything else inserted there: what follows an
+	/// expression ending there, however that expression is rewritten
+	Trailer {
+		text: &'alloc str,
+	},
 	Delete,
 }
 
@@ -365,6 +370,7 @@ impl<'alloc: 'data, 'data> RewriteType<'alloc, 'data> {
 			Self::Replace { text } => smallvec![change!(span, Replace { text })],
 			Self::Insert { text } => smallvec![change!(span, Insert { text })],
 			Self::Prelude { text } => smallvec![change!(span, Prelude { text })],
+			Self::Trailer { text } => smallvec![change!(span, Trailer { text })],
 			Self::Delete => smallvec![change!(span, Delete)],
 		}
 	}

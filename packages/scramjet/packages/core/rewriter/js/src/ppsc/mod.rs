@@ -17,11 +17,13 @@ use oxc::{
 	allocator::{Allocator, StringBuilder},
 	ast::ast::{
 		AssignmentExpression, AssignmentTarget, AssignmentTargetMaybeDefault,
-		AssignmentTargetProperty, CallExpression, DebuggerStatement, ExportAllDeclaration,
-		ExportNamedDeclaration, Expression, FunctionBody, IdentifierReference, ImportDeclaration,
-		ImportExpression, MemberExpression, MetaProperty, NewExpression, ObjectExpression,
-		ObjectPropertyKind, Program, SimpleAssignmentTarget, StringLiteral, ThisExpression,
-		TryStatement, UnaryExpression, UnaryOperator, UpdateExpression,
+		AssignmentTargetProperty, BindingPattern, BindingPatternKind, CallExpression,
+		DebuggerStatement, ExportAllDeclaration, ExportNamedDeclaration, Expression,
+		ForInStatement, ForOfStatement, ForStatementLeft, FunctionBody, IdentifierReference,
+		ImportDeclaration, ImportExpression, MemberExpression, MetaProperty, NewExpression,
+		ObjectExpression, ObjectPropertyKind, Program, SimpleAssignmentTarget, Statement,
+		StringLiteral, ThisExpression, TryStatement, UnaryExpression, UnaryOperator,
+		UpdateExpression, VariableDeclaration, VariableDeclarationKind, WithStatement,
 	},
 	ast_visit::{Visit, walk},
 	span::{GetSpan, Span},
@@ -32,6 +34,7 @@ use crate::{
 	cfg::{Config, Flags, UrlRewriter},
 	changes::JsChanges,
 	rewrite::rewrite,
+	stamp::Stamper,
 };
 
 /// What the proxies stand in for. Wider than `dpsc`'s list: the whole point is that a reference
@@ -61,6 +64,8 @@ where
 	pub flags: Flags,
 
 	pub elision: Elision,
+	/// incumbency call stamping, the same as `dpsc`'s
+	pub stamp: Stamper,
 }
 
 impl<'alloc, 'data, E> Visitor<'alloc, 'data, E>
@@ -123,10 +128,6 @@ where
 				.push_str(&format!("var {t}=this==={rw}||this==={rd}?{wrapfn}(this):this;"));
 		}
 
-		for (at, text) in decls {
-			let text = self.text(&text);
-			self.jschanges.add(rewrite!(Span::new(at, at), Insert { text }));
-		}
 		for (at, text) in preludes {
 			let text = self.text(&text);
 			self.jschanges.add(rewrite!(Span::new(at, at), Prelude { text }));
@@ -136,10 +137,15 @@ where
 			let text = self.text(&v.into_iter().map(|x| x.1).collect::<String>());
 			self.jschanges.add(rewrite!(Span::new(at, at), Insert { text }));
 		}
+		// closes before declarations: `var q = e = x` closes `e`'s write before `q`'s twin
 		for (at, mut v) in closes {
 			v.sort_by(|a, b| b.0.cmp(&a.0));
 			let text = self.text(&v.into_iter().map(|x| x.1).collect::<String>());
-			self.jschanges.add(rewrite!(Span::new(at, at), Insert { text }));
+			self.jschanges.add(rewrite!(Span::new(at, at), Trailer { text }));
+		}
+		for (at, text) in decls {
+			let text = self.text(&text);
+			self.jschanges.add(rewrite!(Span::new(at, at), Trailer { text }));
 		}
 	}
 
@@ -160,23 +166,32 @@ where
 			.add(rewrite!(url.span.shrink(1), Replace { text }));
 	}
 
-	/// The objects of the members a destructuring assignment writes to, and its defaults and
-	/// computed keys - everything in it that is an expression, and none of the names it binds,
-	/// which `$wrap(name) = ...` could not.
-	fn walk_pattern_target(&mut self, target: &AssignmentTarget<'data>) {
+	/// The target of a destructuring assignment or a `for (x of ...)`: the objects of the members
+	/// it writes to, its defaults and computed keys - everything in it that is an expression, and
+	/// none of the names it binds, which `$wrap(name) = ...` could not.
+	///
+	/// A `location` it names is written as `$temploc` instead, and assigned through `$tryset` by
+	/// whatever the caller puts after the write, the way `location = x` is. Returns whether it
+	/// named one.
+	fn walk_pattern_target(&mut self, target: &AssignmentTarget<'data>) -> bool {
+		let mut location = false;
 		match target {
 			AssignmentTarget::ArrayAssignmentTarget(a) => {
 				for el in a.elements.iter().flatten() {
-					self.walk_pattern_maybe_default(el);
+					location |= self.walk_pattern_maybe_default(el);
 				}
 				if let Some(r) = &a.rest {
-					self.walk_pattern_target(&r.target);
+					location |= self.walk_pattern_target(&r.target);
 				}
 			}
 			AssignmentTarget::ObjectAssignmentTarget(o) => {
 				for p in &o.properties {
 					match p {
 						AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(p) => {
+							if p.binding.name == "location" {
+								self.temp_location_shorthand(p.binding.span);
+								location = true;
+							}
 							if let Some(init) = &p.init {
 								self.visit_expression(init);
 							}
@@ -187,35 +202,144 @@ where
 							{
 								self.visit_expression(key);
 							}
-							self.walk_pattern_maybe_default(&p.binding);
+							location |= self.walk_pattern_maybe_default(&p.binding);
 						}
 					}
 				}
 				if let Some(r) = &o.rest {
-					self.walk_pattern_target(&r.target);
+					location |= self.walk_pattern_target(&r.target);
 				}
 			}
-			AssignmentTarget::AssignmentTargetIdentifier(_) => {}
+			AssignmentTarget::AssignmentTargetIdentifier(i) => {
+				if i.name == "location" {
+					self.jschanges.add(rewrite!(i.span, TempVar));
+					location = true;
+				}
+			}
 			other => {
 				if let Some(m) = other.as_member_expression() {
 					self.visit_member_expression(m);
 				}
 			}
 		}
+		location
 	}
 
-	fn walk_pattern_maybe_default(&mut self, t: &AssignmentTargetMaybeDefault<'data>) {
+	fn walk_pattern_maybe_default(&mut self, t: &AssignmentTargetMaybeDefault<'data>) -> bool {
 		match t {
 			AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(d) => {
-				self.walk_pattern_target(&d.binding);
+				let location = self.walk_pattern_target(&d.binding);
 				self.visit_expression(&d.init);
+				location
+			}
+			other => other
+				.as_assignment_target()
+				.is_some_and(|t| self.walk_pattern_target(t)),
+		}
+	}
+
+	/// The same for what a `var` binds: every `location` in the pattern becomes `$temploc`. The
+	/// pattern's expressions are left to the walk. Returns whether it bound one.
+	fn temp_location_binding(&mut self, p: &BindingPattern<'data>) -> bool {
+		match &p.kind {
+			BindingPatternKind::BindingIdentifier(i) => {
+				let location = i.name == "location";
+				if location {
+					self.jschanges.add(rewrite!(i.span, TempVar));
+				}
+				location
+			}
+			BindingPatternKind::ObjectPattern(o) => {
+				let mut location = false;
+				for prop in &o.properties {
+					if prop.shorthand {
+						// `{location}` and `{location = x}`: the key has to stay
+						let ident = match &prop.value.kind {
+							BindingPatternKind::AssignmentPattern(a) => a.left.get_binding_identifier(),
+							_ => prop.value.get_binding_identifier(),
+						};
+						if let Some(i) = ident
+							&& i.name == "location"
+						{
+							self.temp_location_shorthand(i.span);
+							location = true;
+						}
+					} else {
+						location |= self.temp_location_binding(&prop.value);
+					}
+				}
+				if let Some(r) = &o.rest {
+					location |= self.temp_location_binding(&r.argument);
+				}
+				location
+			}
+			BindingPatternKind::ArrayPattern(a) => {
+				let mut location = false;
+				for el in a.elements.iter().flatten() {
+					location |= self.temp_location_binding(el);
+				}
+				if let Some(r) = &a.rest {
+					location |= self.temp_location_binding(&r.argument);
+				}
+				location
+			}
+			BindingPatternKind::AssignmentPattern(a) => self.temp_location_binding(&a.left),
+		}
+	}
+
+	/// `{location}` -> `{location: $temploc}`
+	fn temp_location_shorthand(&mut self, span: Span) {
+		let text = self.text(&format!("location:{}", self.config.templocid));
+		self.jschanges.add(rewrite!(span, Replace { text }));
+	}
+
+	/// `for (x in o)` and `for (x of xs)`
+	fn visit_for_in_of(
+		&mut self,
+		left: &ForStatementLeft<'data>,
+		right: &Expression<'data>,
+		body: &Statement<'data>,
+	) {
+		let (location, declared) = match left {
+			ForStatementLeft::VariableDeclaration(v) => {
+				// only a `var` can be the global: `let location` is a binding of its own
+				let mut location = false;
+				if v.kind == VariableDeclarationKind::Var {
+					for d in &v.declarations {
+						location |= self.temp_location_binding(&d.id);
+					}
+				}
+				// not `visit_variable_declaration`, which would put the assignment after the
+				// declaration, where the loop head has no room for it
+				walk::walk_variable_declaration(self, v);
+				(location, true)
 			}
 			other => {
-				if let Some(t) = other.as_assignment_target() {
-					self.walk_pattern_target(t);
-				}
+				let target = other
+					.as_assignment_target()
+					.expect("a for-in/of head is a declaration or an assignment target");
+				(self.walk_pattern_target(target), false)
 			}
+		};
+		self.visit_expression(right);
+		// each iteration's value is assigned at the top of the body
+		if location {
+			let (span, wrap) = match body {
+				Statement::BlockStatement(b) => (Span::new(b.span.start + 1, b.span.end - 1), false),
+				_ => (body.span(), true),
+			};
+			self.jschanges.add(rewrite!(
+				span,
+				CleanFunction {
+					restids: Vec::new(),
+					expression: false,
+					location_assigned: true,
+					wrap,
+					declare_local_location: declared,
+				}
+			));
 		}
+		self.visit_statement(body);
 	}
 }
 
@@ -277,6 +401,7 @@ where
 	}
 
 	fn visit_member_expression(&mut self, it: &MemberExpression<'data>) {
+		self.stamp.member(&self.flags, &mut self.jschanges, it);
 		// `hybrid`: an unsafe name read statically, renamed to the accessor that answers it
 		match it {
 			MemberExpression::StaticMemberExpression(m)
@@ -326,6 +451,46 @@ where
 		walk::walk_member_expression(self, it);
 	}
 
+	fn visit_with_statement(&mut self, it: &WithStatement<'data>) {
+		self.visit_expression(&it.object);
+		self.stamp.with_depth += 1;
+		self.visit_statement(&it.body);
+		self.stamp.with_depth -= 1;
+	}
+
+	/// `var location = x` at the top level of a script is the window's `location`, and assigning
+	/// it navigates: it is bound as `$temploc` and assigned through `$tryset` right after. A
+	/// `location` declared in a function is a local of its own, which `$tryset` leaves alone; in a
+	/// module every `var` is, and renaming one would rename what it exports.
+	fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'data>) {
+		if it.kind == VariableDeclarationKind::Var && !self.flags.is_module {
+			let mut location = false;
+			for d in &it.declarations {
+				location |= self.temp_location_binding(&d.id);
+			}
+			// after the last declarator rather than the declaration, which can end in a `;`
+			if location && let Some(last) = it.declarations.last() {
+				self.jschanges.add(rewrite!(
+					Span::new(last.span.end, last.span.end),
+					CleanVariableDeclaration {
+						restids: Vec::new(),
+						location_assigned: true,
+						declare_local_location: true,
+					}
+				));
+			}
+		}
+		walk::walk_variable_declaration(self, it);
+	}
+
+	fn visit_for_in_statement(&mut self, it: &ForInStatement<'data>) {
+		self.visit_for_in_of(&it.left, &it.right, &it.body);
+	}
+
+	fn visit_for_of_statement(&mut self, it: &ForOfStatement<'data>) {
+		self.visit_for_in_of(&it.left, &it.right, &it.body);
+	}
+
 	fn visit_debugger_statement(&mut self, it: &DebuggerStatement) {
 		self.jschanges.add(rewrite!(it.span, Delete));
 	}
@@ -345,6 +510,7 @@ where
 			walk::walk_arguments(self, &it.arguments);
 			return;
 		}
+		self.stamp.call(&self.flags, &mut self.jschanges, it);
 		walk::walk_call_expression(self, it);
 	}
 
@@ -458,7 +624,12 @@ where
 			// a destructuring assignment binds names this visitor never rewrites, but a member it
 			// assigns to is read off an object like any other: `({a: window.location} = o)`
 			AssignmentTarget::ArrayAssignmentTarget(_) | AssignmentTarget::ObjectAssignmentTarget(_) => {
-				self.walk_pattern_target(&it.left);
+				if self.walk_pattern_target(&it.left) {
+					self.jschanges.add(rewrite!(
+						it.span,
+						WrapObjectAssignment { restids: Vec::new(), location_assigned: true }
+					));
+				}
 			}
 			_ => walk::walk_assignment_target(self, &it.left),
 		}
