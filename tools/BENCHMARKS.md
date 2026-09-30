@@ -187,3 +187,34 @@ fix in the slot dispatch (`getElementById` 27 → 47ns). The worst case is
 jQuery-style identity check hits on every element. `window.innerWidth`,
 `location.href` and `setAttribute` are just as slow under dpsc: those costs are
 the interceptors', not the rewrite's.
+
+### Speedometer 3.1 (the 18-suite subset; higher is better)
+
+| Run        | chromium   | dpsc        | ppsc        | ppsc-hybrid |
+| ---------- | ---------- | ----------- | ----------- | ----------- |
+| 1          | 31.9 ± 1.8 | 17.3 ± 0.77 | 17.2 ± 0.72 |             |
+| 2 (paired) |            | 17.0 ± 0.83 |             | 16.7 ± 0.62 |
+| 3 (paired) |            | 16.1 ± 0.95 |             | 15.5 ± 0.77 |
+
+Every scramjet mode is within Speedometer's own confidence interval of the
+others. ppsc-hybrid came in 0.3-0.6 under dpsc in both paired runs, which is
+worth rechecking when the document proxy's per-call costs above change.
+
+### Sites (one round, script ms; lower is better)
+
+Totals over the 32 sites in `benchmark-sites.txt`: **chromium 40103, dpsc
+108950, ppsc-hybrid 101144**. Per site the two scramjet modes are mostly within
+10% of each other. The exceptions, and the page errors only ppsc-hybrid threw,
+are what to look at:
+
+| Site    | dpsc | ppsc-hybrid | Note                                                                   |
+| ------- | ---: | ----------: | ---------------------------------------------------------------------- |
+| walmart | 1182 |        3374 | `undefined is not iterable`, ppsc-hybrid only                          |
+| canva   | 1710 |        1627 | `new MouseEvent(..., { view })` rejects the window proxy               |
+| linear  | 1284 |        1232 | `Cannot read properties of undefined (reading 'getReader')`            |
+| notion  |  854 |        2025 | dpsc threw `$scramjet$temploc is not defined` and ran less of the page |
+| discord | 3529 |        2617 |                                                                        |
+
+The errors both modes threw (`osdlfm is not defined` on ESPN, the Guardian and
+Coolmath; `$scramjet$pushsourcemap is not defined` on Booking; reCAPTCHA
+timeouts on Spotify and Pinterest) are not the rewriter's.
