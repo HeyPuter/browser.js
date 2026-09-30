@@ -1,7 +1,6 @@
-import Protocol from "devtools-protocol";
-import { bindCDP, CDPSession } from "..";
-import { NodeManager } from "../nodemanager";
+import { bindCDP } from "..";
 
+// MARK: enable/disable
 bindCDP("Page.enable", async function () {
 	this.enableDomain("Page");
 });

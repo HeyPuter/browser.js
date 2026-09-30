@@ -1,18 +1,17 @@
 import Protocol from "devtools-protocol";
 import { bindCDP, CDPSession } from "..";
 
+// MARK: helpers
 // TODO: instance properly
 let exceptionId = 0;
 function createExceptionDetails(
 	session: CDPSession,
-	error: any
+	error: unknown
 ): Protocol.Runtime.ExceptionDetails {
-	const wrapped = session.objects.wrap(error);
-	console.log(wrapped);
 	return {
 		exceptionId: exceptionId++,
 		text: "Uncaught",
-		exception: wrapped,
+		exception: session.objects.wrap(error),
 		lineNumber: 0,
 		columnNumber: 0,
 		stackTrace: {
@@ -21,47 +20,36 @@ function createExceptionDetails(
 	};
 }
 
+// MARK: enable/disable
 bindCDP("Runtime.enable", function () {
-	console.log("runtime enabled!");
-	this.isDomainEnabled("Runtime");
+	this.enableDomain("Runtime");
 });
 
 bindCDP("Runtime.disable", function () {
 	this.disableDomain("Runtime");
 });
 
+// MARK: evaluation
 bindCDP("Runtime.evaluate", async function (params) {
 	if (!this.isDomainEnabled("Runtime")) {
 		throw new Error("Runtime not enabled");
 	}
-	const {
-		expression,
-		objectGroup,
-		includeCommandLineAPI,
-		silent,
-		contextId,
-		returnByValue,
-		generatePreview,
-		userGesture,
-		awaitPromise,
-	} = params;
-	let result;
-	let error;
+	let result: unknown;
+	let error: unknown;
 	try {
-		result = this.context.client.indirectEval(expression);
-	} catch (_error) {
-		result = error = _error;
+		result = this.context.client.indirectEval(params.expression);
+	} catch (e) {
+		result = error = e;
 	}
 
-	const wrappedResult = this.objects.wrap(result);
-
-	const res: Partial<Protocol.Runtime.EvaluateResponse> = {};
-	res.result = wrappedResult;
+	const res: Partial<Protocol.Runtime.EvaluateResponse> = {
+		result: this.objects.wrap(result),
+	};
 	if (error) res.exceptionDetails = createExceptionDetails(this, error);
 
 	return res;
 });
 
 bindCDP("Runtime.compileScript", async function (params) {
-	const { expression, sourceMapURL, persistScript } = params;
+	// TODO: implement
 });

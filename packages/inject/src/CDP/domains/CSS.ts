@@ -1,6 +1,29 @@
 import Protocol from "devtools-protocol";
 import { bindCDP, CDPSession } from "..";
-import { StyleManager } from "../stylemanager";
+
+// MARK: helpers
+const INLINE_PREFIX = "inline-";
+
+function serializeInlineStyle(
+	session: CDPSession,
+	node: Element,
+	nodeId: number
+) {
+	return node instanceof HTMLElement
+		? session.styles.serializeStyle(node.style, `${INLINE_PREFIX}${nodeId}`)
+		: undefined;
+}
+
+function getSheet(session: CDPSession, styleSheetId: string): CSSStyleSheet {
+	const sheet = session.styles.get(styleSheetId);
+	if (!sheet) {
+		throw new Error("StyleSheet not found");
+	}
+	return sheet;
+}
+
+// MARK: enable/disable
+let onResize: (() => void) | undefined = undefined;
 
 bindCDP("CSS.enable", async function () {
 	for (const styleSheet of document.styleSheets) {
@@ -8,69 +31,43 @@ bindCDP("CSS.enable", async function () {
 			this.styles.register(styleSheet);
 		}
 	}
-	window.addEventListener("resize", () => {
-		if (this.isDomainEnabled("CSS")) {
-			this.emit("CSS.mediaQueryResultChanged", undefined);
-		}
-	});
+	if (onResize) window.removeEventListener("resize", onResize);
+	onResize = () => this.emit("CSS.mediaQueryResultChanged", undefined);
+	window.addEventListener("resize", onResize);
 
 	this.enableDomain("CSS");
 });
 
 bindCDP("CSS.disable", async function () {
+	if (onResize) window.removeEventListener("resize", onResize);
+	onResize = undefined;
 	this.disableDomain("CSS");
 });
 
+// MARK: reading styles
 bindCDP("CSS.getComputedStyleForNode", async function (params) {
 	const { nodeId } = params;
 	const node = this.nodes.resolveElement(nodeId);
-	if (node instanceof Element) {
-		return {
-			computedStyle: this.styles.serializeComputedStyle(getComputedStyle(node)),
-		};
-	} else {
-		return {
-			computedStyle: [],
-		};
-	}
+	return {
+		computedStyle: this.styles.serializeComputedStyle(getComputedStyle(node)),
+	};
 });
 
 bindCDP("CSS.getInlineStylesForNode", async function (params) {
 	const { nodeId } = params;
 	const node = this.nodes.resolveElement(nodeId);
-	if (node instanceof HTMLElement) {
-		return {
-			inlineStyle: this.styles.serializeStyle(node.style, `inline-${nodeId}`),
-			attributesStyle: null,
-		};
-	} else {
-		return {
-			inlineStyle: null,
-			attributesStyle: null,
-		};
-	}
+	return {
+		inlineStyle: serializeInlineStyle(this, node, nodeId) ?? null,
+		attributesStyle: null,
+	};
 });
 
 bindCDP("CSS.getMatchedStylesForNode", async function (params) {
 	const { nodeId } = params;
 	const node = this.nodes.resolveElement(nodeId);
 
-	if (!node || !(node instanceof Element)) {
-		return {
-			inlineStyle: null,
-			matchedCSSRules: [],
-			attributesStyle: null,
-			pseudoElements: [],
-			inherited: [],
-			cssKeyframesRules: [],
-		};
-	}
-
 	const matchedCSSRules = this.styles.getMatchingRulesForNode(node);
-	const inlineStyle =
-		node instanceof HTMLElement
-			? this.styles.serializeStyle(node.style, `inline-${nodeId}`)
-			: undefined;
+	const inlineStyle = serializeInlineStyle(this, node, nodeId);
 
 	// collect inherited styles
 	const inheritedStyles: Protocol.CSS.InheritedStyleEntry[] = [];
@@ -78,12 +75,8 @@ bindCDP("CSS.getMatchedStylesForNode", async function (params) {
 	while (parent) {
 		const parentMatchedRules = this.styles.getMatchingRulesForNode(parent);
 		const parentNodeId = this.nodes.getOrCreateId(parent);
-		const parentInlineStyle =
-			parent instanceof HTMLElement
-				? this.styles.serializeStyle(parent.style, `inline-${parentNodeId}`)
-				: undefined;
 		inheritedStyles.push({
-			inlineStyle: parentInlineStyle,
+			inlineStyle: serializeInlineStyle(this, parent, parentNodeId),
 			matchedCSSRules: parentMatchedRules,
 		});
 
@@ -95,58 +88,42 @@ bindCDP("CSS.getMatchedStylesForNode", async function (params) {
 		.animationName.split(",")
 		.map((name) => name.trim());
 	const cssKeyframesRules: Protocol.CSS.CSSKeyframesRule[] = [];
-	for (const rule of document.styleSheets) {
-		if (rule instanceof CSSStyleSheet) {
-			for (const cssRule of rule.cssRules) {
-				if (cssRule instanceof CSSKeyframesRule) {
-					if (!applicableAnimations.includes(cssRule.name)) {
-						continue; // skip keyframes that are not applicable to this node
-					}
-					const id = this.styles.getOrCreateId(rule);
-					const keyframes: Protocol.CSS.CSSKeyframeRule[] = Array.from(
-						cssRule.cssRules
-					)
-						.filter((r) => r instanceof CSSKeyframeRule)
-						.map((r) => ({
-							styleSheetId: id,
-							keyText: { text: (r as CSSKeyframeRule).keyText },
-							style: this.styles.serializeStyle(r.style, id),
-							origin: "regular",
-						}));
-					cssKeyframesRules.push({
-						animationName: { text: cssRule.name },
-						keyframes: keyframes,
-					});
-				}
+	for (const sheet of document.styleSheets) {
+		for (const cssRule of sheet.cssRules) {
+			// skip keyframes that are not applicable to this node
+			if (
+				!(cssRule instanceof CSSKeyframesRule) ||
+				!applicableAnimations.includes(cssRule.name)
+			) {
+				continue;
 			}
+			const id = this.styles.getOrCreateId(sheet);
+			const keyframes: Protocol.CSS.CSSKeyframeRule[] = [...cssRule.cssRules]
+				.filter((r): r is CSSKeyframeRule => r instanceof CSSKeyframeRule)
+				.map((r) => ({
+					styleSheetId: id,
+					keyText: { text: r.keyText },
+					style: this.styles.serializeStyle(r.style, id),
+					origin: "regular",
+				}));
+			cssKeyframesRules.push({
+				animationName: { text: cssRule.name },
+				keyframes,
+			});
 		}
 	}
 
 	return {
-		inlineStyle: inlineStyle,
-		matchedCSSRules: matchedCSSRules,
+		inlineStyle,
+		matchedCSSRules,
 		attributesStyle: null,
 		pseudoElements: [],
 		inherited: inheritedStyles,
-		cssKeyframesRules: cssKeyframesRules,
+		cssKeyframesRules,
 	};
 });
 
-function applyStyleEdit(
-	css: string,
-	range: Protocol.CSS.SourceRange,
-	text: string
-): string {
-	const lines = css?.split("\n") ?? [];
-	lines.splice(
-		range.startLine,
-		Math.max(0, range.endLine - range.startLine + 1),
-		...text.split("\n")
-	);
-	return lines.filter((line) => line.trim()).join("\n");
-}
-
-// editing
+// MARK: editing
 bindCDP("CSS.setStyleTexts", async function (params) {
 	const { edits } = params;
 	const results: Protocol.CSS.SetStyleTextsResponse = { styles: [] };
@@ -154,8 +131,8 @@ bindCDP("CSS.setStyleTexts", async function (params) {
 	for (const edit of edits) {
 		const { styleSheetId, range, text } = edit;
 
-		if (styleSheetId.startsWith("inline-")) {
-			const nodeId = parseInt(styleSheetId.split("-")[1], 10);
+		if (styleSheetId.startsWith(INLINE_PREFIX)) {
+			const nodeId = parseInt(styleSheetId.slice(INLINE_PREFIX.length), 10);
 			const node = this.nodes.resolveElement(nodeId);
 
 			if (node instanceof HTMLElement) {
@@ -196,11 +173,7 @@ bindCDP("CSS.setStyleTexts", async function (params) {
 
 bindCDP("CSS.addRule", async function (params) {
 	const { styleSheetId, ruleText } = params;
-	const sheet = this.styles.get(styleSheetId);
-
-	if (!sheet) {
-		throw new Error("StyleSheet not found");
-	}
+	const sheet = getSheet(this, styleSheetId);
 
 	const index = sheet.insertRule(ruleText, sheet.cssRules.length);
 	const newRule = sheet.cssRules[index] as CSSStyleRule;
@@ -222,16 +195,10 @@ bindCDP("CSS.addRule", async function (params) {
 
 bindCDP("CSS.getStyleSheetText", async function (params) {
 	const { styleSheetId } = params;
-	const sheet = this.styles.get(styleSheetId);
-
-	if (!sheet) {
-		throw new Error("StyleSheet not found");
-	}
+	const sheet = getSheet(this, styleSheetId);
 
 	// Reconstruct raw CSS text from rules
-	const text = Array.from(sheet.cssRules)
-		.map((r) => r.cssText)
-		.join("\n");
+	const text = [...sheet.cssRules].map((r) => r.cssText).join("\n");
 
 	return { text };
 });
@@ -240,12 +207,12 @@ bindCDP("CSS.createStyleSheet", async function (params) {
 	const el = document.createElement("style");
 	document.head.appendChild(el);
 
-	const sheet = el.sheet as CSSStyleSheet;
-	const id = this.styles.register(sheet);
+	const id = this.styles.register(el.sheet as CSSStyleSheet);
 
 	return { id };
 });
 
+// MARK: unimplemented
 // bindCDP("CSS.collectClassNames", async function (params) {
 // 	const sheet = this.styles.get(params.styleSheetId);
 // 	const classNames = new Set<string>();
