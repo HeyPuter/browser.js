@@ -80,7 +80,12 @@
 
 				await controller.ready;
 
-				scramjetFrame = controller.createFrame(testframe);
+				// `?flags={"jsRewriter":"dpsc"}` runs the frame with those flags,
+				// which is how the benchmarks compare modes on one build
+				const flags = new URLSearchParams(location.search).get("flags");
+				scramjetFrame = controller.createFrame(testframe, {
+					flags: flags ? JSON.parse(flags) : undefined,
+				});
 				window.__runwayScramjetFrame = scramjetFrame;
 
 				statusEl.textContent = "Ready - waiting for test...";
