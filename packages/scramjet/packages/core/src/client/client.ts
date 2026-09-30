@@ -583,7 +583,12 @@ export class ScramjetClient {
 		this.indirectEval = createIndirectEval(this);
 		if (flagValue("jsRewriter", this.context) !== "dpsc") {
 			this.globalProxy = createGlobalProxy(this, global as never);
-			if (iswindow) this.documentProxy = createDocumentProxy(this, global);
+			this.box.proxied.set(this.globalProxy, global);
+			if (iswindow) {
+				this.documentProxy = createDocumentProxy(this, global);
+				this.box.proxied.set(this.documentProxy, (global as Self).document);
+			}
+			this.box.proxyClients++;
 		}
 		this.wrapfn = createWrapFn(this, global);
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1540,6 +1545,49 @@ return { apply, construct };
 	}
 
 	/**
+	 * Put a patched constructor's slot on its prototype's `constructor` too.
+	 *
+	 * https://webidl.spec.whatwg.org/#interface-prototype-object
+	 * "The interface prototype object must also have a property
+	 * named `constructor` [...] whose value is a reference to the
+	 * interface object."
+	 *
+	 * The page-visible interface object is now the slot's object, so
+	 * leaving the native one on the prototype makes
+	 * `X.prototype.constructor === X` false - an identity that holds
+	 * for every interface in every engine, and so a one-expression
+	 * enumeration of exactly which interfaces we construct through.
+	 * Reaching it is enough: it holds the same native function, so
+	 * `slotFor` puts it in the same slot, with the native's own
+	 * attributes (writable, not enumerable, configurable).
+	 *
+	 * Only when the prototype's `constructor` is the very function
+	 * being replaced. A legacy factory - `Audio`, `Image`, `Option` -
+	 * is not an interface object and does not own its `.prototype`:
+	 * `Audio.prototype` *is* `HTMLAudioElement.prototype`, whose
+	 * `constructor` correctly names `HTMLAudioElement`. Rewriting
+	 * that one would break the identity for the interface it really
+	 * belongs to, which is the same bug one interface over.
+	 */
+	private aliasConstructor(slot: Slot, globalname: string) {
+		const nativeCtor = slot.native.value;
+		const prototype = nativeCtor?.prototype;
+		const constructorDescriptor =
+			prototype && Object_getOwnPropertyDescriptor(prototype, "constructor");
+		if (
+			constructorDescriptor &&
+			(constructorDescriptor.value === nativeCtor ||
+				constructorDescriptor.value === slot.callable)
+		) {
+			this.slotFor(
+				prototype,
+				"constructor",
+				`${globalname}.prototype.constructor`
+			);
+		}
+	}
+
+	/**
 	 * Wrap the method or constructor `prop` reached from `target`.
 	 *
 	 * `target` only says where the lookup starts: the member is patched on
@@ -1563,6 +1611,9 @@ return { apply, construct };
 
 		slot.calls[slot.calls.length] = handler;
 		this.render(slot);
+		// a constructor is also reached as `X.prototype.constructor` - by
+		// `new event.constructor(...)` - which has to be the same patched object
+		if (handler.construct) this.aliasConstructor(slot, prop);
 	}
 
 	/** Wrap an attribute, named from this client's global. See `RawTrap`. */
@@ -1898,42 +1949,7 @@ return { apply, construct };
 				};
 				this.render(slot);
 
-				// https://webidl.spec.whatwg.org/#interface-prototype-object
-				// "The interface prototype object must also have a property
-				// named `constructor` [...] whose value is a reference to the
-				// interface object."
-				//
-				// The page-visible interface object is now the slot's object, so
-				// leaving the native one on the prototype makes
-				// `X.prototype.constructor === X` false - an identity that holds
-				// for every interface in every engine, and so a one-expression
-				// enumeration of exactly which interfaces we construct through.
-				// Reaching it is enough: it holds the same native function, so
-				// `slotFor` puts it in the same slot, with the native's own
-				// attributes (writable, not enumerable, configurable).
-				//
-				// Only when the prototype's `constructor` is the very function
-				// being replaced. A legacy factory - `Audio`, `Image`, `Option` -
-				// is not an interface object and does not own its `.prototype`:
-				// `Audio.prototype` *is* `HTMLAudioElement.prototype`, whose
-				// `constructor` correctly names `HTMLAudioElement`. Rewriting
-				// that one would break the identity for the interface it really
-				// belongs to, which is the same bug one interface over.
-				const prototype = nativeCtor.prototype;
-				const constructorDescriptor =
-					prototype &&
-					Object_getOwnPropertyDescriptor(prototype, "constructor");
-				if (
-					constructorDescriptor &&
-					(constructorDescriptor.value === nativeCtor ||
-						constructorDescriptor.value === slot.callable)
-				) {
-					this.slotFor(
-						prototype,
-						"constructor",
-						`${globalname}.prototype.constructor`
-					);
-				}
+				this.aliasConstructor(slot, globalname);
 			} else {
 				// normal static method
 				writePrototypeField(prop, baseclass, handlerDesc, isglobal);

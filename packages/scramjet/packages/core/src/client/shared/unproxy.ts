@@ -23,11 +23,13 @@
  */
 
 import type { ScramjetClient } from "@client/client";
-import { SCRAMJETCLIENT } from "@/symbols";
 import { flagValue } from "@/shared";
 import {
+	_Map,
 	_Set,
 	_WeakMap,
+	Object_create,
+	Reflect_get,
 	Array_isArray,
 	Object_freeze,
 	Object_isFrozen,
@@ -46,56 +48,34 @@ import {
 export const order = 3;
 
 /**
- * The real platform object behind one of this realm's proxies, or `v` itself.
- *
- * A value arriving from another frame is answered by the client that owns it,
- * which is why the stash is read off the value rather than compared against
- * this client's two proxies alone. Reading it can throw for a cross origin
- * window, so it is guarded.
+ * The real platform object behind a proxy, or `v` itself: this realm's, or
+ * another frame's, which the box knows as well.
  */
 function unproxyValue(v: any, client: ScramjetClient): any {
-	if (v == null) return v;
+	if (typeof v !== "object" || v === null) return v;
 	if (v === client.globalProxy) return client.global;
 	if (v === client.documentProxy) return (client.global as any).document;
 
-	try {
-		const c = (v as any)[SCRAMJETCLIENT];
-		if (c) {
-			if (v === c.globalProxy) return c.global;
-			if (v === c.documentProxy) return c.global.document;
-		}
-	} catch {}
-
-	return v;
+	return client.box.proxied.get(v) ?? v;
 }
 
 /**
  * The proxy standing in for `v`, when `v` is a window or a document the page is
- * not allowed to hold directly. `kind` is what the IDL said the member hands
- * back; `*` means the overloads disagreed and only the value itself can say.
+ * not allowed to hold directly - this realm's or another frame's, answered by
+ * the client that owns it. `kind` is what the IDL said the member hands back;
+ * `*` means only the value itself can say.
  */
 function proxyValue(v: any, kind: ProxyKind, client: ScramjetClient): any {
-	if (v == null) return v;
+	if (typeof v !== "object" || v === null) return v;
 
 	if (kind !== "d") {
-		if (v === client.global) return client.globalProxy ?? v;
+		const owner = client.box.globals.get(v);
+		if (owner) return owner.globalProxy ?? v;
 	}
 	if (kind !== "w") {
-		if (client.documentProxy && v === (client.global as any).document) {
-			return client.documentProxy;
-		}
+		const owner = client.box.documents.get(v);
+		if (owner) return owner.documentProxy ?? v;
 	}
-
-	// another frame's, answered by the client that owns it
-	try {
-		const c = (v as any)[SCRAMJETCLIENT];
-		if (c) {
-			if (kind !== "d" && c.globalProxy && v === c.global) return c.globalProxy;
-			if (kind !== "w" && c.documentProxy && v === c.global.document) {
-				return c.documentProxy;
-			}
-		}
-	} catch {}
 
 	return v;
 }
@@ -150,32 +130,76 @@ function proxyShaped(v: any, kind: ValueKind, client: ScramjetClient): any {
 }
 
 /**
- * Replaces each argument the IDL named with its real platform object. A
- * selector with a path past the kind reaches into a dictionary argument, which
- * is how `options.root` and its like are described.
+ * The members of a dictionary argument to unwrap: `true` for one, or the
+ * members of one in it. Made with no prototype, so a key is only ever its own.
  */
-function unproxyArgs(
-	args: any[],
-	selectors: readonly ArgSelector[],
-	client: ScramjetClient
-) {
+type DictPlan = { [key: string]: DictPlan | true };
+
+/** What of an operation's arguments to unwrap: whole ones, and members of dictionary ones */
+type ArgPlan = { whole: number[]; dicts: [index: number, plan: DictPlan][] };
+
+function planArgs(selectors: readonly ArgSelector[]): ArgPlan {
+	const whole: number[] = [];
+	const dicts = new _Map<number, DictPlan>();
 	for (let s = 0; s < selectors.length; s++) {
 		const sel = selectors[s];
-		const argIdx = sel[0];
-
 		if (sel.length <= 2) {
-			args[argIdx] = unproxyValue(args[argIdx], client);
+			whole.push(sel[0]);
 			continue;
 		}
-
-		let obj = args[argIdx];
+		let plan = dicts.get(sel[0]);
+		if (!plan) dicts.set(sel[0], (plan = Object_create(null) as DictPlan));
 		for (let i = 2; i < sel.length - 1; i++) {
-			if (obj == null) break;
-			obj = obj[sel[i] as string];
+			const key = sel[i] as string;
+			let next = plan[key];
+			if (next === true) break;
+			if (!next) plan[key] = next = Object_create(null) as DictPlan;
+			plan = next;
 		}
-		if (obj == null) continue;
-		const last = sel[sel.length - 1] as string;
-		obj[last] = unproxyValue(obj[last], client);
+		plan[sel[sel.length - 1] as string] = true;
+	}
+	const out: ArgPlan = { whole, dicts: [] };
+	dicts.forEach((plan, index) => out.dicts.push([index, plan]));
+
+	return out;
+}
+
+/**
+ * A dictionary argument as the native should see it: every member read
+ * straight through to the page's object when the native asks for it, and the
+ * ones the IDL names unwrapped on the way.
+ *
+ * Web IDL converts a dictionary by reading each member once, in its own order,
+ * so the object itself is never written to - it can be frozen, or all getters,
+ * and a page can watch the reads - and nothing is read ahead of the native.
+ */
+function dictView(v: any, plan: DictPlan, client: ScramjetClient): any {
+	if (typeof v !== "object" || v === null) return v;
+
+	return new Proxy(
+		{},
+		{
+			get(_target, key) {
+				const value = Reflect_get(v, key);
+				const inner = typeof key === "string" ? plan[key] : undefined;
+				if (inner === undefined) return value;
+
+				return inner === true
+					? unproxyValue(value, client)
+					: dictView(value, inner, client);
+			},
+		}
+	);
+}
+
+function unproxyArgs(args: any[], plan: ArgPlan, client: ScramjetClient) {
+	for (let i = 0; i < plan.whole.length; i++) {
+		const index = plan.whole[i];
+		args[index] = unproxyValue(args[index], client);
+	}
+	for (let i = 0; i < plan.dicts.length; i++) {
+		const index = plan.dicts[i][0];
+		args[index] = dictView(args[index], plan.dicts[i][1], client);
 	}
 }
 
@@ -225,8 +249,21 @@ export default function (client: ScramjetClient, self: Self) {
 	const dProxy = client.documentProxy;
 	const gReal = client.global as any;
 	const dReal = (client.global as any).document;
-	client.fixReceiver = (that: any) =>
-		that === gProxy ? gReal : that === dProxy && dProxy ? dReal : that;
+	const proxied = client.box.proxied;
+	client.fixReceiver = (that: any) => {
+		if (that === gProxy) return gReal;
+		if (that === dProxy && dProxy) return dReal;
+		// another frame's proxy, calling a member of this realm - which needs
+		// another frame with proxies to have happened at all
+		if (
+			client.box.proxyClients > 1 &&
+			typeof that === "object" &&
+			that !== null
+		)
+			return proxied.get(that) ?? that;
+
+		return that;
+	};
 
 	for (let i = 0; i < OPERATIONS.length; i++) {
 		const op = OPERATIONS[i];
@@ -236,6 +273,7 @@ export default function (client: ScramjetClient, self: Self) {
 			isCtor = op[3],
 			argSelectors = op[4],
 			returnKind = op[5];
+		const args = planArgs(argSelectors);
 		const ctor = (self as any)[owner];
 		if (!ctor) continue;
 
@@ -255,7 +293,7 @@ export default function (client: ScramjetClient, self: Self) {
 				owner,
 				{
 					construct(ctx) {
-						unproxyArgs(ctx.args as any[], argSelectors, client);
+						unproxyArgs(ctx.args as any[], args, client);
 					},
 				},
 				`${owner} constructor`
@@ -285,7 +323,7 @@ export default function (client: ScramjetClient, self: Self) {
 			member,
 			{
 				apply(ctx) {
-					if (wrapsArgs) unproxyArgs(ctx.args as any[], argSelectors, client);
+					if (wrapsArgs) unproxyArgs(ctx.args as any[], args, client);
 
 					if (wrapsReturn) {
 						ctx.return(
