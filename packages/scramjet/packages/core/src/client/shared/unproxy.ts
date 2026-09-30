@@ -274,44 +274,4 @@ export default function (client: ScramjetClient, self: Self) {
 			debugName(owner, member, isStatic)
 		);
 	}
-
-	// The reflection builtins are not described by IDL, and take any object at
-	// all - including a proxy, which they would then answer about rather than
-	// about the thing it stands for.
-	client.Proxy("Object.defineProperty", {
-		apply(ctx) {
-			ctx.args[0] = unproxyValue(ctx.args[0], client);
-		},
-	});
-
-	client.Proxy("Object.getOwnPropertyDescriptor", {
-		apply(ctx) {
-			ctx.args[0] = unproxyValue(ctx.args[0], client);
-
-			const desc = ctx.call();
-			if (!desc) return;
-
-			// the halves a descriptor carries are native accessors, and take the
-			// platform object as their receiver just as a method does
-			if (desc.get) {
-				client.RawProxy(desc, "get", {
-					apply(c) {
-						c.this = unproxyValue(c.this, client);
-					},
-				});
-			}
-			if (desc.set) {
-				client.RawProxy(desc, "set", {
-					apply(c) {
-						c.this = unproxyValue(c.this, client);
-						for (let i = 0; i < c.args.length; i++) {
-							c.args[i] = unproxyValue(c.args[i], client);
-						}
-					},
-				});
-			}
-
-			ctx.return(desc);
-		},
-	});
 }

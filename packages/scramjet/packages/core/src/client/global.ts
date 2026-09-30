@@ -10,13 +10,7 @@
 import { iswindow } from "@client/entry";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
-import { getOwnPropertyDescriptorHandler } from "@client/helpers";
-import {
-	_Set,
-	Number_isInteger,
-	Reflect_set,
-	Reflect_defineProperty,
-} from "@/shared/snapshot";
+import { _Set, Number_isInteger, Reflect_set } from "@/shared/snapshot";
 
 /**
  * The names the proxy answers rather than reads. `get` fires on every property
@@ -89,18 +83,9 @@ export function createGlobalProxy(
 
 			return Reflect_set(target, prop, value);
 		},
-		// `has` and `ownKeys` forwarded to `Reflect` unchanged, which is what a
-		// missing trap does - only slower, since a declared trap takes the slow
-		// path whatever it does
-		defineProperty(target, property, attributes) {
-			if (!attributes.get && !attributes.set) {
-				attributes.writable = true;
-			}
-			attributes.configurable = true;
-
-			return Reflect_defineProperty(target, property, attributes);
-		},
-		getOwnPropertyDescriptor: getOwnPropertyDescriptorHandler,
+		// No other traps: a missing one forwards to the window exactly, and a
+		// declared one takes the slow path whatever it does. `defineProperty` in
+		// particular has to reach the window with the descriptor the page wrote.
 	});
 }
 
