@@ -1,8 +1,6 @@
 import { css, type FC } from "dreamland/core";
 import type { Tab } from "../Tab/Tab";
-import { iconLink, iconClose, iconFolder } from "../icons";
-import { Icon } from "@components/Icon";
-import { formatBytes } from "../util";
+import { DownloadActions, DownloadStatus } from "@components/DownloadActions";
 import { Favicon } from "@components/Favicon";
 import { downloadsService, tabsService } from "..";
 
@@ -16,27 +14,20 @@ export function DownloadsPage(this: FC<{ tab: Tab }>) {
 				{use(downloadsService.globalDownloadHistory).mapEach((entry) => {
 					const url = new URL(entry.url);
 					return (
-						<li
-							class="entry"
-							on:click={() => {
-								tabsService.newTab(url);
-							}}
-						>
+						<li class="entry">
 							<span class="inner">
 								<Favicon domain={url.hostname} size="medium"></Favicon>
 								<div class="text">
 									<span class="title">{entry.filename}</span>
-									<span class="url">{url.hostname}</span>
+									<button class="url" on:click={() => tabsService.newTab(url)}>
+										{url.hostname}
+									</button>
 									<div class="details">
-										<span>{formatBytes(entry.size)}</span>
+										<DownloadStatus entry={entry} />
 										<span>{new Date(entry.timestamp).toDateString()}</span>
 									</div>
 								</div>
-								<div class="icons">
-									<Icon icon={iconFolder}></Icon>
-									<Icon icon={iconLink}></Icon>
-									<Icon icon={iconClose}></Icon>
-								</div>
+								<DownloadActions entry={entry} />
 							</span>
 						</li>
 					);
@@ -80,7 +71,7 @@ DownloadsPage.style = css`
 		display: flex;
 		align-items: center;
 		gap: var(--space-md);
-		cursor: pointer;
+		cursor: default;
 		padding-block: var(--space-lg);
 		padding-left: var(--space-md);
 		margin-left: 1.75em;
