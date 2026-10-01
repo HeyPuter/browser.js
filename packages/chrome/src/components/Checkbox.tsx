@@ -44,19 +44,25 @@ Checkbox.style = css`
 		margin: 0;
 	}
 
+	:scope::before,
 	:scope::after {
-		content: "✓";
+		content: "";
 		position: absolute;
 		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--toolbar_field);
-		text-shadow: 0 0.055em 0.05em var(--accent-shade-20);
-		font-size: 0.8em;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+			center / 75% no-repeat;
 		transform: scale(0);
 		transition: transform 120ms var(--ease-control);
 		pointer-events: none;
+	}
+
+	:scope::before {
+		background-color: var(--accent-shade-20);
+		translate: 0 0.055em;
+	}
+
+	:scope::after {
+		background-color: var(--toolbar_field);
 	}
 
 	:scope:has(input:checked) {
@@ -72,8 +78,9 @@ Checkbox.style = css`
 		border: none;
 	}
 
+	:scope:has(input:checked)::before,
 	:scope:has(input:checked)::after {
-		transform: scale(1) translateY(0.5px);
+		transform: scale(1);
 	}
 
 	:scope:has(input:disabled) {
