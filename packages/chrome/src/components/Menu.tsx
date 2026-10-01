@@ -10,6 +10,21 @@ export function closeMenu() {
 	activeMenuClose?.();
 }
 
+let dismissedAnchor: HTMLElement | null = null;
+const forgetDismissedAnchor = () => (dismissedAnchor = null);
+
+window.addEventListener("pointerdown", forgetDismissedAnchor, {
+	capture: true,
+});
+window.addEventListener("click", forgetDismissedAnchor);
+window.addEventListener("contextmenu", forgetDismissedAnchor);
+
+function dismissedByThisPress(anchor: HTMLElement | undefined) {
+	if (!anchor || anchor !== dismissedAnchor) return false;
+	dismissedAnchor = null;
+	return true;
+}
+
 export type PositionConstraints = {
 	left?: number;
 	right?: number;
@@ -23,6 +38,7 @@ export function Menu(
 			position: PositionConstraints;
 			items?: MenuItem[];
 			custom?: HTMLElement;
+			anchor?: HTMLElement;
 		},
 		{
 			closing: boolean;
@@ -86,6 +102,8 @@ export function Menu(
 		close();
 		e.stopImmediatePropagation();
 		e.preventDefault();
+		if (e.type === "mousedown" && this.anchor?.contains(e.target as Node))
+			dismissedAnchor = this.anchor;
 	};
 
 	this.cx.mount = () => {
@@ -350,8 +368,9 @@ export function setContextMenu(elm: HTMLElement, items: MenuItem[]) {
 
 export function createMenu(
 	position: PositionConstraints,
-	items: MenuItem[]
-): HTMLElement {
+	items: MenuItem[],
+	anchor?: HTMLElement
+): HTMLElement | null {
 	// if (isPuter) {
 	// 	puter.ui.contextMenu({
 	// 		items: items.map((i) =>
@@ -370,8 +389,11 @@ export function createMenu(
 	if (activeMenu) {
 		closeMenu();
 	}
+	if (dismissedByThisPress(anchor)) return null;
 
-	let menu = (<Menu position={position} items={items} />) as HTMLElement;
+	let menu = (
+		<Menu position={position} items={items} anchor={anchor} />
+	) as HTMLElement;
 	activeMenu = menu;
 
 	return menu;
@@ -379,13 +401,17 @@ export function createMenu(
 
 export function createMenuCustom(
 	position: PositionConstraints,
-	custom: HTMLElement
-): HTMLElement {
+	custom: HTMLElement,
+	anchor?: HTMLElement
+): HTMLElement | null {
 	if (activeMenu) {
 		closeMenu();
 	}
+	if (dismissedByThisPress(anchor)) return null;
 
-	let menu = (<Menu position={position} custom={custom} />) as HTMLElement;
+	let menu = (
+		<Menu position={position} custom={custom} anchor={anchor} />
+	) as HTMLElement;
 	activeMenu = menu;
 
 	return menu;

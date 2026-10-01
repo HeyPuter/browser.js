@@ -18,7 +18,8 @@ export function SiteOptionsButton() {
 					},
 					<SiteInformationPopup
 						tab={tabsService.activetab}
-					></SiteInformationPopup>
+					></SiteInformationPopup>,
+					target
 				);
 				e.preventDefault();
 				e.stopPropagation();

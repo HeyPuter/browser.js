@@ -35,7 +35,8 @@ export function BookmarkButton(this: FC<{ url: URL }>) {
 						right: rect.right,
 						top: rect.bottom + 6,
 					},
-					<BookmarkPopup new={isnew} bookmark={bookmark}></BookmarkPopup>
+					<BookmarkPopup new={isnew} bookmark={bookmark}></BookmarkPopup>,
+					target
 				);
 			}}
 		>

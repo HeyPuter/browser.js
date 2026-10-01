@@ -79,26 +79,30 @@ export function Omnibar(
 
 	const historyMenu = (e: MouseEvent, states: HistoryState[]) => {
 		if (states.length > 0) {
-			createMenu(getPopupPosition(e.currentTarget), [
-				...states.map((st) => ({
-					label: st.title || "New Tab",
-					image: st.favicon || defaultFaviconUrl,
-					action: () => {
-						let rel =
-							tabsService.activetab.history.states.indexOf(st) -
-							tabsService.activetab.history.index;
-						tabsService.activetab.history.go(rel);
+			createMenu(
+				getPopupPosition(e.currentTarget),
+				[
+					...states.map((st) => ({
+						label: st.title || "New Tab",
+						image: st.favicon || defaultFaviconUrl,
+						action: () => {
+							let rel =
+								tabsService.activetab.history.states.indexOf(st) -
+								tabsService.activetab.history.index;
+							tabsService.activetab.history.go(rel);
+						},
+					})),
+					"-",
+					{
+						icon: iconTime,
+						label: "Show Full History",
+						action: () => {
+							tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
+						},
 					},
-				})),
-				"-",
-				{
-					icon: iconTime,
-					label: "Show Full History",
-					action: () => {
-						tabsService.newTab(new URL(`${INTERNAL_URL_PROTOCOL}//history`));
-					},
-				},
-			]);
+				],
+				e.currentTarget as HTMLElement
+			);
 		}
 		e.preventDefault();
 		e.stopPropagation();
@@ -115,7 +119,8 @@ export function Omnibar(
 	showDownloadsPopup.listen(() => {
 		createMenuCustom(
 			getPopupPosition(downloadsButton, "right"),
-			<DownloadsPopup></DownloadsPopup>
+			<DownloadsPopup></DownloadsPopup>,
+			downloadsButton
 		);
 	});
 
@@ -260,7 +265,8 @@ export function Omnibar(
 										},
 									]
 								: []),
-						].filter((x) => x !== null) as any
+						].filter((x) => x !== null) as any,
+						e.currentTarget as HTMLElement
 					);
 					e.stopPropagation();
 				}}
