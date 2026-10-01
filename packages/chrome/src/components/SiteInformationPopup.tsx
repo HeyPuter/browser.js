@@ -31,16 +31,16 @@ export function SiteInformationPopup(this: FC<{ tab: Tab }>) {
 					Connection is protected by SSL for this site and forwarded over WISP
 				</p>
 			</div>
-			<div class="footer section">
-				{/* <div class="entry">
+			{/*<div class="footer section">
+				 <div class="entry">
 					<Icon icon={iconTrash}></Icon>
 					<span>Clear Site Data</span>
 				</div>
 				<div class="entry">
 					<Icon icon={iconSettings}></Icon>
 					<span>Site Settings</span>
-				</div> */}
-			</div>
+				</div>
+			</div>*/}
 		</div>
 	);
 }
@@ -66,6 +66,7 @@ SiteInformationPopup.style = css`
 		padding-inline: var(--space-xl);
 		font-size: 0.85em;
 		line-height: 1.3;
+		padding-bottom: var(--space-lg);
 	}
 
 	.header {
