@@ -115,3 +115,6 @@ T("named iife escaping", function () { var g; (function f(w) { g = f; return w.t
 T("with shadows a definite local", function () { var w = window; String(w); with ({ w: { innerWidth: 99 } }) { return w.innerWidth } });
 T("with shadows a twin", function () { var w = window; if (Math.random() < 2) w = document; String(w); with ({ w: { title: "x" } }) { return w.title } });
 T("with leaves an unshadowed local", function () { var w = window; String(w); with ({ other: 1 }) { return w.innerWidth + w.location.href } });
+T("param default before the param", function () { return (function (a = w.title, w) { return a })(undefined, document) });
+T("param own default", function () { return (function (w = w) { return w.title })(undefined) });
+T("param default after the param", function () { return (function (w, a = w.title) { return a + w.location.href })(document) });

@@ -1067,7 +1067,9 @@ fn definite_name(
 fn initialized_at(sym: SymbolId, d: &Decision, ctx: &Ctx) -> bool {
 	let decl = ctx.scoping.symbol_declaration(sym);
 	match ctx.nodes.kind(decl) {
-		AstKind::FormalParameter(_) => true,
+		// parameters are initialized left to right: a default before this one, or this one's
+		// own, still sees it in its temporal dead zone - `(a = w.title, w) => ...`
+		AstKind::FormalParameter(p) => d.span.start >= p.span.end,
 		AstKind::VariableDeclarator(v) => {
 			let function_of = |id: NodeId| {
 				ctx.nodes.ancestor_ids(id).find(|&a| {
