@@ -129,6 +129,14 @@ export class SingletonBox {
 	wrappedEvents: _WeakMap<Event, Event> = new _WeakMap();
 	// the reverse: the real event behind each stand-in event.ts hands out
 	standIns: _WeakMap<Event, Event> = new _WeakMap();
+	/**
+	 * `ppsc`: every client's window and document proxy, to the real object it
+	 * stands for, so that one frame can put right a proxy another frame hands
+	 * it - `child.Document.prototype.querySelector.call(document, ...)`.
+	 */
+	proxied: _WeakMap<object, object> = new _WeakMap();
+	/** how many clients have put proxies in {@link proxied} */
+	proxyClients = 0;
 	// fake events that scramjet synthesized
 	trustedEvents: _WeakSet<Event> = new _WeakSet();
 	// the page's function behind each wrapper event.ts puts in an `on*` slot

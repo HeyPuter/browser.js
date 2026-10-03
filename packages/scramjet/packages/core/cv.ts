@@ -249,6 +249,12 @@ export default definePackage(import.meta.dirname, {
 					{ mode: "production", log: ctx.log }
 				),
 		},
+		"gen-unproxy": {
+			desc: "regenerate the ppsc unproxy tables from @webref/idl",
+			inputs: ["tools/generate-unproxy-tables.mjs", "package.json"],
+			outputs: ["src/client/unproxy.generated.ts"],
+			run: (ctx) => ctx.sh`node tools/generate-unproxy-tables.mjs`,
+		},
 		test: {
 			desc: "vitest unit tests",
 			persistent: true,

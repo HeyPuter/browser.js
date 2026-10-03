@@ -33,6 +33,50 @@ pub struct Config {
 	pub tempreceiverid: String,
 	pub tempcalleeid: String,
 	pub tempunusedid: String,
+
+	/// `ppsc`: the real object behind one of the global or document proxies
+	pub unwrapfn: String,
+	/// `ppsc`: what a local's name is followed by to name its twin, the local that holds the
+	/// real object where the local itself holds the proxy
+	pub realsuffix: String,
+	/// `ppsc` with `ppsc_wrap_this`: a function's `this`, wrapped once where it is used unsafely
+	pub tempthisid: String,
+	/// `ppsc` with `ppsc_wrap_this`: the real window and document, constants a `this` is compared
+	/// against before it is wrapped
+	pub rawwindowid: String,
+	pub rawdocumentid: String,
+}
+
+/// Which rewrite a script gets. The mirror of `JsRewriter` in `types.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JsRewriter {
+	/// rewrites the key of every member access that could name something unsafe, answered by
+	/// accessors on `Object.prototype`
+	Dpsc,
+	/// rewrites only the references to the globals, handing back a `Proxy` for the window and the
+	/// document - except where every use of one is a use the proxy would answer the same
+	Ppsc,
+	/// `ppsc`, with a static read of an unsafe name - `.location`, `.top` - renamed to `dpsc`'s
+	/// accessor for it, so that it needs no proxy either
+	#[default]
+	PpscHybrid,
+}
+
+#[derive(Debug, ThisError)]
+#[error("not a js rewriter: {0}")]
+pub struct InvalidJsRewriter(String);
+
+impl FromStr for JsRewriter {
+	type Err = InvalidJsRewriter;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"dpsc" => Ok(Self::Dpsc),
+			"ppsc" => Ok(Self::Ppsc),
+			"ppsc-hybrid" => Ok(Self::PpscHybrid),
+			_ => Err(InvalidJsRewriter(s.to_string())),
+		}
+	}
 }
 
 /// How a stack frame is traced back to the script that owns it, which is what
@@ -89,4 +133,9 @@ pub struct Flags {
 	pub destructure_rewrites: bool,
 
 	pub incumbency: IncumbencyMode,
+	pub js_rewriter: JsRewriter,
+	/// `ppsc` only: follow a function's `this` too, and wrap it where it is used unsafely. Off, a
+	/// `this` is left as it always has been - which is the window whenever a sloppy function is
+	/// called bare, and whenever an unwrapped window is a method's receiver
+	pub ppsc_wrap_this: bool,
 }

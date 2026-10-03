@@ -43,8 +43,9 @@ export default function (client: ScramjetClient, self: Self) {
 					) {
 						const cl = client.box.clientIds.get(data.$scramjet$clientid);
 						// a sender whose client has since gone - its document
-						// navigated away - leaves nothing better than the native
-						if (cl) return cl.global;
+						// navigated away - leaves nothing better than the native.
+						// Under `ppsc` the page only ever holds a window as its proxy
+						if (cl) return cl.globalProxy ?? cl.global;
 					}
 
 					return this.source;
@@ -232,7 +233,8 @@ export default function (client: ScramjetClient, self: Self) {
 					args[0] = wrapEvent(realEvent, trustedProps);
 				}
 
-				const rv = Reflect_apply(target, that, args);
+				// a listener is called with the real current target as its `this`
+				const rv = Reflect_apply(target, client.pageValue(that), args);
 
 				return rv;
 			},

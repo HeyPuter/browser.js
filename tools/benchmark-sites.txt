@@ -1,0 +1,34 @@
+# Sites for tools/benchmark-sites.mjs: a spread of frameworks, bundlers and ad stacks.
+# One URL per line; lines starting with # are skipped.
+https://www.youtube.com/
+https://en.wikipedia.org/wiki/JavaScript
+https://github.com/microsoft/vscode
+https://discord.com/
+https://www.twitch.tv/
+https://open.spotify.com/
+https://www.figma.com/
+https://www.notion.com/
+https://linear.app/
+https://vercel.com/
+https://www.tiktok.com/explore
+https://www.bing.com/search?q=weather
+https://duckduckgo.com/?q=weather
+https://www.apple.com/
+https://www.microsoft.com/en-us/
+https://developer.mozilla.org/en-US/docs/Web/JavaScript
+https://www.bbc.com/news
+https://www.cnn.com/
+https://www.theguardian.com/international
+https://www.espn.com/
+https://www.craigslist.org/
+https://www.coolmathgames.com/
+https://www.crazygames.com/
+https://www.canva.com/
+https://www.roblox.com/
+https://www.walmart.com/
+https://www.amazon.com/
+https://www.booking.com/
+https://www.airbnb.com/
+https://www.pinterest.com/
+https://maps.google.com/
+https://www.yahoo.com/
