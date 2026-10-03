@@ -4,6 +4,8 @@ import {
 	frozenBaseUrl,
 	isFragmentOnly,
 	rewriteUrl,
+	sameDocumentUrl,
+	splitFragment,
 	unrewriteBlob,
 	URLMeta,
 } from "@rewriters/url";
@@ -92,15 +94,20 @@ export const htmlRules: {
 		// everything scramjet leaves relative - fragment-only hyperlinks above
 		// all. Left pointing at the site, `#x` would resolve to the site's real
 		// URL and navigate out of the proxy. A base that names the document
-		// itself goes to its real URL, so that `#x` resolved against it is
-		// still in the document. One the browser ignores - `data:`,
+		// itself is its real URL, so that `#x` resolved against it is still in
+		// the document. One the browser ignores - `data:`,
 		// `javascript:`, not a URL - is left as it is, for the browser to
 		// ignore it too.
 		fn: (value, context, meta) => {
 			const base = frozenBaseUrl(value, meta.origin);
 			if (!base) return value;
 
-			return rewriteUrl(base.href, context, meta, { navigateType: "link" });
+			const [withoutFragment, fragment] = splitFragment(base.href);
+
+			return (
+				sameDocumentUrl(withoutFragment, fragment, meta) ??
+				rewriteUrl(base.href, context, meta)
+			);
 		},
 
 		href: ["base"],

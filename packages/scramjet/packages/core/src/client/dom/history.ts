@@ -2,7 +2,7 @@ import { ScramjetClient } from "@client/index";
 import { Tap } from "@/Tap";
 import { Arguments, Returns } from "@client/webidl";
 import { _URL } from "@/shared/snapshot";
-import { rewriteHistoryUrl, splitFragment } from "@rewriters/url";
+import { canHaveItsURLRewritten, rewriteHistoryUrl } from "@rewriters/url";
 
 export default function (client: ScramjetClient, _self: Self) {
 	const stateUrlRejected = (
@@ -16,38 +16,6 @@ export default function (client: ScramjetClient, _self: Self) {
 			detail: `A history state object with URL '${url}' cannot be created in a document with origin '${documentUrl.origin}' and URL '${documentUrl.href}'.`,
 			caller: resolveStateUrl,
 		});
-
-	/**
-	 * https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten
-	 *
-	 * A test on the two URLs alone. It says nothing about origins: an
-	 * about:blank or srcdoc document can take a new fragment, and nothing else,
-	 * whoever created it - which a comparison of origins gets wrong both ways,
-	 * since `about:blank#x` has an opaque origin that equals no creator's.
-	 */
-	const canHaveItsURLRewritten = (document: URL, target: URL): boolean => {
-		// `host` is the host and the port, so this is steps 1's five parts
-		if (
-			target.protocol !== document.protocol ||
-			target.username !== document.username ||
-			target.password !== document.password ||
-			target.host !== document.host
-		) {
-			return false;
-		}
-
-		// the path, the query and the fragment may all change
-		if (target.protocol === "http:" || target.protocol === "https:") {
-			return true;
-		}
-
-		if (target.protocol === "file:" && target.pathname !== document.pathname) {
-			return false;
-		}
-
-		// anything else may only change its fragment
-		return splitFragment(target.href)[0] === splitFragment(document.href)[0];
-	};
 
 	/**
 	 * https://html.spec.whatwg.org/multipage/nav-history-apis.html#shared-history-push/replace-state-steps

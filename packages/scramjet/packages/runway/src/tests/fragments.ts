@@ -97,10 +97,18 @@ function fragmentTest(props: {
 			return;
 		}
 		if (path === entry) {
+			// the fetch metadata this document was requested with. Not
+			// `sec-fetch-dest`: bare Chrome runs the page in a frame, where
+			// the proxy has it stand in for a top-level document
+			const request = JSON.stringify(
+				["sec-fetch-site", "sec-fetch-mode"].map(
+					(name) => req.headers[name] ?? null
+				)
+			);
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(
 				page(
-					props.head ?? "",
+					`<script>window.request = ${request};</script>` + (props.head ?? ""),
 					(props.body ?? "") +
 						`<script>runTest(async () => {\n${props.js}\n}, true);</script>`
 				)
@@ -442,6 +450,46 @@ export default [
 		`,
 	}),
 
+	// only an HTML base element in the document's own tree sets its base URL
+	...(
+		[
+			["template", `<template><base href="/wrong/"></template>`],
+			["svg", `<svg><base href="/wrong/"></base></svg>`],
+			["math", `<math><base href="/wrong/"></base></math>`],
+		] as [string, string][]
+	).map(([name, ignored]) =>
+		fragmentTest({
+			name: `fragment-base-ignores-${name}`,
+			head: `${ignored}<base href="/right/">`,
+			routes: {
+				"/right/s.js": js(`window.loadedFrom = "right";`),
+				"/wrong/s.js": js(`window.loadedFrom = "wrong";`),
+			},
+			body: `<script src="s.js"></script>`,
+			js: `
+				assertConsistent("script", window.loadedFrom ?? null);
+				assertConsistent("baseURI", document.baseURI.slice(location.origin.length));
+				const img = new Image();
+				img.src = "x.png";
+				assertConsistent("img.src", img.src.slice(location.origin.length));
+			`,
+		})
+	),
+
+	fragmentTest({
+		name: "fragment-base-html-inside-svg-integration-point",
+		// back in HTML inside foreignObject, so this one counts
+		head: `<svg><foreignObject><base href="/right/"></foreignObject></svg>`,
+		routes: {
+			"/right/s.js": js(`window.loadedFrom = "right";`),
+		},
+		body: `<script src="s.js"></script>`,
+		js: `
+			assertConsistent("script", window.loadedFrom ?? null);
+			assertConsistent("baseURI", document.baseURI.slice(location.origin.length));
+		`,
+	}),
+
 	fragmentTest({
 		name: "fragment-base-in-innerhtml",
 		js: `
@@ -467,21 +515,43 @@ export default [
 		fragmentTest({
 			name: `fragment-self-navigation-${name}`,
 			js: `
-				// the harness token is in the fragment, so drop it first: this is
-				// a navigation to exactly the document's URL
+				// no fragment, so this loads the document again - requested by
+				// the document itself this time, and not by the page that
+				// first linked to it
 				const n = loads("doc");
 				if (n === 1) {
+					assertConsistent("first request", request);
 					history.replaceState(null, "", location.pathname + "?self=1");
-					sessionStorage.setItem("length", history.length);
 					${navigate};
 					await new Promise(() => {});
 				}
-				// a navigation to the document's own URL replaces its entry
-				assertConsistent("length delta", history.length - +sessionStorage.getItem("length"));
+				assertConsistent("second request", request);
 				assertConsistent("href", location.href.slice(location.origin.length));
 			`,
 		})
 	),
+
+	// fails, and is the price of the test above: a navigation to the
+	// document's own URL replaces its history entry, which the browser only
+	// sees when the new real URL equals the old one - and it cannot, when the
+	// new one has to name a different initiator
+	fragmentTest({
+		name: "fragment-self-navigation-replaces-entry",
+		js: `
+			const n = loads("doc");
+			if (n === 1) {
+				history.replaceState(null, "", location.pathname + "?self=1");
+				// after the load event: a navigation while the document loads is
+				// made a replace whatever its URL
+				await new Promise((r) => (document.readyState === "complete" ? r() : addEventListener("load", r)));
+				await sleep(0);
+				sessionStorage.setItem("length", history.length);
+				location.assign(location.href);
+				await new Promise(() => {});
+			}
+			assertConsistent("length delta", history.length - +sessionStorage.getItem("length"));
+		`,
+	}),
 
 	fragmentTest({
 		name: "fragment-reload-keeps-fragment",
@@ -710,6 +780,25 @@ export default [
 			assertConsistent("urls", [own(staticA.url), own(staticB.url), own(a.url), own(c.url)]);
 			assertConsistent("same module", [a === staticA, a === staticB]);
 			assertConsistent("evaluated", window.evaluated);
+		`,
+	}),
+
+	fragmentTest({
+		name: "fragment-module-import-escaping",
+		routes: {
+			"/m.js": js(`export const url = import.meta.url;`),
+			// fragments a string literal has to escape
+			"/entry.js": js(
+				String.raw`import * as a from "/m.js#a\\"; import * as b from '/m.js#it\'s'; import * as c from "/m.js#\\\\x"; window.imported = [a.url, b.url, c.url];`
+			),
+		},
+		js: `
+			const s = document.createElement("script");
+			s.type = "module";
+			s.src = "/entry.js";
+			await new Promise((r) => { s.onload = r; s.onerror = r; document.head.append(s); });
+			const own = (url) => url.slice(location.origin.length);
+			assertConsistent("imported", (window.imported ?? []).map(own));
 		`,
 	}),
 

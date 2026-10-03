@@ -91,23 +91,21 @@ export function isFragmentOnly(url: string): boolean {
 }
 
 /**
- * The proxy URL a navigation to `url` goes to when it stays in the document
- * `meta` describes, or null when it leaves it.
+ * The real URL of the document `meta` describes, with `fragment`, when the
+ * rest of the URL is that document's - or null.
  *
  * https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate -
- * whether a navigation is to a fragment, and whether it replaces the current
- * history entry, both turn on the target URL *equalling the document's URL*,
- * with or without fragments. The browser makes that comparison on the real
- * URLs, and a freshly rewritten one almost never equals the document's: it
- * carries the query parameters of whoever is navigating now (`$io`, `$rfp`,
- * ...), and the document's carries those of whoever loaded it. So `#x` would
- * reload the page instead of scrolling, and a navigation to the page's own
- * URL would push an entry instead of replacing one.
+ * a navigation is to a fragment, and stays in the document, when the target
+ * URL has a fragment and *equals the document's URL* without it. The browser
+ * makes that comparison on the real URLs, and a freshly rewritten one almost
+ * never equals the document's: it carries the query parameters of whoever is
+ * navigating now (`$io`, `$rfp`, ...), and the document's carries those of
+ * whoever loaded it. So `#x` would reload the page instead of scrolling.
  *
  * Built on the document's own URL instead, the two compare exactly as the
  * site's URLs do, and the browser applies its own rules to them.
  */
-function sameDocumentUrl(
+export function sameDocumentUrl(
 	withoutFragment: string,
 	fragment: string | null,
 	meta: URLMeta
@@ -283,7 +281,11 @@ export function rewriteUrl(
 		// answer `location.hash` - all of which need the site's own fragment
 		const [withoutFragment, fragment] = splitFragment(realUrl.href);
 
-		if (options?.navigateType) {
+		// only with a fragment: without one, a navigation to the document's
+		// own URL loads a new document, which is requested by whoever is
+		// navigating now - and the document's real URL names whoever loaded it
+		// (`$io`), so its `Sec-Fetch-Site` would be stale
+		if (options?.navigateType && fragment !== null) {
 			const same = sameDocumentUrl(withoutFragment, fragment, meta);
 			if (same !== null) return same;
 		}
@@ -361,6 +363,39 @@ export function rewriteHistoryUrl(
 		new _URL(meta.rawUrl).search +
 		(fragment ?? "")
 	);
+}
+
+/**
+ * https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten
+ *
+ * A test on the two URLs alone. It says nothing about origins: an
+ * about:blank or srcdoc document can take a new fragment, and nothing else,
+ * whoever created it - which a comparison of origins gets wrong both ways,
+ * since `about:blank#x` has an opaque origin that equals no creator's.
+ */
+export function canHaveItsURLRewritten(document: URL, target: URL): boolean {
+	// `host` is the host and the port, so this is steps 1's five parts
+	if (
+		target.protocol !== document.protocol ||
+		target.username !== document.username ||
+		target.password !== document.password ||
+		target.host !== document.host
+	) {
+		return false;
+	}
+
+	// the path, the query and the fragment may all change
+	if (target.protocol === "http:" || target.protocol === "https:") {
+		return true;
+	}
+
+	// the query and the fragment may change, but not the path
+	if (target.protocol === "file:") {
+		return target.pathname === document.pathname;
+	}
+
+	// anything else may only change its fragment
+	return splitFragment(target.href)[0] === splitFragment(document.href)[0];
 }
 
 export function unrewriteUrl(url: string | URL, context: ScramjetContext) {

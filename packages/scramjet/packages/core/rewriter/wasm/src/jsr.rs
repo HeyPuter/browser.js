@@ -83,7 +83,10 @@ impl UrlRewriter for WasmUrlRewriter {
 			rewritten.push_str(&encoded_origin);
 		}
 
-		rewritten.push_str(fragment);
+		// back inside the string literal it came out of. The fragment
+		// percent-encode set covers `"`, line terminators and everything
+		// outside ASCII, but leaves `\` and `'`
+		rewritten.push_str(&js::cfg::escape_js_string(fragment));
 
 		builder.push_str(&rewritten);
 

@@ -421,6 +421,49 @@ export function unrewriteHtml(
 	return render(root);
 }
 
+/** Where foreign content goes back to HTML - the serializer's list. */
+const htmlIntegrationPoints = [
+	"mi",
+	"mo",
+	"mn",
+	"ms",
+	"mtext",
+	"annotation-xml",
+	"foreignobject",
+	"desc",
+	"title",
+];
+
+/**
+ * Whether `node` is an HTML element in the document's own tree - which a base
+ * element has to be to set the document's base URL.
+ *
+ * The parser records neither: an element inside `<svg>` or `<math>` is in
+ * that namespace until an integration point takes it back to HTML, and a
+ * `<template>`'s contents are its children here where the browser puts them
+ * in an inert fragment of their own. So both are read off the ancestors. The
+ * names are compared lowercased, since the serializer fixes up mixed-case
+ * foreign names in place.
+ */
+function isDocumentHtmlElement(node: Element): boolean {
+	let foreign: boolean | null = null;
+	for (
+		let at = node.parent;
+		at && at.type === ElementType.Tag;
+		at = at.parent
+	) {
+		const name = String_toLowerCase((at as Element).name);
+		if (name === "template") return false;
+		if (foreign !== null) continue;
+
+		// the nearest of these decides the namespace
+		if (name === "svg" || name === "math") foreign = true;
+		else if (Array_indexOf(htmlIntegrationPoints, name) !== -1) foreign = false;
+	}
+
+	return foreign !== true;
+}
+
 /**
  * The metas whose base URL a base element has already set.
  *
@@ -440,8 +483,9 @@ const basedMetas = new _WeakSet<URLMeta>();
  * getter reading the live document, which is where the base element is going
  * - so it already answers for it once it lands, and has no setter to call.
  */
-function adoptBaseElement(href: string, meta: URLMeta) {
+function adoptBaseElement(node: Element, href: string, meta: URLMeta) {
 	if (basedMetas.has(meta)) return;
+	if (!isDocumentHtmlElement(node)) return;
 
 	const desc = Object_getOwnPropertyDescriptor(meta, "base");
 	if (!desc || !desc.writable) return;
@@ -469,7 +513,7 @@ function traverseParsedHtml(
 	const ruleAttributeNames = getRuleAttributeNames();
 
 	if (node.name === "base" && attribs.href !== undefined) {
-		adoptBaseElement(attribs.href, meta);
+		adoptBaseElement(node, attribs.href, meta);
 	}
 
 	for (let ruleIndex = 0; ruleIndex < htmlRules.length; ruleIndex++) {

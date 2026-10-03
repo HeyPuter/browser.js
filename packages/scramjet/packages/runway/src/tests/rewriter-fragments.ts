@@ -1,4 +1,5 @@
 import {
+	canHaveItsURLRewritten,
 	isFragmentOnly,
 	rewriteCss,
 	rewriteHistoryUrl,
@@ -127,7 +128,13 @@ export default [
 				raw + "#y",
 				"absolute"
 			);
-			assertEqual(nav("?q=1"), raw, "the same URL without a fragment");
+			// without a fragment it loads a new document, with this one as the
+			// initiator rather than the one that loaded it
+			assert(!nav("?q=1").startsWith(raw), "the same URL without a fragment");
+			assert(
+				!nav("https://example.com/page?q=1").startsWith(raw),
+				"absolute, without a fragment"
+			);
 			// anything else is a fresh rewrite
 			assert(!nav("?q=2#x").startsWith(raw), "another query");
 			assert(!nav("/other#x").startsWith(raw), "another path");
@@ -166,6 +173,38 @@ export default [
 					"?%24io=https%3A%2F%2Fother.test#c",
 				"another URL"
 			);
+		},
+	}),
+
+	directTest({
+		name: "rewriter-fragment-can-have-url-rewritten",
+		fn: ({ assertEqual }) => {
+			// https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten
+			const cases: [string, string, boolean][] = [
+				["https://a.test/p?q#f", "https://a.test/other?r#g", true],
+				["https://a.test/p", "https://b.test/p", false],
+				["https://a.test/p", "https://a.test:8443/p", false],
+				["https://a.test/p", "http://a.test/p", false],
+				["https://a.test/p", "https://user@a.test/p", false],
+				// file: may change its query and fragment, not its path
+				["file:///dir/f.html", "file:///dir/f.html?q=1#x", true],
+				["file:///dir/f.html?a", "file:///dir/f.html?b", true],
+				["file:///dir/f.html", "file:///dir/g.html", false],
+				// anything else only its fragment
+				["about:blank", "about:blank#x", true],
+				["about:blank", "about:blank?q", false],
+				["about:srcdoc", "about:srcdoc#x", true],
+				["about:srcdoc", "about:blank#x", false],
+				["data:text/html,a", "data:text/html,a#x", true],
+				["data:text/html,a", "data:text/html,b", false],
+			];
+			for (const [document, target, expected] of cases) {
+				assertEqual(
+					canHaveItsURLRewritten(new URL(document), new URL(target)),
+					expected,
+					`${document} -> ${target}`
+				);
+			}
 		},
 	}),
 

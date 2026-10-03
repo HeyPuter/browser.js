@@ -884,7 +884,7 @@ export class Frame {
 
 	/**
 	 * The real URL of the frame's document with `url`'s fragment, when `url`
-	 * names that same document - or null.
+	 * is a fragment of that same document - or null.
 	 *
 	 * Going to `page#b` from `page#a` is a fragment navigation: it scrolls,
 	 * and fires `hashchange`, without reloading anything. The browser only
@@ -911,6 +911,9 @@ export class Frame {
 		}
 
 		const [withoutFragment, fragment] = splitFragment(target.href);
+		// without a fragment it loads a new document, which it has to request
+		// afresh
+		if (fragment === null) return null;
 		if (splitFragment(current.href)[0] !== withoutFragment) return null;
 
 		return splitFragment(raw)[0] + (fragment ?? "");
