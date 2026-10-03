@@ -124,3 +124,4 @@ T("window.self replaced before the chain", function () { window.self = { innerWi
 T("window.self replaced before the pattern", function () { window.self = { innerWidth: 99 }; var { self: w } = window; String(w); return w.innerWidth });
 T("document through a replaced self", function () { self = { document: { title: "x" } }; var d = self.document; String(d); return d.title });
 T("document pattern still substituted", function () { var { document: d } = window; String(d); return d.title + d.location.href });
+T("instanceof a custom hasInstance", function () { globalThis.Custom = { [Symbol.hasInstance](v) { return v === window } }; var w = window; return (w instanceof Custom) + "," + (window instanceof Custom) });

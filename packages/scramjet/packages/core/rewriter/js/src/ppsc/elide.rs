@@ -476,15 +476,10 @@ impl<'a> Ctx<'_, 'a> {
 							done!(Use::Unsafe)
 						}
 						B::In if b.right.span() == child => done!(Use::Safe),
-						B::Instanceof if b.left.span() == child => {
-							// a platform constructor looks at the prototype, which the proxy
-							// forwards; anything else may have a `Symbol.hasInstance` that is
-							// handed the value
-							let platform = matches!(&b.right, Expression::Identifier(r)
-								if r.reference_id.get().is_some_and(|id| self.scoping.get_reference(id).symbol_id().is_none())
-									&& r.name.starts_with(|c: char| c.is_ascii_uppercase()));
-							done!(if platform { Use::Safe } else { Use::Unsafe })
-						}
+						// the right side's `Symbol.hasInstance` is handed the value, and any global
+						// name can be replaced by one that has it; the proxy answers a platform
+						// constructor's prototype walk the same
+						B::Instanceof if b.left.span() == child => done!(Use::Unsafe),
 						_ => done!(Use::Safe),
 					}
 				}
