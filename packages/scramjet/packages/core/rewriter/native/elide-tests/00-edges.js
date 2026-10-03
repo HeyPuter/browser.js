@@ -118,3 +118,9 @@ T("with leaves an unshadowed local", function () { var w = window; String(w); wi
 T("param default before the param", function () { return (function (a = w.title, w) { return a })(undefined, document) });
 T("param own default", function () { return (function (w = w) { return w.title })(undefined) });
 T("param default after the param", function () { return (function (w, a = w.title) { return a + w.location.href })(document) });
+T("self replaced after the alias", function () { var w = self; String(w); self = { innerWidth: 99 }; return w.innerWidth });
+T("globalThis replaced after the alias", function () { var w = globalThis; String(w); globalThis = { innerWidth: 99 }; return w.innerWidth });
+T("window.self replaced before the chain", function () { window.self = { innerWidth: 99 }; var w = window.self; String(w); return w.innerWidth });
+T("window.self replaced before the pattern", function () { window.self = { innerWidth: 99 }; var { self: w } = window; String(w); return w.innerWidth });
+T("document through a replaced self", function () { self = { document: { title: "x" } }; var d = self.document; String(d); return d.title });
+T("document pattern still substituted", function () { var { document: d } = window; String(d); return d.title + d.location.href });

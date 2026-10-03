@@ -1048,6 +1048,16 @@ fn definite_name(
 			}
 			_ => None,
 		}?;
+		// what was read off the global has to be what that name still reads: `self.document`
+		// was read through `self`, which the page can replace
+		if d.origin == Origin::Derived && !unforgeable_chain(ctx.nodes, d.node) {
+			return None;
+		}
+		// a pattern does not say which key it read, and only `document` is the one key a
+		// document comes from
+		if via == Via::Destructure && kind != D {
+			return None;
+		}
 		let reached = via == Via::Destructure || d.origin == Origin::Derived;
 		match if reached { kind } else { d.kind } {
 			W if base != "document" => Some(base),
@@ -1092,11 +1102,29 @@ fn initialized_at(sym: SymbolId, d: &Decision, ctx: &Ctx) -> bool {
 	}
 }
 
-/// The names that can stand in a substitution, as `'static` strings.
+/// The names that can stand in a substitution, as `'static` strings: the two the page cannot
+/// replace. `self` and `frames` are `[Replaceable]` and `globalThis` is writable, so a local copied
+/// from one of them holds whatever it held then, which the name may no longer.
 fn static_global(name: &str) -> Option<&'static str> {
-	["window", "self", "globalThis", "frames", "document"]
-		.into_iter()
-		.find(|n| *n == name)
+	["window", "document"].into_iter().find(|n| *n == name)
+}
+
+/// Whether every member in the chain ending at `node` is `window` or `document`, the unforgeable
+/// names: `window.document`, but not `window.self` or `self.document`.
+fn unforgeable_chain(nodes: &AstNodes, node: NodeId) -> bool {
+	let AstKind::StaticMemberExpression(mut m) = nodes.kind(node) else {
+		return false;
+	};
+	loop {
+		if !matches!(m.property.name.as_str(), "window" | "document") {
+			return false;
+		}
+		match m.object.without_parentheses() {
+			Expression::StaticMemberExpression(inner) => m = inner,
+			Expression::Identifier(_) | Expression::ThisExpression(_) => return true,
+			_ => return false,
+		}
+	}
 }
 
 /// Where a local's twin is declared and kept up to date, and the part of the source that can see it.

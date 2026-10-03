@@ -40,8 +40,9 @@ var PW, PD;
 var hW = {
 	get(t, p) {
 		if (p === "location") return SL;
-		if (p === "window" || p === "self" || p === "frames" || p === "globalThis" || p === "top" || p === "parent") return PW;
-		if (p === "document") return PD;
+		// what the window holds, wrapped, as client/global.ts does: a page can replace `self`
+		if (p === "window" || p === "self" || p === "frames" || p === "globalThis" || p === "top" || p === "parent") return $wrap(t[p]);
+		if (p === "document") return $wrap(t[p]);
 		if (p === "eval") return SAFE_EVAL;
 		return t[p];
 	},
