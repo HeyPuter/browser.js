@@ -58,7 +58,7 @@ import type {
 	BodyType,
 	WebSocketMessage,
 } from "../../../scramjet/packages/controller/src/types";
-import { getTheme } from "../themes";
+import { getActiveTheme } from "../themes";
 import {
 	downloadsService,
 	profileService,
@@ -305,7 +305,7 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 	let frameContext = new ProxyFrameContext(controller, contextId);
 	contexts.push(frameContext);
 
-	const theme = getTheme(settingsService.settings.themeId);
+	const theme = getActiveTheme(settingsService.settings);
 
 	return `
 		<script src="${controller.prefix.href}${virtualWasmPath}"></script>

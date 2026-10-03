@@ -5,7 +5,7 @@ import { Sidebar, VerticalPinList } from "@components/TabStrip/Sidebar";
 import { Tab } from "./Tab/Tab";
 import { BookmarksStrip } from "@components/BookmarksStrip";
 import { Omnibar } from "@components/Omnibar/Omnibar";
-import { getTheme } from "./themes";
+import { getActiveTheme } from "./themes";
 import { setIconSet } from "./icons";
 import { TWEAKS, TWEAK_KEYS, tweakClass } from "./tweaks";
 import { contexts } from "./proxy/scramjet";
@@ -35,22 +35,9 @@ export function App(
 	>
 ) {
 	const applyTheme = () => {
-		const appearance = settingsService.settings.appearance;
-		const themeId = settingsService.settings.themeId;
-		const theme = getTheme(themeId);
+		const theme = getActiveTheme(settingsService.settings);
 
-		// Determine if we should use light mode
-		let isLight = false;
-		if (appearance === "system") {
-			const prefersDark = window.matchMedia(
-				"(prefers-color-scheme: dark)"
-			).matches;
-			isLight = !prefersDark;
-		} else {
-			isLight = appearance === "light";
-		}
-
-		document.body.classList.toggle("light-mode", isLight);
+		document.body.classList.toggle("light-mode", theme.appearance === "light");
 
 		// Apply theme tokens
 		for (const [key, value] of Object.entries(theme.tokens)) {
@@ -118,15 +105,17 @@ export function App(
 
 	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 	const handleThemeChange = () => {
-		if (settingsService.settings.appearance === "system") {
+		if (settingsService.settings.followSystemTheme) {
 			applyTheme();
 		}
 	};
 
 	mediaQuery.addEventListener("change", handleThemeChange);
 
-	use(settingsService.settings.appearance).listen(applyTheme);
+	use(settingsService.settings.followSystemTheme).listen(applyTheme);
 	use(settingsService.settings.themeId).listen(applyTheme);
+	use(settingsService.settings.lightThemeId).listen(applyTheme);
+	use(settingsService.settings.darkThemeId).listen(applyTheme);
 
 	use(settingsService.settings.uiProfile).listen(applyProfile);
 	use(settingsService.settings.roundness).listen(applyTweaks);

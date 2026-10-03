@@ -32,12 +32,14 @@ export default defineConfig({
 	define: {
 		__COPYRIGHT_YEAR__: JSON.stringify(new Date().getFullYear()),
 		__DEFAULT_SETTINGS__: {
-			appearance: "system",
 			tabLayout: "horizontal",
 			verticalTabJustify: "left",
 			sidebarWidth: null,
 			uiProfile: "default",
 			themeId: "dark",
+			followSystemTheme: false,
+			lightThemeId: "light",
+			darkThemeId: "dark",
 			roundness: "balanced",
 			tabStyle: "floating",
 			iconSet: "ionicons",

@@ -6,7 +6,7 @@ import { Checkbox } from "@components/Checkbox";
 import { Button } from "@components/Button";
 import { Input } from "@components/Input";
 import { AVAILABLE_SEARCH_ENGINES } from "@components/Omnibar/suggestions";
-import { THEMES, type ThemeDefinition } from "../themes";
+import { THEMES, getTheme, type ThemeDefinition } from "../themes";
 import type { TabLayoutMode } from "../services/SettingsService";
 import { TWEAKS, TWEAK_KEYS, type TweakKey, type Tweaks } from "../tweaks";
 
@@ -675,9 +675,10 @@ LayoutPreview.style = css`
 	}
 `;
 
-/**
- * The theme picker for one appearance, as a section of the Themes pane.
- */
+function themeSlot(appearance: ThemeDefinition["appearance"]) {
+	return appearance === "dark" ? "darkThemeId" : "lightThemeId";
+}
+
 function themeSection(
 	appearance: ThemeDefinition["appearance"],
 	title: string,
@@ -695,11 +696,16 @@ function themeSection(
 						(theme) => (
 							<div
 								class="theme-card"
-								class:selected={use(settingsService.settings.themeId).map(
-									(id) => id === theme.id
+								class:selected={use(
+									settingsService.settings.followSystemTheme,
+									settingsService.settings.themeId,
+									settingsService.settings[themeSlot(appearance)]
+								).map(([follow, themeId, slotId]) =>
+									follow ? slotId === theme.id : themeId === theme.id
 								)}
 								on:click={() => {
 									settingsService.settings.themeId = theme.id;
+									settingsService.settings[themeSlot(appearance)] = theme.id;
 								}}
 							>
 								<ThemePreview theme={theme} />
@@ -1171,6 +1177,42 @@ export function SettingsPage(
 						)
 						.and(
 							<div class="settings-tab">
+								<section class="setting-section">
+									<div class="section-header">
+										<h2>Color Scheme</h2>
+									</div>
+									<div class="section-content">
+										<div class="setting-group">
+											<div class="checkbox-option">
+												<Checkbox
+													id="follow-system-theme"
+													value={use(
+														settingsService.settings.followSystemTheme
+													)}
+													on:change={(follow) => {
+														if (!follow) return;
+														const current = getTheme(
+															settingsService.settings.themeId
+														);
+														settingsService.settings[
+															themeSlot(current.appearance)
+														] = current.id;
+													}}
+												/>
+												<label
+													for="follow-system-theme"
+													class="label-multiline"
+												>
+													<span>Follow system color scheme</span>
+													<span class="description">
+														Use the selected light theme in light mode and the
+														selected dark theme in dark mode.
+													</span>
+												</label>
+											</div>
+										</div>
+									</div>
+								</section>
 								{themeSection(
 									"dark",
 									"Dark",
@@ -1992,7 +2034,7 @@ SettingsPage.style = css`
 
 	.theme-card.selected {
 		border-color: var(--tab_line);
-		box-shadow: 0 0 0 3px var(--accent-20);
+		box-shadow: 0 0 0 3px var(--accent-50);
 	}
 
 	.theme-info {

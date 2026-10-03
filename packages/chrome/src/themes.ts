@@ -1,5 +1,5 @@
 import { PRODUCT_SHORTNAME } from "./consts";
-export type AppearancePreference = "system" | "light" | "dark";
+import type { Settings } from "./services/SettingsService";
 
 export type ThemeId =
 	| "light"
@@ -808,6 +808,17 @@ export const themeMap: Record<ThemeId, ThemeDefinition> = THEMES.reduce(
 
 export function getTheme(themeId: ThemeId): ThemeDefinition {
 	return themeMap[themeId] || themeMap[DEFAULT_THEME_ID];
+}
+
+export function getActiveTheme(
+	settings: Pick<
+		Settings,
+		"followSystemTheme" | "themeId" | "lightThemeId" | "darkThemeId"
+	>
+): ThemeDefinition {
+	if (!settings.followSystemTheme) return getTheme(settings.themeId);
+	const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+	return getTheme(prefersDark ? settings.darkThemeId : settings.lightThemeId);
 }
 
 export function isThemeId(value: string): value is ThemeId {
