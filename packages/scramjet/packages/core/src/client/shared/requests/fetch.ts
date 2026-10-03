@@ -3,15 +3,25 @@ import {
 	Arguments,
 	Constructor,
 	idlDOMString,
+	idlUSVString,
 	Returns,
 	Type,
 } from "@client/webidl";
-import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
+import {
+	carriedHeaderName,
+	REFERRER_FALLBACK_HEADER,
+	uncarriedHeaderName,
+} from "@/shared/headers";
+import { iswindow } from "@client/entry";
+import type { NativeErrorSite } from "@client/nativeerror";
+import { QP } from "@/fetch/parse";
+import { MAX_REFERRER_LENGTH, referrerFallback } from "@rewriters/url";
 import {
 	Object_create,
 	Reflect_apply,
 	Reflect_get,
 	String_startsWith,
+	_URL,
 	drain,
 } from "@/shared/snapshot";
 
@@ -78,6 +88,58 @@ export default function (client: ScramjetClient, self: Self) {
 			: init;
 
 	/**
+	 * A `RequestInit.referrer`, parsed, as the native constructor should see it.
+	 *
+	 * The native parses it against the proxy's URL and turns anything not
+	 * same-origin with the proxy into `about:client`, so the site's URL has to
+	 * be judged against the site's origin here and handed over as the proxy's.
+	 * The service worker reads it back off the request.
+	 *
+	 * https://fetch.spec.whatwg.org/#dom-request (the `referrer` steps)
+	 */
+	const referrerFor = (parsed: URL): string => {
+		if (parsed.protocol === "about:" && parsed.pathname === "client") {
+			return "about:client";
+		}
+		if (parsed.origin !== client.siteOrigin) return "about:client";
+
+		return client.rewriteUrl(parsed.href);
+	};
+
+	/**
+	 * The member the native reads last in converting a `RequestInit`, found by
+	 * watching it convert one - which, member for member, is the order it reads
+	 * the page's in.
+	 */
+	let lastInitMember: string | symbol | undefined;
+	const lastRequestInitMember = (): string | symbol | undefined => {
+		if (lastInitMember === undefined) {
+			new nativeGlobal.Request(
+				"about:blank",
+				new Proxy(Object_create(null), {
+					get: (_, key) => {
+						lastInitMember = key;
+						return undefined;
+					},
+				})
+			);
+		}
+
+		return lastInitMember;
+	};
+
+	/**
+	 * What the native left undone when handed a view from {@link readInit}:
+	 * the page's `referrer`, resolved, and whether `referrerPolicy` was given
+	 * at all.
+	 */
+	type PendingReferrer = {
+		referrer?: string;
+		resolved?: string;
+		policy?: boolean;
+	};
+
+	/**
 	 * A `RequestInit` / `ResponseInit` with the members named by `keys` read
 	 * exactly once, and a tagged `headers` swapped for the corrected view.
 	 *
@@ -91,16 +153,35 @@ export default function (client: ScramjetClient, self: Self) {
 	 * So the native is handed a view that answers the members read here from
 	 * what they read as, and sends every other `[[Get]]` to the page's object
 	 * with the page's object as the receiver, which is what keeps a platform
-	 * getter's brand check passing. `mode` and `credentials` go through
-	 * `ToString` here too, so the native converts a primitive and runs no page
-	 * code a second time. What this cannot keep is WebIDL's lexicographic
-	 * order: these members are read before the native reads the rest.
+	 * getter's brand check passing. The view is not a proxy *of* the page's
+	 * object: a frozen one's members could then only ever read as they are,
+	 * and a proxy that answers otherwise throws. `mode` and `credentials` go
+	 * through `ToString` here too, so the native converts a primitive and runs
+	 * no page code a second time. What this cannot keep is WebIDL's
+	 * lexicographic order: these members are read before the native reads the
+	 * rest.
+	 *
+	 * `referrer`, which nothing here needs to know ahead of the native, is not
+	 * one of them. With `site` given it is read and converted where the
+	 * native reads it, so it keeps its place in that order - but it is only
+	 * resolved once the whole dictionary has been read, as the constructor
+	 * steps do, since a later member's getter can still move `<base>`. That is
+	 * as the native reads its last member, and before it can take a body: one
+	 * that does not parse then is refused there, with the native's TypeError.
+	 * The native itself sees none, and {@link settleReferrer} hands it over
+	 * afterwards.
 	 */
 	const readInit = <T>(
 		init: T,
-		keys: readonly string[]
-	): { init: T; members: Record<string, unknown> } => {
+		keys: readonly string[],
+		site?: NativeErrorSite
+	): {
+		init: T;
+		members: Record<string, unknown>;
+		pending: PendingReferrer;
+	} => {
 		const members: Record<string, unknown> = Object_create(null);
+		const pending: PendingReferrer = Object_create(null);
 
 		// undefined and null are the empty dictionary and anything else that is
 		// not an object is the native's TypeError to raise, so neither has a
@@ -109,7 +190,7 @@ export default function (client: ScramjetClient, self: Self) {
 			init === null ||
 			(typeof init !== "object" && typeof init !== "function")
 		) {
-			return { init, members };
+			return { init, members, pending };
 		}
 
 		for (const key of drain(keys)) {
@@ -124,35 +205,121 @@ export default function (client: ScramjetClient, self: Self) {
 			members.headers = toNativeHeaders(members.headers as Headers);
 		}
 
-		const view = new Proxy(init as object, {
-			get: (target, key) =>
-				key in members
-					? members[key as string]
-					: Reflect_get(target, key, target),
+		const view = new Proxy(Object_create(null), {
+			get: (_, key) => {
+				if (key in members) return members[key as string];
+
+				const value = Reflect_get(init as object, key, init);
+				if (!site) return value;
+
+				let result = value;
+				if (key === "referrerPolicy" && value !== undefined) {
+					pending.policy = true;
+				}
+				if (key === "referrer" && value !== undefined) {
+					const string = idlUSVString(value);
+					// an empty one has nothing to resolve
+					if (string === "") {
+						result = string;
+					} else {
+						pending.referrer = string;
+						result = undefined;
+					}
+				}
+				if (key === lastRequestInitMember()) {
+					// converted here, an enum, so that no page code runs after
+					if (key === "targetAddressSpace" && value !== undefined) {
+						result = idlDOMString(value);
+					}
+					resolveReferrer(pending, site);
+				}
+
+				return result;
+			},
 		});
 
-		return { init: view as T, members };
+		return { init: view as T, members, pending };
+	};
+
+	const resolveReferrer = (pending: PendingReferrer, site: NativeErrorSite) => {
+		if (pending.referrer === undefined) return;
+
+		let parsed: URL;
+		try {
+			parsed = new _URL(pending.referrer, client.meta.base);
+		} catch {
+			throw client.errors.typeError({
+				...site,
+				detail: `Referrer '${pending.referrer}' is not a valid URL.`,
+			});
+		}
+		pending.resolved = referrerFor(parsed);
 	};
 
 	/**
-	 * A Request whose URL is the site's rather than the proxy's, rebuilt against
-	 * the proxy URL.
+	 * `request` with the referrer {@link readInit} held back from the native.
+	 *
+	 * Rebuilt from `request` with only `referrer` - and the `referrerPolicy`
+	 * that any non-empty init resets - which copies everything
+	 * else across, the body included. `request` is never handed to the page,
+	 * so its body being taken does not matter. Nor is what the native reset or
+	 * not in building it: an init of nothing but `referrer` read as empty
+	 * there, and this one is not.
+	 */
+	const settleReferrer = <R extends Request>(
+		request: R,
+		pending: PendingReferrer,
+		Ctor: new (input: RequestInfo, init?: RequestInit) => R
+	): R => {
+		if (pending.resolved === undefined) return request;
+
+		const init: RequestInit = Object_create(null);
+		init.referrer = pending.resolved;
+		if (pending.policy) {
+			init.referrerPolicy = new client.native.Request(request).referrerPolicy;
+		}
+
+		return new Ctor(request, init);
+	};
+
+	/**
+	 * The proxy URL a Request whose URL is the site's rather than the proxy's
+	 * has to be rebuilt at, or null for one that is fine as it is.
 	 *
 	 * Anything built through our own constructor is already rewritten, but not
 	 * every Request comes from there: a `cache.keys()` entry is keyed by the real
 	 * URL by design, and one handed over from another realm never passed through
 	 * us at all. Fetching either as-is goes straight at the origin and fails.
 	 */
-	const rewriteRequestObject = async (request: Request): Promise<Request> => {
-		const n = new client.native.Request(request);
+	const proxyUrlFor = (n: Request): string | null => {
 		const url: string = n.url;
 
-		if (String_startsWith(url, client.context.prefix.href)) return request;
+		if (String_startsWith(url, client.context.prefix.href)) return null;
 		if (!String_startsWith(url, "http:") && !String_startsWith(url, "https:")) {
-			return request;
+			return null;
 		}
 		// a disturbed body is the native's to refuse, with its own TypeError
-		if (n.bodyUsed) return request;
+		if (n.bodyUsed) return null;
+
+		return client.rewriteUrl(url, {
+			mode: n.mode === "navigate" ? "cors" : n.mode,
+			credentials: n.credentials === "include" ? "include" : undefined,
+		});
+	};
+
+	/**
+	 * `request` - read through the native, as `n` - at another URL.
+	 *
+	 * Or `request` itself when its signal has already been aborted, for the
+	 * native to reject with the reason before reading any of the body - which
+	 * an open stream would otherwise never finish giving up.
+	 */
+	const copyRequest = async (
+		request: Request,
+		n: Request,
+		url: string
+	): Promise<Request> => {
+		if (new client.native.AbortSignal(n.signal).aborted) return request;
 
 		const init: RequestInit = {
 			method: n.method,
@@ -174,13 +341,66 @@ export default function (client: ScramjetClient, self: Self) {
 		// Firefox does not support at all
 		if (n.body !== null) init.body = await n.blob();
 
-		return new nativeGlobal.Request(
-			client.rewriteUrl(url, {
-				mode: n.mode === "navigate" ? "cors" : n.mode,
-				credentials: n.credentials === "include" ? "include" : undefined,
-			}),
-			init
+		return new nativeGlobal.Request(url, init);
+	};
+
+	/**
+	 * `request`, or a copy, telling the service worker what its referrer is
+	 * where the browser would send that as nothing but an origin for the
+	 * length of the proxy's URL for it alone.
+	 *
+	 * The URL a request is made for is stamped with that, for the page it was
+	 * made in (see `referrerFallback`) - which is not the referrer when the
+	 * request has one of its own, nor when it is sent from a page that has
+	 * changed its URL since. So it is worked out again here, as the request is
+	 * sent, and given to the service worker in a header that takes the stamp's
+	 * place. `owned` is a request the page never sees, which can be given the
+	 * header itself; a page's is copied first, which takes its body the way
+	 * sending it does. A `no-cors` request cannot carry the header, and has its
+	 * URL restamped instead, and this is that URL for the caller to copy it to.
+	 */
+	const withReferrerFallback = (
+		request: Request,
+		owned: boolean
+	): Request | string => {
+		const n = new client.native.Request(request);
+		const referrer: string = n.referrer;
+
+		let fallback: string | undefined;
+		if (referrer === "about:client") {
+			fallback = client.meta.referrerFallback;
+		} else if (
+			referrer.length > MAX_REFERRER_LENGTH &&
+			String_startsWith(referrer, client.context.prefix.href)
+		) {
+			fallback = referrerFallback(
+				referrer,
+				new _URL(client.unrewriteUrl(referrer))
+			);
+		} else {
+			// none, or one short enough to reach the service worker whole
+			return request;
+		}
+
+		const url = new _URL(n.url);
+		if ((fallback ?? null) === url.searchParams.get(QP.referrerFallback)) {
+			return request;
+		}
+
+		if (n.mode === "no-cors") {
+			if (fallback) url.searchParams.set(QP.referrerFallback, fallback);
+			else url.searchParams.delete(QP.referrerFallback);
+
+			return url.href;
+		}
+
+		const sent = owned ? request : new nativeGlobal.Request(request);
+		new client.native.Headers(new client.native.Request(sent).headers).set(
+			REFERRER_FALLBACK_HEADER,
+			fallback ?? ""
 		);
+
+		return sent;
 	};
 
 	client.Intercept(class extends GlobalScope {
@@ -189,18 +409,67 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments("(Request or USVString)", "optional RequestInit")
 		@Returns("Promise<Response>")
 		static async fetch(input: RequestInfo, requestInit?: RequestInit) {
-			const { init, members } = readInit(
+			const { init, members, pending } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
+				{ execute: "fetch", on: iswindow ? "Window" : "WorkerGlobalScope" }
 			);
-			input =
-				typeof input === "string"
-					? client.rewriteUrl(input, rewriteUrlOptionsForFetch(members))
-					: await rewriteRequestObject(input);
-
 			// through `this` rather than a saved global, so the native's own
 			// receiver check still sees what the page called it on
-			const response = await new client.native.window(this).fetch(input, init);
+			const nativeThis = new client.native.window(this);
+
+			// nothing of the page's, nor of its URL and policy, can change
+			// before the native has the request: it takes the referrer and policy
+			// it will send as it is called. so there is nothing asynchronous on
+			// the way, save the copy of a body only the rarest requests need
+			let request: Request;
+			let owned = true;
+			if (typeof input === "string") {
+				const url = client.rewriteUrl(
+					input,
+					rewriteUrlOptionsForFetch(members)
+				);
+				// nothing to settle nor to correct, and sent exactly as it was
+				if (init === undefined || init === null) {
+					const response = await nativeThis.fetch(url, init);
+					client.box.taggedResponses.add(response);
+
+					return response;
+				}
+				request = new nativeGlobal.Request(url, init);
+			} else {
+				const n = new client.native.Request(input);
+				const url = proxyUrlFor(n);
+				if (url === null) {
+					request = input;
+					owned = false;
+				} else {
+					request = await copyRequest(input, n, url);
+					// an aborted one is not copied, and still the page's
+					owned = request !== input;
+				}
+				if (init !== undefined && init !== null) {
+					request = new nativeGlobal.Request(request, init);
+					owned = true;
+				}
+			}
+			// the referrer is only settled once the init has been read, so a
+			// fetch with one is a Request first, as `fetch()` itself does it
+			// https://fetch.spec.whatwg.org/#dom-global-fetch
+			request = settleReferrer(request, pending, nativeGlobal.Request);
+
+			const corrected = withReferrerFallback(request, owned);
+			if (typeof corrected === "string") {
+				request = await copyRequest(
+					request,
+					new client.native.Request(request),
+					corrected
+				);
+			} else {
+				request = corrected;
+			}
+
+			const response: Response = await nativeThis.fetch(request);
 			client.box.taggedResponses.add(response);
 
 			return response;
@@ -210,15 +479,25 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Intercept(class extends Request {
 		@Constructor("(Request or USVString)", "optional RequestInit")
 		static konstructor(input: RequestInfo, requestInit?: RequestInit) {
-			const { init, members } = readInit(
+			const { init, members, pending } = readInit(
 				requestInit,
-				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER
+				typeof input === "string" ? URL_INIT_MEMBERS : HEADERS_INIT_MEMBER,
+				{ construct: "Request" }
 			);
 			if (typeof input === "string") {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(members));
 			}
 
-			return new this(input, init);
+			// built by the native first, so that what only the page's own
+			// constructor adds - reading `newTarget.prototype` for one - happens
+			// once, in whichever construction is the last
+			const request = new nativeGlobal.Request(input, init);
+			if (pending.resolved !== undefined) {
+				return settleReferrer(request, pending, this);
+			}
+			if (this === nativeGlobal.Request) return request;
+
+			return new this(request);
 		}
 
 		@Type("USVString")
@@ -231,6 +510,17 @@ export default function (client: ScramjetClient, self: Self) {
 			return String_startsWith(url, client.context.prefix.href)
 				? client.unrewriteUrl(url)
 				: url;
+		}
+
+		// the referrer init was handed to the native as a proxy URL, and one
+		// that is not (`about:client`, or none) is the same for the site
+		@Type("USVString")
+		get referrer() {
+			const referrer = super.referrer;
+
+			return String_startsWith(referrer, client.context.prefix.href)
+				? client.unrewriteUrl(referrer)
+				: referrer;
 		}
 	});
 	client.Intercept(class extends Response {
