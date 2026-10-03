@@ -292,7 +292,14 @@ impl<'a> Ctx<'_, 'a> {
 			offset = 1;
 		}
 		match c {
-			Expression::FunctionExpression(f) => Some((extend(&f.params), offset, true)),
+			// only while nothing names it: a named function expression can call itself, with
+			// arguments of its own - `(function f(w, n) { ... f(other, 0) })(document, 1)`
+			Expression::FunctionExpression(f) => {
+				let only = f.id.as_ref().and_then(|id| id.symbol_id.get()).is_none_or(|sym| {
+					self.scoping.get_resolved_reference_ids(sym).is_empty()
+				});
+				Some((extend(&f.params), offset, only))
+			}
 			Expression::ArrowFunctionExpression(f) => Some((extend(&f.params), offset, true)),
 			Expression::Identifier(id) => {
 				let sym = self.scoping.get_reference(id.reference_id.get()?).symbol_id()?;
@@ -887,10 +894,14 @@ impl Graph {
 		let mut twinned: HashSet<SymbolId> = HashSet::new();
 		for d in self.decisions.iter().filter(|d| d.origin == Origin::Alias && d.safe && d.member_object) {
 			let Some(sym) = symbol_of(nodes, scoping, d.node) else { continue };
+			// inside `with`, the name read can be the object's own property: either substitute
+			// would choose a binding the lookup might not
+			if ctx.in_with(d.span) {
+				continue;
+			}
 			let use_scope = nodes.get_node(d.node).scope_id();
 			let edit = if let Some(Some(name)) = definite.get(&sym)
 				&& scoping.find_binding(use_scope, name).is_none()
-				&& !ctx.in_with(d.span)
 				&& initialized_at(sym, d, ctx)
 			{
 				IdentEdit::Global(name)

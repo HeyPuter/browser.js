@@ -109,3 +109,9 @@ T("wm location escape", function(){ var w = window; var l = w.location; return l
 T("wm in chain", function(){ var w = window; return w.document.location.href + w.document.defaultView.location.href });
 T("twin arrow body returns the proxy", function(){ var e = document, O = { title: "o" }; if (Math.random() > 2) e = O; var g = () => e = document; var r = g(); e.title; return r.location.href });
 T("twin arrow body in a sequence", function(){ var e = document; if (Math.random() > 2) e = 1; var g = () => (e = document, e); e.title; return g().location.href });
+T("recursive named iife", function () { return (function f(w, n) { return n ? f({ title: "other" }, 0) : w.title })(document, 1) });
+T("recursive named iife via call", function () { return (function f(w, n) { return n ? f.call(null, { title: "other" }, 0) : w.title }).call(null, document, 1) });
+T("named iife escaping", function () { var g; (function f(w) { g = f; return w.title })(document); return g({ title: "other" }) });
+T("with shadows a definite local", function () { var w = window; String(w); with ({ w: { innerWidth: 99 } }) { return w.innerWidth } });
+T("with shadows a twin", function () { var w = window; if (Math.random() < 2) w = document; String(w); with ({ w: { title: "x" } }) { return w.title } });
+T("with leaves an unshadowed local", function () { var w = window; String(w); with ({ other: 1 }) { return w.innerWidth + w.location.href } });
