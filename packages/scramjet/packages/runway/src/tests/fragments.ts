@@ -163,6 +163,7 @@ export default [
 		js: `
 			if (!noReload()) return;
 			const read = () => [location.hash, location.href.slice(location.origin.length), document.URL.slice(location.origin.length)];
+			const length = history.length;
 			for (const value of ["a%2Fb", "a/b?c", "%", "café x", "#twice", "a#b", ":~:text=x", ""]) {
 				const before = events.length;
 				location.hash = value;
@@ -171,7 +172,7 @@ export default [
 				assertConsistent("set " + JSON.stringify(value), read());
 			}
 			await sleep(100);
-			assertConsistent("length", history.length);
+			assertConsistent("length delta", history.length - length);
 			assertConsistent("events", events);
 		`,
 	}),
@@ -456,6 +457,16 @@ export default [
 			["template", `<template><base href="/wrong/"></template>`],
 			["svg", `<svg><base href="/wrong/"></base></svg>`],
 			["math", `<math><base href="/wrong/"></base></math>`],
+			// an HTML integration point only with an HTML encoding
+			[
+				"annotation-xml",
+				`<math><annotation-xml><base href="/wrong/"></base></annotation-xml></math>`,
+			],
+			// a title is an integration point in SVG, not in MathML
+			[
+				"math-title",
+				`<math><title><base href="/wrong/"></base></title></math>`,
+			],
 		] as [string, string][]
 	).map(([name, ignored]) =>
 		fragmentTest({
@@ -476,19 +487,44 @@ export default [
 		})
 	),
 
-	fragmentTest({
-		name: "fragment-base-html-inside-svg-integration-point",
-		// back in HTML inside foreignObject, so this one counts
-		head: `<svg><foreignObject><base href="/right/"></foreignObject></svg>`,
-		routes: {
-			"/right/s.js": js(`window.loadedFrom = "right";`),
-		},
-		body: `<script src="s.js"></script>`,
-		js: `
-			assertConsistent("script", window.loadedFrom ?? null);
-			assertConsistent("baseURI", document.baseURI.slice(location.origin.length));
-		`,
-	}),
+	// and these are HTML base elements, which do count
+	...(
+		[
+			[
+				"svg-integration-point",
+				`<svg><foreignObject><base href="/right/"></foreignObject></svg>`,
+			],
+			[
+				"annotation-xml-html",
+				`<math><annotation-xml encoding="text/html"><base href="/right/"></annotation-xml></math>`,
+			],
+			[
+				"mathml-text-integration-point",
+				`<math><mi><base href="/right/"></mi></math>`,
+			],
+			// an SVG element called template is not an inert HTML one
+			[
+				"svg-template",
+				`<svg><template><foreignObject><base href="/right/"></foreignObject></template></svg>`,
+			],
+			// a breakout tag ends the SVG, so the base after it is in HTML
+			["after-breakout", `<svg><p></p><base href="/right/"></svg>`],
+		] as [string, string][]
+	).map(([name, counted]) =>
+		fragmentTest({
+			name: `fragment-base-counts-${name}`,
+			head: counted,
+			routes: {
+				"/right/s.js": js(`window.loadedFrom = "right";`),
+				"/s.js": js(`window.loadedFrom = "document";`),
+			},
+			body: `<base href="/wrong/"><script src="s.js"></script>`,
+			js: `
+				assertConsistent("script", window.loadedFrom ?? null);
+				assertConsistent("baseURI", document.baseURI.slice(location.origin.length));
+			`,
+		})
+	),
 
 	fragmentTest({
 		name: "fragment-base-in-innerhtml",

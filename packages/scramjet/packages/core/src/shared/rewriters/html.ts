@@ -421,47 +421,32 @@ export function unrewriteHtml(
 	return render(root);
 }
 
-/** Where foreign content goes back to HTML - the serializer's list. */
-const htmlIntegrationPoints = [
-	"mi",
-	"mo",
-	"mn",
-	"ms",
-	"mtext",
-	"annotation-xml",
-	"foreignobject",
-	"desc",
-	"title",
-];
-
 /**
  * Whether `node` is an HTML element in the document's own tree - which a base
  * element has to be to set the document's base URL.
  *
- * The parser records neither: an element inside `<svg>` or `<math>` is in
- * that namespace until an integration point takes it back to HTML, and a
- * `<template>`'s contents are its children here where the browser puts them
- * in an inert fragment of their own. So both are read off the ancestors. The
- * names are compared lowercased, since the serializer fixes up mixed-case
- * foreign names in place.
+ * The parser records each element's namespace by the tree construction rules
+ * (integration points, `annotation-xml`'s `encoding`, foreign content broken
+ * out of). What it does not model is a `<template>`'s contents, which the
+ * browser puts in an inert fragment of their own and are its children here.
+ * Only an HTML template has them: an SVG element called `template` is an
+ * ordinary one.
  */
 function isDocumentHtmlElement(node: Element): boolean {
-	let foreign: boolean | null = null;
+	if (node.namespace !== "html") return false;
+
 	for (
 		let at = node.parent;
 		at && at.type === ElementType.Tag;
 		at = at.parent
 	) {
-		const name = String_toLowerCase((at as Element).name);
-		if (name === "template") return false;
-		if (foreign !== null) continue;
-
-		// the nearest of these decides the namespace
-		if (name === "svg" || name === "math") foreign = true;
-		else if (Array_indexOf(htmlIntegrationPoints, name) !== -1) foreign = false;
+		const element = at as Element;
+		if (element.name === "template" && element.namespace === "html") {
+			return false;
+		}
 	}
 
-	return foreign !== true;
+	return true;
 }
 
 /**
