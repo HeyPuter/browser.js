@@ -1,0 +1,72 @@
+# Syncs packages/scramjet/ in this monorepo (source of truth) to the
+# standalone public repo MercuryWorkshop/scramjet, on pushes to main.
+#
+# How it works:
+#   - Pushes to main migrate the subdir state to main in
+#     MercuryWorkshop/scramjet via the `browserjs_to_scramjet` workflow in
+#     copy.bara.sky. Pushes that don't touch packages/scramjet/ are cheap no-ops.
+#   - Loop prevention: commits that already carry a `Scramjet-RevId:` trailer
+#     arrived via the reverse sync (public -> monorepo) and are skipped.
+#
+# Required setup (once, in BOTH HeyPuter/browser.js and
+# MercuryWorkshop/scramjet): create a fine-grained PAT (or classic PAT with
+# `repo` + `workflow` scopes) owned by an account with push access to both
+# repos, and store it as the Actions secret COPYBARA_SYNC_TOKEN.
+
+name: Sync to public scramjet
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: copybara-forward
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.COPYBARA_SYNC_TOKEN }}
+
+      - name: Sync main to MercuryWorkshop/scramjet
+        env:
+          SYNC_TOKEN: ${{ secrets.COPYBARA_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$SYNC_TOKEN"
+
+          # Loop guard: skip commits that came from the reverse sync.
+          MSG="$(git log -1 --format=%B origin/main)"
+          if grep -q 'Scramjet-RevId:' <<<"$MSG"; then
+            echo "Skipping: tip already carries Scramjet-RevId (reverse-synced)."
+            exit 0
+          fi
+          if grep -q '\[skip copybara\]' <<<"$MSG"; then
+            echo "Skipping: tip carries [skip copybara]."
+            exit 0
+          fi
+
+          set +e
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            gcr.io/copybara/copybara:latest \
+            migrate copy.bara.sky browserjs_to_scramjet \
+            --git-origin-url "https://x-access-token:${SYNC_TOKEN}@github.com/HeyPuter/browser.js.git" \
+            --git-destination-url "https://x-access-token:${SYNC_TOKEN}@github.com/MercuryWorkshop/scramjet.git"
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 4 ]; then
+            echo "Already in sync."
+            exit 0
+          fi
+          exit "$CODE"
