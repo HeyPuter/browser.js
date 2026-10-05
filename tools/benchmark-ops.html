@@ -1,0 +1,327 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>ops</title>
+	</head>
+	<body>
+		<div id="host"></div>
+		<div id="x" class="q"></div>
+		<script>
+			// The cost of one operation, in ns, for the shapes real code is made of. Each case is
+			// calibrated to run for at least 20ms and reported as the best of five, so the numbers
+			// stay comparable however fast or slow a build makes it.
+			//
+			// Plain ES5 on purpose: the page is rewritten like any other, and a case is only
+			// meaningful if it is written the way the pattern appears in the wild.
+			var RESULTS = [];
+			var host = document.getElementById("host");
+
+			function bench(group, name, setup, body) {
+				var ctx = setup ? setup() : null;
+				var n = 1;
+				for (;;) {
+					var t0 = performance.now();
+					body(ctx, n);
+					if (performance.now() - t0 >= 20 || n >= 1 << 26) break;
+					n *= 2;
+				}
+				var best = Infinity;
+				for (var r = 0; r < 5; r++) {
+					t0 = performance.now();
+					body(ctx, n);
+					var dt = performance.now() - t0;
+					if (dt < best) best = dt;
+				}
+				RESULTS.push({
+					group: group,
+					name: name,
+					ns: (best * 1e6) / n,
+					iters: n,
+				});
+			}
+
+			var G = "control";
+			bench(G, "arithmetic loop", null, function (_, n) {
+				var s = 0;
+				for (var i = 0; i < n; i++) s += (i * 3) % 7;
+				return s;
+			});
+			bench(
+				G,
+				"el.setAttribute",
+				function () {
+					return document.createElement("div");
+				},
+				function (el, n) {
+					for (var i = 0; i < n; i++) el.setAttribute("data-i", "1");
+				}
+			);
+			bench(
+				G,
+				"el.className =",
+				function () {
+					return document.createElement("div");
+				},
+				function (el, n) {
+					for (var i = 0; i < n; i++) el.className = "a";
+				}
+			);
+
+			G = "document";
+			bench(G, "document.body", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.body;
+				return v;
+			});
+			bench(G, "document.title", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.title;
+				return v;
+			});
+			bench(G, "document.getElementById", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.getElementById("x");
+				return v;
+			});
+			bench(G, "document.querySelector", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.querySelector("#x");
+				return v;
+			});
+			bench(G, "document.createElement", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.createElement("div");
+				return v;
+			});
+			bench(G, "document.createTextNode", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = document.createTextNode("t");
+				return v;
+			});
+			bench(G, 'document["bo" + "dy"]', null, function (_, n) {
+				var v,
+					k = "bo" + "dy";
+				for (var i = 0; i < n; i++) v = document[k];
+				return v;
+			});
+			bench(
+				G,
+				"el.ownerDocument.body",
+				function () {
+					return document.createElement("div");
+				},
+				function (el, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = el.ownerDocument.body;
+					return v;
+				}
+			);
+
+			G = "window";
+			window.__own = 7;
+			bench(G, "window.<own data property>", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = window.__own;
+				return v;
+			});
+			bench(G, "window.innerWidth", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = window.innerWidth;
+				return v;
+			});
+			bench(G, "window.parseInt", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = window.parseInt("42");
+				return v;
+			});
+			bench(G, "window add/removeEventListener", null, function (_, n) {
+				var f = function () {};
+				for (var i = 0; i < n; i++) {
+					window.addEventListener("zz", f);
+					window.removeEventListener("zz", f);
+				}
+			});
+			bench(G, "location.href", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = location.href;
+				return v;
+			});
+			bench(G, "window.top", null, function (_, n) {
+				var v;
+				for (var i = 0; i < n; i++) v = window.top;
+				return v;
+			});
+
+			// how minified code holds the globals: a module wrapper's parameter, a local that is
+			// only sometimes the document, an alias kept on an object
+			G = "aliases";
+			(function (d, w) {
+				bench(G, "IIFE param d.createElement", null, function (_, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = d.createElement("div");
+					return v;
+				});
+				bench(G, "IIFE param d.body", null, function (_, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = d.body;
+					return v;
+				});
+				bench(G, "IIFE param w.innerWidth", null, function (_, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = w.innerWidth;
+					return v;
+				});
+			})(document, window);
+			(function () {
+				var d = document;
+				if (Math.random() > 2) d = host;
+				bench(G, "reassigned local d.getElementById", null, function (_, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = d.getElementById("x");
+					return v;
+				});
+			})();
+			bench(
+				G,
+				"alias on an object o.doc.body",
+				function () {
+					return { doc: document };
+				},
+				function (o, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = o.doc.body;
+					return v;
+				}
+			);
+			(function (doc) {
+				bench(
+					G,
+					"el === doc || el.ownerDocument === doc",
+					function () {
+						return document.createElement("div");
+					},
+					function (el, n) {
+						var c = 0;
+						for (var i = 0; i < n; i++)
+							if (el === doc || el.ownerDocument === doc) c++;
+						return c;
+					}
+				);
+			})(document);
+
+			G = "this";
+			function Fluent() {
+				this.x = 0;
+			}
+			Fluent.prototype.inc = function () {
+				this.x++;
+				return this;
+			};
+			bench(
+				G,
+				"method returning this",
+				function () {
+					return new Fluent();
+				},
+				function (f, n) {
+					for (var i = 0; i < n; i++) f.inc().inc();
+					return f.x;
+				}
+			);
+			function Selfy() {
+				var self = this;
+				this.x = 0;
+				this.inc = function () {
+					self.x++;
+				};
+			}
+			bench(
+				G,
+				"var self = this closure",
+				function () {
+					return new Selfy();
+				},
+				function (f, n) {
+					for (var i = 0; i < n; i++) f.inc();
+					return f.x;
+				}
+			);
+			bench(G, "constructor setting this[k]", null, function (_, n) {
+				function K(k) {
+					this[k] = 1;
+				}
+				var v;
+				for (var i = 0; i < n; i++) v = new K("a");
+				return v;
+			});
+			bench(
+				G,
+				"fn.apply(this, arguments)",
+				function () {
+					var o = {
+						x: 0,
+						inner: function () {
+							this.x++;
+						},
+						outer: function () {
+							return this.inner.apply(this, arguments);
+						},
+					};
+					return o;
+				},
+				function (o, n) {
+					for (var i = 0; i < n; i++) o.outer(1, 2);
+					return o.x;
+				}
+			);
+
+			G = "events";
+			bench(
+				G,
+				"event.target",
+				function () {
+					var e = new Event("zz");
+					host.dispatchEvent(e);
+					return e;
+				},
+				function (e, n) {
+					var v;
+					for (var i = 0; i < n; i++) v = e.target;
+					return v;
+				}
+			);
+			bench(
+				G,
+				"dispatch to a listener reading target",
+				function () {
+					var seen = 0;
+					host.addEventListener("yy", function (e) {
+						if (e.target === host) seen++;
+					});
+					return new Event("yy");
+				},
+				function (e, n) {
+					for (var i = 0; i < n; i++) host.dispatchEvent(e);
+				}
+			);
+
+			G = "dom";
+			bench(G, "build a 200 node tree", null, function (_, n) {
+				for (var i = 0; i < n; i++) {
+					var f = document.createDocumentFragment();
+					for (var j = 0; j < 200; j++) {
+						var d = document.createElement("div");
+						d.className = "row";
+						d.appendChild(document.createTextNode("x" + j));
+						f.appendChild(d);
+					}
+					host.innerHTML = "";
+					host.appendChild(f);
+				}
+			});
+
+			window.__OPS = RESULTS;
+		</script>
+	</body>
+</html>

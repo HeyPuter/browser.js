@@ -99,7 +99,11 @@ export class EventHandlerSlot {
 		// only reachable through [LegacyTreatNonObjectAsNull]
 		if (typeof callback !== "function") return;
 
-		const returnValue = Reflect_apply(callback, thisArg, [event]);
+		const returnValue = Reflect_apply(
+			callback,
+			this.client.pageValue(thisArg),
+			[event]
+		);
 
 		// "If return value is false, then set event's canceled flag." Through
 		// the native, on the real event: the stand-in fails its brand check,

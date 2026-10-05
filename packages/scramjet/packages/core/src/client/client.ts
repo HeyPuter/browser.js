@@ -8,6 +8,7 @@ import { IFACE_NAME } from "@client/iface";
 import { getOwnPropertyDescriptorHandler } from "@client/helpers";
 import { createLocationProxy } from "@client/location";
 import { createWrapFn } from "@client/shared/wrap";
+import { createDocumentProxy, createGlobalProxy } from "@client/global";
 import { LifecycleHooks } from "@client/events";
 import {
 	frozenBaseUrl,
@@ -18,6 +19,7 @@ import {
 } from "@rewriters/url";
 import {
 	flagEnabled,
+	flagValue,
 	BooleanFlag,
 	HtmlRewriterHooks,
 	ScramjetContext,
@@ -275,6 +277,13 @@ type Slot = {
 	callable?: any;
 	getter?: any;
 	setter?: any;
+	/**
+	 * Patched with no layers on it at all, so that a call still reaches
+	 * {@link ScramjetClient.fixReceiver}. Without this a slot with nothing
+	 * layered on it is left as the native, and a call made on a proxy never
+	 * reaches the dispatch that would put its receiver right.
+	 */
+	forced?: boolean;
 	/** `Intercept` declared a half the native attribute does not have */
 	addsGet?: boolean;
 	addsSet?: boolean;
@@ -375,6 +384,10 @@ function isAboutBlankOrSrcdoc(url: _URL): boolean {
 }
 
 export class ScramjetClient {
+	/** `ppsc` only: what every reference to the global object is rewritten into */
+	globalProxy: typeof globalThis | null = null;
+	/** `ppsc` only, and only in a window: the same for the document */
+	documentProxy: Document | null = null;
 	locationProxy: any;
 	indirectEval: any;
 	private readonly creatorOrigin: string | null;
@@ -398,6 +411,19 @@ export class ScramjetClient {
 	meta: URLMeta;
 
 	box: SingletonBox;
+
+	/**
+	 * `ppsc` only: the receiver a call should have been made with, for one made
+	 * on the global or document proxy.
+	 *
+	 * A native checks its receiver's internal slots, which a `Proxy` has none
+	 * of, so every member reached through one of those proxies would be an
+	 * "Illegal invocation". More than half of what the IDL names needs nothing
+	 * else done to it, and giving each of those a layer of its own cost a `ctx`
+	 * and three closures per call for one identity test. It happens here
+	 * instead, once, ahead of whatever layers the member does have.
+	 */
+	fixReceiver: ((that: any) => any) | null = null;
 
 	/** The attribute layer: every attribute read and write goes through it. */
 	attributes: AttributeLayer;
@@ -578,6 +604,15 @@ export class ScramjetClient {
 		}
 
 		this.indirectEval = createIndirectEval(this);
+		if (flagValue("jsRewriter", this.context) !== "dpsc") {
+			this.globalProxy = createGlobalProxy(this, global as never);
+			this.box.proxied.set(this.globalProxy, global);
+			if (iswindow) {
+				this.documentProxy = createDocumentProxy(this, global);
+				this.box.proxied.set(this.documentProxy, (global as Self).document);
+			}
+			this.box.proxyClients++;
+		}
 		this.wrapfn = createWrapFn(this, global);
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const client = this;
@@ -1234,7 +1269,12 @@ return { apply, construct };
 			if (slot.traps[i].set) trapsSet = true;
 		}
 
-		if (slot.calls.length > 0 || base?.value || base?.construct) {
+		if (
+			slot.calls.length > 0 ||
+			slot.forced ||
+			base?.value ||
+			base?.construct
+		) {
 			this.callableFor(slot);
 		}
 
@@ -1341,6 +1381,7 @@ return { apply, construct };
 	}
 
 	private dispatchApply(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.value;
 		const run = (that: any, a: any[]) =>
 			this.applyLayer(slot, slot.calls.length - 1, that, a);
@@ -1466,6 +1507,7 @@ return { apply, construct };
 	}
 
 	private dispatchGet(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.get;
 		const run = (that: any) => this.getLayer(slot, slot.traps.length - 1, that);
 
@@ -1497,6 +1539,7 @@ return { apply, construct };
 	}
 
 	private dispatchSet(slot: Slot, thisArg: any, args: any[]): any {
+		if (this.fixReceiver) thisArg = this.fixReceiver(thisArg);
 		const base = slot.base?.set;
 		const run = (that: any, a: any[]) =>
 			this.setLayer(slot, slot.traps.length - 1, that, a[0]);
@@ -1533,6 +1576,69 @@ return { apply, construct };
 	}
 
 	/**
+	 * Patch the method `prop` reached from `target` without layering anything
+	 * on it.
+	 *
+	 * For a member that needs nothing but {@link fixReceiver}, which the slot
+	 * runs on its own: the member still has to be patched for a call on it to
+	 * reach the slot at all, but it needs no handler.
+	 */
+	Patch(target: any, prop: string, debugname?: string) {
+		if (!target) return;
+		if (!prop) return;
+
+		const slot = this.slotFor(target, prop, debugname ?? prop);
+		if (!slot) return;
+		if (typeof slot.native.value !== "function") return;
+
+		slot.forced = true;
+		this.render(slot);
+	}
+
+	/**
+	 * Put a patched constructor's slot on its prototype's `constructor` too.
+	 *
+	 * https://webidl.spec.whatwg.org/#interface-prototype-object
+	 * "The interface prototype object must also have a property
+	 * named `constructor` [...] whose value is a reference to the
+	 * interface object."
+	 *
+	 * The page-visible interface object is now the slot's object, so
+	 * leaving the native one on the prototype makes
+	 * `X.prototype.constructor === X` false - an identity that holds
+	 * for every interface in every engine, and so a one-expression
+	 * enumeration of exactly which interfaces we construct through.
+	 * Reaching it is enough: it holds the same native function, so
+	 * `slotFor` puts it in the same slot, with the native's own
+	 * attributes (writable, not enumerable, configurable).
+	 *
+	 * Only when the prototype's `constructor` is the very function
+	 * being replaced. A legacy factory - `Audio`, `Image`, `Option` -
+	 * is not an interface object and does not own its `.prototype`:
+	 * `Audio.prototype` *is* `HTMLAudioElement.prototype`, whose
+	 * `constructor` correctly names `HTMLAudioElement`. Rewriting
+	 * that one would break the identity for the interface it really
+	 * belongs to, which is the same bug one interface over.
+	 */
+	private aliasConstructor(slot: Slot, globalname: string) {
+		const nativeCtor = slot.native.value;
+		const prototype = nativeCtor?.prototype;
+		const constructorDescriptor =
+			prototype && Object_getOwnPropertyDescriptor(prototype, "constructor");
+		if (
+			constructorDescriptor &&
+			(constructorDescriptor.value === nativeCtor ||
+				constructorDescriptor.value === slot.callable)
+		) {
+			this.slotFor(
+				prototype,
+				"constructor",
+				`${globalname}.prototype.constructor`
+			);
+		}
+	}
+
+	/**
 	 * Wrap the method or constructor `prop` reached from `target`.
 	 *
 	 * `target` only says where the lookup starts: the member is patched on
@@ -1556,6 +1662,9 @@ return { apply, construct };
 
 		slot.calls[slot.calls.length] = handler;
 		this.render(slot);
+		// a constructor is also reached as `X.prototype.constructor` - by
+		// `new event.constructor(...)` - which has to be the same patched object
+		if (handler.construct) this.aliasConstructor(slot, prop);
 	}
 
 	/** Wrap an attribute, named from this client's global. See `RawTrap`. */
@@ -1891,47 +2000,28 @@ return { apply, construct };
 				};
 				this.render(slot);
 
-				// https://webidl.spec.whatwg.org/#interface-prototype-object
-				// "The interface prototype object must also have a property
-				// named `constructor` [...] whose value is a reference to the
-				// interface object."
-				//
-				// The page-visible interface object is now the slot's object, so
-				// leaving the native one on the prototype makes
-				// `X.prototype.constructor === X` false - an identity that holds
-				// for every interface in every engine, and so a one-expression
-				// enumeration of exactly which interfaces we construct through.
-				// Reaching it is enough: it holds the same native function, so
-				// `slotFor` puts it in the same slot, with the native's own
-				// attributes (writable, not enumerable, configurable).
-				//
-				// Only when the prototype's `constructor` is the very function
-				// being replaced. A legacy factory - `Audio`, `Image`, `Option` -
-				// is not an interface object and does not own its `.prototype`:
-				// `Audio.prototype` *is* `HTMLAudioElement.prototype`, whose
-				// `constructor` correctly names `HTMLAudioElement`. Rewriting
-				// that one would break the identity for the interface it really
-				// belongs to, which is the same bug one interface over.
-				const prototype = nativeCtor.prototype;
-				const constructorDescriptor =
-					prototype &&
-					Object_getOwnPropertyDescriptor(prototype, "constructor");
-				if (
-					constructorDescriptor &&
-					(constructorDescriptor.value === nativeCtor ||
-						constructorDescriptor.value === slot.callable)
-				) {
-					this.slotFor(
-						prototype,
-						"constructor",
-						`${globalname}.prototype.constructor`
-					);
-				}
+				this.aliasConstructor(slot, globalname);
 			} else {
 				// normal static method
 				writePrototypeField(prop, baseclass, handlerDesc, isglobal);
 			}
 		}
+	}
+
+	/**
+	 * `ppsc`: what the page holds in place of `v` - the proxy of a window or a
+	 * document, this realm's or another frame's - or `v` itself. For a value a
+	 * native hands to page code without a member of its own to trap, such as
+	 * the receiver of an event listener.
+	 */
+	pageValue(v: any): any {
+		if (!this.globalProxy || typeof v !== "object" || v === null) return v;
+
+		return (
+			this.box.globals.get(v)?.globalProxy ??
+			this.box.documents.get(v)?.documentProxy ??
+			v
+		);
 	}
 
 	rewriteUrl(url: string | URL, options?: RewriteUrlOptions): string {

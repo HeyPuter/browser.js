@@ -23,6 +23,9 @@ const outputDir =
 const timeoutMs = Number(process.env.SPEEDOMETER_TIMEOUT_MS ?? 900000);
 const suites = process.env.SPEEDOMETER_SUITES;
 const cpuProfilePath = process.env.SPEEDOMETER_CPU_PROFILE;
+// flags for the scramjet frame, e.g. '{"jsRewriter":"dpsc"}'; see benchmark-lib.mjs for the modes
+const flags = process.env.SCRAMJET_FLAGS;
+const label = process.env.SPEEDOMETER_LABEL ?? variant;
 
 const benchmark = express();
 benchmark.use(express.static(speedometerRoot));
@@ -96,9 +99,10 @@ try {
 		frame = page.mainFrame();
 	} else {
 		const harness =
-			variant === "pre-idl"
+			(variant === "pre-idl"
 				? "http://localhost:4510/"
-				: "http://localhost:4500/";
+				: "http://localhost:4500/") +
+			(flags ? `?flags=${encodeURIComponent(flags)}` : "");
 		await page.goto(harness);
 		await page.waitForFunction(
 			() => typeof window.__runwayNavigate === "function",
@@ -168,6 +172,8 @@ try {
 	}));
 	const record = {
 		variant,
+		label,
+		flags: flags ? JSON.parse(flags) : null,
 		iterations,
 		suites: suites ?? "all",
 		seconds: (Date.now() - started) / 1000,
@@ -177,12 +183,12 @@ try {
 	mkdirSync(outputDir, { recursive: true });
 	const output = path.join(
 		outputDir,
-		`${variant}-${iterations}${suites ? "-filtered" : ""}.json`
+		`${label}-${iterations}${suites ? "-filtered" : ""}.json`
 	);
 	writeFileSync(output, JSON.stringify(record, null, 2));
 	console.log(
 		"RESULT",
-		variant,
+		label,
 		JSON.stringify({
 			score: result.score,
 			confidence: result.confidence,

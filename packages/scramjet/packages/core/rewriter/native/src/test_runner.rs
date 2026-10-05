@@ -8,7 +8,7 @@ mod test {
 		object::ObjectInitializer,
 		property::{Attribute, PropertyDescriptorBuilder},
 	};
-	use js::cfg::IncumbencyMode;
+	use js::cfg::{IncumbencyMode, JsRewriter};
 
 	fn create_context() -> Context {
 		let mut context = Context::default();
@@ -121,6 +121,11 @@ function check(val) {
 			tempreceiverid: String::from("$tempreceiver"),
 			tempcalleeid: String::from("$tempcallee"),
 			tempunusedid: String::from("$tempunused"),
+			unwrapfn: String::from("$unwrap"),
+			realsuffix: String::from("$r"),
+			tempthisid: String::from("$t"),
+			rawwindowid: String::from("$rw"),
+			rawdocumentid: String::from("$rd"),
 
 			base: String::from("https://google.com/glorngle/si.js"),
 			sourcetag: String::from("glongle1"),
@@ -132,6 +137,9 @@ function check(val) {
 			disable_computed_wrap: false,
 			destructure_rewrites: true,
 			incumbency: IncumbencyMode::None,
+			// the realm below is `dpsc`'s: `$wrap` hands back a stand-in rather than a proxy
+			js_rewriter: JsRewriter::Dpsc,
+			ppsc_wrap_this: false,
 		};
 
 		let mut rewriter = NativeRewriter::new(&opts);

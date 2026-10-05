@@ -38,6 +38,25 @@ export interface ScramjetVersionInfo {
  */
 export type IncumbencyMode = "pst" | "stamp" | "lazystamp" | "none";
 
+/**
+ * How a script is kept from reaching the real `location`, `parent`, `top` and
+ * `eval`.
+ *
+ * - `dpsc`        Every member access that could name one is rewritten to go
+ *                 through accessors on `Object.prototype`, and every
+ *                 identifier naming a global is wrapped.
+ * - `ppsc`        Only the window and the document are wrapped, in a `Proxy`
+ *                 that answers those members; no member access is touched.
+ *                 Where analysis proves a reference is only ever read through
+ *                 in ways the proxy would answer identically, it is left
+ *                 pointing at the real object.
+ * - `ppsc-hybrid` `ppsc`, but a member named literally, as in `x.location`,
+ *                 goes through the `Object.prototype` accessor instead, so
+ *                 the proxy is only needed where the object is used as a
+ *                 value: a computed key, or being passed on.
+ */
+export type JsRewriter = "dpsc" | "ppsc" | "ppsc-hybrid";
+
 export type ScramjetFlags = {
 	syncxhr: boolean;
 	disableComputedWrap: boolean;
@@ -50,6 +69,13 @@ export type ScramjetFlags = {
 	debugTrampolines: boolean;
 	debugSourceURL: boolean;
 	incumbency: IncumbencyMode;
+	jsRewriter: JsRewriter;
+	/**
+	 * `ppsc` only: rebind a function's `this` to a wrapped copy wherever it is
+	 * used in a way that could reach the real window, for code that is called
+	 * with the real window as its receiver.
+	 */
+	ppscWrapThis: boolean;
 	encapsulateWorkers: boolean;
 };
 
@@ -70,6 +96,11 @@ export interface ScramjetConfig {
 		tempreceiverid: string;
 		tempcalleeid: string;
 		tempunusedid: string;
+		unwrapfn: string;
+		realsuffix: string;
+		tempthisid: string;
+		rawwindowid: string;
+		rawdocumentid: string;
 	};
 	flags: ScramjetFlags;
 	maskedfiles: string[];

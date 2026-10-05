@@ -86,6 +86,12 @@ impl NativeRewriter {
 					tempreceiverid: cfg.tempreceiverid.clone(),
 					tempcalleeid: cfg.tempcalleeid.clone(),
 					tempunusedid: cfg.tempunusedid.clone(),
+
+					unwrapfn: cfg.unwrapfn.clone(),
+					realsuffix: cfg.realsuffix.clone(),
+					tempthisid: cfg.tempthisid.clone(),
+					rawwindowid: cfg.rawwindowid.clone(),
+					rawdocumentid: cfg.rawdocumentid.clone(),
 				},
 				Flags {
 					base: cfg.base.clone(),
@@ -101,6 +107,8 @@ impl NativeRewriter {
 					destructure_rewrites: cfg.destructure_rewrites,
 
 					incumbency: cfg.incumbency,
+					js_rewriter: cfg.js_rewriter,
+					ppsc_wrap_this: cfg.ppsc_wrap_this,
 				},
 				&rewriter
 			)

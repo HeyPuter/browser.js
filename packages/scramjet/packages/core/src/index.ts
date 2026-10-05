@@ -34,6 +34,11 @@ export const defaultConfig: ScramjetConfig = {
 		tempreceiverid: "$scramjet$tempreceiver",
 		tempcalleeid: "$scramjet$tempcallee",
 		tempunusedid: "$scramjet$tempunused",
+		unwrapfn: "$scramjet$unwrap",
+		realsuffix: "$scramjet$r",
+		tempthisid: "$scramjet$t",
+		rawwindowid: "$scramjet$rw",
+		rawdocumentid: "$scramjet$rd",
 	},
 	flags: {
 		syncxhr: false,
@@ -48,6 +53,8 @@ export const defaultConfig: ScramjetConfig = {
 		encapsulateWorkers: true,
 		debugSourceURL: false,
 		incumbency: pstAvailable ? "pst" : "lazystamp",
+		jsRewriter: "ppsc-hybrid",
+		ppscWrapThis: false,
 	},
 	maskedfiles: [],
 };
