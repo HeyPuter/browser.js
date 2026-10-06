@@ -12,6 +12,7 @@ import {
 	iconInfo,
 	iconSettings,
 	iconError,
+	iconBug,
 } from "../../icons";
 import { createMenu, createMenuCustom } from "@components/Menu";
 import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
@@ -234,7 +235,15 @@ export function Omnibar(
 								},
 								icon: iconInfo,
 							},
-
+							puterBranding
+								? {
+										label: "Report Bug",
+										action: () => {
+											puter.ui.showFeedbackDialog();
+										},
+										icon: iconBug,
+									}
+								: null,
 							puterBranding &&
 							tabsService.activetab.url.protocol !== INTERNAL_URL_PROTOCOL
 								? {
