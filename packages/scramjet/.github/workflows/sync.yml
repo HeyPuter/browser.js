@@ -1,0 +1,81 @@
+# Syncs the standalone public repo MercuryWorkshop/scramjet back into the
+# monorepo (HeyPuter/browser.js, under packages/scramjet/), on pushes to main.
+#
+# NOTE on location: this file lives at
+#   packages/scramjet/.github/workflows/sync.yml
+# in the monorepo, which Copybara maps to
+#   .github/workflows/sync.yml
+# in MercuryWorkshop/scramjet. It is guarded to run ONLY in
+# MercuryWorkshop/scramjet (the synced copy sitting in the monorepo never runs).
+#
+# How it works:
+#   - Pushes to main migrate the repo state to main in HeyPuter/browser.js via
+#     the `scramjet_to_browserjs` workflow in copy.bara.sky (nested under
+#     packages/scramjet/).
+#   - Loop prevention: commits that already carry a `Browserjs-RevId:` trailer
+#     arrived via the forward sync (monorepo -> public) and are skipped.
+#
+# Required setup (once, in BOTH HeyPuter/browser.js and
+# MercuryWorkshop/scramjet): create a fine-grained PAT (or classic PAT with
+# `repo` + `workflow` scopes) owned by an account with push access to both
+# repos, and store it as the Actions secret COPYBARA_SYNC_TOKEN.
+
+name: Sync to monorepo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: copybara-reverse
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    # Only run in the public repo; the copy synced into the monorepo stays idle.
+    if: github.repository == 'MercuryWorkshop/scramjet'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.COPYBARA_SYNC_TOKEN }}
+
+      - name: Sync main to HeyPuter/browser.js
+        env:
+          SYNC_TOKEN: ${{ secrets.COPYBARA_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$SYNC_TOKEN"
+
+          # Loop guard: skip commits that came from the forward sync.
+          MSG="$(git log -1 --format=%B origin/main)"
+          if grep -q 'Browserjs-RevId:' <<<"$MSG"; then
+            echo "Skipping: tip already carries Browserjs-RevId (forward-synced)."
+            exit 0
+          fi
+          if grep -q '\[skip copybara\]' <<<"$MSG"; then
+            echo "Skipping: tip carries [skip copybara]."
+            exit 0
+          fi
+
+          set +e
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            gcr.io/copybara/copybara:latest \
+            migrate copy.bara.sky scramjet_to_browserjs \
+            --git-origin-url "https://x-access-token:${SYNC_TOKEN}@github.com/MercuryWorkshop/scramjet.git" \
+            --git-destination-url "https://x-access-token:${SYNC_TOKEN}@github.com/HeyPuter/browser.js.git"
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 4 ]; then
+            echo "Already in sync."
+            exit 0
+          fi
+          exit "$CODE"
