@@ -57,8 +57,6 @@ export function Sidebar(
 			// Collapsed strip drawn at full width over the page (hover, keyboard
 			// focus, or mid expand/collapse animation).
 			peeking: boolean;
-			// Suppresses width transitions for the frame a layout change commits.
-			instant: boolean;
 			// An expand/collapse animation is running (no peek shadow).
 			toggling: boolean;
 		}
@@ -69,7 +67,6 @@ export function Sidebar(
 	this.visualtabs = [];
 	this.layoutCollapsed = !!this.collapsible && !!this.collapsed;
 	this.peeking = false;
-	this.instant = false;
 	this.toggling = false;
 
 	const [lock, unlock] = requestUnfocusFrames();
@@ -313,10 +310,16 @@ export function Sidebar(
 
 	const isCollapsed = () => this.layoutCollapsed;
 
-	// Two frames: one for the style change to commit with transitions off,
-	// one more so re-enabling them doesn't animate that change.
-	const afterCommit = (fn: () => void) =>
-		requestAnimationFrame(() => requestAnimationFrame(fn));
+	// Applies a layout change with transitions off, in the same frame. The
+	// microtask lets dreamland apply the class changes, and reading the width
+	// flushes the style so turning transitions back on doesn't animate it.
+	const commitInstantly = async (apply: () => void) => {
+		this.container.classList.add("instant");
+		apply();
+		await Promise.resolve();
+		void this.container.offsetWidth;
+		this.container.classList.remove("instant");
+	};
 
 	const afterWidthTransition = (fn: () => void) => {
 		let finished = false;
@@ -331,24 +334,20 @@ export function Sidebar(
 			if (e.target === this.container && e.propertyName === "width") finish();
 		};
 		this.container.addEventListener("transitionend", onEnd);
-		const fallback = window.setTimeout(finish, 400);
+		const fallback = window.setTimeout(finish, 300);
 	};
 
 	const pointerOrFocusInside = () =>
 		this.container.matches(":hover") ||
 		this.container.matches(":has(:focus-visible)");
 
-	const setLayoutInstantly = (collapsed: boolean, peeking: boolean) => {
-		this.instant = true;
-		this.layoutCollapsed = collapsed;
-		this.peeking = peeking;
-		const token = toggleToken;
-		afterCommit(() => {
-			if (token === toggleToken) this.instant = false;
+	const setLayoutInstantly = (collapsed: boolean, peeking: boolean) =>
+		commitInstantly(() => {
+			this.layoutCollapsed = collapsed;
+			this.peeking = peeking;
 		});
-	};
 
-	const animateCollapsed = (collapsed: boolean) => {
+	const animateCollapsed = async (collapsed: boolean) => {
 		const token = ++toggleToken;
 		clearTimeout(peekTimer);
 
@@ -363,16 +362,11 @@ export function Sidebar(
 			// Give the page its space back in one step, keeping the strip
 			// drawn at full width over it, then shrink the strip.
 			this.toggling = true;
-			this.instant = true;
-			this.layoutCollapsed = true;
-			this.peeking = true;
-			afterCommit(() => {
-				if (token !== toggleToken) return;
-				this.instant = false;
-				this.peeking = pointerOrFocusInside();
-				afterWidthTransition(() => {
-					if (token === toggleToken) this.toggling = false;
-				});
+			await setLayoutInstantly(true, true);
+			if (token !== toggleToken) return;
+			this.peeking = pointerOrFocusInside();
+			afterWidthTransition(() => {
+				if (token === toggleToken) this.toggling = false;
 			});
 		} else {
 			if (!this.layoutCollapsed) return;
@@ -650,7 +644,6 @@ export function Sidebar(
 			)}
 			class:collapsed={use(this.layoutCollapsed)}
 			class:peeking={use(this.peeking)}
-			class:instant={use(this.instant)}
 			class:toggling={use(this.toggling)}
 			class:favicon-only={use(this.layoutCollapsed, this.peeking).map(
 				([collapsed, peeking]) => collapsed && !peeking
@@ -713,7 +706,7 @@ Sidebar.style = css`
 		min-width: var(--sidebar-collapsed-width);
 		flex-basis: var(--sidebar-collapsed-width);
 		transition-property: width, min-width, flex-basis, margin, box-shadow;
-		transition-duration: 200ms;
+		transition-duration: 150ms;
 		/* No overshoot: springing past the collapsed width would open a gap
 		   between the strip and the page. */
 		transition-timing-function: var(--ease-tab-close);
