@@ -445,6 +445,15 @@ DragTab.style = css`
 	:scope.vertical {
 		display: block;
 	}
+
+	/* Collapsed hybrid sidebar: favicon only. */
+	:global(.favicon-only) :scope .main {
+		justify-content: center;
+	}
+	:global(.favicon-only) :scope .main span,
+	:global(.favicon-only) :scope .close {
+		display: none;
+	}
 	:scope:focus-visible .main {
 		outline: 2px solid var(--tab_line);
 		outline-offset: -2px;

@@ -157,6 +157,11 @@ export function App(
 						setSidebarWidth={(width: number) => {
 							settingsService.settings.sidebarWidth = Math.round(width);
 						}}
+						collapsible={layout === "hybrid"}
+						collapsed={use(settingsService.settings.sidebarCollapsed)}
+						setCollapsed={(collapsed: boolean) => {
+							settingsService.settings.sidebarCollapsed = collapsed;
+						}}
 						addTab={() => {
 							tabsService.newTab(
 								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),

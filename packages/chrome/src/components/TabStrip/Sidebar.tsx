@@ -9,7 +9,7 @@ import {
 } from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
-import { iconAdd } from "../../icons";
+import { iconAdd, iconSidebarCollapse, iconSidebarExpand } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
 import { settingsService, tabsService } from "../..";
 import { easing } from "../../easing";
@@ -38,6 +38,10 @@ export function Sidebar(
 			setSidebarWidth: (width: number) => void;
 			topContent?: any;
 			bottomContent?: any;
+			// Collapsing to a favicon-only strip (hybrid layout only).
+			collapsible?: boolean;
+			collapsed?: boolean;
+			setCollapsed?: (collapsed: boolean) => void;
 		},
 		{
 			visualtabs: VisualTab[];
@@ -47,15 +51,19 @@ export function Sidebar(
 			afterEl: HTMLElement;
 			currentlydragging: string | null;
 			currentlyHovered: Tab | null;
+			// Collapsed strip temporarily expanded over the page while hovered.
+			peeking: boolean;
 		}
 	>
 ) {
 	this.currentlydragging = null;
 	this.currentlyHovered = this.tabs[0] ?? null;
 	this.visualtabs = [];
+	this.peeking = false;
 
 	const [lock, unlock] = requestUnfocusFrames();
-	const SIDEBAR_MIN_WIDTH = this.layout === "vertical" ? 190 : 48;
+	const SIDEBAR_MIN_WIDTH =
+		this.layout === "vertical" ? 190 : this.collapsible ? 150 : 48;
 	const SIDEBAR_MAX_WIDTH = 520;
 
 	const TAB_TRANSITION = () => `225ms ${easing("--ease-tab-move")}`;
@@ -281,6 +289,52 @@ export function Sidebar(
 		window.addEventListener("mouseup", mouseUpHandler);
 	};
 
+	// --- Collapsed (favicon-only) strip ------------------------------------
+	//
+	// Mirrors Chromium's collapsed vertical tab strip: only favicons are shown,
+	// and hovering the strip for a moment expands it to full width over the
+	// page (without reflowing it) until the pointer leaves. Clicking a favicon
+	// activates its tab straight away, with no need to wait for the expansion.
+
+	const PEEK_DELAY = 250;
+	// Below this width, dragging the resizer snaps the sidebar collapsed.
+	const COLLAPSE_SNAP_WIDTH = 100;
+	let peekTimer: number | undefined;
+	let resizing = false;
+
+	const isCollapsed = () => !!this.collapsible && !!this.collapsed;
+
+	const startPeek = () => {
+		if (!isCollapsed() || resizing || this.peeking) return;
+		clearTimeout(peekTimer);
+		peekTimer = window.setTimeout(() => {
+			if (isCollapsed() && !resizing) this.peeking = true;
+		}, PEEK_DELAY);
+	};
+
+	const endPeek = (e: MouseEvent) => {
+		clearTimeout(peekTimer);
+		if (!this.peeking) return;
+		// Leaving mid-drag (a tab, a pinned tile): keep the strip expanded so
+		// the drag's layout doesn't shift under it, and collapse on release.
+		if (e.buttons & 1) {
+			window.addEventListener(
+				"mouseup",
+				() => {
+					if (!this.container.matches(":hover")) this.peeking = false;
+				},
+				{ once: true }
+			);
+			return;
+		}
+		this.peeking = false;
+	};
+
+	use(this.collapsed).listen(() => {
+		clearTimeout(peekTimer);
+		this.peeking = false;
+	});
+
 	const clampSidebarWidth = (width: number) => {
 		const viewportMax = Math.max(SIDEBAR_MIN_WIDTH, window.innerWidth - 140);
 		return Math.min(
@@ -294,21 +348,28 @@ export function Sidebar(
 
 		lock();
 		document.body.style.cursor = "ew-resize";
+		resizing = true;
+		clearTimeout(peekTimer);
+		this.peeking = false;
 
 		const mouseMoveHandler = (moveEvent: MouseEvent) => {
-			const { left } = this.container.getBoundingClientRect();
-			if (this.justify === "right") {
-				this.setSidebarWidth(
-					clampSidebarWidth(
-						left + this.container.offsetWidth - moveEvent.clientX
-					)
-				);
-			} else {
-				this.setSidebarWidth(clampSidebarWidth(moveEvent.clientX - left));
+			const { left, right } = this.container.getBoundingClientRect();
+			const width =
+				this.justify === "right"
+					? right - moveEvent.clientX
+					: moveEvent.clientX - left;
+			if (this.collapsible) {
+				// Like Chromium, dragging the edge far enough in collapses the
+				// strip, and dragging a collapsed strip back out expands it.
+				const collapse = width < COLLAPSE_SNAP_WIDTH;
+				if (collapse !== !!this.collapsed) this.setCollapsed?.(collapse);
+				if (collapse) return;
 			}
+			this.setSidebarWidth(clampSidebarWidth(width));
 		};
 
 		const mouseUpHandler = () => {
+			resizing = false;
 			unlock();
 			document.body.style.cursor = "";
 			window.removeEventListener("mousemove", mouseMoveHandler);
@@ -429,6 +490,11 @@ export function Sidebar(
 	});
 
 	this.cx.mount = () => {
+		// A hybrid sidebar saved narrower than the expanded minimum was being
+		// used as a favicon strip already; carry that over as collapsed.
+		if (this.collapsible && this.sidebarWidth < SIDEBAR_MIN_WIDTH) {
+			this.setCollapsed?.(true);
+		}
 		if (
 			this.sidebarWidth < SIDEBAR_MIN_WIDTH ||
 			this.sidebarWidth > SIDEBAR_MAX_WIDTH
@@ -470,9 +536,15 @@ export function Sidebar(
 				() => this.visualtabs,
 				(tab) => this.destroyTab(tab)
 			)}
+			class:collapsed={use(this.collapsed).map((c) => isCollapsed() && !!c)}
+			class:peeking={use(this.peeking)}
+			class:favicon-only={use(this.collapsed, this.peeking).map(
+				([c, peeking]) => isCollapsed() && !!c && !peeking
+			)}
+			on:mouseenter={startPeek}
+			on:mouseleave={endPeek}
 			style={use(this.sidebarWidth).map(
-				(width) =>
-					`--sidebar-width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`
+				(width) => `--sidebar-width: ${width}px;`
 			)}
 		>
 			<div class="extra top" this={use(this.topEl)}>
@@ -491,6 +563,25 @@ export function Sidebar(
 			</div>
 			<div class="extra bottom" this={use(this.bottomEl)}>
 				{this.bottomContent}
+				{this.collapsible ? (
+					<button
+						class="collapse-toggle"
+						aria-label={use(this.collapsed).map((c) =>
+							c ? "Expand tabs" : "Collapse tabs"
+						)}
+						title={use(this.collapsed).map((c) =>
+							c ? "Expand tabs" : "Collapse tabs"
+						)}
+						aria-pressed={use(this.collapsed).map((c) => !!c)}
+						on:click={() => this.setCollapsed?.(!this.collapsed)}
+					>
+						<Icon
+							icon={use(this.collapsed).map((c) =>
+								c ? iconSidebarExpand : iconSidebarCollapse
+							)}
+						/>
+					</button>
+				) : null}
 			</div>
 			<div
 				class="sidebar-resizer"
@@ -512,6 +603,36 @@ Sidebar.style = css`
 		z-index: 2;
 		border-right: 1px solid var(--text-15);
 		width: var(--sidebar-width);
+		min-width: var(--sidebar-width);
+		flex: 0 0 var(--sidebar-width);
+
+		/* Favicon + the tab's inline padding, the strip's padding, and the
+		   1px border. */
+		--sidebar-collapsed-width: calc(16px + 4 * var(--space-md) + 1px);
+	}
+
+	:scope.collapsed {
+		width: var(--sidebar-collapsed-width);
+		min-width: var(--sidebar-collapsed-width);
+		flex-basis: var(--sidebar-collapsed-width);
+		transition-property: width, min-width, flex-basis, margin, box-shadow;
+		transition-duration: 200ms;
+		transition-timing-function: var(--ease-tab-open);
+	}
+
+	/* Expanded over the page: the negative margin gives back everything past
+	   the collapsed width, so the page content doesn't reflow underneath. */
+	:scope.collapsed.peeking {
+		width: var(--sidebar-width);
+		min-width: var(--sidebar-width);
+		flex-basis: var(--sidebar-width);
+		margin-right: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
+		box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+	}
+
+	:global(.sidebar-right *) > :scope.collapsed.peeking {
+		margin-right: 0;
+		margin-left: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
 	}
 
 	:global(.sidebar-right *) > :scope {
@@ -574,6 +695,33 @@ Sidebar.style = css`
 
 	.new-tab:is(:hover, :active, :focus) {
 		background: var(--toolbar);
+	}
+
+	.bottom {
+		padding-bottom: var(--space-md);
+	}
+
+	.collapse-toggle {
+		align-self: flex-start;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: calc(16px + 2 * var(--space-md));
+		height: var(--tab-height);
+		border-radius: var(--radius-md);
+		color: var(--toolbar_text);
+	}
+
+	.collapse-toggle:is(:hover, :focus-visible) {
+		background: var(--toolbar);
+	}
+
+	:global(.sidebar-right *) > :scope .collapse-toggle {
+		align-self: flex-end;
+	}
+
+	:global(.sidebar-right *) > :scope .collapse-toggle > * {
+		transform: scaleX(-1);
 	}
 
 	.sidebar-resizer {
@@ -838,5 +986,9 @@ VerticalPinList.style = css`
 
 	:scope.empty {
 		display: none;
+	}
+
+	:global(.favicon-only) :scope {
+		grid-template-columns: 1fr;
 	}
 `;
