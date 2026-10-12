@@ -51,14 +51,12 @@ export function Sidebar(
 			afterEl: HTMLElement;
 			currentlydragging: string | null;
 			currentlyHovered: Tab | null;
-			// The strip takes the collapsed width in the page layout. Lags the
-			// `collapsed` prop while an expand animation is running.
+			// The strip takes the collapsed width in the page layout. Follows the
+			// `collapsed` prop, except that it can't start collapsed before mount.
 			layoutCollapsed: boolean;
-			// Collapsed strip drawn at full width over the page (hover, keyboard
-			// focus, or mid expand/collapse animation).
+			// Collapsed strip drawn at full width over the page (hover or
+			// keyboard focus).
 			peeking: boolean;
-			// An expand/collapse animation is running (no peek shadow).
-			toggling: boolean;
 		}
 	>
 ) {
@@ -67,7 +65,6 @@ export function Sidebar(
 	this.visualtabs = [];
 	this.layoutCollapsed = !!this.collapsible && !!this.collapsed;
 	this.peeking = false;
-	this.toggling = false;
 
 	const [lock, unlock] = requestUnfocusFrames();
 	const SIDEBAR_MIN_WIDTH =
@@ -294,10 +291,10 @@ export function Sidebar(
 	// page (without reflowing it) until the pointer leaves. Clicking a favicon
 	// activates its tab straight away, with no need to wait for the expansion.
 	//
-	// Collapsing and expanding animate the same way: only the strip's width
-	// animates, drawn over the page, and the page itself is resized once (at
-	// the start of a collapse, at the end of an expand) rather than reflowing
-	// its frame on every animation frame.
+	// Collapsing and expanding (the omnibar toggle) animate the strip's width
+	// in the page layout, so the page resizes in step with it. Both are plain
+	// CSS transitions, so reversing mid-animation carries on from wherever the
+	// strip is.
 
 	const PEEK_DELAY = 250;
 	// Below this width, dragging the resizer snaps the sidebar collapsed.
@@ -306,7 +303,6 @@ export function Sidebar(
 	let resizing = false;
 
 	let mounted = false;
-	let toggleToken = 0;
 
 	const isCollapsed = () => this.layoutCollapsed;
 
@@ -321,64 +317,16 @@ export function Sidebar(
 		this.container.classList.remove("instant");
 	};
 
-	const afterWidthTransition = (fn: () => void) => {
-		let finished = false;
-		const finish = () => {
-			if (finished) return;
-			finished = true;
-			this.container.removeEventListener("transitionend", onEnd);
-			clearTimeout(fallback);
-			fn();
-		};
-		const onEnd = (e: TransitionEvent) => {
-			if (e.target === this.container && e.propertyName === "width") finish();
-		};
-		this.container.addEventListener("transitionend", onEnd);
-		const fallback = window.setTimeout(finish, 300);
-	};
-
-	const pointerOrFocusInside = () =>
-		this.container.matches(":hover") ||
-		this.container.matches(":has(:focus-visible)");
-
-	const setLayoutInstantly = (collapsed: boolean, peeking: boolean) =>
-		commitInstantly(() => {
-			this.layoutCollapsed = collapsed;
-			this.peeking = peeking;
-		});
-
-	const animateCollapsed = async (collapsed: boolean) => {
-		const token = ++toggleToken;
+	const setCollapsedLayout = (collapsed: boolean) => {
 		clearTimeout(peekTimer);
-
-		if (!mounted || resizing) {
-			this.toggling = false;
-			setLayoutInstantly(collapsed, false);
-			return;
-		}
-
-		if (collapsed) {
-			if (this.layoutCollapsed && !this.peeking) return;
-			// Give the page its space back in one step, keeping the strip
-			// drawn at full width over it, then shrink the strip.
-			this.toggling = true;
-			await setLayoutInstantly(true, true);
-			if (token !== toggleToken) return;
-			this.peeking = pointerOrFocusInside();
-			afterWidthTransition(() => {
-				if (token === toggleToken) this.toggling = false;
-			});
-		} else {
-			if (!this.layoutCollapsed) return;
-			// Grow the strip over the page, then hand it its space in one step.
-			this.toggling = true;
-			this.peeking = true;
-			afterWidthTransition(() => {
-				if (token !== toggleToken) return;
-				this.toggling = false;
-				setLayoutInstantly(false, false);
-			});
-		}
+		const apply = () => {
+			this.layoutCollapsed = collapsed;
+			this.peeking = false;
+		};
+		// Snapping via the resizer follows the pointer, and the state restored
+		// on mount shouldn't animate in.
+		if (!mounted || resizing) commitInstantly(apply);
+		else apply();
 	};
 
 	const startPeek = () => {
@@ -425,7 +373,7 @@ export function Sidebar(
 
 	use(this.collapsed).listen((collapsed) => {
 		if (!this.collapsible) return;
-		animateCollapsed(!!collapsed);
+		setCollapsedLayout(!!collapsed);
 	});
 
 	const clampSidebarWidth = (width: number) => {
@@ -442,6 +390,7 @@ export function Sidebar(
 		lock();
 		document.body.style.cursor = "ew-resize";
 		resizing = true;
+		this.container.classList.add("resizing");
 		clearTimeout(peekTimer);
 		this.peeking = false;
 
@@ -463,6 +412,7 @@ export function Sidebar(
 
 		const mouseUpHandler = () => {
 			resizing = false;
+			this.container.classList.remove("resizing");
 			unlock();
 			document.body.style.cursor = "";
 			window.removeEventListener("mousemove", mouseMoveHandler);
@@ -644,7 +594,7 @@ export function Sidebar(
 			)}
 			class:collapsed={use(this.layoutCollapsed)}
 			class:peeking={use(this.peeking)}
-			class:toggling={use(this.toggling)}
+			class:collapsible={!!this.collapsible}
 			class:favicon-only={use(this.layoutCollapsed, this.peeking).map(
 				([collapsed, peeking]) => collapsed && !peeking
 			)}
@@ -701,19 +651,24 @@ Sidebar.style = css`
 		--sidebar-collapsed-width: calc(16px + 4 * var(--space-md) + 1px);
 	}
 
+	/* A transition takes its curve from the state it's heading to, so
+	   expanding (to here or to .peeking) and collapsing (to .collapsed) each
+	   get their own. */
+	:scope.collapsible {
+		transition-property: width, min-width, flex-basis, margin, box-shadow;
+		transition-duration: 150ms;
+		transition-timing-function: var(--ease-sidebar-expand);
+	}
+
 	:scope.collapsed {
 		width: var(--sidebar-collapsed-width);
 		min-width: var(--sidebar-collapsed-width);
 		flex-basis: var(--sidebar-collapsed-width);
-		transition-property: width, min-width, flex-basis, margin, box-shadow;
-		transition-duration: 150ms;
-		/* A transition takes its curve from the state it's heading to, so
-		   collapsing (to here) and expanding (to .peeking, below) each get
-		   their own. */
 		transition-timing-function: var(--ease-sidebar-collapse);
 	}
 
-	:scope.instant {
+	:scope.instant,
+	:scope.resizing {
 		transition: none;
 	}
 
@@ -727,7 +682,7 @@ Sidebar.style = css`
 		transition-timing-function: var(--ease-sidebar-expand);
 	}
 
-	:scope.collapsed.peeking:not(.toggling) {
+	:scope.collapsed.peeking {
 		box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
 	}
 
