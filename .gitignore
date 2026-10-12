@@ -11,3 +11,7 @@ packages/scramjet/packages/runway/coverage
 packages/scramjet/packages/runway/src/tests/wpt/vendored/fetch/metadata/generated/
 packages/scramjet/packages/runway/src/tests/wpt/vendored/referrer-policy/gen/
 packages/scramjet/packages/runway/src/tests/wpt/vendored/cookies
+packages/chrome/public/controller.sw.js
+packages/chrome/public/controller.sw.js.map
+packages/sandbox/controller.sw.js
+packages/sandbox/controller.sw.js.map

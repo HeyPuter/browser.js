@@ -194,6 +194,9 @@ export async function route(event: FetchEvent): Promise<Response> {
 				: undefined
 		);
 
+		// A network error crosses the controller bridge as status zero. It must
+		// reject fetch(), rather than becoming an ordinary HTTP 500 response.
+		if (response.status === 0) return Response.error();
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
