@@ -707,9 +707,10 @@ Sidebar.style = css`
 		flex-basis: var(--sidebar-collapsed-width);
 		transition-property: width, min-width, flex-basis, margin, box-shadow;
 		transition-duration: 150ms;
-		/* No overshoot: springing past the collapsed width would open a gap
-		   between the strip and the page. */
-		transition-timing-function: var(--ease-tab-close);
+		/* A transition takes its curve from the state it's heading to, so
+		   collapsing (to here) and expanding (to .peeking, below) each get
+		   their own. */
+		transition-timing-function: var(--ease-sidebar-collapse);
 	}
 
 	:scope.instant {
@@ -723,6 +724,7 @@ Sidebar.style = css`
 		min-width: var(--sidebar-width);
 		flex-basis: var(--sidebar-width);
 		margin-right: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
+		transition-timing-function: var(--ease-sidebar-expand);
 	}
 
 	:scope.collapsed.peeking:not(.toggling) {
