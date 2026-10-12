@@ -9,6 +9,8 @@ export type Settings = {
 	tabLayout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact";
 	verticalTabJustify: "left" | "right";
 	sidebarWidth: number | null;
+	// Hybrid layout only: shrink the sidebar to a favicon-only strip.
+	sidebarCollapsed: boolean;
 	uiProfile: "default" | "compact" | "touch";
 	// Style tweaks. Independent axes, each with a build-time configurable
 	// default; see ../tweaks.ts.
@@ -39,6 +41,7 @@ export type SettingsServiceState = {
 		tabLayout: "horizontal" | "bottom" | "hybrid" | "vertical" | "compact";
 		verticalTabJustify: "left" | "right";
 		sidebarWidth: number | null;
+		sidebarCollapsed: boolean;
 		themeId: ThemeId;
 		followSystemTheme: boolean;
 		lightThemeId: ThemeId;
@@ -80,6 +83,7 @@ export class SettingsService extends Service {
 				tabLayout: this.settings.tabLayout,
 				verticalTabJustify: this.settings.verticalTabJustify,
 				sidebarWidth: this.settings.sidebarWidth,
+				sidebarCollapsed: this.settings.sidebarCollapsed,
 				themeId: this.settings.themeId,
 				followSystemTheme: this.settings.followSystemTheme,
 				lightThemeId: this.settings.lightThemeId,

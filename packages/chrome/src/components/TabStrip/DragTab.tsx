@@ -445,6 +445,29 @@ DragTab.style = css`
 	:scope.vertical {
 		display: block;
 	}
+
+	/* Collapsed hybrid sidebar: favicon only. The title and close button fade
+	   rather than leaving the layout, so nothing reflows while the strip
+	   narrows; the favicon keeps its spot at the start of the tab, which is
+	   centered once the strip reaches its collapsed width. */
+	:scope.vertical .main span,
+	:scope.vertical .close {
+		transition: opacity 120ms var(--ease-hover);
+	}
+	:scope.vertical .favicon {
+		flex-shrink: 0;
+	}
+	:global(.favicon-only) :scope .main {
+		overflow: hidden;
+	}
+	:global(.favicon-only) :scope .main span,
+	:global(.favicon-only) :scope .close {
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 120ms var(--ease-hover),
+			visibility 0s 120ms;
+	}
 	:scope:focus-visible .main {
 		outline: 2px solid var(--tab_line);
 		outline-offset: -2px;
