@@ -9,7 +9,7 @@ import {
 } from "./DragTab";
 import { TabHoverCard } from "@components/TabStrip/TabHoverCard";
 import { Icon } from "@components/Icon";
-import { iconAdd, iconSidebarCollapse, iconSidebarExpand } from "../../icons";
+import { iconAdd } from "../../icons";
 import { requestUnfocusFrames } from "@components/Shell";
 import { settingsService, tabsService } from "../..";
 import { easing } from "../../easing";
@@ -51,15 +51,26 @@ export function Sidebar(
 			afterEl: HTMLElement;
 			currentlydragging: string | null;
 			currentlyHovered: Tab | null;
-			// Collapsed strip temporarily expanded over the page while hovered.
+			// The strip takes the collapsed width in the page layout. Lags the
+			// `collapsed` prop while an expand animation is running.
+			layoutCollapsed: boolean;
+			// Collapsed strip drawn at full width over the page (hover, keyboard
+			// focus, or mid expand/collapse animation).
 			peeking: boolean;
+			// Suppresses width transitions for the frame a layout change commits.
+			instant: boolean;
+			// An expand/collapse animation is running (no peek shadow).
+			toggling: boolean;
 		}
 	>
 ) {
 	this.currentlydragging = null;
 	this.currentlyHovered = this.tabs[0] ?? null;
 	this.visualtabs = [];
+	this.layoutCollapsed = !!this.collapsible && !!this.collapsed;
 	this.peeking = false;
+	this.instant = false;
+	this.toggling = false;
 
 	const [lock, unlock] = requestUnfocusFrames();
 	const SIDEBAR_MIN_WIDTH =
@@ -88,16 +99,6 @@ export function Sidebar(
 		return (
 			this.container.offsetHeight - padding - border - top - bottom - after
 		);
-	};
-
-	const getRootWidth = () => {
-		const style = getComputedStyle(this.container);
-		const padding =
-			parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-		const border =
-			parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-
-		return this.container.offsetWidth - padding - border;
 	};
 
 	const getAbsoluteStart = () => {
@@ -164,9 +165,7 @@ export function Sidebar(
 
 	const layoutTabs = (transition: boolean) => {
 		const height = getTabHeight();
-		const width = getRootWidth();
 		const tabPadding = getTabPadding();
-		console.log(height, width, tabPadding);
 
 		if (this.currentlydragging !== null) reorderTabs();
 
@@ -182,7 +181,9 @@ export function Sidebar(
 				continue;
 			}
 
-			tab.root.style.width = width + "px";
+			// Sized in CSS rather than measured, so tabs track the strip's width
+			// through the collapse animation without a relayout per frame.
+			tab.root.style.width = "calc(100% - 2 * var(--space-md))";
 			tab.root.style.height = height + "px";
 
 			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
@@ -295,6 +296,11 @@ export function Sidebar(
 	// and hovering the strip for a moment expands it to full width over the
 	// page (without reflowing it) until the pointer leaves. Clicking a favicon
 	// activates its tab straight away, with no need to wait for the expansion.
+	//
+	// Collapsing and expanding animate the same way: only the strip's width
+	// animates, drawn over the page, and the page itself is resized once (at
+	// the start of a collapse, at the end of an expand) rather than reflowing
+	// its frame on every animation frame.
 
 	const PEEK_DELAY = 250;
 	// Below this width, dragging the resizer snaps the sidebar collapsed.
@@ -302,7 +308,84 @@ export function Sidebar(
 	let peekTimer: number | undefined;
 	let resizing = false;
 
-	const isCollapsed = () => !!this.collapsible && !!this.collapsed;
+	let mounted = false;
+	let toggleToken = 0;
+
+	const isCollapsed = () => this.layoutCollapsed;
+
+	// Two frames: one for the style change to commit with transitions off,
+	// one more so re-enabling them doesn't animate that change.
+	const afterCommit = (fn: () => void) =>
+		requestAnimationFrame(() => requestAnimationFrame(fn));
+
+	const afterWidthTransition = (fn: () => void) => {
+		let finished = false;
+		const finish = () => {
+			if (finished) return;
+			finished = true;
+			this.container.removeEventListener("transitionend", onEnd);
+			clearTimeout(fallback);
+			fn();
+		};
+		const onEnd = (e: TransitionEvent) => {
+			if (e.target === this.container && e.propertyName === "width") finish();
+		};
+		this.container.addEventListener("transitionend", onEnd);
+		const fallback = window.setTimeout(finish, 400);
+	};
+
+	const pointerOrFocusInside = () =>
+		this.container.matches(":hover") ||
+		this.container.matches(":has(:focus-visible)");
+
+	const setLayoutInstantly = (collapsed: boolean, peeking: boolean) => {
+		this.instant = true;
+		this.layoutCollapsed = collapsed;
+		this.peeking = peeking;
+		const token = toggleToken;
+		afterCommit(() => {
+			if (token === toggleToken) this.instant = false;
+		});
+	};
+
+	const animateCollapsed = (collapsed: boolean) => {
+		const token = ++toggleToken;
+		clearTimeout(peekTimer);
+
+		if (!mounted || resizing) {
+			this.toggling = false;
+			setLayoutInstantly(collapsed, false);
+			return;
+		}
+
+		if (collapsed) {
+			if (this.layoutCollapsed && !this.peeking) return;
+			// Give the page its space back in one step, keeping the strip
+			// drawn at full width over it, then shrink the strip.
+			this.toggling = true;
+			this.instant = true;
+			this.layoutCollapsed = true;
+			this.peeking = true;
+			afterCommit(() => {
+				if (token !== toggleToken) return;
+				this.instant = false;
+				this.peeking = pointerOrFocusInside();
+				afterWidthTransition(() => {
+					if (token === toggleToken) this.toggling = false;
+				});
+			});
+		} else {
+			if (!this.layoutCollapsed) return;
+			// Grow the strip over the page, then hand it its space in one step.
+			this.toggling = true;
+			this.peeking = true;
+			afterWidthTransition(() => {
+				if (token !== toggleToken) return;
+				this.toggling = false;
+				setLayoutInstantly(false, false);
+			});
+		}
+	};
 
 	const startPeek = () => {
 		if (!isCollapsed() || resizing || this.peeking) return;
@@ -346,9 +429,9 @@ export function Sidebar(
 		this.peeking = false;
 	};
 
-	use(this.collapsed).listen(() => {
-		clearTimeout(peekTimer);
-		this.peeking = false;
+	use(this.collapsed).listen((collapsed) => {
+		if (!this.collapsible) return;
+		animateCollapsed(!!collapsed);
 	});
 
 	const clampSidebarWidth = (width: number) => {
@@ -511,6 +594,7 @@ export function Sidebar(
 		if (this.collapsible && this.sidebarWidth < SIDEBAR_MIN_WIDTH) {
 			this.setCollapsed?.(true);
 		}
+		mounted = true;
 		if (
 			this.sidebarWidth < SIDEBAR_MIN_WIDTH ||
 			this.sidebarWidth > SIDEBAR_MAX_WIDTH
@@ -524,14 +608,26 @@ export function Sidebar(
 		}
 
 		requestAnimationFrame(() => layoutTabs(false));
-		let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
-			if (!this.root.isConnected) {
-				resizeObserver?.disconnect();
-				resizeObserver = null;
-				return;
+		// Tab widths follow the strip in CSS, so only height changes need a
+		// relayout. Skipping width-only changes keeps the collapse animation
+		// from re-running the layout on every frame.
+		const heights = new WeakMap<Element, number>();
+		let resizeObserver: ResizeObserver | null = new ResizeObserver(
+			(entries) => {
+				if (!this.root.isConnected) {
+					resizeObserver?.disconnect();
+					resizeObserver = null;
+					return;
+				}
+				let heightChanged = false;
+				for (const entry of entries) {
+					const height = entry.contentRect.height;
+					if (heights.get(entry.target) !== height) heightChanged = true;
+					heights.set(entry.target, height);
+				}
+				if (heightChanged) layoutTabs(false);
 			}
-			layoutTabs(false);
-		});
+		);
 		resizeObserver.observe(this.container);
 		resizeObserver.observe(this.topEl);
 		resizeObserver.observe(this.bottomEl);
@@ -552,10 +648,12 @@ export function Sidebar(
 				() => this.visualtabs,
 				(tab) => this.destroyTab(tab)
 			)}
-			class:collapsed={use(this.collapsed).map((c) => isCollapsed() && !!c)}
+			class:collapsed={use(this.layoutCollapsed)}
 			class:peeking={use(this.peeking)}
-			class:favicon-only={use(this.collapsed, this.peeking).map(
-				([c, peeking]) => isCollapsed() && !!c && !peeking
+			class:instant={use(this.instant)}
+			class:toggling={use(this.toggling)}
+			class:favicon-only={use(this.layoutCollapsed, this.peeking).map(
+				([collapsed, peeking]) => collapsed && !peeking
 			)}
 			on:mouseenter={startPeek}
 			on:mouseleave={endPeek}
@@ -581,25 +679,6 @@ export function Sidebar(
 			</div>
 			<div class="extra bottom" this={use(this.bottomEl)}>
 				{this.bottomContent}
-				{this.collapsible ? (
-					<button
-						class="collapse-toggle"
-						aria-label={use(this.collapsed).map((c) =>
-							c ? "Expand tabs" : "Collapse tabs"
-						)}
-						title={use(this.collapsed).map((c) =>
-							c ? "Expand tabs" : "Collapse tabs"
-						)}
-						aria-pressed={use(this.collapsed).map((c) => !!c)}
-						on:click={() => this.setCollapsed?.(!this.collapsed)}
-					>
-						<Icon
-							icon={use(this.collapsed).map((c) =>
-								c ? iconSidebarExpand : iconSidebarCollapse
-							)}
-						/>
-					</button>
-				) : null}
 			</div>
 			<div
 				class="sidebar-resizer"
@@ -635,7 +714,13 @@ Sidebar.style = css`
 		flex-basis: var(--sidebar-collapsed-width);
 		transition-property: width, min-width, flex-basis, margin, box-shadow;
 		transition-duration: 200ms;
-		transition-timing-function: var(--ease-tab-open);
+		/* No overshoot: springing past the collapsed width would open a gap
+		   between the strip and the page. */
+		transition-timing-function: var(--ease-tab-close);
+	}
+
+	:scope.instant {
+		transition: none;
 	}
 
 	/* Expanded over the page: the negative margin gives back everything past
@@ -645,6 +730,9 @@ Sidebar.style = css`
 		min-width: var(--sidebar-width);
 		flex-basis: var(--sidebar-width);
 		margin-right: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
+	}
+
+	:scope.collapsed.peeking:not(.toggling) {
 		box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
 	}
 
@@ -713,33 +801,6 @@ Sidebar.style = css`
 
 	.new-tab:is(:hover, :active, :focus) {
 		background: var(--toolbar);
-	}
-
-	.bottom {
-		padding-bottom: var(--space-md);
-	}
-
-	.collapse-toggle {
-		align-self: flex-start;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: calc(16px + 2 * var(--space-md));
-		height: var(--tab-height);
-		border-radius: var(--radius-md);
-		color: var(--toolbar_text);
-	}
-
-	.collapse-toggle:is(:hover, :focus-visible) {
-		background: var(--toolbar);
-	}
-
-	:global(.sidebar-right *) > :scope .collapse-toggle {
-		align-self: flex-end;
-	}
-
-	:global(.sidebar-right *) > :scope .collapse-toggle > * {
-		transform: scaleX(-1);
 	}
 
 	.sidebar-resizer {

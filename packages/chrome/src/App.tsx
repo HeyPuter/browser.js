@@ -216,6 +216,7 @@ export function App(
 							<Omnibar
 								tab={use(tabsService.activetab)}
 								layout={layout === "compact" ? "compact" : "horizontal"}
+								sidebarToggle={layout === "hybrid"}
 							/>
 							{use(
 								tabsService.activetab.url,
