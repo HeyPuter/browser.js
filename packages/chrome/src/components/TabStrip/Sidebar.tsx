@@ -330,6 +330,22 @@ export function Sidebar(
 		this.peeking = false;
 	};
 
+	// Keyboard focus moving into the collapsed strip expands it right away, and
+	// it collapses again once focus leaves (unless the pointer is still over
+	// it). Pointer clicks don't count, so they don't keep the strip expanded.
+	const focusPeek = (e: FocusEvent) => {
+		if (!isCollapsed() || resizing) return;
+		if (!(e.target as Element).matches(":focus-visible")) return;
+		clearTimeout(peekTimer);
+		this.peeking = true;
+	};
+
+	const focusUnpeek = (e: FocusEvent) => {
+		if (this.container.contains(e.relatedTarget as Node | null)) return;
+		if (this.container.matches(":hover")) return;
+		this.peeking = false;
+	};
+
 	use(this.collapsed).listen(() => {
 		clearTimeout(peekTimer);
 		this.peeking = false;
@@ -543,6 +559,8 @@ export function Sidebar(
 			)}
 			on:mouseenter={startPeek}
 			on:mouseleave={endPeek}
+			on:focusin={focusPeek}
+			on:focusout={focusUnpeek}
 			style={use(this.sidebarWidth).map(
 				(width) => `--sidebar-width: ${width}px;`
 			)}
