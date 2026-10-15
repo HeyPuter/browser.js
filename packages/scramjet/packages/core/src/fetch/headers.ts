@@ -12,8 +12,9 @@ import {
 	ScramjetFetchRequest,
 } from ".";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
-import { _URL, _Set } from "@/shared/snapshot";
-import { createReferrerString } from "./util";
+import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
+import { createReferrerString, DEFAULT_REFERRER_POLICY } from "./util";
+import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -120,11 +121,124 @@ export async function rewriteResponseHeaders(
 		headers.set("Cross-Origin-Opener-Policy", "same-origin");
 	}
 
-	if (parsed.destination === "document" || parsed.destination === "iframe") {
-		headers.set("Referrer-Policy", "unsafe-url");
+	return headers;
+}
+
+/**
+ * The site's URL for a URL the browser handed the service worker as a
+ * referrer, or null when it has none: an http(s) URL outside the proxy is the
+ * embedder's, not a site's.
+ */
+function unrewriteReferrer(
+	url: URL,
+	handler: ScramjetFetchHandler
+): _URL | null {
+	if (!String_startsWith(url.href, handler.context.prefix.href)) return null;
+	try {
+		return new _URL(unrewriteUrl(url, handler.context));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The URL the request's referrer is taken from, before its policy is applied.
+ *
+ * The browser has already worked out which document, stylesheet, module or
+ * worker the referrer comes from, and which policy applies, and handed both to
+ * the service worker - only in the proxy's URL space. Every proxied URL is
+ * same-origin with every other, so the policy it applied there left the URL
+ * whole unless it asks for no referrer at all or for an origin only, or the
+ * URL was too long. An origin-only referrer is the proxy's own, and the site's
+ * origin has to come from elsewhere: the one the page stamped on the URL it
+ * asked for, or the client that asked.
+ */
+function referrerSource(
+	handler: ScramjetFetchHandler,
+	request: ScramjetFetchRequest,
+	parsed: ScramjetFetchParsed
+): _URL | null {
+	// a redirect hands on the referrer the hops before it cut down, which can
+	// only be cut down further
+	if (parsed.referrerSourceUrl !== undefined) return parsed.referrerSourceUrl;
+
+	if (!request.rawReferrer) return null;
+	let raw: _URL;
+	try {
+		raw = new _URL(request.rawReferrer);
+	} catch {
+		return null;
 	}
 
-	return headers;
+	const whole = unrewriteReferrer(raw, handler);
+	if (whole) return whole;
+
+	// anything else from outside the proxy's origin is nothing the site knows
+	const prefix = handler.context.prefix;
+	if (raw.origin !== prefix.origin) return null;
+
+	const client = request.rawClientUrl
+		? unrewriteReferrer(request.rawClientUrl, handler)
+		: null;
+	const clientIsSite =
+		client && (client.protocol === "http:" || client.protocol === "https:");
+
+	if (raw.href === raw.origin + "/") {
+		// cut down to an origin, by the policy or for being too long - maybe
+		// too long only as the proxy's URL, which the page then said. the
+		// client's URL cannot stand in for a long one: the browser does not
+		// keep it up with pushState
+		if (parsed.referrerFallback) return parsed.referrerFallback;
+		if (parsed.fetchInitiatorOrigin) {
+			try {
+				return new _URL(parsed.fetchInitiatorOrigin + "/");
+			} catch {
+				// fall through to the client
+			}
+		}
+
+		return clientIsSite ? new _URL(client.origin + "/") : null;
+	}
+
+	// the proxy's own script asked on the site's behalf, as a dynamic import()
+	// does - unless the client is the embedder, whose navigations of the frame
+	// are the user's and have no referrer
+	return clientIsSite ? client : null;
+}
+
+/**
+ * The Referer header a request is sent with, or null for none.
+ *
+ * https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+ */
+export function determineReferrer(
+	handler: ScramjetFetchHandler,
+	request: ScramjetFetchRequest,
+	parsed: ScramjetFetchParsed
+): string | null {
+	const policy = request.rawReferrerPolicy || DEFAULT_REFERRER_POLICY;
+	const source = referrerSource(handler, request, parsed);
+	if (!source) return null;
+
+	return createReferrerString(source, parsed.url, policy) || null;
+}
+
+/**
+ * What document.referrer reads in a document served for this request.
+ *
+ * That is the Referer it was requested with - except after a redirect, where
+ * Chrome puts that Referer through the policy the navigation started out with
+ * rather than the one the redirects left it with.
+ */
+export function documentReferrer(parsed: ScramjetFetchParsed): string {
+	if (!parsed.referrer) return "";
+	if (parsed.initialReferrerPolicy === undefined) return parsed.referrer;
+
+	return createReferrerString(
+		new _URL(parsed.referrer),
+		parsed.url,
+		parsed.initialReferrerPolicy
+	);
 }
 
 export function rewriteRequestHeaders(
@@ -136,33 +250,18 @@ export function rewriteRequestHeaders(
 
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");
+	headers.delete(REFERRER_FALLBACK_HEADER);
 
-	const rawOriginUrl =
-		parsed.referrerSourceUrl !== undefined
-			? parsed.referrerSourceUrl
-			: request.rawClientUrl ||
-				(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
-	const originUrl =
-		rawOriginUrl &&
-		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
-			? new _URL(unrewriteUrl(rawOriginUrl, handler.context))
-			: rawOriginUrl;
+	// Origin and the SameSite context are the initiator's, which no referrer
+	// policy hides: the referrer is the wrong place to look for it, since its
+	// policy is free to cut it down to the proxy's origin or drop it. Chrome
+	// sends that origin whatever the policy, never "null" for one
+	const initiator = resolveFetchInitiatorUrl(request, parsed, handler);
+	if (initiator) headers.set("Origin", initiator.origin);
 
-	if (
-		rawOriginUrl &&
-		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
-	) {
-		headers.set("Origin", originUrl.origin);
+	if (parsed.referrer) headers.set("Referer", parsed.referrer);
 
-		const referer = createReferrerString(
-			originUrl,
-			parsed.url,
-			parsed.referrerPolicy ?? null
-		);
-		if (referer) headers.set("Referer", referer);
-	}
-
-	const sameSiteContext = computeSameSiteContext(request, parsed, originUrl);
+	const sameSiteContext = computeSameSiteContext(request, parsed, initiator);
 	const cookies = handler.context.cookieJar.getCookies(
 		parsed.url,
 		false,

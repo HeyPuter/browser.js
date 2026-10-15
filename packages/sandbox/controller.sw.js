@@ -212,6 +212,7 @@ var $scramjetController;
 						{
 							rawUrl: e.request.url,
 							rawReferrer: e.request.referrer,
+							rawReferrerPolicy: e.request.referrerPolicy,
 							destination: e.request.destination,
 							mode: e.request.mode,
 							referrer: e.request.referrer,

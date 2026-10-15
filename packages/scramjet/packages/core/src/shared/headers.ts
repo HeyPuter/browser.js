@@ -28,6 +28,15 @@ import {
  */
 export const CARRIED_HEADER_PREFIX = "x-scramjet-";
 
+/**
+ * The request header in which the page tells the service worker what a
+ * request's referrer is, when it knows better than the `$rff` the request's
+ * URL was stamped with - and which is empty for one that has none. See
+ * `referrerFallback`. Only ever on a request the page itself never sees, and
+ * never sent on.
+ */
+export const REFERRER_FALLBACK_HEADER = "x-scramjet-referrer-fallback";
+
 /** The carrier name for an original header: `Link` -> `x-scramjet-Link`. */
 export function carriedHeaderName(name: string): string {
 	return CARRIED_HEADER_PREFIX + name;
