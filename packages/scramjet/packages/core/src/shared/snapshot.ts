@@ -142,6 +142,17 @@ export const AsyncFunction_prototype = globalThis.Object.getPrototypeOf(
 	async function () {}
 );
 export const ArrayBuffer_isView = globalThis.ArrayBuffer.isView;
+/**
+ * The browser's UA client hints, in whichever realm this is - a service worker
+ * has them too. Absent outside Chromium, and outside a browser.
+ */
+export const Navigator_userAgentData = (
+	globalThis.navigator as Navigator & {
+		userAgentData?: {
+			getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>>;
+		};
+	}
+)?.userAgentData;
 export const WebAssembly_Module = globalThis.WebAssembly.Module;
 // taken before page code runs: `self` is [Replaceable] on a window, so a page
 // can shadow it. the Location itself is [LegacyUnforgeable]. undefined outside
@@ -514,6 +525,11 @@ export type _TextDecoder = Wrapped<TextDecoder>;
 export const _TextEncoder = makeWrap(globalThis.TextEncoder);
 export type _TextEncoder = Wrapped<TextEncoder>;
 export const _Blob = makeWrap(globalThis.Blob);
+/** Blob.prototype's `size` getter: the slot, so a Blob is told apart without `instanceof`. */
+export const Blob_prototype_size = Object_getOwnPropertyDescriptor(
+	globalThis.Blob.prototype,
+	"size"
+)!.get!;
 export type _Blob = Wrapped<Blob>;
 
 export function makeWrap<T extends object>(source: T): Wrapped<T> {
