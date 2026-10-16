@@ -57,8 +57,10 @@ export default function (client: ScramjetClient, _self: Self) {
 			// to drop, but it is not the string the frame text contains
 			let shown: string | null = null;
 			try {
-				file = frames[i].getFileName();
 				shown = frames[i].getScriptNameOrSourceURL();
+				// code with no resource of its own - scramjet's copy evaluated
+				// into a popup (see `bundleSource`) - has only its sourceURL
+				file = frames[i].getFileName() || shown;
 			} catch {
 				// a frame with no file - eval, or native code - is kept as-is
 			}
