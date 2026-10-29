@@ -11,6 +11,8 @@ import { ProxyFrame } from "../proxy/ProxyFrame";
 import { uuid } from "../util";
 import { mountedPromise } from "../App";
 import { tabsService } from "..";
+import { defaultFaviconUrl } from "../assets/favicon";
+import { browserIcon } from "../assets/icon";
 // const requestInspectElement = createDelegate<[HTMLElement, Tab]>();
 
 export type SerializedTab = {
@@ -147,11 +149,11 @@ export class Tab extends StatefulClass {
 		// Internal pages never send a frame load acknowledgement.
 		this.history.justTriggeredNavigation =
 			url.protocol !== INTERNAL_URL_PROTOCOL;
-		this.icon = "/defaultfavicon.png";
+		this.icon = defaultFaviconUrl;
 		if (url.protocol == INTERNAL_URL_PROTOCOL) {
 			this.frame.clear();
 			this.icon = null;
-			this.history.current().favicon = "/icon.png";
+			this.history.current().favicon = browserIcon;
 			switch (url.host) {
 				case "newtab":
 					this.history.current().title = this.title = "New Tab";
