@@ -15,6 +15,7 @@ import { Icon } from "@components/Icon";
 import { iconSearch } from "../icons";
 import { TopSiteButton, type TopSiteEntry } from "@components/TopSiteButton";
 import { profileService, settingsService, tabsService } from "..";
+import { browserIcon } from "../assets/icon";
 
 const MAX_TOP_SITES = 8;
 
@@ -138,7 +139,7 @@ export function NewTabPage(
 	return (
 		<div>
 			<div class="logo">
-				<img src="/icon.png" alt="Browser.js Logo" width="56" height="56" />
+				<img src={browserIcon} alt="Browser.js Logo" width="56" height="56" />
 				<h1>Browser</h1>
 			</div>
 			<div class="topbar">

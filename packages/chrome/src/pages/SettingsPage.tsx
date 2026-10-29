@@ -35,6 +35,7 @@ import {
 	PRODUCT_FULLNAME,
 } from "../consts";
 import { httpCache } from "../proxy/Controller";
+import { browserIcon } from "../assets/icon";
 
 function ThemePreview(this: FC<{ theme: (typeof THEMES)[number] }>) {
 	const theme = this.theme;
@@ -1440,7 +1441,7 @@ export function SettingsPage(
 										<div class="about-info">
 											<img
 												class="browser-logo"
-												src="/icon.png"
+												src={browserIcon}
 												alt={`${PRODUCT_FULLNAME} Logo`}
 											/>
 											<div class="browser-info">
