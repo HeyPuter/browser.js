@@ -12,7 +12,7 @@ import {
 	type ScramjetFetchHandler,
 	type ScramjetFetchRequest,
 } from "@mercuryworkshop/scramjet/bundled";
-import { HttpCachePlugin } from "./cache";
+import { CacheMissError, HttpCachePlugin } from "./cache";
 
 export function makeId(): string {
 	return Math.random().toString(36).substring(2, 10);
@@ -84,6 +84,8 @@ export class Controller {
 				}
 				return [response, transfer];
 			} catch (e: any) {
+				if (e instanceof CacheMissError)
+					return [{ status: 0, statusText: "", headers: [], body: null }, []];
 				console.error("Error in controller fetch:", e);
 				return [
 					{
