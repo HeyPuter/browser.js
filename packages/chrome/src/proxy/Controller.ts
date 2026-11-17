@@ -32,20 +32,9 @@ export class Controller {
 		this.rpc.recieve(e.data);
 	};
 
-	/**
-	 * The SW sends `$controller$swrevive` whenever it activates, even on the very
-	 * first init when the message port is already healthy. We use this flag to
-	 * ignore the first revive after construction so we don't tear down the
-	 * working channel for no reason.
-	 */
-	guardServiceWorkerRevive = true;
-
 	private methods: MethodsDefinition<Controllerbound> = {
 		ready: async () => {
 			this.readyResolve();
-			setTimeout(() => {
-				this.guardServiceWorkerRevive = false;
-			}, 5000);
 		},
 		request: async (data) => {
 			try {
@@ -167,31 +156,32 @@ export class Controller {
 		}
 	}
 
+	private isReviveForUs(data: any): boolean {
+		const revive = data?.$controller$swrevive;
+		if (!revive || typeof revive !== "object") return false;
+		return revive.id === undefined || revive.id === this.id;
+	}
+
 	private installSwReviveListener() {
-		// sw will kill itself randomly, if it restarts we get sent this message, rebuild the message ports
+		// a restarted sw has lost its tab registry and asks the owning controller to resend its port
 		if (isIsolated) {
 			const sandboxWindow = this.initTarget as Window;
 			window.addEventListener("message", (e) => {
 				if (e.source !== sandboxWindow) return;
-				if (e.data?.$controller$swrevive) {
-					if (this.guardServiceWorkerRevive) {
-						return;
-					}
-					console.log(
-						"controller: detected sandbox SW revive, re-establishing port"
-					);
-					this.setupMessagePort();
-				}
+				if (!this.isReviveForUs(e.data)) return;
+				console.log(
+					"controller: sandbox SW asked for revive, re-establishing port"
+				);
+				this.setupMessagePort();
 			});
 		} else {
 			navigator.serviceWorker.addEventListener("message", (e) => {
-				if (e.data?.$controller$swrevive) {
-					if (this.guardServiceWorkerRevive) {
-						return;
-					}
-					console.log("controller: detected SW revive, re-establishing port");
-					this.setupMessagePort();
+				if (!this.isReviveForUs(e.data)) return;
+				if (e.source instanceof ServiceWorker) {
+					this.initTarget = e.source;
 				}
+				console.log("controller: SW asked for revive, re-establishing port");
+				this.setupMessagePort();
 			});
 		}
 	}

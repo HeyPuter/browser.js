@@ -38,14 +38,14 @@
 	});
 
 	// service worker -> controller -> chrome
-	// the sandbox SW broadcasts $controller$swrevive when it activates so that
-	// the chrome controller can re-establish its message port. since the chrome
-	// is at a different origin from this SW it can't listen directly, so we
-	// forward the revive notification up to the parent.
+	// the sandbox SW sends $controller$swrevive when it needs a controller to
+	// re-establish its message port. since the chrome is at a different origin
+	// from this SW it can't listen directly, so we forward it up to the parent.
 	navigator.serviceWorker.addEventListener("message", (event) => {
 		if (!event.data || typeof event.data !== "object") return;
-		if (event.data.$controller$swrevive) {
-			window.parent.postMessage({ $controller$swrevive: {} }, "*");
+		const revive = event.data.$controller$swrevive;
+		if (revive && typeof revive === "object") {
+			window.parent.postMessage({ $controller$swrevive: revive }, "*");
 		}
 	});
 </script>

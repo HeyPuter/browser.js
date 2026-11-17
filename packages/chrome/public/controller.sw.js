@@ -1,7 +1,7 @@
 var $scramjetController;
 (() => {
 	var e = {
-			805(e, t, r) {
+			223: function (e, t, r) {
 				r.d(t, { C: () => o });
 				class o {
 					methods;
@@ -98,8 +98,8 @@ var $scramjetController;
 		}));
 	var o = {};
 	((() => {
-		(r.r(o), r.d(o, { route: () => a, shouldRoute: () => n }));
-		var e = r(805);
+		(r.r(o), r.d(o, { config: () => i, route: () => p, shouldRoute: () => u }));
+		var e = r(223);
 		let t = {};
 		addEventListener("message", (e) => {
 			if (e.data && "object" == typeof e.data) {
@@ -116,12 +116,14 @@ var $scramjetController;
 					"object" == typeof e.data.$sw$initRemoteTransport
 				) {
 					let { port: t, prefix: r } = e.data.$sw$initRemoteTransport,
-						o = i.find((e) => new URL(r).pathname.startsWith(e.prefix));
-					if (!o)
-						return void console.error(
-							"No relevant controller found for transport init"
-						);
-					o.rpc.call("initRemoteTransport", t, [t]);
+						o = d(new URL(r).pathname).then((e) => {
+							e
+								? e.rpc.call("initRemoteTransport", t, [t])
+								: console.error(
+										"No relevant controller found for transport init"
+									);
+						});
+					e.waitUntil(o);
 				}
 			}
 		});
@@ -196,18 +198,59 @@ var $scramjetController;
 					this.rpc.call("ready", void 0));
 			}
 		}
-		let i = [];
-		function n(e) {
-			let t = new URL(e.request.url);
-			return void 0 !== i.find((e) => t.pathname.startsWith(e.prefix));
+		let i = { prefix: "/~/sj/", reviveTimeout: 1e4 },
+			n = [],
+			a = new Map();
+		function l(e) {
+			return (
+				(e.startsWith(i.prefix) && e.slice(i.prefix.length).split("/")[0]) ||
+				null
+			);
 		}
-		async function a(e) {
+		function d(e) {
+			let t = n.find((t) => e.startsWith(t.prefix));
+			if (t) return Promise.resolve(t);
+			let r = l(e);
+			return r
+				? new Promise((e) => {
+						let t = a.get(r),
+							o = !t;
+						t || ((t = []), a.set(r, t));
+						let s = setTimeout(() => {
+								let t = a.get(r);
+								if (t) {
+									let e = t.indexOf(n);
+									(-1 !== e && t.splice(e, 1), 0 === t.length && a.delete(r));
+								}
+								e(void 0);
+							}, i.reviveTimeout),
+							n = (t) => {
+								(clearTimeout(s), e(t));
+							};
+						(t.push(n), o && c(r));
+					})
+				: Promise.resolve(void 0);
+		}
+		async function c(e) {
+			for (let t of await self.clients.matchAll({ includeUncontrolled: !0 }))
+				t.postMessage({ $controller$swrevive: { id: e } });
+		}
+		function u(e) {
+			let t = new URL(e.request.url);
+			return !!l(t.pathname) || n.some((e) => t.pathname.startsWith(e.prefix));
+		}
+		async function p(e) {
 			try {
 				let t = new URL(e.request.url),
-					r = i.find((e) => t.pathname.startsWith(e.prefix)),
-					o = await clients.get(e.clientId),
+					r = await d(t.pathname);
+				if (!r)
+					return new Response(
+						"Proxy controller for this page is gone; reload the proxy page.",
+						{ status: 503, headers: { "content-type": "text/plain" } }
+					);
+				let o = await clients.get(e.clientId),
 					s = [...e.request.headers],
-					n = await r.rpc.call(
+					i = await r.rpc.call(
 						"request",
 						{
 							rawUrl: e.request.url,
@@ -228,10 +271,10 @@ var $scramjetController;
 							? [e.request.body]
 							: void 0
 					);
-				return new Response(n.body, {
-					status: n.status,
-					statusText: n.statusText,
-					headers: n.headers,
+				return new Response(i.body, {
+					status: i.status,
+					statusText: i.statusText,
+					headers: i.headers,
 				});
 			} catch (e) {
 				return (
@@ -251,22 +294,19 @@ var $scramjetController;
 			)
 				return;
 			let t = e.data.$controller$init,
-				r = i.findIndex((e) => e.id === t.id);
-			(-1 !== r && i.splice(r, 1), i.push(new s(t.prefix, t.id, e.ports[0])));
+				r = n.findIndex((e) => e.id === t.id);
+			-1 !== r && n.splice(r, 1);
+			let o = new s(t.prefix, t.id, e.ports[0]);
+			n.push(o);
+			let i = a.get(t.id);
+			if (i) for (let e of (a.delete(t.id), i)) e(o);
 		}),
 			addEventListener("install", () => {
 				self.skipWaiting();
 			}),
 			addEventListener("activate", (e) => {
 				e.waitUntil(clients.claim());
-			}),
-			setTimeout(async () => {
-				for (let e of (console.log(
-					"service worker activated, notifying clients to revive"
-				),
-				await clients.matchAll()))
-					e.postMessage({ $controller$swrevive: {} });
-			}, 100));
+			}));
 	})(),
 		($scramjetController = o));
 })();
