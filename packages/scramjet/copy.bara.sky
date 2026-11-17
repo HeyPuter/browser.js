@@ -1,0 +1,26 @@
+# Usage (manual, from the public repo root):
+#   copybara migrate copy.bara.sky scramjet_to_browserjs \
+#     --git-origin-ref my-branch --git-destination-fetch my-branch \
+#     --git-destination-push my-branch
+SUBDIR = "packages/scramjet"
+
+core.workflow(
+    name = "scramjet_to_browserjs",
+    origin = git.origin(
+        url = "https://github.com/MercuryWorkshop/scramjet",
+        ref = "main",
+    ),
+    destination = git.destination(
+        url = "https://github.com/HeyPuter/browser.js",
+        fetch = "main",
+        push = "main",
+    ),
+    destination_files = glob([SUBDIR + "/**"]),
+    transformations = [
+        core.move("", SUBDIR),
+    ],
+    authoring = authoring.pass_thru("copybara-mw <copybara@mercurywork.shop>"),
+    mode = "ITERATIVE",
+    reversible_check = True,
+    custom_rev_id = "Scramjet-RevId",
+)
