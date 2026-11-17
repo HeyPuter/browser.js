@@ -387,7 +387,6 @@ export default function (client: ScramjetClient, _self: Self) {
 		}
 	});
 
-	// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-domparser-parsefromstring
 	const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 	/**
@@ -506,6 +505,7 @@ export default function (client: ScramjetClient, _self: Self) {
 		}
 	});
 
+	// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-domparser-parsefromstring
 	client.Intercept(class extends DOMParser {
 		@Arguments("(TrustedHTML or DOMString)", "DOMParserSupportedType")
 		@Returns("Document")

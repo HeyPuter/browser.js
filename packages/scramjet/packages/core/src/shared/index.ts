@@ -4,7 +4,6 @@ import { URLMeta } from "@rewriters/url";
 import { CookieJar } from "./cookie";
 import { TapInstance } from "@/Tap";
 import { HtmlContext } from "@/shared/rewriters/html";
-import { _RegExp } from "./snapshot";
 
 export * from "./cookie";
 export * from "./headers";
@@ -12,40 +11,20 @@ export * from "./htmlRules";
 export * from "./mime";
 export * from "./rewriters";
 
-/**
- * The URL whose flags a context runs with: its top-level frame's, so that a
- * subframe - or a script, or a worker - never picks different flags than the
- * page it is part of. `fallback` is for a meta that was built without one.
- */
-export function flagsUrl(meta: URLMeta, fallback: URL = meta.base): URL {
-	return meta.topUrl ?? fallback;
-}
-
 /** the flags whose value is a boolean, which is all but `incumbency` */
 export type BooleanFlag = {
 	[K in keyof ScramjetFlags]: ScramjetFlags[K] extends boolean ? K : never;
 }[keyof ScramjetFlags];
 
 /**
- * A flag's value for one URL: the configured default, unless a `siteFlags`
- * pattern matches and overrides it.
- *
- * `url` should be a top-level frame's (see {@link flagsUrl}).
+ * A flag's value. Flags are fixed for a context: an embedder that wants
+ * different flags for different sites hands each its own config.
  */
 export function flagValue<K extends keyof ScramjetFlags>(
 	flag: K,
-	context: ScramjetContext,
-	url: URL
+	context: ScramjetContext
 ): ScramjetFlags[K] {
-	const value = context.config.flags[flag];
-	for (const regex in context.config.siteFlags) {
-		const partialflags = context.config.siteFlags[regex];
-		if (new _RegExp(regex).test(url.href) && flag in partialflags) {
-			return partialflags[flag] as ScramjetFlags[K];
-		}
-	}
-
-	return value;
+	return context.config.flags[flag];
 }
 
 /**
@@ -55,10 +34,9 @@ export function flagValue<K extends keyof ScramjetFlags>(
  */
 export function flagEnabled(
 	flag: BooleanFlag,
-	context: ScramjetContext,
-	url: URL
+	context: ScramjetContext
 ): boolean {
-	return flagValue(flag, context, url);
+	return flagValue(flag, context);
 }
 export type ScramjetInterface = {
 	codecEncode: (input: string) => string;

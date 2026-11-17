@@ -153,60 +153,6 @@ const strictAfterComment = Object.assign(
 	{ incumbencyMode: "pst" as const, timeoutMs: 10000 }
 );
 
-// siteFlags are matched against the top-level frame, and a subframe runs with
-// its top-level frame's flags whatever its own URL matches.
-const subframeInheritsTopFlags = Object.assign(
-	serverTest({
-		name: "review113-subframe-inherits-top-level-flags",
-		scramjetOnly: true,
-		async start(server, port) {
-			server.on("request", (req, res) => {
-				const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-				if (pathname === "/") {
-					res.setHeader("Content-Type", "text/html");
-					res.end(`<!doctype html><script>
-						window.addEventListener("message", (event) => {
-							if (event.data?.tag !== "subframe-flags") return;
-							if (event.data.error) fail(event.data.error);
-							else pass();
-						});
-					</script><iframe src="/sub"></iframe>`);
-				} else if (pathname === "/sub") {
-					res.setHeader("Content-Type", "text/html");
-					res.end('<!doctype html><script src="/sub-script.js"></script>');
-				} else if (pathname === "/sub-script.js") {
-					res.setHeader("Content-Type", "application/javascript");
-					res.end(`
-						const client = window[Symbol.for("scramjet client global")];
-						const expectedTop = "http://localhost:${port}/";
-						let error = null;
-						if (client.topUrl.href.split("#")[0] !== expectedTop)
-							error = "subframe's top-level URL was " + client.topUrl.href;
-						else if ($scramjet.flagValue("incumbency", client.context, client.topUrl) !== "stamp")
-							error = "top-level frame's override was not selected";
-						else if (typeof window[client.config.globals.callfn] !== "function")
-							error = "subframe did not install its top-level frame's mode";
-						else if (typeof window[client.config.globals.registerrealmfn] === "function")
-							error = "subframe installed the mode its own URL matches";
-						parent.postMessage({ tag: "subframe-flags", error }, "*");
-					`);
-				} else {
-					res.statusCode = 404;
-					res.end();
-				}
-			});
-		},
-	}),
-	{
-		incumbencyMode: "none" as const,
-		incumbencySiteFlags: {
-			"^http://localhost:[0-9]+/(#|$)": "stamp" as const,
-			"/sub": "pst" as const,
-		},
-		timeoutMs: 10000,
-	}
-);
-
 const noneArrayPayload = Object.assign(
 	basicTest({
 		name: "review113-none-array-postmessage",
@@ -232,6 +178,5 @@ export default [
 	boundCallbackTest("lazystamp"),
 	boundCallbackTest("pst"),
 	strictAfterComment,
-	subframeInheritsTopFlags,
 	noneArrayPayload,
 ];

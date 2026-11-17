@@ -3,6 +3,7 @@ import {
 	defaultConfigDev,
 	ScramjetFetchHandler,
 	type ScramjetConfig,
+	type ScramjetFlags,
 	type ScramjetFetchRequest,
 	type ScramjetInterface,
 	unrewriteUrl,
@@ -21,12 +22,22 @@ import { isIsolated } from ".";
 export const virtualWasmPath = "scramjet.wasm.js";
 export const virtualInjectPath = "inject.js";
 
-function makeConfig(): ScramjetConfig {
+/**
+ * Flag overrides keyed on root domain (`example.co.uk`, never a subdomain).
+ * In isolated mode there is one controller per root domain, and each runs with
+ * the flags for its own: a cross-site subframe gets its site's flags, not the
+ * top-level page's. Non-isolated mode has one controller for everything, so
+ * these don't apply there.
+ */
+const siteFlags: Record<string, Partial<ScramjetFlags>> = {};
+
+function makeConfig(controller: Controller): ScramjetConfig {
 	return {
 		...defaultConfig,
 		flags: {
 			...defaultConfigDev.flags,
 			captureErrors: false,
+			...(controller.rootdomain ? siteFlags[controller.rootdomain] : {}),
 		},
 		maskedfiles: ["inject.js", "scramjet.wasm.js"],
 	};
@@ -307,7 +318,7 @@ export function renderErrorPage(controller: Controller, error: Error): string {
 			$injectLoadError({
 				id: "${contextId}",
 				sequence: ${JSON.stringify(findSequence(top!, self)!)},
-				config: ${JSON.stringify(makeConfig())},
+				config: ${JSON.stringify(makeConfig(controller))},
 				cookies: ${JSON.stringify(profileService.cookieJar.dump())},
 				wisp: ${JSON.stringify(wispUrl)},
 				codecEncode: ${codecEncode.toString()},
@@ -342,7 +353,7 @@ export function createFetchHandler(controller: Controller) {
 			$injectLoad({
 				id: "${contextId}",
 				sequence: ${JSON.stringify(findSequence(top!, self)!)},
-				config: ${JSON.stringify(makeConfig())},
+				config: ${JSON.stringify(makeConfig(controller))},
 				cookies: ${JSON.stringify(profileService.cookieJar.dump())},
 				wisp: ${JSON.stringify(wispUrl)},
 				codecEncode: ${codecEncode.toString()},
@@ -373,7 +384,7 @@ export function createFetchHandler(controller: Controller) {
 		// workers don't have a document, so initHeaders/history are empty.
 		const injectLoad = `
 				$injectLoad({
-					config: ${JSON.stringify(makeConfig())},
+					config: ${JSON.stringify(makeConfig(controller))},
 					cookies: null,
 					wisp: ${JSON.stringify(wispUrl)},
 					codecEncode: ${codecEncode.toString()},
@@ -402,7 +413,7 @@ export function createFetchHandler(controller: Controller) {
 				codecDecode,
 			},
 			cookieJar: profileService.cookieJar,
-			config: makeConfig(),
+			config: makeConfig(controller),
 			prefix: controller.prefix,
 		},
 		async fetchDataUrl(dataUrl: string) {

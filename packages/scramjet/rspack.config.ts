@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,15 +18,6 @@ import {
 } from "@rspack/core";
 import { RsdoctorRspackPlugin } from "@rsdoctor/rspack-plugin";
 import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
-if (!process.env.CI) {
-	try {
-		writeFileSync(
-			".git/hooks/pre-commit",
-			"pnpm format\ngit update-index --again"
-		);
-		chmodSync(".git/hooks/pre-commit", 0o755);
-	} catch {}
-}
 
 function nodeExternals(
 	{ context, request }: ExternalItemFunctionData,
@@ -170,8 +161,10 @@ class TypeScriptDeclarationsPlugin {
 	}
 
 	apply(compiler: WebpackCompiler) {
-		compiler.hooks.afterEmit.tap("TypeScriptDeclarationsPlugin", () => {
-			(async () => {
+		// awaited so a build only reports done once the declarations exist
+		compiler.hooks.afterEmit.tapPromise(
+			"TypeScriptDeclarationsPlugin",
+			async () => {
 				try {
 					console.log(`Generating TypeScript declarations for ${this.dir}...`);
 					try {
@@ -213,8 +206,8 @@ class TypeScriptDeclarationsPlugin {
 						error.message
 					);
 				}
-			})();
-		});
+			}
+		);
 	}
 }
 
@@ -227,32 +220,51 @@ const createproxyappdir = join(__dirname, "packages/create-proxy-app");
 
 const wasmPath = join(scramjetdir, "dist/scramjet.wasm");
 let wasmB64: string;
-const wasmBuf = await readFile(wasmPath);
-wasmB64 = wasmBuf.toString("base64");
+try {
+	wasmB64 = (await readFile(wasmPath)).toString("base64");
+} catch {
+	throw new Error(
+		`${wasmPath} is missing: build the rewriter first with \`./cv build wasm\``
+	);
+}
+
+const swcOptions = {
+	jsc: {
+		parser: {
+			syntax: "typescript",
+			// interceptors declare their IDL with decorators (@Arguments etc.)
+			decorators: true,
+		},
+		transform: {
+			// the 2022-03 standard proposal, not the legacy TS semantics
+			decoratorVersion: "2022-03",
+		},
+		target: "es2022",
+	},
+	module: {
+		type: "es6",
+		strict: false,
+		strictMode: false,
+	},
+};
 
 export const tsloader = {
 	test: /\.ts$/,
-	loader: "builtin:swc-loader",
 	exclude: ["/node_modules/"],
-	options: {
-		jsc: {
-			parser: {
-				syntax: "typescript",
-				// interceptors declare their IDL with decorators (@Arguments etc.)
-				decorators: true,
-			},
-			transform: {
-				// the 2022-03 standard proposal, not the legacy TS semantics
-				decoratorVersion: "2022-03",
-			},
-			target: "es2022",
+	// loaders run last to first: the heritage rewrite has to see the TS source,
+	// before swc lowers the decorators
+	use: [
+		{
+			loader: "builtin:swc-loader",
+			options: swcOptions,
 		},
-		module: {
-			type: "es6",
-			strict: false,
-			strictMode: false,
+		{
+			loader: resolve(
+				__dirname,
+				"packages/core/tools/intercept-heritage-loader.mjs"
+			),
 		},
-	},
+	],
 	type: "javascript/auto",
 };
 //TODO: replace this
@@ -494,6 +506,7 @@ const moduleBundledConfig = createScramjetConfig({
 
 // Type generation configuration
 const typeGenConfig = defineConfig({
+	name: "scramjet-types",
 	context: scramjetdir,
 	entry: {
 		index: "./src/index.ts",

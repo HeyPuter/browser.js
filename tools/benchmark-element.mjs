@@ -12,9 +12,8 @@ const express = require(
 const { chromium } = require(
 	path.join(root, "packages/scramjet/packages/runway/node_modules/playwright")
 );
-const { startHarness } = await import(
-	"../packages/scramjet/packages/runway/src/harness/scramjet/index.ts"
-);
+const { startHarness } =
+	await import("../packages/scramjet/packages/runway/src/harness/scramjet/index.ts");
 const baseline = process.env.PRE_IDL_ROOT ?? "/tmp/browserjs-preidl-bench";
 const extraScript = readFileSync(
 	path.join(root, "tools/benchmark-element-app.js"),

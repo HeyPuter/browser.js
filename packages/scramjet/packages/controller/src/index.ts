@@ -11,14 +11,17 @@ import {
 	ScramjetFetchHandler,
 	ScramjetHeaders,
 	setWasm,
+	splitFragment,
 	Tap,
 	type CookieSyncOptions,
 	type FetchHooks,
 	type ScramjetConfig,
 	type ScramjetContext,
+	type ScramjetFlags,
 	type ScramjetInterface,
 	type TrackedHistoryState,
 	Plugin,
+	unrewriteUrl,
 } from "@mercuryworkshop/scramjet";
 import { CONTROLLERFRAME } from "./symbols";
 import type {
@@ -210,6 +213,11 @@ type ControllerInit = {
 
 type FrameOptions = {
 	plugins: ManagedPlugin[];
+	/**
+	 * Overrides of the controller's flags for this frame, and for everything
+	 * loaded in it: its subframes and workers run with the same flags.
+	 */
+	flags?: Partial<ScramjetFlags>;
 };
 
 export class Controller {
@@ -711,6 +719,11 @@ function yieldGetInjectScripts(
 export class Frame {
 	id: string;
 	prefix: string;
+	/**
+	 * The controller's config with this frame's flags applied. A frame with its
+	 * own flags takes a copy when it is created.
+	 */
+	scramjetConfig: ScramjetConfig;
 	fetchHandler: ScramjetFetchHandler;
 	hooks: {
 		fetch: FetchHooks;
@@ -720,13 +733,13 @@ export class Frame {
 
 	get context(): ScramjetContext {
 		return {
-			config: this.controller.scramjetConfig,
+			config: this.scramjetConfig,
 			prefix: new URL(this.prefix, location.href),
 			cookieJar: this.controller.cookieJar,
 			interface: {
 				getInjectScripts: yieldGetInjectScripts(
 					this.controller.config,
-					this.controller.scramjetConfig,
+					this.scramjetConfig,
 					new URL(this.prefix, location.href),
 					this.controller.cookieJar,
 					this.controller.config.codec.encode,
@@ -746,7 +759,7 @@ export class Frame {
 						setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
 						delete self.WASM;
 
-						const sjconfig = ${JSON.stringify(this.controller.scramjetConfig)};
+						const sjconfig = ${JSON.stringify(this.scramjetConfig)};
 						const prefix = new URL("${this.prefix}", location.href);
 
 						const context = {
@@ -784,6 +797,14 @@ export class Frame {
 	) {
 		this.id = makeId();
 		this.prefix = this.controller.prefix + this.id + "/";
+		// without overrides the frame shares the controller's config, so changes
+		// to it still reach the frame
+		this.scramjetConfig = options.flags
+			? {
+					...controller.scramjetConfig,
+					flags: { ...controller.scramjetConfig.flags, ...options.flags },
+				}
+			: controller.scramjetConfig;
 
 		this.fetchHandler = new ScramjetFetchHandler({
 			crossOriginIsolated: self.crossOriginIsolated,
@@ -858,6 +879,43 @@ export class Frame {
 			//@ts-expect-error
 			base: new URL(location.href),
 		});
-		this.element.src = encoded;
+		this.element.src = this.sameDocument(url) ?? encoded;
+	}
+
+	/**
+	 * The real URL of the frame's document with `url`'s fragment, when `url`
+	 * is a fragment of that same document - or null.
+	 *
+	 * Going to `page#b` from `page#a` is a fragment navigation: it scrolls,
+	 * and fires `hashchange`, without reloading anything. The browser only
+	 * sees one when the frame's new URL equals its document's real URL but for
+	 * the fragment, and a rewritten URL does not - it lacks the query the
+	 * document was loaded with.
+	 */
+	private sameDocument(url: string): string | null {
+		let raw: string | undefined;
+		try {
+			raw = this.element.contentWindow?.location.href;
+		} catch {
+			return null;
+		}
+		if (!raw) return null;
+
+		let target: URL;
+		let current: URL;
+		try {
+			target = new URL(url);
+			current = new URL(unrewriteUrl(raw, this.context));
+		} catch {
+			return null;
+		}
+
+		const [withoutFragment, fragment] = splitFragment(target.href);
+		// without a fragment it loads a new document, which it has to request
+		// afresh
+		if (fragment === null) return null;
+		if (splitFragment(current.href)[0] !== withoutFragment) return null;
+
+		return splitFragment(raw)[0] + (fragment ?? "");
 	}
 }

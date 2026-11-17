@@ -72,15 +72,16 @@ export interface ScramjetConfig {
 		tempunusedid: string;
 	};
 	flags: ScramjetFlags;
-	siteFlags: Record<string, Partial<ScramjetFlags>>;
 	maskedfiles: string[];
 }
 
 /**
  * The config for Scramjet initialization.
  */
-export interface ScramjetInitConfig
-	extends Omit<ScramjetConfig, "codec" | "flags"> {
+export interface ScramjetInitConfig extends Omit<
+	ScramjetConfig,
+	"codec" | "flags"
+> {
 	flags: Partial<ScramjetFlags>;
 	codec: {
 		encode: (url: string) => string;
