@@ -204,6 +204,9 @@ export const Array_sort = Function_prototype_call.bind(
 export const Array_join = Function_prototype_call.bind(
 	globalThis.Array.prototype.join
 ) as (array: unknown[], separator?: string) => string;
+export const Array_splice = Function_prototype_call.bind(
+	globalThis.Array.prototype.splice
+) as <T>(array: T[], start: number, deleteCount?: number, ...items: T[]) => T[];
 export const Array_indexOf = Function_prototype_call.bind(
 	globalThis.Array.prototype.indexOf
 ) as <T>(

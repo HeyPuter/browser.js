@@ -218,7 +218,8 @@ class ExecutionContextWrapper {
 
 	constructor(
 		public global: typeof globalThis,
-		public init: Init
+		public init: Init,
+		private restorable = false
 	) {
 		const channel = new MessageChannel();
 		this.transport = new RemoteTransport(channel.port1);
@@ -286,6 +287,13 @@ class ExecutionContextWrapper {
 		);
 
 		this.injectScramjet();
+		this.client.onUnhook(() => {
+			navigator.serviceWorker?.removeEventListener(
+				"message",
+				this.handleServiceWorkerCookieMessage
+			);
+			channel.port1.close();
+		});
 	}
 
 	injectScramjet() {
@@ -340,14 +348,23 @@ class ExecutionContextWrapper {
 				return false;
 			},
 			hookSubcontext: (frameself) => {
-				const context = new ExecutionContextWrapper(frameself, {
-					...this.init,
-					cookies: this.cookieJar.dump(),
-				});
+				// restorable: if the window goes on to commit a same-origin
+				// document, the browser keeps this realm and that document's
+				// own copy of scramjet replaces this client (see core's
+				// `client/realm.ts`)
+				const context = new ExecutionContextWrapper(
+					frameself,
+					{
+						...this.init,
+						cookies: this.cookieJar.dump(),
+					},
+					true
+				);
 				return context.client;
 			},
 			initHeaders: this.init.initHeaders,
 			history: this.init.history,
+			restorable: this.restorable,
 		});
 		const frameInitContext = {
 			window: this.global.window,

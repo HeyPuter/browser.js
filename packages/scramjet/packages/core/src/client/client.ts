@@ -25,6 +25,7 @@ import {
 } from "@/shared";
 import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
+import { RealmSnapshot } from "./realm";
 import { AttributeLayer, HTML_NAMESPACE } from "./attributes";
 import { TextLayer } from "./text";
 import { ScramjetConfig } from "@/types";
@@ -108,6 +109,13 @@ export type ScramjetClientInit = {
 	hookSubcontext: (self: Self, frame?: HTMLIFrameElement) => ScramjetClient;
 	initHeaders: RawHeaders;
 	history: TrackedHistoryState[];
+	/**
+	 * Record the realm before hooking it so {@link ScramjetClient.unhook} can
+	 * undo the hooks. For a client installed into another realm by
+	 * `hookSubcontext`, which that realm's own document replaces if the
+	 * browser keeps the Window (see `realm.ts`).
+	 */
+	restorable?: boolean;
 };
 
 export type ProxyCtx<
@@ -420,6 +428,17 @@ export class ScramjetClient {
 	/** Set once `hook` has installed every module; `Intercept` is closed after. */
 	private hooked = false;
 
+	/** The realm as it was before this client, when `init.restorable`. */
+	private realmSnapshot: RealmSnapshot | null = null;
+
+	/** Undoes what hooking did outside the realm's built-ins, run by `unhook`. */
+	private disposers: AnyFunction[] = [];
+
+	/** Register something for {@link unhook} to undo, like a listener. */
+	onUnhook(fn: AnyFunction) {
+		this.disposers[this.disposers.length] = fn;
+	}
+
 	hooks = {
 		rewriter: {
 			html: Tap.create<HtmlRewriterHooks>(),
@@ -534,6 +553,8 @@ export class ScramjetClient {
 			);
 			throw new Error();
 		}
+
+		if (init.restorable) this.realmSnapshot = new RealmSnapshot(global);
 
 		if (iswindow) {
 			const b = findBox(global as unknown as Window, []);
@@ -729,6 +750,34 @@ export class ScramjetClient {
 		};
 
 		this.hooked = true;
+		this.realmSnapshot?.seal();
+	}
+
+	/**
+	 * Take this client back out of its realm, leaving the built-ins as they
+	 * were before it hooked them, so another client can hook the realm fresh.
+	 *
+	 * Only for a client created with `init.restorable`: called by a document
+	 * that finds the client its realm was hooked with from outside still
+	 * installed on a reused Window (see `realm.ts`).
+	 */
+	unhook() {
+		if (!this.realmSnapshot)
+			throw new Error("unhook() on a client that was not created restorable");
+
+		for (let i = this.disposers.length - 1; i >= 0; i--) {
+			try {
+				this.disposers[i]();
+			} catch (err) {
+				dbg.error("failed to dispose scramjet hook", err);
+			}
+		}
+		this.disposers = [];
+		this.realmSnapshot.restore();
+		this.realmSnapshot = null;
+
+		this.box.unregisterClient(this, this.global as Self);
+		delete this.global[SCRAMJETCLIENT];
 	}
 
 	/**
