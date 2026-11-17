@@ -23,7 +23,7 @@ export type TransferRequest = {
 };
 
 export type TransferResponse = {
-	body: BodyType;
+	body: BodyType | null;
 	headers: RawHeaders;
 	status: number;
 	statusText: string;
