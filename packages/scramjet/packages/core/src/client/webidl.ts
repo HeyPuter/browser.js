@@ -1843,7 +1843,10 @@ export function idlDictionary(
 	value: unknown,
 	name: string
 ): Record<string, unknown> {
-	if (value === undefined || value === null) return {};
+	// every member of an undefined or null dictionary is absent, and is not
+	// looked up on Object.prototype either
+	// https://webidl.spec.whatwg.org/#js-dictionary
+	if (value === undefined || value === null) return Object_create(null);
 
 	if (typeof value !== "object" && typeof value !== "function") {
 		throw new TypeError(`The provided value is not of type '${name}'.`);

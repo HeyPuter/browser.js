@@ -24,9 +24,8 @@ import {
 	Object_keys,
 	Reflect_apply,
 	Reflect_get,
-	String_charCodeAt,
 	String_startsWith,
-	String_substring,
+	Symbol_iterator,
 	_URL,
 } from "@/shared/snapshot";
 
@@ -46,29 +45,6 @@ function rewriteUrlOptionsForFetch(init: Record<string, unknown>) {
 		mode: (init.mode as string | undefined) ?? "cors",
 		credentials: init.credentials === "include" ? "include" : undefined,
 	};
-}
-
-/** Tab, LF, CR and space. https://fetch.spec.whatwg.org/#http-whitespace-byte */
-function isHttpWhitespace(code: number): boolean {
-	return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
-}
-
-/**
- * A header value with its leading and trailing HTTP whitespace stripped, as
- * appending it to a header list does before it is combined with another.
- * https://fetch.spec.whatwg.org/#concept-header-value-normalize
- */
-function normalizeHeaderValue(value: string): string {
-	let start = 0;
-	let end = value.length;
-	while (start < end && isHttpWhitespace(String_charCodeAt(value, start))) {
-		start++;
-	}
-	while (end > start && isHttpWhitespace(String_charCodeAt(value, end - 1))) {
-		end--;
-	}
-
-	return String_substring(value, start, end);
 }
 
 export default function (client: ScramjetClient, self: Self) {
@@ -124,7 +100,9 @@ export default function (client: ScramjetClient, self: Self) {
 		if (parsed.protocol === "about:" && parsed.pathname === "client") {
 			return "about:client";
 		}
-		if (parsed.origin !== client.siteOrigin) return "about:client";
+		// against the document's origin, which is opaque in a sandboxed frame
+		// and so the same as no URL's
+		if (parsed.origin !== client.originKey) return "about:client";
 
 		return client.rewriteUrl(parsed.href);
 	};
@@ -176,16 +154,39 @@ export default function (client: ScramjetClient, self: Self) {
 	);
 
 	/**
+	 * `items` as an iterable the native iterates without looking anything up
+	 * on a prototype: its `@@iterator`, the iterator's `next` and every result
+	 * are its own properties, where an array's are `Array.prototype`'s and
+	 * `%ArrayIteratorPrototype%`'s, which are the page's to replace.
+	 */
+	const ownIterable = (items: unknown[]): object => {
+		const iterable = Object_create(null);
+		iterable[Symbol_iterator] = () => {
+			let i = 0;
+			const iterator = Object_create(null);
+			iterator.next = () => {
+				const result = Object_create(null);
+				result.done = i >= items.length;
+				result.value = result.done ? undefined : items[i++];
+
+				return result;
+			};
+
+			return iterator;
+		};
+
+		return iterable;
+	};
+
+	/**
 	 * A `HeadersInit`, in a form the native reads without running anything of
 	 * the page's.
 	 *
 	 * A Headers is filled from by its list, and a tagged one is swapped for the
-	 * corrected view. Anything else is converted, and handed over as a record
-	 * with no prototype: the native would iterate an array through
-	 * `Array.prototype[@@iterator]`, which is the page's to replace. A name
-	 * given twice is one entry with both values, as the list combines them.
-	 * A malformed pair is left as the sequence it was, for the native to refuse
-	 * when it fills the list.
+	 * corrected view. Anything else is converted here and handed over in the
+	 * same shape, as a record with no prototype or as a sequence of
+	 * {@link ownIterable}s, for the native to fill the request from entry by
+	 * entry, under its own guard and with its own errors.
 	 */
 	const convertHeaders = (value: unknown): unknown => {
 		if (client.box.taggedHeaders.has(value as Headers)) {
@@ -196,20 +197,19 @@ export default function (client: ScramjetClient, self: Self) {
 		const converted = convertHeadersInit(value) as
 			| string[][]
 			| Record<string, string>;
-		const record: Record<string, string> = Object_create(null);
 		if (Array_isArray(converted)) {
+			const pairs: object[] = [];
 			for (let i = 0; i < converted.length; i++) {
-				const pair = converted[i];
-				if (pair.length !== 2) return converted;
-				const name = pair[0];
-				const value = normalizeHeaderValue(pair[1]);
-				record[name] = name in record ? record[name] + ", " + value : value;
+				pairs[i] = ownIterable(converted[i]);
 			}
-		} else {
-			const names = Object_keys(converted);
-			for (let i = 0; i < names.length; i++) {
-				record[names[i]] = converted[names[i]];
-			}
+
+			return ownIterable(pairs);
+		}
+
+		const record: Record<string, string> = Object_create(null);
+		const names = Object_keys(converted);
+		for (let i = 0; i < names.length; i++) {
+			record[names[i]] = converted[names[i]];
 		}
 
 		return record;
@@ -338,7 +338,9 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	/**
-	 * `request` - read through the native, as `n` - at another URL.
+	 * `request` - read through the native, as `n` - at another URL, without
+	 * its body when `bodyReplaced`: the init's takes its place, and the old
+	 * one may already have been read.
 	 *
 	 * Or `request` itself when its signal has already been aborted, for the
 	 * native to reject with the reason before reading any of the body - which
@@ -347,7 +349,8 @@ export default function (client: ScramjetClient, self: Self) {
 	const copyRequest = async (
 		request: Request,
 		n: Request,
-		url: string
+		url: string,
+		bodyReplaced: boolean
 	): Promise<Request> => {
 		if (new client.native.AbortSignal(n.signal).aborted) return request;
 
@@ -369,7 +372,7 @@ export default function (client: ScramjetClient, self: Self) {
 		// buffered rather than handed over as a stream: a stream body needs
 		// `duplex: "half"`, which a keepalive request refuses outright and which
 		// Firefox does not support at all
-		if (n.body !== null) init.body = await n.blob();
+		if (n.body !== null && !bodyReplaced) init.body = await n.blob();
 
 		return new nativeGlobal.Request(url, init);
 	};
@@ -485,7 +488,11 @@ export default function (client: ScramjetClient, self: Self) {
 				request = input;
 				const n = new client.native.Request(input);
 				const url = proxyUrlFor(n);
-				if (url !== null) request = await copyRequest(input, n, url);
+				// a null one leaves the request's own in place
+				const bodyReplaced = init.body !== undefined && init.body !== null;
+				if (url !== null) {
+					request = await copyRequest(input, n, url, bodyReplaced);
+				}
 
 				const sent = new client.native.Request(request);
 				// what the native sends it with: a non-empty init resets its
@@ -507,7 +514,8 @@ export default function (client: ScramjetClient, self: Self) {
 						request = await copyRequest(
 							request,
 							sent,
-							restamp(sentUrl, fallback)
+							restamp(sentUrl, fallback),
+							bodyReplaced
 						);
 					} else {
 						// in a header of the init's, which then takes the place of

@@ -6,7 +6,6 @@ import {
 	String_startsWith,
 	String_substring,
 	String_toLowerCase,
-	_URL,
 	_WeakMap,
 	drain,
 } from "@/shared/snapshot";
@@ -15,7 +14,6 @@ import {
 	REFERRER_FALLBACK_HEADER,
 	uncarriedHeaderName,
 } from "@/shared/headers";
-import { QP } from "@/fetch/parse";
 import { ScramjetClient } from "@client/client";
 import { Arguments, Returns, Type } from "@client/webidl";
 
@@ -24,10 +22,10 @@ export const enabled = (client: ScramjetClient, self: Self) =>
 
 export default function (client: ScramjetClient) {
 	/**
-	 * The URL each request was opened at, as the native has it - which is
-	 * stamped with the referrer fallback of the page as it was then.
+	 * The referrer fallback each request's URL was stamped with when it was
+	 * opened ("" for none), or null for a URL outside the proxy.
 	 */
-	const opened = new _WeakMap<XMLHttpRequest, string>();
+	const opened = new _WeakMap<XMLHttpRequest, string | null>();
 
 	client.Intercept(class extends XMLHttpRequest {
 		@Arguments(
@@ -46,7 +44,12 @@ export default function (client: ScramjetClient) {
 			password?: string | null
 		): void {
 			const rewritten = client.rewriteUrl(url);
-			opened.set(this, rewritten);
+			opened.set(
+				this,
+				String_startsWith(rewritten, client.context.prefix.href)
+					? (client.meta.referrerFallback ?? "")
+					: null
+			);
 
 			if (arguments.length < 3) return super.open(method, rewritten);
 
@@ -74,18 +77,12 @@ export default function (client: ScramjetClient) {
 		@Arguments("optional (Document or XMLHttpRequestBodyInit)?")
 		@Returns("undefined")
 		send(body?: Document | XMLHttpRequestBodyInit | null): void {
-			const url = opened.get(this);
-			if (
-				url !== undefined &&
-				String_startsWith(url, client.context.prefix.href)
-			) {
-				const fallback = client.meta.referrerFallback;
-				if (
-					(fallback ?? null) !==
-					new _URL(url).searchParams.get(QP.referrerFallback)
-				) {
+			const stamped = opened.get(this);
+			if (typeof stamped === "string") {
+				const fallback = client.meta.referrerFallback ?? "";
+				if (fallback !== stamped) {
 					try {
-						super.setRequestHeader(REFERRER_FALLBACK_HEADER, fallback ?? "");
+						super.setRequestHeader(REFERRER_FALLBACK_HEADER, fallback);
 					} catch {
 						// not open, or already sent: the send is the one to refuse
 					}
