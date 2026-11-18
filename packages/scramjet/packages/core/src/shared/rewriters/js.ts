@@ -54,6 +54,7 @@ function rewriteJsWasm(
 	flagsobj["incumbency"] = incumbencyMode(context);
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
 	flagsobj["scriptId"] = genScriptId();
+	flagsobj["initiatorOrigin"] = meta.initiatorOrigin ?? "";
 
 	try {
 		let out: JsRewriterOutput;

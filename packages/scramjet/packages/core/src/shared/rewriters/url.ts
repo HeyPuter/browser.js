@@ -363,11 +363,18 @@ export function rewriteUrl(
 			paramsInit.set(QP.initiatorOrigin, initiator);
 		}
 		// the referrer's origin, where that is not the initiator's, for when the
-		// browser hands over nothing but the proxy's
-		if (meta.origin.origin !== initiator) {
+		// browser hands over nothing but the proxy's. not on a module, whose
+		// URL has to be the same whichever module imports it
+		if (!options?.isModule && meta.origin.origin !== initiator) {
 			paramsInit.set(QP.referrerOrigin, meta.origin.origin);
 		}
-		const fallback = meta.referrerFallback;
+		// not on a module or a worker, whose URL is its identity: the same
+		// script imported again after the page's URL changed has to be the same
+		// module, and a SharedWorker the same worker
+		const fallback =
+			options?.isModule || isWorkerDestination(options?.destination)
+				? undefined
+				: meta.referrerFallback;
 		if (fallback) paramsInit.set(QP.referrerFallback, fallback);
 
 		let paramstring = "";
