@@ -157,6 +157,15 @@ export async function rewriteResponseHeaders(
 	const headers = ScramjetHeaders.fromRawHeaders(rawHeaders);
 	attachCarriedHeaders(headers, rawHeaders);
 
+	// the browser applies the last policy it recognizes out of every field,
+	// so they go on as the one list rather than as the last field alone
+	// https://w3c.github.io/webappsec-referrer-policy/#parse-referrer-policy-from-header
+	const policies: string[] = [];
+	for (const [name, value] of rawHeaders) {
+		if (name.toLowerCase() === "referrer-policy") policies.push(value);
+	}
+	if (policies.length > 1) headers.set("referrer-policy", policies.join(", "));
+
 	for (const cspHeader of SEC_HEADERS) {
 		headers.delete(cspHeader);
 	}
@@ -332,12 +341,15 @@ export function rewriteRequestHeaders(
 	headers.delete("Referer");
 	headers.delete(REFERRER_FALLBACK_HEADER);
 
-	// Origin and the SameSite context are the initiator's, which no referrer
-	// policy hides: the referrer is the wrong place to look for it, since its
-	// policy is free to cut it down to the proxy's origin or drop it. Chrome
-	// sends that origin whatever the policy, never "null" for one
+	// Origin and the SameSite context are the initiator's: the referrer is the
+	// wrong place to look for it, since its policy is free to cut it down to
+	// the proxy's origin or drop it
 	const initiator = resolveFetchInitiatorUrl(request, parsed, handler);
-	if (initiator) headers.set("Origin", initiator.origin);
+	headers.delete("Origin");
+	const origin = initiator
+		? requestOriginHeader(request, parsed, initiator)
+		: null;
+	if (origin !== null) headers.set("Origin", origin);
 
 	if (parsed.referrer) headers.set("Referer", parsed.referrer);
 
@@ -542,6 +554,50 @@ function computeFetchMode(
 		return request.mode;
 	}
 	return "no-cors";
+}
+
+/**
+ * The Origin header a request from `initiator` is sent with, or null for
+ * none: a CORS request to another origin always has it, a GET or HEAD
+ * otherwise never does, and anything else has it unless its referrer policy
+ * would hide where it came from, when it is "null".
+ *
+ * Except that Chrome also sends it on a same-origin CORS request an element
+ * or a stylesheet makes - a `crossorigin` image, a module, a font - and leaves
+ * it off only `fetch()` and XHR, whose destination is "".
+ *
+ * https://fetch.spec.whatwg.org/#append-a-request-origin-header
+ */
+function requestOriginHeader(
+	request: ScramjetFetchRequest,
+	parsed: ScramjetFetchParsed,
+	initiator: URL
+): string | null {
+	const origin = initiator.origin;
+	const mode = computeFetchMode(request, parsed);
+	if (
+		mode === "cors" &&
+		(origin !== parsed.url.origin || parsed.destination !== "")
+	) {
+		return origin;
+	}
+	if (request.method === "GET" || request.method === "HEAD") return null;
+	if (mode === "cors") return origin;
+
+	switch (request.rawReferrerPolicy || DEFAULT_REFERRER_POLICY) {
+		case "no-referrer":
+			return "null";
+		case "no-referrer-when-downgrade":
+		case "strict-origin":
+		case "strict-origin-when-cross-origin":
+			return initiator.protocol === "https:" && parsed.url.protocol !== "https:"
+				? "null"
+				: origin;
+		case "same-origin":
+			return origin === parsed.url.origin ? origin : "null";
+		default:
+			return origin;
+	}
 }
 
 /**
