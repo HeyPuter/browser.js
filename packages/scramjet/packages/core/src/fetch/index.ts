@@ -65,6 +65,8 @@ export interface ScramjetFetchParsed {
 	// origin of the page that initialized the request
 	// specifically for tracking Sec-Fetch-Site, don't use for anything else, it will diverge from clientUrl in some cases
 	fetchInitiatorOrigin?: string;
+	/** The `$ro` the request was stamped with, see `URLMeta.initiatorOrigin`. */
+	fetchReferrerOrigin?: string;
 
 	// was the request made with credentials=include?
 	fetchCredentialsInclude?: boolean;

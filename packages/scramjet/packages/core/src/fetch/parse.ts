@@ -1,4 +1,10 @@
-import { Object_entries, Object_keys, _URL, Error } from "@/shared/snapshot";
+import {
+	Object_entries,
+	Object_keys,
+	_Set,
+	_URL,
+	Error,
+} from "@/shared/snapshot";
 import { referrerFallback, unrewriteUrl, URLMeta } from "@rewriters/url";
 import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
 import {
@@ -19,6 +25,7 @@ export const QP = {
 	credentials: "$cred",
 	destination: "$dest",
 	initiatorOrigin: "$io",
+	referrerOrigin: "$ro",
 	fetchSite: "$fs",
 	crossSiteRedirect: "$csr",
 	fakeDataURL: "$fakedataurl",
@@ -121,6 +128,52 @@ function headerReferrerFallback(
 	return fallback.origin === client.origin ? fallback : undefined;
 }
 
+/** What a document or worker loads makes its requests as that document or worker. */
+const ENVIRONMENT_DESTINATIONS = new _Set<RequestDestination>([
+	"document",
+	"iframe",
+	"frame",
+	"object",
+	"embed",
+	"fencedframe" as RequestDestination,
+	"worker",
+	"sharedworker",
+	"serviceworker" as RequestDestination,
+]);
+
+/**
+ * The origin of the environment a subresource's own requests are made by - the
+ * stylesheet's fonts are the document's - or undefined for a response that is
+ * an environment itself, a document or a worker, whose requests are its own.
+ *
+ * The one it was loaded with, carried in its `$io`, and failing that the
+ * client that asked for it: an import map's prefix mapping builds URLs that
+ * carry no query at all.
+ */
+function subresourceInitiator(
+	request: ScramjetFetchRequest,
+	params: QueryParams,
+	destination: RequestDestination,
+	handler: ScramjetFetchHandler
+): string | undefined {
+	if (ENVIRONMENT_DESTINATIONS.has(destination)) return undefined;
+	if (params.initiatorOrigin) return params.initiatorOrigin;
+
+	const client = request.rawClientUrl;
+	if (!client || !client.href.startsWith(handler.context.prefix.href)) {
+		return undefined;
+	}
+	try {
+		const url = new _URL(unrewriteUrl(client, handler.context));
+		if (url.protocol === "http:" || url.protocol === "https:")
+			return url.origin;
+	} catch {
+		// not a URL of the site's
+	}
+
+	return undefined;
+}
+
 export function parseRequest(
 	request: ScramjetFetchRequest,
 	handler: ScramjetFetchHandler
@@ -185,6 +238,12 @@ export function parseRequest(
 		parentFrameName: params.parentFrame,
 		// what this response goes on to request has it as the referrer
 		referrerFallback: referrerFallback(request.rawUrl.href, url),
+		initiatorOrigin: subresourceInitiator(
+			request,
+			params,
+			destination,
+			handler
+		),
 	};
 
 	const parsed: ScramjetFetchParsed = {
@@ -197,6 +256,7 @@ export function parseRequest(
 		crossSiteRedirect: params.crossSiteRedirect === "1",
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
+		fetchReferrerOrigin: params.referrerOrigin || undefined,
 		referrerFallback:
 			fromHeader === undefined
 				? parseReferrerFallback(params.referrerFallback)

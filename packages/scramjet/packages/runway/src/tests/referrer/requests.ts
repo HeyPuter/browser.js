@@ -695,6 +695,99 @@ export default [
 		}
 		`,
 	}),
+	// a stylesheet's font is the document's request - its Origin, cookies and
+	// Sec-Fetch-Site are the document's - with the stylesheet as its referrer
+	referrerTest({
+		name: "referrer-stylesheet-font-origin",
+		js: `
+		for (const rp of [undefined, "origin"]) {
+			const font = uid("font"), family = uid("f");
+			const css = "@font-face { font-family: '" + family + "'; src: url(" + JSON.stringify(rurl(MAIN, font, {}, ".woff")) + "); }";
+			await loadEl("link", { rel: "stylesheet", href: rurl(ALT, uid("sheet"), { body: css, rp }, ".css") });
+			document.fonts.load("16px '" + family + "'").catch(() => {});
+			const got = await seenAll(font);
+			assertEqual(got.origin, MAIN, "the font's Origin, stylesheet policy " + rp);
+			assertEqual(got.referer, ALT + "/", "the font's Referer, stylesheet policy " + rp);
+		}
+		`,
+	}),
+	// RequestInit is converted member by member in the order Chrome converts
+	// it, each getter and toString run once and where Chrome runs it
+	referrerTest({
+		name: "referrer-init-conversion-matches-native",
+		js: `
+		const logged = (values) => {
+			const log = [];
+			const str = (name, v) => ({ toString() { log.push(name + ".toString"); return v; } });
+			const init = new Proxy({}, {
+				get(_, key) {
+					log.push("get " + String(key));
+					if (key === "headers") return { a: str("header", "1") };
+					if (key in values) return str(String(key), values[key]);
+					return undefined;
+				},
+			});
+			return { log, init };
+		};
+		const full = { body: "x", cache: "no-store", credentials: "omit", integrity: "", method: "POST", mode: "cors", priority: "high", redirect: "follow", referrer: "/r", referrerPolicy: "origin" };
+
+		const a = logged(full);
+		new Request("/x", a.init);
+		assertConsistent("new Request()", a.log.join());
+
+		const b = logged(full);
+		await fetch(rurl(MAIN, uid("f")), b.init);
+		assertConsistent("fetch()", b.log.join());
+
+		const c = logged({ ...full, mode: "bogus" });
+		const result = await attempt(() => new Request("/x", c.init));
+		assertConsistent("an invalid enum stops the conversion", [result, c.log.join()]);
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-new-target-after-conversion",
+		js: `
+		const log = [];
+		const init = { get referrer() { log.push("referrer"); return "/r"; }, get signal() { log.push("signal"); return undefined; } };
+		const newTarget = new Proxy(function () {}, {
+			get(target, key) {
+				if (key === "prototype") {
+					log.push("prototype");
+					throw new Error("prototype");
+				}
+				return Reflect.get(target, key);
+			},
+		});
+		const input = new Request(MAIN + "/x", { method: "POST", body: "abc" });
+		const result = await attempt(() => Reflect.construct(Request, [input, init], newTarget));
+		assertConsistent("a throwing newTarget.prototype", [result, log.join()]);
+		assertEqual(input.bodyUsed, false, "the input's body is left alone");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-xhr-sent-after-history-change",
+		js: `
+		const url = MAIN + "/page/main.html?q=1&pad=";
+		const longA = url + "a".repeat(4050 - url.length), longB = url + "b".repeat(4050 - url.length);
+		const send = (x) => new Promise((resolve) => { x.onloadend = resolve; x.send(); });
+
+		const fromLong = uid("fromlong"), fromShort = uid("fromshort");
+		history.pushState(null, "", longA);
+		const a = new XMLHttpRequest();
+		a.open("GET", rurl(MAIN, fromLong));
+		history.pushState(null, "", longB);
+		await send(a);
+		await expectRef(fromLong, longB, "opened at one long URL, sent from another");
+
+		history.replaceState(null, "", PAGE);
+		const b = new XMLHttpRequest();
+		b.open("GET", rurl(MAIN, fromShort));
+		history.pushState(null, "", longB);
+		await send(b);
+		await expectRef(fromShort, longB, "opened at a short URL, sent from a long one");
+		history.replaceState(null, "", PAGE);
+		`,
+	}),
 	referrerTest({
 		name: "referrer-long-pushed-url",
 		js: `

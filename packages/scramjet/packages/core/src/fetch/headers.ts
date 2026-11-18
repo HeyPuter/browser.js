@@ -268,9 +268,10 @@ function referrerSource(
 		// client's URL cannot stand in for a long one: the browser does not
 		// keep it up with pushState
 		if (parsed.referrerFallback) return parsed.referrerFallback;
-		if (parsed.fetchInitiatorOrigin) {
+		const origin = parsed.fetchReferrerOrigin ?? parsed.fetchInitiatorOrigin;
+		if (origin) {
 			try {
-				return new _URL(parsed.fetchInitiatorOrigin + "/");
+				return new _URL(origin + "/");
 			} catch {
 				// fall through to the client
 			}

@@ -42,6 +42,7 @@ import {
 	String_fromCharCode,
 	Reflect_ownKeys,
 	Reflect_apply,
+	Reflect_get,
 	Reflect_construct,
 	Object_getOwnPropertyDescriptor,
 	Object_defineProperty,
@@ -285,6 +286,27 @@ export type ScramjetModule = {
 	order: number | undefined;
 	default: (client: ScramjetClient, self: GlobalThis) => void;
 };
+
+/**
+ * A constructor of our own to construct `native` with, in place of a page's
+ * newTarget whose `prototype` has already been read as `proto`.
+ *
+ * GetPrototypeFromConstructor falls back to the realm's own prototype when
+ * `prototype` is not an object, which is `native`'s here.
+ * https://tc39.es/ecma262/#sec-getprototypefromconstructor
+ */
+function standInNewTarget(proto: unknown, native: AnyFunction): AnyFunction {
+	const target = function () {};
+	Object_defineProperty(target, "prototype", {
+		value:
+			(typeof proto === "object" && proto !== null) ||
+			typeof proto === "function"
+				? proto
+				: native.prototype,
+	});
+
+	return target;
+}
 
 function findBox(global: Window, seen: Window[]): SingletonBox | null {
 	if (Array_includes(seen, global)) return null;
@@ -1853,12 +1875,28 @@ return { apply, construct };
 							// `new Request(...)` names the slot's object as its
 							// newTarget and wants the native constructor itself, which
 							// is both the common case and the one that allocates nothing
+							//
+							// And the page's newTarget's `prototype` is read first of
+							// all, before a single argument is converted: V8 makes the
+							// object a platform constructor fills in before it runs
+							// one step of it. The body's conversions come first here,
+							// so it is read now, once, and the native is handed a
+							// newTarget of our own that carries it - which answers the
+							// read the native then makes itself with nothing of the
+							// page's. A throw out of it throws before any of them
+							const target =
+								newTarget === slot.callable
+									? newTarget
+									: standInNewTarget(
+											Reflect_get(newTarget, "prototype"),
+											nativeCtor
+										);
 							const construct =
 								newTarget === slot.callable
 									? nativeCtor
 									: new Proxy(nativeCtor, {
 											construct: (_target, inner) =>
-												tramp.construct(nativeCtor, inner, newTarget),
+												tramp.construct(nativeCtor, inner, target),
 										});
 
 							// `construct` is the body's `this`, which is what makes
@@ -1874,7 +1912,7 @@ return { apply, construct };
 							// rejection path above always hands back an object, so
 							// this only ever catches a body that declined to build one
 							if (constructed === undefined) {
-								return tramp.construct(nativeCtor, args, newTarget);
+								return tramp.construct(nativeCtor, args, target);
 							}
 
 							return constructed;

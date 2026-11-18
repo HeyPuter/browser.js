@@ -6,9 +6,16 @@ import {
 	String_startsWith,
 	String_substring,
 	String_toLowerCase,
+	_URL,
+	_WeakMap,
 	drain,
 } from "@/shared/snapshot";
-import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
+import {
+	carriedHeaderName,
+	REFERRER_FALLBACK_HEADER,
+	uncarriedHeaderName,
+} from "@/shared/headers";
+import { QP } from "@/fetch/parse";
 import { ScramjetClient } from "@client/client";
 import { Arguments, Returns, Type } from "@client/webidl";
 
@@ -16,6 +23,12 @@ export const enabled = (client: ScramjetClient, self: Self) =>
 	"XMLHttpRequest" in self;
 
 export default function (client: ScramjetClient) {
+	/**
+	 * The URL each request was opened at, as the native has it - which is
+	 * stamped with the referrer fallback of the page as it was then.
+	 */
+	const opened = new _WeakMap<XMLHttpRequest, string>();
+
 	client.Intercept(class extends XMLHttpRequest {
 		@Arguments(
 			"ByteString",
@@ -33,6 +46,7 @@ export default function (client: ScramjetClient) {
 			password?: string | null
 		): void {
 			const rewritten = client.rewriteUrl(url);
+			opened.set(this, rewritten);
 
 			if (arguments.length < 3) return super.open(method, rewritten);
 
@@ -49,6 +63,36 @@ export default function (client: ScramjetClient) {
 			}
 
 			return super.open(method, rewritten, isAsync, username, password);
+		}
+
+		/**
+		 * The request starts here, and its referrer is the page as it is now,
+		 * not as it was when the request was opened - so when the fallback the
+		 * URL was stamped with has since changed, the service worker is told in
+		 * a header instead. See `referrerFallback`.
+		 */
+		@Arguments("optional (Document or XMLHttpRequestBodyInit)?")
+		@Returns("undefined")
+		send(body?: Document | XMLHttpRequestBodyInit | null): void {
+			const url = opened.get(this);
+			if (
+				url !== undefined &&
+				String_startsWith(url, client.context.prefix.href)
+			) {
+				const fallback = client.meta.referrerFallback;
+				if (
+					(fallback ?? null) !==
+					new _URL(url).searchParams.get(QP.referrerFallback)
+				) {
+					try {
+						super.setRequestHeader(REFERRER_FALLBACK_HEADER, fallback ?? "");
+					} catch {
+						// not open, or already sent: the send is the one to refuse
+					}
+				}
+			}
+
+			return super.send(body);
 		}
 
 		@Type("USVString")
