@@ -24,7 +24,9 @@ import {
 	Object_keys,
 	Reflect_apply,
 	Reflect_get,
+	String_charCodeAt,
 	String_startsWith,
+	String_substring,
 	_URL,
 } from "@/shared/snapshot";
 
@@ -44,6 +46,29 @@ function rewriteUrlOptionsForFetch(init: Record<string, unknown>) {
 		mode: (init.mode as string | undefined) ?? "cors",
 		credentials: init.credentials === "include" ? "include" : undefined,
 	};
+}
+
+/** Tab, LF, CR and space. https://fetch.spec.whatwg.org/#http-whitespace-byte */
+function isHttpWhitespace(code: number): boolean {
+	return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
+}
+
+/**
+ * A header value with its leading and trailing HTTP whitespace stripped, as
+ * appending it to a header list does before it is combined with another.
+ * https://fetch.spec.whatwg.org/#concept-header-value-normalize
+ */
+function normalizeHeaderValue(value: string): string {
+	let start = 0;
+	let end = value.length;
+	while (start < end && isHttpWhitespace(String_charCodeAt(value, start))) {
+		start++;
+	}
+	while (end > start && isHttpWhitespace(String_charCodeAt(value, end - 1))) {
+		end--;
+	}
+
+	return String_substring(value, start, end);
 }
 
 export default function (client: ScramjetClient, self: Self) {
@@ -177,7 +202,8 @@ export default function (client: ScramjetClient, self: Self) {
 				const pair = converted[i];
 				if (pair.length !== 2) return converted;
 				const name = pair[0];
-				record[name] = name in record ? record[name] + ", " + pair[1] : pair[1];
+				const value = normalizeHeaderValue(pair[1]);
+				record[name] = name in record ? record[name] + ", " + value : value;
 			}
 		} else {
 			const names = Object_keys(converted);

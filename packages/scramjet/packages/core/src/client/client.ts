@@ -288,22 +288,25 @@ export type ScramjetModule = {
 };
 
 /**
- * A constructor of our own to construct `native` with, in place of a page's
- * newTarget whose `prototype` has already been read as `proto`.
+ * A constructor of our own to construct a native with, in place of the page's
+ * `newTarget` whose `prototype` has already been read as `proto`.
  *
- * GetPrototypeFromConstructor falls back to the realm's own prototype when
- * `prototype` is not an object, which is `native`'s here.
+ * When `proto` is not an object the page's own `newTarget` is handed on: what
+ * V8 builds then is not the spec's fallback to the realm's prototype (Chrome
+ * gives `Object.prototype`), so only the native itself gets it right - at the
+ * cost of `prototype` being read a second time.
  * https://tc39.es/ecma262/#sec-getprototypefromconstructor
  */
-function standInNewTarget(proto: unknown, native: AnyFunction): AnyFunction {
+function standInNewTarget(proto: unknown, newTarget: AnyFunction): AnyFunction {
+	if (
+		!(typeof proto === "object" && proto !== null) &&
+		typeof proto !== "function"
+	) {
+		return newTarget;
+	}
+
 	const target = function () {};
-	Object_defineProperty(target, "prototype", {
-		value:
-			(typeof proto === "object" && proto !== null) ||
-			typeof proto === "function"
-				? proto
-				: native.prototype,
-	});
+	Object_defineProperty(target, "prototype", { value: proto });
 
 	return target;
 }
@@ -1889,7 +1892,7 @@ return { apply, construct };
 									? newTarget
 									: standInNewTarget(
 											Reflect_get(newTarget, "prototype"),
-											nativeCtor
+											newTarget
 										);
 							const construct =
 								newTarget === slot.callable
