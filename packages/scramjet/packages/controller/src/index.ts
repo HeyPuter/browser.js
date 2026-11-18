@@ -687,6 +687,19 @@ function yieldGetInjectScripts(
 			);
 		}
 		return [
+			// first, before scramjet's bundle snapshots any built-in: a client
+			// still installed here was put on this Window by another realm
+			// while it held its initial about:blank, and the browser kept the
+			// Window for this document. Taking it out lets this document hook
+			// its realm with its own code (see core's `client/realm.ts`).
+			// "scramjet client global" is `SCRAMJETCLIENTNAME`
+			script(
+				"data:text/javascript;charset=utf-8;base64," +
+					base64Encode(`
+					try { self[Symbol.for("scramjet client global")]?.unhook(); }
+					catch (e) { console.error("failed to unhook the outer realm's client", e); }
+				`)
+			),
 			script(config.scramjetPath),
 			script(prefix.href + config.virtualWasmPath),
 			script(config.injectPath),

@@ -225,6 +225,13 @@ export default function (client: ScramjetClient, self: Self) {
 			new client.native.Event(event).stopImmediatePropagation();
 		};
 		new client.native.EventTarget(self).addEventListener("message", gate, true);
+		client.onUnhook(() =>
+			new client.native.EventTarget(self).removeEventListener(
+				"message",
+				gate,
+				true
+			)
+		);
 	}
 
 	client.Proxy("BroadcastChannel.prototype.postMessage", {

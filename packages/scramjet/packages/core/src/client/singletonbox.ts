@@ -10,6 +10,8 @@ import {
 	_WeakSet,
 	Object_create,
 	Function_hasInstance,
+	Array_indexOf,
+	Array_splice,
 	drain,
 } from "@/shared/snapshot";
 import { FakeWebSocketState } from "./shared/requests/WebSocket";
@@ -221,6 +223,31 @@ export class SingletonBox {
 				ctors[ctors.length] = desc.value;
 			}
 		}
+	}
+
+	/**
+	 * Forget a client that has been taken out of its realm. The realm's
+	 * constructors stay in `ctors`: they are still its built-ins, and the
+	 * client that hooks it next registers them again.
+	 */
+	unregisterClient(client: ScramjetClient, global: Self) {
+		const index = Array_indexOf(this.clients, client);
+		if (index !== -1) Array_splice(this.clients, index, 1);
+		if (this.globals.get(global) === client) this.globals.delete(global);
+		for (const table of drain([
+			this.documents,
+			this.locations,
+			this.histories,
+			this.functions,
+			this.objectPrototypes,
+		] as _Map<unknown, ScramjetClient>[])) {
+			const stale: unknown[] = [];
+			table.forEach((value, key) => {
+				if (value === client) stale[stale.length] = key;
+			});
+			for (const key of drain(stale)) table.delete(key);
+		}
+		this.clientIds.delete(client.id);
 	}
 
 	instanceof(obj: any, name: string): boolean {
