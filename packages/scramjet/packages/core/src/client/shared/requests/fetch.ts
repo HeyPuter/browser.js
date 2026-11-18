@@ -385,6 +385,50 @@ export default function (client: ScramjetClient, self: Self) {
 		return parsed.href;
 	};
 
+	/**
+	 * Whether the browser would have refused this fetch for carrying integrity
+	 * metadata into a response it cannot read.
+	 *
+	 * A `no-cors` fetch of another origin gets an opaque response, and one with
+	 * a digest to check is a network error - no digest is ever checked against
+	 * an opaque body. Proxied, every fetch is same-origin and nothing is
+	 * opaque, so the browser lets it through; the refusal has to be made here.
+	 * It needs no digest: it is the mode, the origin and whether there is
+	 * integrity metadata at all. A same-origin fetch that is redirected to
+	 * another origin is not caught.
+	 *
+	 * `request` is what the native was handed, and `init` the init as
+	 * {@link readRequestInit} converted it.
+	 *
+	 * https://fetch.spec.whatwg.org/#main-fetch
+	 */
+	const isOpaqueWithIntegrity = (
+		request: RequestInfo,
+		init: Record<string, unknown>
+	): boolean => {
+		let mode = init.mode as string | undefined;
+		let integrity = init.integrity as string | undefined;
+		let url: string;
+		if (typeof request === "string") {
+			url = request;
+			mode ??= "cors";
+		} else {
+			const n = new client.native.Request(request);
+			url = n.url;
+			mode ??= n.mode;
+			integrity ??= n.integrity;
+		}
+
+		if (mode !== "no-cors" || !integrity) return false;
+
+		const target = new _URL(client.unrewriteUrl(url));
+		if (target.protocol !== "http:" && target.protocol !== "https:") {
+			return false;
+		}
+
+		return target.origin !== client.url.origin;
+	};
+
 	client.Intercept(class extends GlobalScope {
 		// RequestInfo is the Fetch typedef `(Request or USVString)`.
 		// https://fetch.spec.whatwg.org/#requestinfo
@@ -460,6 +504,10 @@ export default function (client: ScramjetClient, self: Self) {
 			}
 
 			const response: Response = await nativeThis.fetch(request, init);
+
+			if (isOpaqueWithIntegrity(request, init)) {
+				throw client.errors.typeError({ detail: "Failed to fetch" });
+			}
 			client.box.taggedResponses.add(response);
 
 			return response;
