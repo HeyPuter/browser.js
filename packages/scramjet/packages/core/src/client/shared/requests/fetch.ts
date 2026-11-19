@@ -8,15 +8,9 @@ import {
 	Returns,
 	Type,
 } from "@client/webidl";
-import {
-	carriedHeaderName,
-	REFERRER_FALLBACK_HEADER,
-	uncarriedHeaderName,
-} from "@/shared/headers";
+import { carriedHeaderName, uncarriedHeaderName } from "@/shared/headers";
 import { iswindow } from "@client/entry";
 import type { NativeErrorSite } from "@client/nativeerror";
-import { QP } from "@/fetch/parse";
-import { MAX_REFERRER_LENGTH, referrerFallback } from "@rewriters/url";
 import {
 	Array_isArray,
 	Object_assign,
@@ -216,8 +210,10 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	/**
-	 * `RequestInit`, member by member.
-	 * https://fetch.spec.whatwg.org/#requestinit, and Chrome's partials of it
+	 * `RequestInit`, member by member: the members Chrome converts, its
+	 * partials included. `privateToken` is a dictionary of its own that is
+	 * handed on as it is, for the native to convert.
+	 * https://fetch.spec.whatwg.org/#requestinit
 	 *
 	 * `targetAddressSpace` is an enum whose values are the native's to know.
 	 * It is only converted to a string here - and being the last member read,
@@ -248,51 +244,25 @@ export default function (client: ScramjetClient, self: Self) {
 			method: "ByteString",
 			mode: "RequestMode",
 			priority: "RequestPriority",
+			privateToken: "any",
 			redirect: "RequestRedirect",
 			referrer: "USVString",
 			referrerPolicy: "ReferrerPolicy",
 			sharedStorageWritable: "boolean",
 			signal: "AbortSignal?",
 			targetAddressSpace: "DOMString",
-			window: "any",
 		}
 	);
 
-	/**
-	 * The reader for the `RequestInit` members this browser converts.
-	 *
-	 * Which those are is the native's to say - Chrome's partials come and go
-	 * behind flags, and reading one it does not convert would run a getter it
-	 * never runs - so it is asked, once, by watching it convert an empty one.
-	 * A member it reads that is not modelled here is handed over as it is, for
-	 * the native to convert: the one place this still defers to it.
-	 */
-	let requestInitReader: ((value: unknown) => Record<string, unknown>) | null =
-		null;
+	const requestInitReader = dictionaryReaderOf(
+		"RequestInit",
+		REQUEST_INIT,
+		client.box
+	);
 	const readRequestInit = (
 		value: unknown,
 		site: NativeErrorSite
 	): Record<string, unknown> => {
-		if (!requestInitReader) {
-			const members: Record<string, IDLMember> = Object_create(null);
-			new nativeGlobal.Request(
-				"about:blank",
-				new Proxy(Object_create(null), {
-					get: (_, key) => {
-						if (typeof key === "string") {
-							members[key] = REQUEST_INIT[key] ?? ((raw: unknown) => raw);
-						}
-						return undefined;
-					},
-				})
-			);
-			requestInitReader = dictionaryReaderOf(
-				"RequestInit",
-				members,
-				client.box
-			);
-		}
-
 		const init = requestInitReader(value);
 		// resolved once the whole dictionary has been converted, as the
 		// constructor steps do: a later member can still have moved <base>
@@ -338,9 +308,7 @@ export default function (client: ScramjetClient, self: Self) {
 	};
 
 	/**
-	 * `request` - read through the native, as `n` - at another URL, without
-	 * its body when `bodyReplaced`: the init's takes its place, and the old
-	 * one may already have been read.
+	 * `request` - read through the native, as `n` - at another URL.
 	 *
 	 * Or `request` itself when its signal has already been aborted, for the
 	 * native to reject with the reason before reading any of the body - which
@@ -349,8 +317,7 @@ export default function (client: ScramjetClient, self: Self) {
 	const copyRequest = async (
 		request: Request,
 		n: Request,
-		url: string,
-		bodyReplaced: boolean
+		url: string
 	): Promise<Request> => {
 		if (new client.native.AbortSignal(n.signal).aborted) return request;
 
@@ -372,46 +339,9 @@ export default function (client: ScramjetClient, self: Self) {
 		// buffered rather than handed over as a stream: a stream body needs
 		// `duplex: "half"`, which a keepalive request refuses outright and which
 		// Firefox does not support at all
-		if (n.body !== null && !bodyReplaced) init.body = await n.blob();
+		if (n.body !== null) init.body = await n.blob();
 
 		return new nativeGlobal.Request(url, init);
-	};
-
-	/**
-	 * What the service worker should take a request's referrer from when the
-	 * browser sends it as nothing but an origin for the length of the proxy's
-	 * URL for it alone - for `referrer` as the native holds it - or undefined
-	 * for nothing but what it is sent.
-	 *
-	 * The URL a request is made for is stamped with that for the page it was
-	 * made in (see `referrerFallback`), which is not the one when the request
-	 * has a referrer of its own, nor when it is sent from a page that has
-	 * changed its URL since. So it is worked out again as the request is sent.
-	 */
-	const fallbackFor = (referrer: string): string | undefined => {
-		if (referrer === "about:client") return client.meta.referrerFallback;
-		if (
-			referrer.length <= MAX_REFERRER_LENGTH ||
-			!String_startsWith(referrer, client.context.prefix.href)
-		) {
-			return undefined;
-		}
-
-		return referrerFallback(referrer, new _URL(client.unrewriteUrl(referrer)));
-	};
-
-	/** `url`, a proxy URL, stamped with `fallback` for its `$rff` instead. */
-	const restamp = (url: string, fallback: string | undefined): string => {
-		if (!String_startsWith(url, client.context.prefix.href)) return url;
-
-		const parsed = new _URL(url);
-		if ((fallback ?? null) === parsed.searchParams.get(QP.referrerFallback)) {
-			return url;
-		}
-		if (fallback) parsed.searchParams.set(QP.referrerFallback, fallback);
-		else parsed.searchParams.delete(QP.referrerFallback);
-
-		return parsed.href;
 	};
 
 	/**
@@ -472,69 +402,13 @@ export default function (client: ScramjetClient, self: Self) {
 			// receiver check still sees what the page called it on
 			const nativeThis = new client.native.window(this);
 
-			// the native takes the URL and policy the referrer comes from as it
-			// is called, so it is called before anything of the page's can
-			// change them - with nothing asynchronous on the way, save the copy
-			// of a body only the rarest requests need
 			let request: RequestInfo;
 			if (typeof input === "string") {
 				request = client.rewriteUrl(input, rewriteUrlOptionsForFetch(init));
-				// a referrer of the page's own is not the page its URL was
-				// stamped for
-				if (typeof init.referrer === "string" && init.referrer !== "") {
-					request = restamp(request, fallbackFor(init.referrer));
-				}
 			} else {
-				request = input;
 				const n = new client.native.Request(input);
 				const url = proxyUrlFor(n);
-				// a null one leaves the request's own in place
-				const bodyReplaced = init.body !== undefined && init.body !== null;
-				if (url !== null) {
-					request = await copyRequest(input, n, url, bodyReplaced);
-				}
-
-				const sent = new client.native.Request(request);
-				// what the native sends it with: a non-empty init resets its
-				// referrer to the client, save for one the init gives
-				const empty = Object_keys(init).length === 0;
-				const referrer: string =
-					typeof init.referrer === "string"
-						? init.referrer
-						: empty
-							? sent.referrer
-							: "about:client";
-				const fallback = fallbackFor(referrer);
-				const sentUrl: string = sent.url;
-				if (referrer !== "" && restamp(sentUrl, fallback) !== sentUrl) {
-					const mode = (init.mode as string | undefined) ?? sent.mode;
-					if (mode === "no-cors") {
-						// which cannot carry a header of ours, so has its URL
-						// restamped, which it can only have by being copied
-						request = await copyRequest(
-							request,
-							sent,
-							restamp(sentUrl, fallback),
-							bodyReplaced
-						);
-					} else {
-						// in a header of the init's, which then takes the place of
-						// the request's own, so they come along - and an empty init
-						// would have left the referrer and policy alone
-						const headers = new nativeGlobal.Headers(
-							(init.headers as HeadersInit | undefined) ?? sent.headers
-						);
-						new client.native.Headers(headers).set(
-							REFERRER_FALLBACK_HEADER,
-							fallback ?? ""
-						);
-						init.headers = headers;
-						if (empty) {
-							init.referrer = sent.referrer;
-							init.referrerPolicy = sent.referrerPolicy;
-						}
-					}
-				}
+				request = url === null ? input : await copyRequest(input, n, url);
 			}
 
 			const response: Response = await nativeThis.fetch(request, init);
@@ -556,8 +430,7 @@ export default function (client: ScramjetClient, self: Self) {
 				input = client.rewriteUrl(input, rewriteUrlOptionsForFetch(init));
 			}
 
-			// converted already, so the native reads nothing of the page's but
-			// what it does itself: `newTarget.prototype`, when it would
+			// converted already, so the native reads nothing of the page's
 			return new this(input, init);
 		}
 

@@ -15,7 +15,6 @@ import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
 import { createReferrerString, DEFAULT_REFERRER_POLICY } from "./util";
 import { isFetchPreload } from "@/shared/htmlRules";
-import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -272,11 +271,8 @@ function referrerSource(
 		client && (client.protocol === "http:" || client.protocol === "https:");
 
 	if (raw.href === raw.origin + "/") {
-		// cut down to an origin, by the policy or for being too long - maybe
-		// too long only as the proxy's URL, which the page then said. the
-		// client's URL cannot stand in for a long one: the browser does not
-		// keep it up with pushState
-		if (parsed.referrerFallback) return parsed.referrerFallback;
+		// cut down to an origin, by the policy or for being too long as the
+		// proxy's URL, in which case the origin is all that is sent
 		const origin = parsed.fetchReferrerOrigin ?? parsed.fetchInitiatorOrigin;
 		if (origin) {
 			try {
@@ -339,7 +335,6 @@ export function rewriteRequestHeaders(
 
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");
-	headers.delete(REFERRER_FALLBACK_HEADER);
 
 	// Origin and the SameSite context are the initiator's: the referrer is the
 	// wrong place to look for it, since its policy is free to cut it down to

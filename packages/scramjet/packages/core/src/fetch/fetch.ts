@@ -153,7 +153,6 @@ export async function doHandleFetch(
 		// proxy's URL space it has not left the origin. hand on the one this hop
 		// actually sent, which is all the next hop may start from
 		location.searchParams.set(QP.referrerSource, parsed.referrer ?? "");
-		location.searchParams.delete(QP.referrerFallback);
 		if (isDocument(parsed)) {
 			location.searchParams.set(
 				QP.referrerPolicy,

@@ -5,8 +5,7 @@ import {
 	_URL,
 	Error,
 } from "@/shared/snapshot";
-import { referrerFallback, unrewriteUrl, URLMeta } from "@rewriters/url";
-import { REFERRER_FALLBACK_HEADER } from "@/shared/headers";
+import { unrewriteUrl, URLMeta } from "@rewriters/url";
 import {
 	ScramjetFetchHandler,
 	ScramjetFetchParsed,
@@ -16,7 +15,6 @@ import {
 export const QP = {
 	referrerPolicy: "$rfp",
 	referrerSource: "$rfs",
-	referrerFallback: "$rff",
 	isModule: "$module",
 	topFrame: "$tf",
 	parentFrame: "$pf",
@@ -82,50 +80,6 @@ function isUnmarkedModule(
 	if (Object_keys(params).length !== 0) return false;
 
 	return request.rawDestination === "script" && request.mode === "cors";
-}
-
-function parseReferrerFallback(
-	href: string | null | undefined
-): _URL | undefined {
-	if (!href) return undefined;
-	try {
-		return new _URL(href);
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * The referrer the page put in {@link REFERRER_FALLBACK_HEADER}, `null` for
- * none at all, or `undefined` for no header - or one that cannot be believed.
- *
- * The page's own `fetch()` writes it, for a referrer that is the page or one
- * of its choosing, and a page's referrer is always of its own origin. But any
- * page can write any header, so it is only taken when it is: the client is the
- * one thing about the request the page cannot write.
- */
-function headerReferrerFallback(
-	request: ScramjetFetchRequest,
-	handler: ScramjetFetchHandler
-): _URL | null | undefined {
-	const header = request.initialHeaders.get(REFERRER_FALLBACK_HEADER);
-	if (header === null) return undefined;
-	// saying there is none can only ever take away
-	if (header === "") return null;
-
-	const fallback = parseReferrerFallback(header);
-	if (!fallback || !request.rawClientUrl) return undefined;
-	let client: _URL;
-	try {
-		client = new _URL(unrewriteUrl(request.rawClientUrl, handler.context));
-	} catch {
-		return undefined;
-	}
-	if (client.protocol !== "http:" && client.protocol !== "https:") {
-		return undefined;
-	}
-
-	return fallback.origin === client.origin ? fallback : undefined;
 }
 
 /** What a document or worker loads makes its requests as that document or worker. */
@@ -223,8 +177,6 @@ export function parseRequest(
 		(params.destination as RequestDestination | undefined) ||
 		request.rawDestination;
 
-	const fromHeader = headerReferrerFallback(request, handler);
-
 	const meta: URLMeta = {
 		origin: url,
 		base: url,
@@ -236,8 +188,6 @@ export function parseRequest(
 				: undefined,
 		topFrameName: params.topFrame,
 		parentFrameName: params.parentFrame,
-		// what this response goes on to request has it as the referrer
-		referrerFallback: referrerFallback(request.rawUrl.href, url),
 		initiatorOrigin: subresourceInitiator(
 			request,
 			params,
@@ -257,10 +207,6 @@ export function parseRequest(
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
 		fetchReferrerOrigin: params.referrerOrigin || undefined,
-		referrerFallback:
-			fromHeader === undefined
-				? parseReferrerFallback(params.referrerFallback)
-				: (fromHeader ?? undefined),
 		// TODO: should really just be a boolean
 		fetchCredentialsInclude: params.credentials === "include",
 		fetchMode,

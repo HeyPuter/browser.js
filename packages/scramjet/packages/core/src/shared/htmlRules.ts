@@ -239,8 +239,6 @@ export const htmlRules: {
 					base: new _URL(meta.origin.origin),
 					topFrameName: meta.topFrameName,
 					parentFrameName: meta.parentFrameName,
-					// its referrer is the document it is in, which is this one
-					referrerFallback: meta.referrerFallback,
 					initiatorOrigin: meta.initiatorOrigin,
 				},
 				{
