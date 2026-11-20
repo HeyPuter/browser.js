@@ -1,5 +1,6 @@
 {
 	"tests": [
+		"csp-srcdoc-eval-removed-meta",
 		"cssurls-author-string-preserved",
 		"cssurls-computed-style",
 		"cssurls-cssom-write-serialization",
