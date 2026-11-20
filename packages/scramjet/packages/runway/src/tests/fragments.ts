@@ -599,7 +599,9 @@ export default [
 		},
 	}),
 
-	// and a frame's is still a frame's
+	// a frame's is still a frame's. Known failure: the pushed entry is a
+	// fresh URL, which says nothing about frames, so that links rendered
+	// before the push still match it (below)
 	fragmentTest({
 		name: "fragment-history-pushed-frame-reload-request",
 		js: `
@@ -617,6 +619,32 @@ export default [
 						(name) => req.headers[name] ?? null
 					)
 				)};</script>`,
+		},
+	}),
+
+	// in a frame, a link to the URL a pushState moves to, rendered before
+	// the push, is a fragment navigation once it has
+	fragmentTest({
+		name: "fragment-nav-frame-link-before-pushstate",
+		js: `
+			const f = document.createElement("iframe");
+			f.src = "/catalog";
+			document.body.append(f);
+			await until(() => f.contentWindow.ready, 8000);
+			const w = f.contentWindow;
+			w.marker = 1;
+			w.history.pushState(null, "", "/item");
+			w.document.getElementById("l").click();
+			await until(() => f.contentWindow.location.hash === "#reviews");
+			await sleep(200);
+			assertConsistent("frame", [
+				f.contentWindow.marker ?? "reloaded",
+				f.contentWindow.location.pathname + f.contentWindow.location.hash,
+			]);
+		`,
+		routes: {
+			"/catalog": `<a id="l" href="/item#reviews">r</a><p id="reviews">x</p><script>window.ready = true;</script>`,
+			"/item": `<p>item</p>`,
 		},
 	}),
 

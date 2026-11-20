@@ -351,10 +351,7 @@ export function rewriteUrl(
  * with it, and with each other, exactly as the site's do.
  *
  * Any other URL is rewritten afresh, as a request the document makes itself,
- * and keeps only the real one's parameters that say where the document is
- * loaded: a frame that called `pushState` still reloads as a frame. The rest
- * describe who requested the document and how it was redirected there, which
- * a reload of the new entry is not.
+ * so that it matches the URLs the document's links to it were given.
  */
 export function rewriteHistoryUrl(
 	url: URL,
@@ -370,17 +367,8 @@ export function rewriteHistoryUrl(
 	// a scheme with no proxy URL, which only ever differs in its fragment
 	if (url.protocol !== "http:" && url.protocol !== "https:") return url.href;
 
-	const rewritten = new _URL(rewriteUrl(withoutFragment, context, meta));
-	const raw = new _URL(meta.rawUrl).searchParams;
-	for (const key of frameParams) {
-		const value = raw.get(key);
-		if (value !== null) rewritten.searchParams.set(key, value);
-	}
-
-	return rewritten.href + (fragment ?? "");
+	return rewriteUrl(url, context, meta);
 }
-
-const frameParams = [QP.isIframe, QP.destination, QP.topFrame, QP.parentFrame];
 
 /**
  * https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten

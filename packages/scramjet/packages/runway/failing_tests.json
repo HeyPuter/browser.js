@@ -71,6 +71,7 @@
 		"fragment-base-ignores-svg",
 		"fragment-base-ignores-template",
 		"fragment-document-referrer-excludes-fragment",
+		"fragment-history-pushed-frame-reload-request",
 		"fragment-self-navigation-replaces-entry",
 		"functionctor-async-flavor",
 		"functionctor-asyncgenerator-flavor",

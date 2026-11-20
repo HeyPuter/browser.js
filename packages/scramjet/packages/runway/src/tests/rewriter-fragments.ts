@@ -174,8 +174,8 @@ export default [
 				"another URL"
 			);
 
-			// a frame, redirected there: it keeps being a frame, and nothing
-			// else about how it was requested
+			// nothing about how the document was requested carries over, so
+			// a link to the new URL rendered before the push still matches it
 			const framed = rewriteHistoryUrl(
 				new URL("/deep/route", "https://example.com/page?q=1"),
 				context,
@@ -192,8 +192,8 @@ export default [
 				framed,
 				prefix +
 					encodeURIComponent("https://example.com/deep/route") +
-					"?%24io=https%3A%2F%2Fexample.com&%24iframe=1&%24pf=p",
-				"a frame"
+					"?%24io=https%3A%2F%2Fexample.com",
+				"a frame, redirected there"
 			);
 		},
 	}),
