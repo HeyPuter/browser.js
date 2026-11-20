@@ -584,9 +584,18 @@ export default function (client: ScramjetClient, self: Self) {
 			apply(ctx) {
 				// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
 				const real = client.box.standIns.get(ctx.args[0] as Event);
-				if (real) {
-					ctx.args[0] = real;
-					client.box.trustedEvents.delete(real);
+				if (!real) return;
+
+				ctx.args[0] = real;
+				// untrusted for its listeners - unless the dispatch throws,
+				// because it is still in flight, which leaves it as it was
+				const trusted = client.box.trustedEvents.has(real);
+				client.box.trustedEvents.delete(real);
+				try {
+					ctx.return(ctx.call());
+				} catch (err) {
+					if (trusted) client.box.trustedEvents.add(real);
+					throw err;
 				}
 			},
 		},

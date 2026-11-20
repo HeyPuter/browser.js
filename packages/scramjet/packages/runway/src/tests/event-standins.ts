@@ -233,4 +233,41 @@ export default [
 			});
 		},
 	}),
+	// a dispatch that throws, because the event is still being dispatched,
+	// leaves it as trusted as it was
+	serverTest({
+		name: "standin-websocket-redispatch-in-flight",
+		autoPass: true,
+		js: `
+			const socket = new WebSocket("ws://localhost:" + location.port);
+			await new Promise((r) => socket.addEventListener("open", r));
+			const seen = [];
+			const done = new Promise((resolve) => {
+				socket.addEventListener("message", (e) => {
+					try {
+						new EventTarget().dispatchEvent(e);
+						seen.push("dispatched");
+					} catch (err) {
+						seen.push(err.name);
+					}
+				});
+				socket.addEventListener("message", (e) => {
+					seen.push(e.isTrusted);
+					resolve();
+				});
+			});
+			socket.send("echo");
+			await done;
+			assertConsistent("seen", seen);
+			socket.close();
+		`,
+		async start(server) {
+			const wss = new WebSocketServer({ server });
+			wss.on("connection", (socket) => {
+				socket.on("message", (message, isBinary) =>
+					socket.send(message, { binary: isBinary })
+				);
+			});
+		},
+	}),
 ] as Test[];
