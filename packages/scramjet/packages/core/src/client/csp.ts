@@ -62,10 +62,22 @@ export function initializeCsp(client: ScramjetClient): CspState {
 	// that never has one. A meta put in and taken out again between two checks
 	// is missed
 	const seen = new WeakSet<Element>();
+	// and only read again once the head has changed: a meta is put in or
+	// taken out at the end far more often than anywhere else
+	let lastHead: Element | null = null;
+	let lastCount = -1;
+	let lastChild: Element | null = null;
 	state.flush = () => {
 		const head = nDocument.head;
 		if (!head) return;
-		const children = new client.native.Element(head).children;
+		const nHead = new client.native.Element(head);
+		const count = nHead.childElementCount;
+		const child = nHead.lastElementChild;
+		if (head === lastHead && count === lastCount && child === lastChild) return;
+		lastHead = head;
+		lastCount = count;
+		lastChild = child;
+		const children = nHead.children;
 		for (let i = 0; i < children.length; i++) {
 			const element = new client.native.Element(children[i]);
 			if (

@@ -58,7 +58,6 @@ export function uncarriedHeaderName(name: string): string | null {
  * differ in a browser too. Chromium's order is identical across runs.
  */
 const CHROME_REQUEST_ORDER = [
-	"content-length",
 	"sec-ch-ua-platform",
 	"accept-language",
 	"sec-ch-ua",
@@ -128,7 +127,6 @@ const CHROME_REQUEST_ORDER_NO_BODY = CHROME_REQUEST_ORDER.map((h) => h)
  * pseudo-headers that do not sit in this list at all.
  */
 const CHROME_NAVIGATION_ORDER = [
-	"content-length",
 	"sec-ch-ua",
 	"sec-ch-ua-mobile",
 	"sec-ch-ua-platform",
@@ -212,18 +210,6 @@ export class ScramjetHeaders {
 		// decided by the same thing everywhere `toRawHeaders` is called,
 		// rather than by whether a caller remembered to say which kind of
 		// request it had.
-		// `content-length` leads whichever table applies. Measured against
-		// Chromium 155 with a navigation form POST to a local server, which put
-		// it third overall and ahead of every header these tables carry:
-		//
-		//     Host, Connection, Content-Length, Cache-Control, sec-ch-ua, ...
-		//
-		// `host` and `connection` are HTTP/1.1 framing the transport adds and
-		// become pseudo-headers over HTTP/2, which is what the target speaks;
-		// `content-length` does NOT -- it stays an ordinary header there, and
-		// Chromium sends it on every POST that is not a `duplex: "half"`
-		// upload. The comment that used to group all four as "framing the
-		// transport adds" was right about three of them.
 		const order =
 			"upgrade-insecure-requests" in this.headers
 				? CHROME_NAVIGATION_ORDER

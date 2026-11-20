@@ -67,42 +67,83 @@ export default [
 			});
 		},
 	}),
-	// and a secure one that asked for a hint is sent it, and has a navigation
-	// it named critical made again with it. Bare headless Chromium does not
-	// act on Accept-CH here, so this is the proxy alone
+	// a top-level navigation answered with Critical-CH is made again with the
+	// hint, and with the cookie the dropped response set. Bare headless
+	// Chromium does not act on Accept-CH here, so this is the proxy alone
 	serverTest({
 		name: "request-critical-ch-restarts-navigation",
 		hostname: "hints.runway.test",
 		autoPass: true,
 		js: `
 			const id = Math.random().toString(36).slice(2);
-			const frame = document.createElement("iframe");
-			const loaded = new Promise((r) => (frame.onload = r));
-			frame.src = "/doc?" + id;
-			document.body.appendChild(frame);
-			await loaded;
-			assertEqual(frame.contentDocument.body.textContent, "served");
-			const seen = await (await fetch("/seen?" + id)).json();
+			const popup = window.open("/doc?" + id);
+			let seen = [];
+			for (let i = 0; i < 100 && seen.length < 2; i++) {
+				await new Promise((r) => setTimeout(r, 50));
+				seen = await (await fetch("/seen?" + id)).json();
+			}
+			popup?.close();
 			assertEqual(seen.length, 2, "asked twice");
-			assertEqual(seen[0], null, "first without the hint");
-			assert(seen[1] !== null, "second with it");
+			assertEqual(seen[0].arch, null, "first without the hint");
+			assert(seen[1].arch !== null, "second with it");
+			assertEqual(seen[1].cookie, "challenge=" + id, "and the cookie the first set");
 		`,
 		async start(server) {
-			const runs: Record<string, (string | null)[]> = {};
+			const runs: Record<
+				string,
+				{ arch: string | null; cookie: string | null }[]
+			> = {};
 			const run = (url: string) => (runs[url.split("?")[1]] ??= []);
 			server.on("request", (req, res) => {
 				if (req.url!.startsWith("/doc?")) {
 					const arch =
 						(req.headers["sec-ch-ua-arch"] as string | undefined) ?? null;
-					run(req.url!).push(arch);
+					run(req.url!).push({ arch, cookie: req.headers.cookie ?? null });
 					res.writeHead(arch === null ? 403 : 200, {
 						"Content-Type": "text/html",
 						"Accept-CH": "Sec-CH-UA-Arch",
 						"Critical-CH": "Sec-CH-UA-Arch",
+						"Set-Cookie": "challenge=" + req.url!.split("?")[1] + "; Path=/",
 					});
 					res.end(arch === null ? "challenged" : "served");
 				} else if (req.url!.startsWith("/seen?")) {
 					json(res, run(req.url!));
+				}
+			});
+		},
+	}),
+	// a Critical-CH hint the same response does not ask for in Accept-CH is
+	// never one the request could have carried, so nothing is made again
+	serverTest({
+		name: "request-critical-ch-without-accept-ch-not-restarted",
+		hostname: "hints.runway.test",
+		autoPass: true,
+		js: `
+			const id = Math.random().toString(36).slice(2);
+			const popup = window.open("/doc?" + id);
+			let seen = 0;
+			for (let i = 0; i < 100 && seen === 0; i++) {
+				await new Promise((r) => setTimeout(r, 50));
+				seen = await (await fetch("/seen?" + id)).json();
+			}
+			await new Promise((r) => setTimeout(r, 300));
+			seen = await (await fetch("/seen?" + id)).json();
+			popup?.close();
+			assertEqual(seen, 1);
+		`,
+		async start(server) {
+			const runs: Record<string, number> = {};
+			server.on("request", (req, res) => {
+				const id = req.url!.split("?")[1];
+				if (req.url!.startsWith("/doc?")) {
+					runs[id] = (runs[id] ?? 0) + 1;
+					res.writeHead(200, {
+						"Content-Type": "text/html",
+						"Critical-CH": "Sec-CH-UA-Arch",
+					});
+					res.end("served");
+				} else if (req.url!.startsWith("/seen?")) {
+					json(res, runs[id] ?? 0);
 				}
 			});
 		},
@@ -116,7 +157,13 @@ export default [
 		js: `
 			const id = Math.random().toString(36).slice(2);
 			const other = "https://b.hints.runway.test";
-			await fetch(other + "/ask", { mode: "no-cors" });
+			// asked for by a document of its own, at the top level
+			const asking = window.open(other + "/ask?" + id);
+			for (let i = 0; i < 100; i++) {
+				await new Promise((r) => setTimeout(r, 50));
+				if ((await (await fetch("/seen?" + id)).json()).asked) break;
+			}
+			asking?.close();
 			const popup = window.open(other + "/doc?" + id);
 			let seen = null;
 			for (let i = 0; i < 100 && seen === null; i++) {
@@ -128,18 +175,23 @@ export default [
 		`,
 		async start(server) {
 			const runs: Record<string, string | null> = {};
+			const asked: Record<string, boolean> = {};
 			server.on("request", (req, res) => {
 				const id = req.url!.split("?")[1];
-				if (req.url === "/ask") {
-					res.writeHead(200, { "Accept-CH": "Sec-CH-UA-Arch" });
-					res.end();
+				if (req.url!.startsWith("/ask?")) {
+					asked[id] = true;
+					res.writeHead(200, {
+						"Content-Type": "text/html",
+						"Accept-CH": "Sec-CH-UA-Arch",
+					});
+					res.end("asked");
 				} else if (req.url!.startsWith("/doc?")) {
 					runs[id] =
 						(req.headers["sec-ch-ua-arch"] as string | undefined) ?? "none";
 					res.writeHead(200, { "Content-Type": "text/html" });
 					res.end("doc");
 				} else if (req.url!.startsWith("/seen?")) {
-					json(res, { arch: runs[id] ?? null });
+					json(res, { arch: runs[id] ?? null, asked: asked[id] ?? false });
 				}
 			});
 		},

@@ -161,6 +161,17 @@ export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
 }
 
 /**
+ * A navigation of a top-level document: a popup's, or the emulated top-level
+ * one, which the proxy serves into an iframe.
+ */
+export function isTopLevelNavigation(parsed: ScramjetFetchParsed): boolean {
+	return (
+		parsed.destination === "document" ||
+		(parsed.destination === "iframe" && !parsed.isIframe)
+	);
+}
+
+/**
  * May this request carry HIGH-ENTROPY client hints at all?
  *
  * `Accept-CH` is not the only gate. Each hint is also governed by a permissions
@@ -187,12 +198,7 @@ export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
  * the link to it was.
  */
 export function clientHintsAllowed(parsed: ScramjetFetchParsed): boolean {
-	if (
-		parsed.destination === "document" ||
-		(parsed.destination === "iframe" && !parsed.isIframe)
-	) {
-		return true;
-	}
+	if (isTopLevelNavigation(parsed)) return true;
 	// no initiator is one the browser started itself
 	if (!parsed.fetchInitiatorOrigin) return true;
 
@@ -223,28 +229,24 @@ export function applyClientHints(
  * Does this response demand a hint the request did not carry?
  *
  * `Critical-CH` is the server saying "I cannot act on this request", so the
- * browser drops the response and sends the request again with the hints named.
+ * browser drops the response and sends the request again with the hints
+ * named. Only those it also asks for in the same response's `Accept-CH`, and
+ * only ones this browser has: asking again for anything else would get the
+ * same answer. A top-level navigation is always allowed the hints, so the
+ * permissions policy never has a say here.
  */
 export function needsCriticalRestart(
 	responseHeaders: ScramjetHeaders,
-	requestHeaders: ScramjetHeaders,
-	/**
-	 * Whether the permissions policy lets this request carry the hints at all.
-	 * A hint it does not allow is SKIPPED rather than counted missing, which is
-	 * what stops a cross-origin frame restarting forever over a hint it is
-	 * never going to be sent. See `clientHintsAllowed`.
-	 */
-	allowed = true
+	requestHeaders: ScramjetHeaders
 ): boolean {
-	if (!allowed) return false;
 	const critical = responseHeaders.get("critical-ch");
-	if (critical === null || values === null) return false;
+	const accept = responseHeaders.get("accept-ch");
+	if (critical === null || accept === null || values === null) return false;
+	const accepted = accept.split(",").map((token) => token.trim().toLowerCase());
 
 	for (const raw of critical.split(",")) {
 		const name = raw.trim().toLowerCase();
-		if (!(name in HIGH_ENTROPY)) continue;
-		// Only a hint we could actually have sent. Asking again for one this
-		// browser does not have would loop forever.
+		if (!(name in HIGH_ENTROPY) || !accepted.includes(name)) continue;
 		if (values[name] === undefined) continue;
 		if (!requestHeaders.has(name)) return true;
 	}

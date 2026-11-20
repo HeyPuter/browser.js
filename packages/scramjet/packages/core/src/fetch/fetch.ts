@@ -33,8 +33,8 @@ import {
 import { Object_keys, _URL, URL_revokeObjectURL } from "@/shared/snapshot";
 import {
 	acceptClientHints,
+	isTopLevelNavigation,
 	needsCriticalRestart,
-	clientHintsAllowed,
 	readyClientHints,
 } from "./clienthints";
 
@@ -102,31 +102,29 @@ export async function doHandleFetch(
 	let responseBody: BodyType;
 	let response = await doNetworkFetch(handler, request, parsed, newheaders);
 
-	// `Accept-CH` first, so a `Critical-CH` naming the same hints has somewhere
-	// to read them from.
-	let firstHeaders = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
-	acceptClientHints(parsed.url, firstHeaders);
-
-	// Once, and only once. The server is saying it cannot act on the request it
-	// was given, so the response is dropped and the request reissued with the
-	// hints it named. A Cloudflare managed challenge answers its first
-	// navigation this way, which is why such a journey holds two 403s for the
-	// same URL and not one.
-	//
-	// `needsCriticalRestart` only asks again for hints this browser actually
-	// has, so a server naming one we cannot produce is answered rather than
-	// retried forever.
-	// Chrome restarts navigations only, and a request with a body could not
-	// be sent again anyway: its stream has been read
-	if (
-		isDocument(parsed) &&
-		(request.method === "GET" || request.method === "HEAD") &&
-		needsCriticalRestart(firstHeaders, newheaders, clientHintsAllowed(parsed))
-	) {
-		newheaders = rewriteRequestHeaders(request, handler, parsed);
-		response = await doNetworkFetch(handler, request, parsed, newheaders);
-		firstHeaders = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
-		acceptClientHints(parsed.url, firstHeaders);
+	// Only a top-level navigation's `Accept-CH` is kept, and only one fetched
+	// with GET or HEAD is restarted over `Critical-CH` - Chrome restarts
+	// nothing else, and a body could not be sent again anyway: its stream has
+	// been read. Once, and only once: the server is saying it cannot act on
+	// the request it was given, so the response is dropped and the request
+	// reissued with the hints it named. A Cloudflare managed challenge answers
+	// its first navigation this way.
+	if (isTopLevelNavigation(parsed) && parsed.url.protocol === "https:") {
+		const first = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
+		acceptClientHints(parsed.url, first);
+		if (
+			(request.method === "GET" || request.method === "HEAD") &&
+			needsCriticalRestart(first, newheaders)
+		) {
+			// what the dropped response set is sent with its retry
+			await handleCookies(handler, request, parsed, response.rawHeaders);
+			newheaders = rewriteRequestHeaders(request, handler, parsed);
+			response = await doNetworkFetch(handler, request, parsed, newheaders);
+			acceptClientHints(
+				parsed.url,
+				ScramjetHeaders.fromRawHeaders(response.rawHeaders)
+			);
+		}
 	}
 
 	// set-cookie needs to take the raw headers. after this, we can flatten the headers into a ScramjetHeaders object

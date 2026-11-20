@@ -12,17 +12,7 @@ import {
 	ScramjetFetchRequest,
 } from ".";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
-import {
-	_URL,
-	_Set,
-	ArrayBuffer_isView,
-	ArrayBuffer_prototype_byteLength,
-	Blob_prototype_size,
-	Reflect_apply,
-	String,
-	String_startsWith,
-	TextEncoder_encode,
-} from "@/shared/snapshot";
+import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
 import {
 	createReferrerString,
 	DEFAULT_REFERRER_POLICY,
@@ -30,28 +20,6 @@ import {
 } from "./util";
 import { isFetchPreload } from "@/shared/htmlRules";
 import { applyClientHints, clientHintsAllowed } from "./clienthints";
-
-/** A body's length in BYTES, or null when only the transport can know. */
-function bodyLength(body: unknown): number | null {
-	if (body === null || body === undefined) return null;
-	if (typeof body === "string") return TextEncoder_encode(body).length;
-	if (ArrayBuffer_isView(body)) return body.byteLength;
-	// the byteLength and size getters read the internal slots, so they tell a
-	// buffer or a Blob apart without `instanceof`, whatever realm it came from
-	try {
-		return Reflect_apply(ArrayBuffer_prototype_byteLength, body, []);
-	} catch {
-		// not an ArrayBuffer
-	}
-	try {
-		return Reflect_apply(Blob_prototype_size, body, []);
-	} catch {
-		// not a Blob
-	}
-
-	// A stream. Chromium sends no `content-length` for one either.
-	return null;
-}
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -81,6 +49,11 @@ const SEC_HEADERS = new _Set([
 	// This needs to be emulated, but for right now it isn't that important of a feature to be worried about
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Clear-Site-Data
 	"clear-site-data",
+	// client hints are the target origin's, emulated in `clienthints.ts`: the
+	// browser would keep them for the proxy's origin, and restart a navigation
+	// a second time over them
+	"accept-ch",
+	"critical-ch",
 ]);
 
 /**
@@ -414,18 +387,6 @@ export function rewriteRequestHeaders(
 	// high-entropy ones are owed to whoever asked for them by name.
 	applyClientHints(headers, parsed.url, clientHintsAllowed(parsed));
 
-	// How long the body is, when that is knowable.
-	//
-	// The transport frames a length of its own once it is handed bytes rather
-	// than a stream (see `controller/src/sw.ts`), but it appends the header
-	// where Chromium leads with it. Setting it here puts it through
-	// `toRawHeaders`, which orders it against the measured table.
-	//
-	// A ReadableStream is the one case with no answer, and it is also the one
-	// case Chromium has no answer for either: that is when it uses chunked.
-	const len = bodyLength(request.body);
-	if (len !== null) headers.set("content-length", String(len));
-
 	return headers;
 }
 
@@ -549,7 +510,7 @@ function applyFetchMetadataHeaders(
 		headers.set("Sec-Fetch-Storage-Access", "none");
 	}
 
-	applyPriorityHeader(headers, parsed, emulatedTopLevel);
+	applyPriorityHeader(headers, parsed);
 
 	// No `accept-encoding`: it is the transport's to send, because the
 	// transport is what decodes the response. Chromium offers `gzip, deflate,
@@ -590,14 +551,8 @@ function applyFetchMetadataHeaders(
  */
 function applyPriorityHeader(
 	headers: ScramjetHeaders,
-	parsed: ScramjetFetchParsed,
-	emulatedTopLevel: boolean
+	parsed: ScramjetFetchParsed
 ) {
-	// An iframe the proxy is presenting as a top-level document is still
-	// `u=0, i` -- measured, a real iframe and a real document agree on this
-	// one -- so the emulation costs nothing here.
-	void emulatedTopLevel;
-
 	const priority = {
 		document: "u=0, i",
 		iframe: "u=0, i",
@@ -609,7 +564,8 @@ function applyPriorityHeader(
 		empty: "u=1, i",
 	}[parsed.destination || "empty"];
 
-	if (priority) headers.set("Priority", priority);
+	// one the page set itself is sent as it is
+	if (priority && !headers.has("priority")) headers.set("Priority", priority);
 }
 
 /**
@@ -674,7 +630,19 @@ function computeFetchMode(
 	request: ScramjetFetchRequest,
 	parsed: ScramjetFetchParsed
 ): string {
-	if (parsed.fetchMode) return parsed.fetchMode;
+	if (parsed.fetchMode) {
+		// the mode was stamped on the URL when the Request was made, and a
+		// fetch can override it: `fetch(new Request(url, { mode: "no-cors" }),
+		// { mode: "cors" })`. The browser reports the one the fetch has
+		if (
+			(request.mode === "cors" || request.mode === "no-cors") &&
+			(parsed.fetchMode === "cors" || parsed.fetchMode === "no-cors")
+		) {
+			return request.mode;
+		}
+
+		return parsed.fetchMode;
+	}
 	const dest = parsed.destination;
 	if (
 		dest === "document" ||

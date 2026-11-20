@@ -646,7 +646,7 @@ export default function (client: ScramjetClient, self: Self) {
 			return reflectURL(this, "src");
 		}
 
-		@Type("USVString")
+		@Type("(TrustedScriptURL or USVString)")
 		set src(value: string) {
 			void super.type;
 
