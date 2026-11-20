@@ -22,10 +22,10 @@ const isKeyword = (value: string | null) =>
 	value !== null && Array_indexOf(KEYWORDS, String_toLowerCase(value)) !== -1;
 
 export default function (client: ScramjetClient, self: Self) {
-	// in the top-level both keywords are the document itself, which the
-	// service worker's `_self` already says. Only a keyword that reached the
-	// real attribute some other way - `target.baseVal` on an SVG link - is left
-	// to settle there
+	// in the top-level both keywords are the document itself. The service
+	// worker already wrote `_self`; what a script wrote has the frame's real
+	// name, which the page can since have changed, and a keyword can reach the
+	// real attribute untouched - `target.baseVal` on an SVG link
 	const isTop = client.topmostClient() === client;
 	const raw = client.attributes.raw;
 
@@ -38,7 +38,11 @@ export default function (client: ScramjetClient, self: Self) {
 		const value = client.attributes.get(element, name);
 		if (value === null) return false;
 		if (!isKeyword(value)) return true;
-		if (isTop && !isKeyword(raw.get(element, name))) return true;
+		if (isTop) {
+			if (raw.get(element, name) !== "_self") raw.set(element, name, "_self");
+
+			return true;
+		}
 
 		const rewrite = client.attributes.rewriter(element, name);
 		if (!rewrite) return true;

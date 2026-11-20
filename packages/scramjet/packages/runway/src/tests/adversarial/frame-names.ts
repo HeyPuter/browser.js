@@ -868,6 +868,28 @@ export default [
 		}
 	),
 
+	// a target a script wrote before the page renamed its window still means
+	// the window
+	nameTest(
+		"framename-top-renamed-after-dynamic-target",
+		async ({ page, navigate, site }) => {
+			site.page("/", `<a id="l" href="/land/hit">go</a>`);
+			const t = await open(page, navigate, site.a + "/");
+			await pv(t, () => {
+				(document.getElementById("l") as HTMLAnchorElement).target = "_top";
+				window.name = "renamed";
+			});
+			await click(t);
+			await site.waitHit("hit");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/hit",
+				"the top-level navigated"
+			);
+		}
+	),
+
 	nameTest("framename-top-area-and-svg", async ({ page, navigate, site }) => {
 		site.page(
 			"/",
