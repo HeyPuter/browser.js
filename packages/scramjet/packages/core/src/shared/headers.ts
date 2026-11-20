@@ -238,13 +238,15 @@ export class ScramjetHeaders {
 	static fromRawHeaders(raw: RawHeaders): ScramjetHeaders {
 		const h = new ScramjetHeaders();
 		for (const [k, v] of raw) {
-			// two Content-Security-Policy fields are two policies, and the
-			// client reads them all from the joined value. Any other repeat is
-			// left to the last, as it always was
+			// two Content-Security-Policy fields are two policies, and two
+			// Accept-CH fields one list: each is read from the joined value.
+			// Any other repeat is left to the last, as it always was
 			const lk = k.toLowerCase();
 			if (
 				lk === "content-security-policy" ||
-				lk === "content-security-policy-report-only"
+				lk === "content-security-policy-report-only" ||
+				lk === "accept-ch" ||
+				lk === "critical-ch"
 			) {
 				h.append(k, v);
 			} else {

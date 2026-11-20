@@ -142,14 +142,44 @@ export function readyClientHints(): Promise<void> {
 }
 
 /**
+ * Whether Chrome sends client hints to `url` at all: a secure context, which
+ * is https or a loopback host.
+ */
+export function hintsReachable(url: URL): boolean {
+	if (url.protocol === "https:") return true;
+	if (url.protocol !== "http:") return false;
+	const host = url.hostname;
+
+	return (
+		host === "localhost" ||
+		host.endsWith(".localhost") ||
+		host === "[::1]" ||
+		host.startsWith("127.")
+	);
+}
+
+/**
+ * An `Accept-CH` or `Critical-CH` value without the UA hints, which are the
+ * proxy's to handle per target origin. The rest - color scheme, DPR, viewport
+ * width and the like - the browser goes on handling itself, for the proxy's
+ * origin, as it always has.
+ */
+export function withoutUaHints(value: string): string {
+	return value
+		.split(",")
+		.map((token) => token.trim())
+		.filter((token) => token && !token.toLowerCase().startsWith("sec-ch-ua"))
+		.join(", ");
+}
+
+/**
  * Record an origin's `Accept-CH`. A response that carries the header at all
  * REPLACES the origin's set, including with the empty set -- that is how an
  * origin stops being sent hints.
  */
 export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
 	const header = headers.get("accept-ch");
-	// client hints are only ever delegated to a secure origin
-	if (header === null || url.protocol !== "https:") return;
+	if (header === null || !hintsReachable(url)) return;
 
 	const wanted = new _Set(
 		header
@@ -213,6 +243,15 @@ export function applyClientHints(
 	url: URL,
 	allowed = true
 ) {
+	if (!hintsReachable(url)) {
+		// not even the low-entropy three, which the browser put on the
+		// request for the proxy's origin
+		for (const name of ["sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform"])
+			headers.delete(name);
+		for (const name in HIGH_ENTROPY) headers.delete(name);
+
+		return;
+	}
 	if (!allowed) {
 		// the browser attaches the hints a document's meta Accept-CH asks for
 		// to everything it fetches, all of it on the proxy's origin: the ones

@@ -19,7 +19,11 @@ import {
 	isDocument,
 } from "./util";
 import { isFetchPreload } from "@/shared/htmlRules";
-import { applyClientHints, clientHintsAllowed } from "./clienthints";
+import {
+	applyClientHints,
+	clientHintsAllowed,
+	withoutUaHints,
+} from "./clienthints";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -49,11 +53,6 @@ const SEC_HEADERS = new _Set([
 	// This needs to be emulated, but for right now it isn't that important of a feature to be worried about
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Clear-Site-Data
 	"clear-site-data",
-	// client hints are the target origin's, emulated in `clienthints.ts`: the
-	// browser would keep them for the proxy's origin, and restart a navigation
-	// a second time over them
-	"accept-ch",
-	"critical-ch",
 ]);
 
 /**
@@ -177,6 +176,17 @@ export async function rewriteResponseHeaders(
 
 	for (const cspHeader of SEC_HEADERS) {
 		headers.delete(cspHeader);
+	}
+
+	// the UA hints are the target origin's, handled in `clienthints.ts`: the
+	// browser would keep them for the proxy's origin, and restart a
+	// navigation a second time over them
+	for (const name of ["accept-ch", "critical-ch"]) {
+		const value = headers.get(name);
+		if (value === null) continue;
+		const rest = withoutUaHints(value);
+		if (rest) headers.set(name, rest);
+		else headers.delete(name);
 	}
 
 	for (const urlHeader of URL_HEADERS) {
@@ -633,11 +643,9 @@ function computeFetchMode(
 	if (parsed.fetchMode) {
 		// the mode was stamped on the URL when the Request was made, and a
 		// fetch can override it: `fetch(new Request(url, { mode: "no-cors" }),
-		// { mode: "cors" })`. The browser reports the one the fetch has
-		if (
-			(request.mode === "cors" || request.mode === "no-cors") &&
-			(parsed.fetchMode === "cors" || parsed.fetchMode === "no-cors")
-		) {
+		// { mode: "cors" })`. A cors or no-cors the browser reports is the one
+		// the fetch has
+		if (request.mode === "cors" || request.mode === "no-cors") {
 			return request.mode;
 		}
 

@@ -33,6 +33,7 @@ import {
 import { Object_keys, _URL, URL_revokeObjectURL } from "@/shared/snapshot";
 import {
 	acceptClientHints,
+	hintsReachable,
 	isTopLevelNavigation,
 	needsCriticalRestart,
 	readyClientHints,
@@ -109,7 +110,7 @@ export async function doHandleFetch(
 	// the request it was given, so the response is dropped and the request
 	// reissued with the hints it named. A Cloudflare managed challenge answers
 	// its first navigation this way.
-	if (isTopLevelNavigation(parsed) && parsed.url.protocol === "https:") {
+	if (isTopLevelNavigation(parsed) && hintsReachable(parsed.url)) {
 		const first = ScramjetHeaders.fromRawHeaders(response.rawHeaders);
 		acceptClientHints(parsed.url, first);
 		if (
@@ -188,6 +189,8 @@ export async function doHandleFetch(
 		if (initiatorOriginUrl)
 			location.searchParams.set(QP.initiatorOrigin, initiatorOriginUrl.origin);
 		if (parsed.isModule) location.searchParams.set(QP.isModule, "module");
+		// a frame is still a frame after its redirect
+		if (parsed.isIframe) location.searchParams.set(QP.isIframe, "1");
 
 		responseHeaders.set("location", location.href);
 	}
