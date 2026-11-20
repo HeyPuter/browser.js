@@ -228,4 +228,24 @@ export default [
 		assertEqual(r.headers.get("x"), "before", "headers converted at the headers member");
 		`,
 	}),
+	referrerTest({
+		name: "referrer-data-frame-origin-null",
+		js: `
+		const id = uid("data");
+		const f = document.createElement("iframe");
+		f.src = "data:text/html," + encodeURIComponent("<script>fetch(" + JSON.stringify(rurl(MAIN, id)) + ", { credentials: 'include', referrerPolicy: 'no-referrer' }).catch(() => {})<\\/script>");
+		document.body.append(f);
+		const all = await seenAll(id);
+		assertEqual(JSON.stringify(all.origin), JSON.stringify("null"), "Origin of a data: frame's fetch");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-nocors-post-keeps-origin",
+		js: `
+		const id = uid("ncp");
+		await fetch(rurl(MAIN, id), { method: "POST", mode: "no-cors", body: "x", referrerPolicy: "no-referrer" });
+		const all = await seenAll(id);
+		assertEqual(JSON.stringify(all.origin), JSON.stringify(MAIN), "Origin of a no-cors POST under no-referrer");
+		`,
+	}),
 ];

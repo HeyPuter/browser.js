@@ -147,19 +147,6 @@ export async function doHandleFetch(
 		}
 		if (crossSiteRedirect) location.searchParams.set(QP.crossSiteRedirect, "1");
 
-		// https://fetch.spec.whatwg.org/#http-redirect-fetch
-		let taintedOrigin = parsed.taintedOrigin;
-		if (!taintedOrigin && initiatorOriginUrl) {
-			try {
-				const target = new _URL(unrewriteUrl(location, handler.context));
-				taintedOrigin =
-					target.origin !== parsed.url.origin &&
-					initiatorOriginUrl.origin !== parsed.url.origin;
-			} catch {
-				// not a URL of a site's, which has no origin to taint
-			}
-		}
-		if (taintedOrigin) location.searchParams.set(QP.taintedOrigin, "1");
 		if (propagatedFetchSite)
 			location.searchParams.set(QP.fetchSite, propagatedFetchSite);
 		if (initiatorOriginUrl)

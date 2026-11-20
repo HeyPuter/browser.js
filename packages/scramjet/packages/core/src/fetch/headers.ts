@@ -342,13 +342,12 @@ export function rewriteRequestHeaders(
 
 	// Origin and the SameSite context are the initiator's: the referrer is the
 	// wrong place to look for it, since its policy is free to cut it down to
-	// the proxy's origin or drop it
+	// the proxy's origin or drop it. Origin is sent on every request that has
+	// an initiator - more often than Chrome sends it, which no server minds,
+	// where sending it less often or as "null" can fail a CSRF check
 	const initiator = resolveFetchInitiatorUrl(request, parsed, handler);
 	headers.delete("Origin");
-	const origin = initiator
-		? requestOriginHeader(request, parsed, initiator)
-		: null;
-	if (origin !== null) headers.set("Origin", origin);
+	if (initiator) headers.set("Origin", initiator.origin);
 
 	if (parsed.referrer) headers.set("Referer", parsed.referrer);
 
@@ -529,19 +528,7 @@ function computeFetchMode(
 	request: ScramjetFetchRequest,
 	parsed: ScramjetFetchParsed
 ): string {
-	if (parsed.fetchMode) {
-		// the mode the request went out with, which `fetch(request, init)` can
-		// have changed from the one stamped on the request's URL
-		if (
-			request.mode === "cors" ||
-			request.mode === "no-cors" ||
-			request.mode === "same-origin"
-		) {
-			return request.mode;
-		}
-
-		return parsed.fetchMode;
-	}
+	if (parsed.fetchMode) return parsed.fetchMode;
 	const dest = parsed.destination;
 	if (
 		dest === "document" ||
@@ -565,57 +552,6 @@ function computeFetchMode(
 		return request.mode;
 	}
 	return "no-cors";
-}
-
-/**
- * The Origin header a request from `initiator` is sent with, or null for
- * none: a CORS request to another origin always has it, a GET or HEAD
- * otherwise never does, and anything else has it unless its referrer policy
- * would hide where it came from, when it is "null".
- *
- * Except that Chrome also sends it on a same-origin CORS request an element
- * or a stylesheet makes - a `crossorigin` image, a module, a font, an
- * `as=fetch` preload - and leaves it off only the page's `fetch()` and XHR.
- *
- * A redirect to another origin from one the initiator was not same origin
- * with taints it, and it is "null" from then on.
- *
- * https://fetch.spec.whatwg.org/#append-a-request-origin-header
- */
-function requestOriginHeader(
-	request: ScramjetFetchRequest,
-	parsed: ScramjetFetchParsed,
-	initiator: URL
-): string | null {
-	const origin = initiator.origin;
-	// what it is sent as: "null" once a redirect has tainted it
-	const serialized = parsed.taintedOrigin ? "null" : origin;
-	const mode = computeFetchMode(request, parsed);
-	// a page's own fetch() and XHR are the ones stamped with their mode
-	const pageFetch = parsed.destination === "" && parsed.fetchMode !== undefined;
-	if (
-		mode === "cors" &&
-		(origin !== parsed.url.origin || parsed.taintedOrigin || !pageFetch)
-	) {
-		return serialized;
-	}
-	if (request.method === "GET" || request.method === "HEAD") return null;
-	if (mode === "cors") return serialized;
-
-	switch (request.rawReferrerPolicy || DEFAULT_REFERRER_POLICY) {
-		case "no-referrer":
-			return "null";
-		case "no-referrer-when-downgrade":
-		case "strict-origin":
-		case "strict-origin-when-cross-origin":
-			return initiator.protocol === "https:" && parsed.url.protocol !== "https:"
-				? "null"
-				: serialized;
-		case "same-origin":
-			return origin === parsed.url.origin ? serialized : "null";
-		default:
-			return serialized;
-	}
 }
 
 /**
@@ -643,8 +579,10 @@ export function resolveFetchInitiatorUrl(
 		}
 		try {
 			const unrewritten = new _URL(unrewriteUrl(url, handler.context));
+			// a data: document is an initiator too, of an opaque origin
 			return unrewritten.protocol === "http:" ||
-				unrewritten.protocol === "https:"
+				unrewritten.protocol === "https:" ||
+				unrewritten.protocol === "data:"
 				? unrewritten
 				: undefined;
 		} catch {
