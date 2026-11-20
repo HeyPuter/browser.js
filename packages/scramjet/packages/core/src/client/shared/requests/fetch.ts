@@ -173,22 +173,27 @@ export default function (client: ScramjetClient, self: Self) {
 
 	/**
 	 * A `HeadersInit`, in a form the native reads without running anything of
-	 * the page's.
-	 *
-	 * A Headers is copied as it is now, and a tagged one is swapped for the
-	 * corrected view. Anything else is converted here and handed over in the
-	 * same shape, as a record with no prototype or as a sequence of
-	 * {@link ownIterable}s, for the native to fill the request from entry by
-	 * entry, under its own guard and with its own errors.
+	 * the page's: entries in a sequence of {@link ownIterable}s - a Headers
+	 * read through the native, a tagged one as its corrected view - or a
+	 * record with no prototype, for the native to fill the request from entry
+	 * by entry, under its own guard and with its own errors.
 	 */
 	const convertHeaders = (value: unknown): unknown => {
-		if (client.box.taggedHeaders.has(value as Headers)) {
-			return toNativeHeaders(value as Headers);
-		}
-		// copied now, as the native would fill the request from it now: a later
-		// member's getter can still change it before the native reads it
-		if (client.box.instanceof(value, "Headers")) {
-			return new nativeGlobal.Headers(value as Headers);
+		// read now and through the native, where the native would fill the
+		// request from it now: a later member's getter can still change it, or
+		// the `@@iterator` it would be read with
+		const headers = client.box.taggedHeaders.has(value as Headers)
+			? toNativeHeaders(value as Headers)
+			: client.box.instanceof(value, "Headers")
+				? (value as Headers)
+				: null;
+		if (headers) {
+			const pairs: object[] = [];
+			new client.native.Headers(headers).forEach((v: string, k: string) => {
+				pairs[pairs.length] = ownIterable([k, v]);
+			});
+
+			return ownIterable(pairs);
 		}
 
 		const converted = convertHeadersInit(value) as
@@ -307,16 +312,20 @@ export default function (client: ScramjetClient, self: Self) {
 	/**
 	 * `request` - read through the native, as `n` - at another URL.
 	 *
-	 * Or `request` itself when its signal has already been aborted, for the
-	 * native to reject with the reason before reading any of the body - which
-	 * an open stream would otherwise never finish giving up.
+	 * Or `request` itself when its signal has already been aborted and the
+	 * init leaves it in place, for the native to reject with the reason before
+	 * reading any of the body - which an open stream would otherwise never
+	 * finish giving up.
 	 */
 	const copyRequest = async (
 		request: Request,
 		n: Request,
-		url: string
+		url: string,
+		signalReplaced: boolean
 	): Promise<Request> => {
-		if (new client.native.AbortSignal(n.signal).aborted) return request;
+		if (!signalReplaced && new client.native.AbortSignal(n.signal).aborted) {
+			return request;
+		}
 
 		const init: RequestInit = {
 			method: n.method,
@@ -405,7 +414,10 @@ export default function (client: ScramjetClient, self: Self) {
 			} else {
 				const n = new client.native.Request(input);
 				const url = proxyUrlFor(n);
-				request = url === null ? input : await copyRequest(input, n, url);
+				request =
+					url === null
+						? input
+						: await copyRequest(input, n, url, init.signal !== undefined);
 			}
 
 			const response: Response = await nativeThis.fetch(request, init);

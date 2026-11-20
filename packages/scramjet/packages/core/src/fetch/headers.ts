@@ -13,7 +13,11 @@ import {
 } from ".";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { _URL, _Set, String_startsWith } from "@/shared/snapshot";
-import { createReferrerString, DEFAULT_REFERRER_POLICY } from "./util";
+import {
+	createReferrerString,
+	DEFAULT_REFERRER_POLICY,
+	isDocument,
+} from "./util";
 import { isFetchPreload } from "@/shared/htmlRules";
 
 /**
@@ -570,8 +574,8 @@ function computeFetchMode(
  * would hide where it came from, when it is "null".
  *
  * Except that Chrome also sends it on a same-origin CORS request an element
- * or a stylesheet makes - a `crossorigin` image, a module, a font - and leaves
- * it off only `fetch()` and XHR, whose destination is "".
+ * or a stylesheet makes - a `crossorigin` image, a module, a font, an
+ * `as=fetch` preload - and leaves it off only the page's `fetch()` and XHR.
  *
  * A redirect to another origin from one the initiator was not same origin
  * with taints it, and it is "null" from then on.
@@ -587,9 +591,11 @@ function requestOriginHeader(
 	// what it is sent as: "null" once a redirect has tainted it
 	const serialized = parsed.taintedOrigin ? "null" : origin;
 	const mode = computeFetchMode(request, parsed);
+	// a page's own fetch() and XHR are the ones stamped with their mode
+	const pageFetch = parsed.destination === "" && parsed.fetchMode !== undefined;
 	if (
 		mode === "cors" &&
-		(origin !== parsed.url.origin || parsed.destination !== "")
+		(origin !== parsed.url.origin || parsed.taintedOrigin || !pageFetch)
 	) {
 		return serialized;
 	}
@@ -613,38 +619,59 @@ function requestOriginHeader(
 }
 
 /**
- * Resolve the unrewritten URL of the page (or worker) that initiated this
- * request. Used by Sec-Fetch-Site, which always compares against the original
- * initiator regardless of Referer policy.
+ * The site URL of the page (or worker) that initiated this request, or
+ * undefined for one the browser started itself. Its origin is the request's
+ * Origin, SameSite context and Sec-Fetch-Site, whatever the referrer policy.
+ *
+ * What the browser hands over is believed first: for a subresource, the
+ * client that asked for it; for a navigation, the document it came from,
+ * which is its referrer where the policy left that whole - its client is the
+ * frame being navigated. `$io`, stamped by the page's own code, only stands
+ * in where the browser says nothing: a referrer cut down by its policy, a
+ * client that is an about:srcdoc or an about:blank, a top-level navigation
+ * with no client. The client of a navigation comes last, after `$io`: it is
+ * a document the frame is leaving, often not the one that sent it there.
  */
-function resolveFetchInitiatorUrl(
+export function resolveFetchInitiatorUrl(
 	request: ScramjetFetchRequest,
 	parsed: ScramjetFetchParsed,
 	handler: ScramjetFetchHandler
 ): URL | undefined {
-	// On any hop after the first, the propagated initiator origin is the
-	// authoritative source. rawReferrer may have been replaced with the
-	// previous hop's URL, and rawClientUrl is unset for top-level navigations.
-	if (parsed.fetchInitiatorOrigin) {
+	const site = (url: URL | null | undefined): URL | undefined => {
+		if (!url || !String_startsWith(url.href, handler.context.prefix.href)) {
+			return undefined;
+		}
 		try {
-			return new _URL(parsed.fetchInitiatorOrigin);
+			const unrewritten = new _URL(unrewriteUrl(url, handler.context));
+			return unrewritten.protocol === "http:" ||
+				unrewritten.protocol === "https:"
+				? unrewritten
+				: undefined;
 		} catch {
-			// fall through to the fallbacks below
+			return undefined;
+		}
+	};
+	let referrer: URL | undefined;
+	if (request.rawReferrer) {
+		try {
+			referrer = site(new _URL(request.rawReferrer));
+		} catch {
+			// not a URL at all
 		}
 	}
-	const candidate =
-		request.rawClientUrl ||
-		(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
-	if (!candidate) return undefined;
-	if (candidate.pathname.startsWith(handler.context.prefix.pathname)) {
-		return new _URL(unrewriteUrl(candidate, handler.context));
+	const client = site(request.rawClientUrl);
+	let stamped: URL | undefined;
+	if (parsed.fetchInitiatorOrigin) {
+		try {
+			stamped = new _URL(parsed.fetchInitiatorOrigin);
+		} catch {
+			// an opaque origin, which is no URL's
+		}
 	}
-	// The candidate URL is outside scramjet's logical space (e.g. the runway
-	// harness wrapper page, or a chrome:// page kicking off a navigation).
-	// There's no meaningful "initiator" in the proxied site's frame of
-	// reference, so treat it as a browser-initiated request — Sec-Fetch-Site
-	// will be "none".
-	return undefined;
+
+	return isDocument(parsed)
+		? (referrer ?? stamped ?? client)
+		: (client ?? referrer ?? stamped);
 }
 
 /**

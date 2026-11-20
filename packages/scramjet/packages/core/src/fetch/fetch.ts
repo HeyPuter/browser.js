@@ -24,6 +24,7 @@ import { Tap } from "@/Tap";
 import {
 	computeFetchSite,
 	determineReferrer,
+	resolveFetchInitiatorUrl,
 	rewriteRequestHeaders,
 	attachCarriedHeaders,
 	rewriteResponseHeaders,
@@ -103,28 +104,13 @@ export async function doHandleFetch(
 	if (isRedirect(response)) {
 		const location = new _URL(responseHeaders.get("location"));
 
-		// Compute the page (initiator) URL once. The initiator never changes
-		// through a redirect chain, so prefer the propagated `sj$io` value if
-		// the chain has already started; otherwise fall back to rawClientUrl
-		// or rawReferrer (which point at the page for the *first* hop).
-		let initiatorOriginUrl: URL | undefined;
-		if (parsed.fetchInitiatorOrigin) {
-			try {
-				initiatorOriginUrl = new _URL(parsed.fetchInitiatorOrigin);
-			} catch {
-				initiatorOriginUrl = undefined;
-			}
-		}
-		if (!initiatorOriginUrl) {
-			const rawClient =
-				request.rawClientUrl ||
-				(request.rawReferrer ? new _URL(request.rawReferrer) : undefined);
-			initiatorOriginUrl =
-				rawClient &&
-				rawClient.pathname.startsWith(handler.context.prefix.pathname)
-					? new _URL(unrewriteUrl(rawClient, handler.context))
-					: undefined;
-		}
+		// the initiator never changes through a redirect chain, and is handed on
+		// as `$io` for the hops where the browser no longer says who it was
+		const initiatorOriginUrl = resolveFetchInitiatorUrl(
+			request,
+			parsed,
+			handler
+		);
 
 		// Cross-site redirect poisoning (SameSite): if this hop was cross-site, or a
 		// previous hop already was, propagate the flag so the final destination

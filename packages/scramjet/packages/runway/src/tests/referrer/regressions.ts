@@ -168,4 +168,64 @@ export default [
 		assertEqual(r.headers.get("x"), "before", "headers converted at the headers member");
 		`,
 	}),
+	referrerTest({
+		name: "referrer-form-post-no-action-origin",
+		js: `
+		const id = uid("login");
+		const second = msg(id);
+		makeFrame({ src: durl(ALT, id, { js: 'if (!sessionStorage.posted) { sessionStorage.posted = 1; window.__noReport = true; const f = document.createElement("form"); f.method = "post"; document.body.append(f); f.submit(); }' }) });
+		await second;
+		const all = await seenAll(id);
+		assertEqual(all.origin, ALT, "Origin of a form POST with no action");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-srcdoc-fetch-origin",
+		js: `
+		const id = uid("sd");
+		const f = document.createElement("iframe");
+		f.srcdoc = "<script>fetch(" + JSON.stringify(rurl(XSITE, id)) + ", { credentials: 'include' }).catch(() => {})<\\/script>";
+		document.body.append(f);
+		const all = await seenAll(id);
+		assertEqual(all.origin, MAIN, "Origin of a srcdoc's fetch");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-cors-redirect-back-tainted-origin",
+		js: `
+		const end = uid("end"), hop = uid("hop");
+		await attempt(() => fetch(rurl(ALT, hop, { to: rurl(MAIN, end) })));
+		const all = await seenAll(end);
+		assertEqual(all.origin, "null", "Origin after redirecting back to the initiator");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-preload-as-fetch-origin",
+		js: `
+		const id = uid("pre");
+		await loadEl("link", { rel: "preload", as: "fetch", crossorigin: "anonymous", href: rurl(MAIN, id) });
+		const all = await seenAll(id);
+		assertEqual(all.origin, MAIN, "Origin of a same-origin as=fetch preload");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-headers-iterator-snapshot",
+		js: `
+		const h = new Headers({ x: "before" });
+		const original = Headers.prototype[Symbol.iterator];
+		let r;
+		try {
+			r = new Request(location.href, {
+				headers: h,
+				get method() {
+					Headers.prototype[Symbol.iterator] = function* () { yield ["x", "after"]; };
+					return "GET";
+				},
+			});
+		} finally {
+			Headers.prototype[Symbol.iterator] = original;
+		}
+		assertEqual(r.headers.get("x"), "before", "headers converted at the headers member");
+		`,
+	}),
 ];

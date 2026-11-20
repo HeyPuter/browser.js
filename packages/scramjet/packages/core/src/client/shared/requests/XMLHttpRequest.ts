@@ -32,7 +32,8 @@ export default function (client: ScramjetClient) {
 			username?: string | null,
 			password?: string | null
 		): void {
-			const rewritten = client.rewriteUrl(url);
+			// an XHR is always a CORS request, stamped as one like fetch()'s
+			const rewritten = client.rewriteUrl(url, { mode: "cors" });
 
 			if (arguments.length < 3) return super.open(method, rewritten);
 

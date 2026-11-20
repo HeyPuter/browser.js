@@ -316,15 +316,16 @@ export function rewriteUrl(
 
 		// specific tracking for sec-fetch-site
 		// don't send for the top level controller calling it in go()
-		const initiator = meta.initiatorOrigin ?? meta.origin.origin;
+		const source = meta.origin.origin;
+		const initiator = meta.initiatorOrigin ?? source;
 		if (initiator !== context.prefix.origin) {
 			paramsInit.set(QP.initiatorOrigin, initiator);
 		}
 		// the referrer's origin, where that is not the initiator's, for when the
 		// browser hands over nothing but the proxy's. not on a module, whose
 		// URL has to be the same whichever module imports it
-		if (!options?.isModule && meta.origin.origin !== initiator) {
-			paramsInit.set(QP.referrerOrigin, meta.origin.origin);
+		if (!options?.isModule && source !== initiator) {
+			paramsInit.set(QP.referrerOrigin, source);
 		}
 
 		let paramstring = "";
