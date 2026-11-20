@@ -611,30 +611,30 @@ export class ScramjetClient {
 				return iswindow ? client.global.location.href : undefined;
 			},
 			/**
-			 * What `_top` has to say to reach this tree's top-level: null in
-			 * the top-level itself, which `_top` is, and the real name of the
-			 * emulated top-level below it - whose real parent is the embedder,
+			 * What `_top` has to say to reach this tree's top-level: the real
+			 * name of the emulated top-level, whose real parent is the embedder,
 			 * so the keyword itself would leave the proxy. In a real top-level
-			 * tree, a popup's, the keyword already means the right one.
+			 * tree, a popup's, the keyword already means the right one, and in
+			 * that top-level itself it is the document.
 			 */
 			get topFrameName() {
 				if (!iswindow)
 					throw new Error("topFrameName was called from a worker?");
 				const top = client.topmostClient();
-				if (top === client) return null;
+				if (top.isEmulatedTop) return top.frameName();
 
-				return top.isEmulatedTop ? top.frameName() : "_top";
+				return top === client ? null : "_top";
 			},
 			/**
-			 * What `_parent` has to say: null in the emulated top-level, whose
-			 * real parent is the embedder and which is its own parent as far as
-			 * the page knows, and the keyword itself anywhere below it.
+			 * What `_parent` has to say: the emulated top-level's own name in
+			 * the emulated top-level, which is its own parent as far as the page
+			 * knows, and the keyword itself anywhere below it.
 			 */
 			get parentFrameName() {
 				if (!iswindow)
 					throw new Error("parentFrameName was called from a worker?");
 
-				return client.isEmulatedTop ? null : "_parent";
+				return client.isEmulatedTop ? client.frameName() : "_parent";
 			},
 		};
 		this.locationProxy = createLocationProxy(this, global);

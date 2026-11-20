@@ -74,6 +74,7 @@
 		"fragment-history-pushed-frame-reload-request",
 		"fragment-self-navigation-replaces-entry",
 		"framename-target-reflection",
+		"framename-top-cleared-cross-origin",
 		"framename-top-named-like-a-keyword",
 		"framename-two-tabs-names-independent",
 		"functionctor-async-flavor",

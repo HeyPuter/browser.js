@@ -829,6 +829,45 @@ export default [
 		)
 	),
 
+	// a keyword that means this frame is `_self`, not a missing target: the
+	// form's own target, or the base element's, would take over from it
+	nameTest(
+		"framename-top-keyword-keeps-precedence",
+		async ({ page, navigate, site }) => {
+			site.page(
+				"/",
+				`<iframe name="receipt"></iframe>
+			<form target="receipt" action="/land/form"><button id="b" formtarget="_top">pay</button></form>`
+			);
+			let t = await open(page, navigate, site.a + "/");
+			await click(t, "#b");
+			await site.waitHit("form");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/form",
+				"formtarget _top over the form's target"
+			);
+
+			site.page(
+				"/base",
+				`<base target="_blank"><a id="l" href="/land/link">go</a>`
+			);
+			t = await open(page, navigate, site.a + "/base");
+			await pv(t, () => {
+				(document.getElementById("l") as HTMLAnchorElement).target = "_parent";
+			});
+			await click(t);
+			await site.waitHit("link");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/link",
+				"_parent over the base target"
+			);
+		}
+	),
+
 	nameTest("framename-top-area-and-svg", async ({ page, navigate, site }) => {
 		site.page(
 			"/",
