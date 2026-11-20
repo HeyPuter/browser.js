@@ -250,6 +250,7 @@ var $scramjetController;
 					);
 				let o = await clients.get(e.clientId),
 					s = [...e.request.headers],
+					b = e.request.body ? await e.request.arrayBuffer() : null,
 					i = await r.rpc.call(
 						"request",
 						{
@@ -260,17 +261,14 @@ var $scramjetController;
 							mode: e.request.mode,
 							referrer: e.request.referrer,
 							method: e.request.method,
-							body: e.request.body,
+							body: b,
 							cache: e.request.cache,
 							forceCrossOriginIsolated: !1,
 							initialHeaders: s,
 							rawClientUrl: o ? o.url : void 0,
 							clientId: e.clientId || e.resultingClientId,
 						},
-						e.request.body instanceof ReadableStream ||
-							e.request.body instanceof ArrayBuffer
-							? [e.request.body]
-							: void 0
+						b instanceof ArrayBuffer ? [b] : void 0
 					);
 				return new Response(i.body, {
 					status: i.status,
@@ -278,12 +276,7 @@ var $scramjetController;
 					headers: i.headers,
 				});
 			} catch (e) {
-				return (
-					console.error("Service Worker error:", e),
-					new Response("Internal Service Worker Error: " + e.message, {
-						status: 500,
-					})
-				);
+				return (console.error("Service Worker error:", e), Response.error());
 			}
 		}
 		(addEventListener("message", (e) => {

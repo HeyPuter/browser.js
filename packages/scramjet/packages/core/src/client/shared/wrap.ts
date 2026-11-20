@@ -4,8 +4,8 @@ import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
 import {
 	Object_defineProperty,
-	Object_keys,
 	Array_filter,
+	Reflect_ownKeys,
 	drain,
 	String_startsWith,
 } from "@/shared/snapshot";
@@ -210,23 +210,28 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	// siblings -- none of which exist on any browser.
 	//
 	// `$scramjet` prefixes every one of them, and a page that has its own is
-	// already broken under a proxy that claims the name.
-	const isShimName = (k: unknown) =>
-		typeof k === "string" && String_startsWith(k, "$scramjet");
-
-	client.Proxy(["Object.getOwnPropertyNames", "Reflect.ownKeys"], {
+	// already broken under a proxy that claims the name. The one symbol on the
+	// global, the client's own, goes the same way
+	const isShimKey = (k: unknown) =>
+		k === SCRAMJETCLIENT ||
+		(typeof k === "string" && String_startsWith(k, "$scramjet"));
+	const filtered = {
 		apply(ctx) {
 			const keys = ctx.call() as (string | symbol)[];
 
-			return ctx.return(Array_filter(keys, (k) => !isShimName(k)));
+			return ctx.return(Array_filter(keys, (k) => !isShimKey(k)));
 		},
-	});
+	};
+
+	client.Proxy("Object.getOwnPropertyNames", filtered);
+	client.Proxy("Object.getOwnPropertySymbols", filtered);
+	client.Proxy("Reflect.ownKeys", filtered);
 
 	client.Proxy("Object.getOwnPropertyDescriptors", {
 		apply(ctx) {
-			const descs = ctx.call() as Record<string, unknown>;
-			for (const k of drain(Object_keys(descs))) {
-				if (isShimName(k)) delete descs[k];
+			const descs = ctx.call() as Record<string | symbol, unknown>;
+			for (const k of drain(Reflect_ownKeys(descs))) {
+				if (isShimKey(k)) delete descs[k];
 			}
 
 			return ctx.return(descs);

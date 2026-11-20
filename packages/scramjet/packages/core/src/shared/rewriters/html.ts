@@ -216,6 +216,18 @@ export class IncrementalHtmlRewriter {
 	}
 }
 
+/** ASCII whitespace, which the parser skips ahead of the doctype. */
+function isParserWhitespace(data: string): boolean {
+	for (let i = 0; i < data.length; i++) {
+		const c = data[i];
+		if (c !== " " && c !== "\t" && c !== "\n" && c !== "\f" && c !== "\r") {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 function rewriteHtmlInner(
 	html: string | ChildNode,
 	context: ScramjetContext,
@@ -337,7 +349,10 @@ function rewriteHtmlInner(
 				const node = root.children[at];
 				if (
 					node.type === ElementType.Directive ||
-					node.type === ElementType.Comment
+					node.type === ElementType.Comment ||
+					// whitespace ahead of the doctype is dropped by the parser,
+					// and a template engine's leading newline is everywhere
+					(node.type === ElementType.Text && isParserWhitespace(node.data))
 				) {
 					at++;
 					continue;
