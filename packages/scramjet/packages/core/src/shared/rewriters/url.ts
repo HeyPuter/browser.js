@@ -350,12 +350,11 @@ export function rewriteUrl(
  * navigation is (see `sameDocumentUrl`): the entries it makes then compare
  * with it, and with each other, exactly as the site's do.
  *
- * Any other URL keeps the query parameters of the real one. They describe how
- * the document was requested - as a frame, by whom, under which referrer
- * policy - and a reload of the new entry is a request for the same document
- * in the same place. A freshly rewritten URL would describe a navigation made
- * by the page itself, so a frame that called `pushState` would reload as a
- * top-level document.
+ * Any other URL is rewritten afresh, as a request the document makes itself,
+ * and keeps only the real one's parameters that say where the document is
+ * loaded: a frame that called `pushState` still reloads as a frame. The rest
+ * describe who requested the document and how it was redirected there, which
+ * a reload of the new entry is not.
  */
 export function rewriteHistoryUrl(
 	url: URL,
@@ -371,13 +370,17 @@ export function rewriteHistoryUrl(
 	// a scheme with no proxy URL, which only ever differs in its fragment
 	if (url.protocol !== "http:" && url.protocol !== "https:") return url.href;
 
-	return (
-		context.prefix.href +
-		context.interface.codecEncode(withoutFragment) +
-		new _URL(meta.rawUrl).search +
-		(fragment ?? "")
-	);
+	const rewritten = new _URL(rewriteUrl(withoutFragment, context, meta));
+	const raw = new _URL(meta.rawUrl).searchParams;
+	for (const key of frameParams) {
+		const value = raw.get(key);
+		if (value !== null) rewritten.searchParams.set(key, value);
+	}
+
+	return rewritten.href + (fragment ?? "");
 }
+
+const frameParams = [QP.isIframe, QP.destination, QP.topFrame, QP.parentFrame];
 
 /**
  * https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten

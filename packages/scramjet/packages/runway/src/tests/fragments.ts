@@ -79,6 +79,10 @@ function fragmentTest(props: {
 	body?: string;
 	path?: string;
 	routes?: Record<string, Route>;
+	/** paths that redirect to another, with a 302 */
+	redirects?: Record<string, string>;
+	/** where the entry navigates to, when not straight to `path` */
+	start?: string;
 }): Test {
 	const entry = props.path ?? "/doc";
 	let other: http.Server | null = null;
@@ -91,9 +95,15 @@ function fragmentTest(props: {
 			res.end(
 				page(
 					"",
-					`<script>location.href = "http://localhost:${otherPort}${entry}";</script>`
+					`<script>location.href = "http://localhost:${otherPort}${props.start ?? entry}";</script>`
 				)
 			);
+			return;
+		}
+		const redirect = props.redirects?.[path];
+		if (redirect !== undefined) {
+			res.writeHead(302, { Location: redirect });
+			res.end();
 			return;
 		}
 		if (path === entry) {
@@ -605,6 +615,46 @@ export default [
 	}),
 
 	// --- history -------------------------------------------------------------
+
+	// a reload of a pushed entry is the document's own request, whoever first
+	// loaded it and however it was redirected there
+	fragmentTest({
+		name: "fragment-history-pushed-entry-reload-request",
+		start: "/start",
+		redirects: { "/start": "/doc" },
+		js: `
+			history.pushState(null, "", "/pushed");
+			location.reload();
+			await new Promise(() => {});
+		`,
+		routes: {
+			"/pushed": (req) => `<script>runTest(async () => {
+				assertConsistent("sec-fetch-site", ${JSON.stringify(req.headers["sec-fetch-site"] ?? null)});
+				assertConsistent("has referer", ${JSON.stringify(!!req.headers.referer)});
+			}, true);</script>`,
+		},
+	}),
+
+	// and a frame's is still a frame's
+	fragmentTest({
+		name: "fragment-history-pushed-frame-reload-request",
+		js: `
+			const f = document.createElement("iframe");
+			f.src = "/child";
+			document.body.append(f);
+			await until(() => f.contentWindow.request, 8000);
+			assertConsistent("request", f.contentWindow.request);
+		`,
+		routes: {
+			"/child": `<script>history.pushState(null, "", "/pushed"); location.reload();</script>`,
+			"/pushed": (req) =>
+				`<script>window.request = ${JSON.stringify(
+					["sec-fetch-dest", "sec-fetch-site", "sec-fetch-mode"].map(
+						(name) => req.headers[name] ?? null
+					)
+				)};</script>`,
+		},
+	}),
 
 	fragmentTest({
 		name: "fragment-history-urls",
