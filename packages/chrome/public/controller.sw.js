@@ -1,4 +1,3 @@
-var $scramjetController;
 (() => {
 	var e = {
 			223: function (e, t, r) {
@@ -21,10 +20,10 @@ var $scramjetController;
 							let e = t.$token,
 								r = t.$data,
 								o = t.$error,
-								s = this.promiseCallbacks.get(e);
-							if (!s) return;
+								i = this.promiseCallbacks.get(e);
+							if (!i) return;
 							(this.promiseCallbacks.delete(e),
-								void 0 !== o ? s.reject(Error(o)) : s.resolve(r));
+								void 0 !== o ? i.reject(Error(o)) : i.resolve(r));
 						} else if ("request" === r) {
 							let e = t.$method,
 								r = t.$args;
@@ -58,8 +57,8 @@ var $scramjetController;
 					}
 					call(e, t, r = []) {
 						let o = this.counter++;
-						return new Promise((s, i) => {
-							(this.promiseCallbacks.set(o, { resolve: s, reject: i }),
+						return new Promise((i, s) => {
+							(this.promiseCallbacks.set(o, { resolve: i, reject: s }),
 								this.sendRaw(
 									{
 										[this.id]: {
@@ -78,10 +77,10 @@ var $scramjetController;
 		},
 		t = {};
 	function r(o) {
-		var s = t[o];
-		if (void 0 !== s) return s.exports;
-		var i = (t[o] = { exports: {} });
-		return (e[o](i, i.exports, r), i.exports);
+		var i = t[o];
+		if (void 0 !== i) return i.exports;
+		var s = (t[o] = { exports: {} });
+		return (e[o](s, s.exports, r), s.exports);
 	}
 	((r.d = (e, t) => {
 		for (var o in t)
@@ -98,7 +97,7 @@ var $scramjetController;
 		}));
 	var o = {};
 	((() => {
-		(r.r(o), r.d(o, { config: () => i, route: () => p, shouldRoute: () => u }));
+		(r.r(o), r.d(o, { config: () => s, route: () => f, shouldRoute: () => u }));
 		var e = r(223);
 		let t = {};
 		addEventListener("message", (e) => {
@@ -127,60 +126,60 @@ var $scramjetController;
 				}
 			}
 		});
-		class s {
+		class i {
 			prefix;
 			id;
 			rpc;
-			constructor(r, o, s) {
+			constructor(r, o, i) {
 				((this.prefix = r),
 					(this.id = o),
 					(this.rpc = new e.C(
 						{
 							sendSetCookie: async ({ cookies: e, options: r }) => {
 								let o = await self.clients.matchAll(),
-									s = [],
 									i = [],
+									s = [],
 									n =
 										r?.destination === "document" ||
 										r?.destination === "iframe";
 								for (let a of o) {
 									let o = Math.random().toString(36).substring(2, 10);
-									(s.push(o),
+									(i.push(o),
 										a.postMessage({
 											$controller$setCookie: { cookies: e, options: r, id: o },
 										}),
 										n ||
-											i.push(
+											s.push(
 												new Promise((e) => {
 													t[o] = () => e(o);
 												})
 											));
 								}
-								if (i.length > 0) {
+								if (s.length > 0) {
 									let r,
 										n = !1,
-										a = new Promise((i) => {
+										a = new Promise((s) => {
 											r = setTimeout(() => {
 												if (!n) {
-													let r = s.filter((e) => void 0 !== t[e]);
+													let r = i.filter((e) => void 0 !== t[e]);
 													console.error(
-														`timed out waiting for set cookie response (deadlock?): cookies=${e.length} clients=${o.length} pending=${r.length}/${s.length} clientUrls=${o.map((e) => e.url).join(",")}`
+														`timed out waiting for set cookie response (deadlock?): cookies=${e.length} clients=${o.length} pending=${r.length}/${i.length} clientUrls=${o.map((e) => e.url).join(",")}`
 													);
 												}
-												i();
+												s();
 											}, 1e3);
 										});
 									try {
 										await Promise.race([
 											a,
-											Promise.any(i)
+											Promise.any(s)
 												.then(() => {
 													n = !0;
 												})
 												.catch(() => {}),
 										]);
 									} finally {
-										for (let e of (void 0 !== r && clearTimeout(r), s))
+										for (let e of (void 0 !== r && clearTimeout(r), i))
 											delete t[e];
 									}
 								}
@@ -188,22 +187,22 @@ var $scramjetController;
 						},
 						"tabchannel-" + o,
 						(e, t) => {
-							s.postMessage(e, t);
+							i.postMessage(e, t);
 						}
 					)),
-					(s.onmessage = (e) => {
+					(i.onmessage = (e) => {
 						this.rpc.recieve(e.data);
 					}),
-					(s.onmessageerror = console.error),
+					(i.onmessageerror = console.error),
 					this.rpc.call("ready", void 0));
 			}
 		}
-		let i = { prefix: "/~/sj/", reviveTimeout: 1e4 },
+		let s = { prefix: "/~/sj/", reviveTimeout: 1e4 },
 			n = [],
 			a = new Map();
 		function l(e) {
 			return (
-				(e.startsWith(i.prefix) && e.slice(i.prefix.length).split("/")[0]) ||
+				(e.startsWith(s.prefix) && e.slice(s.prefix.length).split("/")[0]) ||
 				null
 			);
 		}
@@ -216,16 +215,16 @@ var $scramjetController;
 						let t = a.get(r),
 							o = !t;
 						t || ((t = []), a.set(r, t));
-						let s = setTimeout(() => {
+						let i = setTimeout(() => {
 								let t = a.get(r);
 								if (t) {
 									let e = t.indexOf(n);
 									(-1 !== e && t.splice(e, 1), 0 === t.length && a.delete(r));
 								}
 								e(void 0);
-							}, i.reviveTimeout),
+							}, s.reviveTimeout),
 							n = (t) => {
-								(clearTimeout(s), e(t));
+								(clearTimeout(i), e(t));
 							};
 						(t.push(n), o && c(r));
 					})
@@ -239,7 +238,7 @@ var $scramjetController;
 			let t = new URL(e.request.url);
 			return !!l(t.pathname) || n.some((e) => t.pathname.startsWith(e.prefix));
 		}
-		async function p(e) {
+		async function f(e) {
 			try {
 				let t = new URL(e.request.url),
 					r = await d(t.pathname);
@@ -249,9 +248,9 @@ var $scramjetController;
 						{ status: 503, headers: { "content-type": "text/plain" } }
 					);
 				let o = await clients.get(e.clientId),
-					s = [...e.request.headers],
-					b = e.request.body ? await e.request.arrayBuffer() : null,
-					i = await r.rpc.call(
+					i = [...e.request.headers],
+					s = e.request.body ? await e.request.arrayBuffer() : null,
+					n = await r.rpc.call(
 						"request",
 						{
 							rawUrl: e.request.url,
@@ -261,19 +260,21 @@ var $scramjetController;
 							mode: e.request.mode,
 							referrer: e.request.referrer,
 							method: e.request.method,
-							body: b,
+							body: s,
 							cache: e.request.cache,
 							forceCrossOriginIsolated: !1,
-							initialHeaders: s,
+							initialHeaders: i,
 							rawClientUrl: o ? o.url : void 0,
 							clientId: e.clientId || e.resultingClientId,
 						},
-						b instanceof ArrayBuffer ? [b] : void 0
+						s instanceof ReadableStream || s instanceof ArrayBuffer
+							? [s]
+							: void 0
 					);
-				return new Response(i.body, {
-					status: i.status,
-					statusText: i.statusText,
-					headers: i.headers,
+				return new Response(n.body, {
+					status: n.status,
+					statusText: n.statusText,
+					headers: n.headers,
 				});
 			} catch (e) {
 				return (console.error("Service Worker error:", e), Response.error());
@@ -290,10 +291,10 @@ var $scramjetController;
 			let t = e.data.$controller$init,
 				r = n.findIndex((e) => e.id === t.id);
 			-1 !== r && n.splice(r, 1);
-			let o = new s(t.prefix, t.id, e.ports[0]);
+			let o = new i(t.prefix, t.id, e.ports[0]);
 			n.push(o);
-			let i = a.get(t.id);
-			if (i) for (let e of (a.delete(t.id), i)) e(o);
+			let s = a.get(t.id);
+			if (s) for (let e of (a.delete(t.id), s)) e(o);
 		}),
 			addEventListener("install", () => {
 				self.skipWaiting();
@@ -302,6 +303,6 @@ var $scramjetController;
 				e.waitUntil(clients.claim());
 			}));
 	})(),
-		($scramjetController = o));
+		(self.$scramjetController = o));
 })();
 //# sourceMappingURL=controller.sw.js.map
