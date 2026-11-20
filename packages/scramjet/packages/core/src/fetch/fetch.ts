@@ -121,11 +121,7 @@ export async function doHandleFetch(
 	if (
 		isDocument(parsed) &&
 		(request.method === "GET" || request.method === "HEAD") &&
-		needsCriticalRestart(
-			firstHeaders,
-			newheaders,
-			clientHintsAllowed(parsed.url, parsed.fetchInitiatorOrigin)
-		)
+		needsCriticalRestart(firstHeaders, newheaders, clientHintsAllowed(parsed))
 	) {
 		newheaders = rewriteRequestHeaders(request, handler, parsed);
 		response = await doNetworkFetch(handler, request, parsed, newheaders);

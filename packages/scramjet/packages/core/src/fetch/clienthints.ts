@@ -32,6 +32,7 @@
  * kept in sync with the page.
  */
 import { ScramjetHeaders } from "@/shared";
+import type { ScramjetFetchParsed } from ".";
 import {
 	Array_isArray,
 	Navigator_userAgentData,
@@ -181,17 +182,21 @@ export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
  * one response for, and which live means the challenge is issued twice.
  *
  * `$io` carries the origin that asked, so the default policy is expressible
- * here exactly: same origin allowed, cross origin not.
+ * here: same origin allowed, cross origin not - except for a top-level
+ * navigation, whose document is the `self` its own policy allows, wherever
+ * the link to it was.
  */
-export function clientHintsAllowed(
-	url: URL,
-	initiatorOrigin: string | undefined
-): boolean {
-	// No initiator is a top-level navigation: the document being fetched IS the
-	// one the policy is `self` for.
-	if (!initiatorOrigin) return true;
+export function clientHintsAllowed(parsed: ScramjetFetchParsed): boolean {
+	if (
+		parsed.destination === "document" ||
+		(parsed.destination === "iframe" && !parsed.isIframe)
+	) {
+		return true;
+	}
+	// no initiator is one the browser started itself
+	if (!parsed.fetchInitiatorOrigin) return true;
 
-	return initiatorOrigin === url.origin;
+	return parsed.fetchInitiatorOrigin === parsed.url.origin;
 }
 
 /**

@@ -107,4 +107,41 @@ export default [
 			});
 		},
 	}),
+	// a top-level document is its own policy's self: one opened from another
+	// origin is sent the hints it asked for earlier
+	serverTest({
+		name: "request-client-hints-top-level-from-another-origin",
+		hostname: "hints.runway.test",
+		autoPass: true,
+		js: `
+			const id = Math.random().toString(36).slice(2);
+			const other = "https://b.hints.runway.test";
+			await fetch(other + "/ask", { mode: "no-cors" });
+			const popup = window.open(other + "/doc?" + id);
+			let seen = null;
+			for (let i = 0; i < 100 && seen === null; i++) {
+				await new Promise((r) => setTimeout(r, 50));
+				seen = (await (await fetch("/seen?" + id)).json()).arch;
+			}
+			popup?.close();
+			assert(seen !== null && seen !== "none", "hint sent: " + seen);
+		`,
+		async start(server) {
+			const runs: Record<string, string | null> = {};
+			server.on("request", (req, res) => {
+				const id = req.url!.split("?")[1];
+				if (req.url === "/ask") {
+					res.writeHead(200, { "Accept-CH": "Sec-CH-UA-Arch" });
+					res.end();
+				} else if (req.url!.startsWith("/doc?")) {
+					runs[id] =
+						(req.headers["sec-ch-ua-arch"] as string | undefined) ?? "none";
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end("doc");
+				} else if (req.url!.startsWith("/seen?")) {
+					json(res, { arch: runs[id] ?? null });
+				}
+			});
+		},
+	}),
 ];
