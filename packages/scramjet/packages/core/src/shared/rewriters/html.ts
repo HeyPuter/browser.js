@@ -425,34 +425,6 @@ export function unrewriteHtml(
 }
 
 /**
- * Whether `node` is an HTML element in the document's own tree - which a base
- * element has to be to set the document's base URL.
- *
- * The parser records each element's namespace by the tree construction rules
- * (integration points, `annotation-xml`'s `encoding`, foreign content broken
- * out of). What it does not model is a `<template>`'s contents, which the
- * browser puts in an inert fragment of their own and are its children here.
- * Only an HTML template has them: an SVG element called `template` is an
- * ordinary one.
- */
-function isDocumentHtmlElement(node: Element): boolean {
-	if (node.namespace !== "html") return false;
-
-	for (
-		let at = node.parent;
-		at && at.type === ElementType.Tag;
-		at = at.parent
-	) {
-		const element = at as Element;
-		if (element.name === "template" && element.namespace === "html") {
-			return false;
-		}
-	}
-
-	return true;
-}
-
-/**
  * The metas whose base URL a base element has already set.
  *
  * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url -
@@ -471,9 +443,8 @@ const basedMetas = new _WeakSet<URLMeta>();
  * getter reading the live document, which is where the base element is going
  * - so it already answers for it once it lands, and has no setter to call.
  */
-function adoptBaseElement(node: Element, href: string, meta: URLMeta) {
+function adoptBaseElement(href: string, meta: URLMeta) {
 	if (basedMetas.has(meta)) return;
-	if (!isDocumentHtmlElement(node)) return;
 
 	const desc = Object_getOwnPropertyDescriptor(meta, "base");
 	if (!desc || !desc.writable) return;
@@ -501,7 +472,7 @@ function traverseParsedHtml(
 	const ruleAttributeNames = getRuleAttributeNames();
 
 	if (node.name === "base" && attribs.href !== undefined) {
-		adoptBaseElement(node, attribs.href, meta);
+		adoptBaseElement(attribs.href, meta);
 	}
 
 	for (let ruleIndex = 0; ruleIndex < htmlRules.length; ruleIndex++) {

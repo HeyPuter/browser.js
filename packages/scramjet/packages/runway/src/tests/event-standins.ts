@@ -48,7 +48,7 @@ window.CATCH = (target, type, keys, start) => new Promise((resolve) => {
 window.REDISPATCH = (e, keys) => new Promise((resolve) => setTimeout(() => {
 	const t = new EventTarget();
 	let got = "not delivered";
-	t.addEventListener(e.type, (ev) => { got = [ev === e, keys.map((k) => view(ev[k]) === view(e[k])), window.event === ev]; });
+	t.addEventListener(e.type, (ev) => { got = [ev === e, keys.map((k) => view(ev[k]) === view(e[k])), window.event === ev, ev.isTrusted]; });
 	const r = S(() => t.dispatchEvent(e));
 	resolve([r, got]);
 }, 0));

@@ -145,8 +145,10 @@ export default function (client: ScramjetClient, self: Self) {
 	 * already get is the only place the answer can change.
 	 */
 	const trustedProps = {
-		isTrusted() {
-			return true;
+		isTrusted(this: Event) {
+			// until the page dispatches it itself, which makes any event
+			// untrusted - see the `dispatchEvent` trap below
+			return client.box.trustedEvents.has(this);
 		},
 	};
 
@@ -582,7 +584,10 @@ export default function (client: ScramjetClient, self: Self) {
 			apply(ctx) {
 				// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
 				const real = client.box.standIns.get(ctx.args[0] as Event);
-				if (real) ctx.args[0] = real;
+				if (real) {
+					ctx.args[0] = real;
+					client.box.trustedEvents.delete(real);
+				}
 			},
 		},
 		"EventTarget.prototype.dispatchEvent"
