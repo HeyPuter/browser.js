@@ -78,7 +78,10 @@ export default function (client: ScramjetClient, self: Self) {
 			try {
 				const link = new client.native.Element(node).closest("a, area");
 				if (link) return link;
-				const root = new client.native.Node(node).getRootNode();
+				const nNode = new client.native.Node(node);
+				const root = nNode.getRootNode();
+				// the usual end: no shadow root around it
+				if (root === nNode.ownerDocument) return null;
 				node = new client.native.ShadowRoot(root).host;
 			} catch {
 				// not an element, or no shadow root around it
