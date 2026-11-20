@@ -129,4 +129,43 @@ export default [
 		}), "Origin headers");
 		`,
 	}),
+	referrerTest({
+		name: "referrer-mode-override-origin",
+		js: `
+		const id = uid("mo");
+		const r = new Request(rurl(ALT, id), { mode: "no-cors" });
+		await attempt(() => fetch(r, { mode: "cors" }));
+		const all = await seenAll(id);
+		assertEqual(all.origin, MAIN, "Origin after overriding mode to cors");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-cors-redirect-tainted-origin",
+		js: `
+		const final = uid("final"), hop = uid("hop");
+		await attempt(() => fetch(rurl(ALT, hop, { to: rurl(XSITE, final) })));
+		const all = await seenAll(final);
+		assertEqual(all.origin, "null", "Origin after a cross-origin redirect");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-base-inline-module-origin",
+		head: '<script>document.write("<base href=\\"" + location.protocol + "//127.0.0.1:" + location.port + "/r/\\">")</script>',
+		js: `
+		const s = document.createElement("script");
+		s.type = "module";
+		s.textContent = 'import "./basedep.js";';
+		document.body.append(s);
+		const all = await seenAll("basedep");
+		assertEqual(all.origin, MAIN, "Origin of an inline module import under a cross-origin base");
+		`,
+	}),
+	referrerTest({
+		name: "referrer-init-headers-snapshot",
+		js: `
+		const h = new Headers({ x: "before" });
+		const r = new Request(location.href, { headers: h, get method() { h.set("x", "after"); return "GET"; } });
+		assertEqual(r.headers.get("x"), "before", "headers converted at the headers member");
+		`,
+	}),
 ];

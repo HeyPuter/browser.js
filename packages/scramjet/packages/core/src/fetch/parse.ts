@@ -26,6 +26,7 @@ export const QP = {
 	referrerOrigin: "$ro",
 	fetchSite: "$fs",
 	crossSiteRedirect: "$csr",
+	taintedOrigin: "$tor",
 	fakeDataURL: "$fakedataurl",
 } as const;
 
@@ -204,6 +205,7 @@ export function parseRequest(
 		initialReferrerPolicy: params.referrerPolicy,
 		hadExtraParams,
 		crossSiteRedirect: params.crossSiteRedirect === "1",
+		taintedOrigin: params.taintedOrigin === "1",
 		fetchSiteState,
 		fetchInitiatorOrigin: params.initiatorOrigin || undefined,
 		fetchReferrerOrigin: params.referrerOrigin || undefined,

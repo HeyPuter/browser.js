@@ -56,6 +56,12 @@ export interface ScramjetFetchParsed {
 	referrer?: string | null;
 	hadExtraParams: boolean;
 	crossSiteRedirect: boolean;
+	/**
+	 * Whether a redirect has taken the request to another origin from a URL
+	 * its initiator was not same origin with, which makes its Origin "null".
+	 * https://fetch.spec.whatwg.org/#concept-request-tainted-origin
+	 */
+	taintedOrigin: boolean;
 
 	// track the worst case Sec-Fetch-Site classification through redirects
 	fetchSiteState?: "same-origin" | "same-site" | "cross-site";

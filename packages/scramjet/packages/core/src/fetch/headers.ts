@@ -525,7 +525,19 @@ function computeFetchMode(
 	request: ScramjetFetchRequest,
 	parsed: ScramjetFetchParsed
 ): string {
-	if (parsed.fetchMode) return parsed.fetchMode;
+	if (parsed.fetchMode) {
+		// the mode the request went out with, which `fetch(request, init)` can
+		// have changed from the one stamped on the request's URL
+		if (
+			request.mode === "cors" ||
+			request.mode === "no-cors" ||
+			request.mode === "same-origin"
+		) {
+			return request.mode;
+		}
+
+		return parsed.fetchMode;
+	}
 	const dest = parsed.destination;
 	if (
 		dest === "document" ||
@@ -561,6 +573,9 @@ function computeFetchMode(
  * or a stylesheet makes - a `crossorigin` image, a module, a font - and leaves
  * it off only `fetch()` and XHR, whose destination is "".
  *
+ * A redirect to another origin from one the initiator was not same origin
+ * with taints it, and it is "null" from then on.
+ *
  * https://fetch.spec.whatwg.org/#append-a-request-origin-header
  */
 function requestOriginHeader(
@@ -569,15 +584,17 @@ function requestOriginHeader(
 	initiator: URL
 ): string | null {
 	const origin = initiator.origin;
+	// what it is sent as: "null" once a redirect has tainted it
+	const serialized = parsed.taintedOrigin ? "null" : origin;
 	const mode = computeFetchMode(request, parsed);
 	if (
 		mode === "cors" &&
 		(origin !== parsed.url.origin || parsed.destination !== "")
 	) {
-		return origin;
+		return serialized;
 	}
 	if (request.method === "GET" || request.method === "HEAD") return null;
-	if (mode === "cors") return origin;
+	if (mode === "cors") return serialized;
 
 	switch (request.rawReferrerPolicy || DEFAULT_REFERRER_POLICY) {
 		case "no-referrer":
@@ -587,11 +604,11 @@ function requestOriginHeader(
 		case "strict-origin-when-cross-origin":
 			return initiator.protocol === "https:" && parsed.url.protocol !== "https:"
 				? "null"
-				: origin;
+				: serialized;
 		case "same-origin":
-			return origin === parsed.url.origin ? origin : "null";
+			return origin === parsed.url.origin ? serialized : "null";
 		default:
-			return origin;
+			return serialized;
 	}
 }
 

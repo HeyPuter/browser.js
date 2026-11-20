@@ -15,7 +15,6 @@ import {
 	Array_isArray,
 	Object_assign,
 	Object_create,
-	Object_keys,
 	Reflect_apply,
 	Reflect_get,
 	String_startsWith,
@@ -176,7 +175,7 @@ export default function (client: ScramjetClient, self: Self) {
 	 * A `HeadersInit`, in a form the native reads without running anything of
 	 * the page's.
 	 *
-	 * A Headers is filled from by its list, and a tagged one is swapped for the
+	 * A Headers is copied as it is now, and a tagged one is swapped for the
 	 * corrected view. Anything else is converted here and handed over in the
 	 * same shape, as a record with no prototype or as a sequence of
 	 * {@link ownIterable}s, for the native to fill the request from entry by
@@ -186,7 +185,11 @@ export default function (client: ScramjetClient, self: Self) {
 		if (client.box.taggedHeaders.has(value as Headers)) {
 			return toNativeHeaders(value as Headers);
 		}
-		if (client.box.instanceof(value, "Headers")) return value;
+		// copied now, as the native would fill the request from it now: a later
+		// member's getter can still change it before the native reads it
+		if (client.box.instanceof(value, "Headers")) {
+			return new nativeGlobal.Headers(value as Headers);
+		}
 
 		const converted = convertHeadersInit(value) as
 			| string[][]
@@ -200,13 +203,7 @@ export default function (client: ScramjetClient, self: Self) {
 			return ownIterable(pairs);
 		}
 
-		const record: Record<string, string> = Object_create(null);
-		const names = Object_keys(converted);
-		for (let i = 0; i < names.length; i++) {
-			record[names[i]] = converted[names[i]];
-		}
-
-		return record;
+		return converted;
 	};
 
 	/**

@@ -1583,7 +1583,9 @@ function coerceIDLRecord(
 		if (!idlIsObject(value)) idlReject();
 
 		const keys = Reflect_ownKeys(value as object);
-		const out: Record<string, unknown> = {};
+		// an ordered map, not an object: nothing is inherited, so a native
+		// converting it again finds the entries and nothing of the page's
+		const out: Record<string, unknown> = Object_create(null);
 
 		for (let i = 0; i < keys.length; i++) {
 			// https://webidl.spec.whatwg.org/#es-record
