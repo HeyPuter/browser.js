@@ -4,7 +4,7 @@ import { ScramjetClient } from "@client/index";
 // import { argdbg } from "@client/shared/err";
 import {
 	Object_defineProperty,
-	Array_filter,
+	Object_getOwnPropertyDescriptor,
 	Reflect_ownKeys,
 	drain,
 	String_startsWith,
@@ -215,11 +215,24 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	const isShimKey = (k: unknown) =>
 		k === SCRAMJETCLIENT ||
 		(typeof k === "string" && String_startsWith(k, "$scramjet"));
+	// they are only ever defined on the global and on Object.prototype, and
+	// every other object's keys are the page's own, whatever they are called
+	const objectPrototype = self.Object.prototype;
+	const carriesShimKeys = (target: unknown) =>
+		target === self || target === objectPrototype;
 	const filtered = {
 		apply(ctx) {
+			if (!carriesShimKeys(ctx.args[0])) return;
+			// the browser's own array, compacted in place: it stays of the
+			// page's realm, and nothing of the page's runs to make another
 			const keys = ctx.call() as (string | symbol)[];
+			let kept = 0;
+			for (let i = 0; i < keys.length; i++) {
+				if (!isShimKey(keys[i])) keys[kept++] = keys[i];
+			}
+			keys.length = kept;
 
-			return ctx.return(Array_filter(keys, (k) => !isShimKey(k)));
+			return ctx.return(keys);
 		},
 	};
 
@@ -229,6 +242,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 
 	client.Proxy("Object.getOwnPropertyDescriptors", {
 		apply(ctx) {
+			if (!carriesShimKeys(ctx.args[0])) return;
 			const descs = ctx.call() as Record<string | symbol, unknown>;
 			for (const k of drain(Reflect_ownKeys(descs))) {
 				if (isShimKey(k)) delete descs[k];
@@ -237,4 +251,15 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			return ctx.return(descs);
 		},
 	});
+
+	// the bundles' own globals, `$scramjet` and `$scramjetController`, are
+	// ordinary assignments, so enumerable: `Object.keys(window)` and for-in
+	// would list them
+	for (const k of drain(Reflect_ownKeys(self))) {
+		if (typeof k !== "string" || !isShimKey(k)) continue;
+		const descriptor = Object_getOwnPropertyDescriptor(self, k);
+		if (descriptor?.enumerable && descriptor.configurable) {
+			Object_defineProperty(self, k, { enumerable: false });
+		}
+	}
 }

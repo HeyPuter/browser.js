@@ -440,7 +440,7 @@ export function unrewriteHtml(
 				// that name and nothing outside scramjet should read it, but it
 				// survived into the serialised output, where anything
 				// fingerprinting an element by its attribute names can see it.
-				if (lower === "scramjet-injected") {
+				if (lower === "scramjet-injected" && node.name === "script") {
 					delete attribs[key];
 					continue;
 				}

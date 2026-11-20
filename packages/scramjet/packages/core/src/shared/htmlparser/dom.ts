@@ -105,7 +105,9 @@ abstract class NodeWithChildren extends Node {
 		for (let i = 0; i < nodes.length; i++) {
 			nodes[i].parent = this as NodeWithChildren as ParentNode;
 		}
-		Array_splice(this.children, index, 0, ...(nodes as ChildNode[]));
+		for (let i = 0; i < nodes.length; i++) {
+			Array_splice(this.children, index + i, 0, nodes[i]);
+		}
 	}
 
 	/** Swap the child at `index` for `node`. */
