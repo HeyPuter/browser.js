@@ -890,6 +890,25 @@ export default [
 		}
 	),
 
+	// `noopener` makes a target a lookup by name, which a keyword is not
+	nameTest(
+		"framename-top-window-open-noopener",
+		async ({ page, navigate, site }) => {
+			site.page("/", `<p>top</p>`);
+			const t = await open(page, navigate, site.a + "/");
+			await pv(t, () => {
+				window.open("/land/hit", "_top", "noopener");
+			});
+			await site.waitHit("hit");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/hit",
+				"the top-level navigated"
+			);
+		}
+	),
+
 	nameTest("framename-top-area-and-svg", async ({ page, navigate, site }) => {
 		site.page(
 			"/",
@@ -1060,6 +1079,51 @@ export default [
 				"the parent (the top-level) navigated"
 			);
 		})
+	),
+
+	// a link around a custom element, clicked on what its shadow root renders
+	nameTest(
+		"framename-child-link-around-shadow-content",
+		async ({ page, navigate, site }) => {
+			site.page("/", `<iframe src="/child"></iframe>`);
+			site.page(
+				"/child",
+				`<a target="_top" href="/land/hit"><x-label></x-label></a>
+			<script>customElements.define("x-label", class extends HTMLElement {
+				constructor() {
+					super();
+					this.attachShadow({ mode: "open" }).innerHTML = '<span style="display:inline-block;width:60px;height:20px">go</span>';
+				}
+			});</script>`
+			);
+			const t = await open(page, navigate, site.a + "/");
+			await click(await child(t, "/child"), "x-label");
+			await site.waitHit("hit");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/hit",
+				"the top-level navigated"
+			);
+		}
+	),
+
+	// an empty target is none: the base element's applies
+	nameTest(
+		"framename-child-empty-target-uses-base",
+		async ({ page, navigate, site }) => {
+			site.page("/", `<iframe src="/child"></iframe>`);
+			site.page("/child", `<base target="_parent">${LINK("", "/land/hit")}`);
+			const t = await open(page, navigate, site.a + "/");
+			await click(await child(t, "/child"));
+			await site.waitHit("hit");
+			await assertHarnessIntact(page);
+			assertEqual(
+				await pathOf(await topFrame(page)),
+				"/land/hit",
+				"the parent (the top-level) navigated"
+			);
+		}
 	),
 
 	nameTest(

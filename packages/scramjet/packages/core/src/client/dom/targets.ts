@@ -36,7 +36,8 @@ export default function (client: ScramjetClient, self: Self) {
 	): boolean => {
 		if (!element) return false;
 		const value = client.attributes.get(element, name);
-		if (value === null) return false;
+		// an empty target is none, and the base element's applies
+		if (value === null || value === "") return false;
 		if (!isKeyword(value)) return true;
 		if (isTop) {
 			if (raw.get(element, name) !== "_self") raw.set(element, name, "_self");
@@ -67,6 +68,27 @@ export default function (client: ScramjetClient, self: Self) {
 		for (let i = 0; i < bases.length; i++) settle(bases[i], "target");
 	};
 
+	/**
+	 * The link a click on `node` follows: the nearest `a` or `area` around it,
+	 * through the open shadow roots between them - a link around a custom
+	 * element, clicked on what its shadow root renders.
+	 */
+	const linkAround = (node: EventTarget): Element | null => {
+		for (let depth = 0; depth < 32; depth++) {
+			try {
+				const link = new client.native.Element(node).closest("a, area");
+				if (link) return link;
+				const root = new client.native.Node(node).getRootNode();
+				node = new client.native.ShadowRoot(root).host;
+			} catch {
+				// not an element, or no shadow root around it
+				return null;
+			}
+		}
+
+		return null;
+	};
+
 	const listen = new client.native.EventTarget(self).addEventListener;
 
 	// a link is followed after its click event is dispatched, whether the
@@ -74,15 +96,7 @@ export default function (client: ScramjetClient, self: Self) {
 	listen(
 		"click",
 		(event: Event) => {
-			// the innermost target, inside an open shadow root as well
-			const target = new client.native.Event(event).composedPath()[0];
-			let link: Element | null;
-			try {
-				link = new client.native.Element(target).closest("a, area");
-			} catch {
-				// not an element
-				return;
-			}
+			const link = linkAround(new client.native.Event(event).composedPath()[0]);
 			if (link && !settle(link, "target")) settleBase(link);
 		},
 		true
@@ -93,9 +107,11 @@ export default function (client: ScramjetClient, self: Self) {
 		"submit",
 		(event: Event) => {
 			const form = new client.native.Event(event).target as Element;
-			const submitter = new client.native.SubmitEvent(event).submitter;
-			if (settle(submitter, "formtarget")) return;
-			if (!settle(form, "target")) settleBase(form);
+			// all three: a submit listener of the page's can still take the
+			// submitter's target away, or the form's
+			settle(new client.native.SubmitEvent(event).submitter, "formtarget");
+			settle(form, "target");
+			settleBase(form);
 		},
 		true
 	);
