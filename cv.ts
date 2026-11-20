@@ -72,7 +72,12 @@ export default defineProject(import.meta.dirname, {
 	commands: {
 		chrome: {
 			desc: "browser.js dev server (chrome + wisp + isolation + rspack watch)",
-			deps: ["core:wasm", "dreamland:build", "cdp:build"],
+			deps: [
+				"core:wasm",
+				"dreamland:build",
+				"cdp:build",
+				"chrome:controller-sw",
+			],
 			persistent: true,
 			run: (ctx) => ctx.sh`node --no-warnings=ExperimentalWarning devserver.ts`,
 		},
