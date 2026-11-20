@@ -196,4 +196,64 @@ export default [
 			});
 		},
 	}),
+	// a meta Accept-CH is the document's alone: its own origin's requests
+	// carry the hint, another origin's do not, and the next document's do not
+	serverTest({
+		name: "request-client-hints-meta-accept-ch-scoped",
+		autoPass: true,
+		js: `
+			const id = Math.random().toString(36).slice(2);
+			const other = "http://127.0.0.1:" + location.port;
+			const p1 = window.open("/meta?" + id);
+			const wait = async (key) => {
+				for (let i = 0; i < 100; i++) {
+					await new Promise((r) => setTimeout(r, 50));
+					const s = await (await fetch("/seen?" + id)).json();
+					if (key in s) return s;
+				}
+				return await (await fetch("/seen?" + id)).json();
+			};
+			await wait("same");
+			p1?.close();
+			const p2 = window.open("/plain?" + id);
+			const seen = await wait("later");
+			p2?.close();
+			assert(seen.same !== undefined && seen.same !== "none", "same origin: " + seen.same);
+			assertEqual(seen.cross, "none", "another origin");
+			assertEqual(seen.later, "none", "a later document");
+		`,
+		async start(server, port) {
+			const runs: Record<string, Record<string, string>> = {};
+			server.on("request", (req, res) => {
+				const [path, id] = req.url!.split("?");
+				const run = (runs[id] ??= {});
+				const arch = (req.headers["sec-ch-ua-arch"] as string) ?? "none";
+				if (path === "/meta") {
+					run.doc = arch;
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end(`<!doctype html><head><meta http-equiv="Accept-CH" content="Sec-CH-UA-Arch"></head><body><script>
+fetch("/probe-same?${id}").then(() => fetch("http://127.0.0.1:${port}/probe-cross?${id}", { mode: "no-cors" }));
+</script></body>`);
+				} else if (path === "/plain") {
+					run.plainDoc = arch;
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end(
+						`<!doctype html><script>fetch("/probe-later?${id}")</script>`
+					);
+				} else if (path === "/probe-same") {
+					run.same = arch;
+					res.end();
+				} else if (path === "/probe-cross") {
+					run.cross = arch;
+					res.end();
+				} else if (path === "/probe-later") {
+					run.later = arch;
+					res.end();
+				} else if (path === "/seen") {
+					res.writeHead(200, { "Content-Type": "application/json" });
+					res.end(JSON.stringify(run));
+				}
+			});
+		},
+	}),
 ];

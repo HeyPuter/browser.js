@@ -75,4 +75,31 @@ parent.parent.postMessage({ child: r }, "*");
 			});
 		},
 	}),
+	// two CSP fields are two policies, and both are enforced
+	serverTest({
+		name: "csp-header-repeated-fields-both-enforced",
+		autoPass: true,
+		js: `
+			const f = document.createElement("iframe");
+			const loaded = new Promise((r) => (f.onload = r));
+			f.src = "/csp";
+			document.body.appendChild(f);
+			await loaded;
+			assertEqual(window.evalResult, "EvalError");
+		`,
+		async start(server) {
+			server.on("request", (req, res) => {
+				if (req.url === "/csp") {
+					res.setHeader("Content-Type", "text/html");
+					res.setHeader("Content-Security-Policy", [
+						"script-src 'unsafe-inline'",
+						"script-src 'unsafe-inline' 'unsafe-eval'",
+					]);
+					res.end(`<!doctype html><script>
+try { eval("1"); parent.evalResult = "ran"; } catch (e) { parent.evalResult = e.name; }
+</script>`);
+				}
+			});
+		},
+	}),
 ];

@@ -213,7 +213,14 @@ export function applyClientHints(
 	url: URL,
 	allowed = true
 ) {
-	if (!allowed) return;
+	if (!allowed) {
+		// the browser attaches the hints a document's meta Accept-CH asks for
+		// to everything it fetches, all of it on the proxy's origin: the ones
+		// the policy keeps from another origin are taken off again
+		for (const name in HIGH_ENTROPY) headers.delete(name);
+
+		return;
+	}
 	const wanted = accepted.get(url.origin);
 	if (!wanted || values === null) return;
 

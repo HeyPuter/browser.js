@@ -238,12 +238,18 @@ export class ScramjetHeaders {
 	static fromRawHeaders(raw: RawHeaders): ScramjetHeaders {
 		const h = new ScramjetHeaders();
 		for (const [k, v] of raw) {
-			if (h.has(k)) {
-				// console.debug(
-				// 	`Duplicate header "${k}" found in raw headers, overwriting previous value.`
-				// );
+			// two Content-Security-Policy fields are two policies, and the
+			// client reads them all from the joined value. Any other repeat is
+			// left to the last, as it always was
+			const lk = k.toLowerCase();
+			if (
+				lk === "content-security-policy" ||
+				lk === "content-security-policy-report-only"
+			) {
+				h.append(k, v);
+			} else {
+				h.set(k, v);
 			}
-			h.set(k, v);
 		}
 
 		return h;
