@@ -367,7 +367,7 @@ export function rewriteHistoryUrl(
 	// a scheme with no proxy URL, which only ever differs in its fragment
 	if (url.protocol !== "http:" && url.protocol !== "https:") return url.href;
 
-	return rewriteUrl(url, context, meta);
+	return rewriteUrl(url.href, context, meta);
 }
 
 /**

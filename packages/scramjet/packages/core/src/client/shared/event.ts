@@ -589,10 +589,9 @@ export default function (client: ScramjetClient, self: Self) {
 				ctx.args[0] = real;
 				// untrusted for its listeners - unless the dispatch throws,
 				// because it is still in flight, which leaves it as it was
-				const trusted = client.box.trustedEvents.has(real);
-				client.box.trustedEvents.delete(real);
+				const trusted = client.box.trustedEvents.delete(real);
 				try {
-					ctx.return(ctx.call());
+					ctx.call();
 				} catch (err) {
 					if (trusted) client.box.trustedEvents.add(real);
 					throw err;
