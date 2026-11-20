@@ -147,7 +147,8 @@ export function readyClientHints(): Promise<void> {
  */
 export function acceptClientHints(url: URL, headers: ScramjetHeaders) {
 	const header = headers.get("accept-ch");
-	if (header === null) return;
+	// client hints are only ever delegated to a secure origin
+	if (header === null || url.protocol !== "https:") return;
 
 	const wanted = new _Set(
 		header

@@ -81,6 +81,8 @@ export default [
     assertEqual(child.eval("42"), 42, "meta outside head is ignored");
   `
 	),
+	// known failure: the policy metas are read when a policy is asked about,
+	// not watched for, so one removed before that is missed
 	test(
 		"removed-meta",
 		nonceOnly +

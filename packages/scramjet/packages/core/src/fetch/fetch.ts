@@ -116,7 +116,11 @@ export async function doHandleFetch(
 	// `needsCriticalRestart` only asks again for hints this browser actually
 	// has, so a server naming one we cannot produce is answered rather than
 	// retried forever.
+	// Chrome restarts navigations only, and a request with a body could not
+	// be sent again anyway: its stream has been read
 	if (
+		isDocument(parsed) &&
+		(request.method === "GET" || request.method === "HEAD") &&
 		needsCriticalRestart(
 			firstHeaders,
 			newheaders,

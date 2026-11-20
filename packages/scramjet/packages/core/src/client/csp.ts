@@ -1,8 +1,7 @@
 import type { ScramjetClient } from "@client/index";
 import {
 	_Map as Map,
-	_Set as Set,
-	Array_includes,
+	_WeakSet as WeakSet,
 	String_replace,
 	String_split,
 	drain,
@@ -41,8 +40,8 @@ export function initializeCsp(client: ScramjetClient): CspState {
 	const global = new client.native.window(client.global);
 	const document = global.document;
 	if (!document) return state;
-	const doc = new client.native.Document(document);
-	if (doc.URL === "about:blank" || doc.URL === "about:srcdoc") {
+	const nDocument = new client.native.Document(document);
+	if (nDocument.URL === "about:blank" || nDocument.URL === "about:srcdoc") {
 		const creator =
 			global.parent !== client.global ? global.parent : global.opener;
 		const parent = creator && client.box.globals.get(creator);
@@ -56,113 +55,41 @@ export function initializeCsp(client: ScramjetClient): CspState {
 		}
 	}
 
-	const seen = new Set<string>();
-	const list = (nodes: NodeList): Node[] => {
-		const native = new client.native.NodeList(nodes);
-		const result: Node[] = [];
-		for (let i = 0; i < native.length; i++) result.push(native.item(i));
-		return result;
-	};
-	const nativeParent = (node: Node) => new client.native.Node(node).parentNode;
-	const nativeChildren = (node: Node) =>
-		list(new client.native.Node(node).childNodes);
-	const attribute = (node: Node, name: string) =>
-		new client.native.Element(node).getAttribute(name);
-	const tag = (node: Node | null, name: string) => {
-		if (!node || new client.native.Node(node).nodeType !== 1) return false;
-		const element = new client.native.Element(node);
-		return (
-			element.namespaceURI === "http://www.w3.org/1999/xhtml" &&
-			element.localName === name
-		);
-	};
-	const process = (
-		node: Node,
-		parent: (node: Node) => Node | null,
-		attr: (node: Node, name: string) => string | null
-	) => {
-		// https://html.spec.whatwg.org/multipage/semantics.html#attr-meta-http-equiv-content-security-policy
-		if (!tag(node, "meta") || !tag(parent(node), "head")) return;
-		let root = node;
-		while (parent(root)) root = parent(root)!;
-		if (root !== document) return;
-		if (attr(node, "http-equiv")?.toLowerCase() !== "content-security-policy")
-			return;
-		const value = attr(node, "scramjet-attr-content") ?? attr(node, "content");
-		if (!value || seen.has(value)) return;
-		seen.add(value);
-		const policy = parse(value);
-		policy.delete("report-uri");
-		policy.delete("frame-ancestors");
-		policy.delete("sandbox");
-		state.policies.push(policy);
-	};
-	const visit = (
-		node: Node,
-		children: (node: Node) => Node[],
-		apply: (node: Node) => void
-	) => {
-		apply(node);
-		for (const child of drain(children(node))) visit(child, children, apply);
-	};
-	visit(document, nativeChildren, (node) =>
-		process(node, nativeParent, attribute)
-	);
-
-	const consume = (records: MutationRecord[]) => {
-		if (!records.length) return;
-		// MutationRecord nodes are live. Reconstruct the tree and attributes at
-		// each mutation in reverse, without changing the DOM. This preserves a
-		// policy inserted, changed or removed before observer delivery/eval.
-		const parents = new Map<Node, Node | null>();
-		const children = new Map<Node, Node[]>();
-		const attributes = new Map<Node, Map<string, string | null>>();
-		const parent = (node: Node) =>
-			parents.has(node) ? parents.get(node)! : nativeParent(node);
-		const kids = (node: Node) => {
-			if (!children.has(node)) children.set(node, nativeChildren(node));
-			return children.get(node)!;
-		};
-		const attr = (node: Node, name: string) =>
-			attributes.get(node)?.has(name)
-				? attributes.get(node)!.get(name)!
-				: attribute(node, name);
-		for (let i = records.length - 1; i >= 0; i--) {
-			const record = new client.native.MutationRecord(records[i]);
-			const node = record.target;
-			if (record.type === "attributes") {
-				process(node, parent, attr);
-				if (!attributes.has(node)) attributes.set(node, new Map());
-				attributes.get(node)!.set(record.attributeName!, record.oldValue);
-			} else {
-				const added = list(record.addedNodes);
-				for (const child of drain(added))
-					visit(child, kids, (item) => process(item, parent, attr));
-				for (const child of drain(added)) parents.set(child, null);
-				const restored = list(record.removedNodes);
-				for (const child of drain(restored)) parents.set(child, node);
-				const current = kids(node);
-				const next: Node[] = [];
-				for (let j = 0; j < current.length; j++) {
-					if (!Array_includes(added, current[j]))
-						next[next.length] = current[j];
-				}
-				for (let j = 0; j < restored.length; j++)
-					next[next.length] = restored[j];
-				children.set(node, next);
-			}
+	// https://html.spec.whatwg.org/multipage/semantics.html#attr-meta-http-equiv-content-security-policy -
+	// a policy meta counts once it is a child of the head, and keeps counting
+	// after it is removed. Read when a policy is asked about, rather than
+	// watched for: watching every insertion in every document costs every page
+	// that never has one. A meta put in and taken out again between two checks
+	// is missed
+	const seen = new WeakSet<Element>();
+	state.flush = () => {
+		const head = nDocument.head;
+		if (!head) return;
+		const children = new client.native.Element(head).children;
+		for (let i = 0; i < children.length; i++) {
+			const element = new client.native.Element(children[i]);
+			if (
+				element.localName !== "meta" ||
+				element.namespaceURI !== "http://www.w3.org/1999/xhtml" ||
+				seen.has(children[i])
+			)
+				continue;
+			const equiv = element.getAttribute("http-equiv");
+			if (equiv === null || equiv.toLowerCase() !== "content-security-policy")
+				continue;
+			const value =
+				element.getAttribute("scramjet-attr-content") ??
+				element.getAttribute("content");
+			if (!value) continue;
+			seen.add(children[i]);
+			const policy = parse(value);
+			policy.delete("report-uri");
+			policy.delete("frame-ancestors");
+			policy.delete("sandbox");
+			state.policies.push(policy);
 		}
 	};
-	const observer = new global.MutationObserver(consume);
-	const nativeObserver = new client.native.MutationObserver(observer);
-	nativeObserver.observe(document, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		attributeFilter: ["http-equiv", "content", "scramjet-attr-content"],
-	});
-	state.flush = () => consume(nativeObserver.takeRecords());
+
 	return state;
 }
 
