@@ -75,6 +75,10 @@ export class Controller {
 				return [response, transfer];
 			} catch (e: any) {
 				console.error("Error in controller fetch:", e);
+				// only a navigation gets the error page: anything else is a
+				// network error, which the service worker answers when this
+				// rejects, and the page's fetch rejects as it would in a browser
+				if (data.mode !== "navigate") throw e;
 				return [
 					{
 						status: 500,
