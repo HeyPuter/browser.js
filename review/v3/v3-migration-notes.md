@@ -26,5 +26,5 @@ Breaking or behaviour changes from v2 (`MercuryWorkshop/scramjet` main as of 202
 
 ## Service worker
 
-- The worker learns each controller's base prefix from its init message and keeps the set in Cache Storage (`$controller$sw`), so it can route requests after being stopped and restarted. If that cache is evicted, an open page's requests go to the host until the controller re-initialises (SCR-32).
+- The worker learns each controller's base prefix from its init message and keeps the set in Cache Storage (`$controller$sw`), so it can route requests after being stopped and restarted. With that cache emptied by hand, an open page's requests went to the host instead; no natural trigger has been reproduced (SCR-32).
 - Request bodies are buffered (`request.arrayBuffer()`) rather than streamed, so they carry a `Content-Length` as in Chrome. True `duplex: "half"` streaming uploads aren't streamed.
