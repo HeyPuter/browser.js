@@ -846,6 +846,13 @@ async function main() {
 		console.log("🧪 Direct tests only: skipping harness/browser startup\n");
 	}
 
+	// From here on, a test's own server throwing (a handler bug, a missing
+	// fixture) would end the whole run; that test times out and fails
+	// instead. The harness has had its chance to fail to listen by now.
+	process.on("uncaughtException", (error) => {
+		console.error("💥 uncaught exception in a test server:", error);
+	});
+
 	const coverageEnabled = process.env.SCRAMJET_COVERAGE === "1";
 	const coverageEntries: Array<{
 		url: string;
