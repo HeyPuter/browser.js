@@ -40,6 +40,7 @@ const enum CharCodes {
     LowerZ = 0x7a, // "z"
     LowerX = 0x78, // "x"
     OpeningSquareBracket = 0x5b, // "["
+    ClosingSquareBracket = 0x5d, // "]"
 }
 
 /** All the states the tokenizer can be in. */
@@ -753,6 +754,8 @@ export default class Tokenizer {
                 c === CharCodes.Dash
                     ? State.BeforeComment
                     : State.InDeclaration;
+            // the depth of `[` in an internal DTD subset, in InDeclaration
+            this.sequenceIndex = 0;
         } else if ((c | 0x20) === Sequences.Doctype[0]) {
             this.state = State.DeclarationSequence;
             this.currentSequence = Sequences.Doctype;
@@ -790,6 +793,24 @@ export default class Tokenizer {
         }
     }
     private stateInDeclaration(c: number): void {
+        if (this.xmlMode) {
+            // `<!DOCTYPE x [ <!ENTITY e "v"> ]>`: an internal subset holds
+            // `>`s of its own, so only one outside the brackets ends it
+            if (c === CharCodes.OpeningSquareBracket) {
+                this.sequenceIndex += 1;
+                return;
+            }
+            if (c === CharCodes.ClosingSquareBracket) {
+                this.sequenceIndex -= 1;
+                return;
+            }
+            if (c !== CharCodes.Gt || this.sequenceIndex > 0) return;
+            this.sequenceIndex = 0;
+            this.cbs.ondeclaration(this.sectionStart, this.index);
+            this.state = State.Text;
+            this.sectionStart = this.index + 1;
+            return;
+        }
         if (c === CharCodes.Gt || this.fastForwardTo(CharCodes.Gt)) {
             this.cbs.ondeclaration(this.sectionStart, this.index);
             this.state = State.Text;
@@ -808,7 +829,8 @@ export default class Tokenizer {
             // Remember that we just consumed `?`, so the next `>` closes the PI.
             this.sequenceIndex = 1;
         } else if (c === CharCodes.Gt && this.sequenceIndex === 1) {
-            this.cbs.onprocessinginstruction(this.sectionStart, this.index - 1);
+            // the end is exclusive: up to the `>`, so the closing `?` is kept
+            this.cbs.onprocessinginstruction(this.sectionStart, this.index);
             this.sequenceIndex = 0;
             this.state = State.Text;
             this.sectionStart = this.index + 1;
