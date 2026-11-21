@@ -250,6 +250,10 @@ async function findTabForPath(
 	if (tab) return tab;
 
 	await prefixesReady;
+	// the tab may have registered while the prefixes were loading: asking it
+	// to revive now would reset a working port under requests already on it
+	const registered = tabs.find((tab) => pathname.startsWith(tab.prefix));
+	if (registered) return registered;
 	const id = tabIdFromPath(pathname);
 	if (!id) return undefined;
 
