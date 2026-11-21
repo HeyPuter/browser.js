@@ -140,3 +140,9 @@ Client-hints edge cases U9-1..4 (one regression: Accept-CH withdrawal) + U9-5 pr
 - Popup → reloaded opener postMessage attributed to the opener (separate SingletonBoxes); `_top` fragment link from an iframe carries `$iframe` → **SCR-42** (unreproduced, rare).
 
 ### U8 frame names (f9d3a88d): codex (`codex/U8-framenames.md`) → **SCR-41** (shadow-root form `_parent`, `window.name` in iframe proxy URLs, base target after target removal; unreproduced). No MutationObserver installed.
+
+### Performance (prior review perf probes, `-p 1`, head vs up; logs `~/.cache/sjreview-v3/logs/perf-{head,up}.log`)
+
+- import() with a large import map: 119.5ms vs 0.077ms per call at 3000 entries → **FIXED** 2d9df252 (0.095ms).
+- growing a `<style>` (CSS-in-JS): 7-9× → **PR #154** (now ≈ upstream to 2×).
+- rest (dead realms 6.4×, rawtext 3.1×, trampolines 2.7×, error stack 2.6×, inline onclick 2.4×) → **SCR-44**.
