@@ -34,13 +34,13 @@ Our 2509 tests run on the up build (1 run) vs head (3 runs): **31 pass on up and
 | #    | tests                                                                                                                                                                                                      | verdict                                                                                                                   |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | P3-1 | `fragment-base-ignores-template` (+ `-svg`, `-math`, which fail on both)                                                                                                                                   | REGRESSION (template only; upstream passed by accident with last-wins). **FIXED** 74cd0192 (pushed in 6725a7bf's series). |
-| P3-2 | 12× `elshape-members-*` `order:` labels                                                                                                                                                                    | known: prior review bucket 1 #68 (brand check after argument conversion). Contrived/fingerprint. Still open.              |
-| P3-3 | `elattr-onclick-attribute-behaviour`, `incumbency-regression-pst-inline-handler-source`, `eltext-mutations-{data,append-string,connected-empty-append,normalize,removechild,splittext,style}`              | known: prior #57/#65 (rewritten source in `onclick.toString()`, MutationObserver records). Still open.                    |
-| P3-4 | `eltext-range-tostring`, `eltext-exec-movebefore`, `eltext-exec-currentscript-two-parts`, `eltext-script-rendered-innertext`, `elshape-innertext-outertext`, `events-handleevent-not-callable-is-reported` | known: prior #58. Still open.                                                                                             |
-| P3-5 | `incumbency-regression-{stamp,lazystamp}-htmldda-is-not-nullish`                                                                                                                                           | non-default incumbency modes only (`pst`, the default, passes). Fails at f9d3a88d too. TODO: decide.                      |
-| P3-6 | `referrer-long-document-url`, `referrer-init-new-target-after-conversion`                                                                                                                                  | added by #135 and already in the committed failing list (the author knew). TODO: review with U6.                          |
+| P3-2 | 12× `elshape-members-*` `order:` labels                                                                                                                                                                    | known: prior #68. Filed **SCR-26**.                                                                                       |
+| P3-3 | `elattr-onclick-attribute-behaviour`, `incumbency-regression-pst-inline-handler-source`, `eltext-mutations-{data,append-string,connected-empty-append,normalize,removechild,splittext,style}`              | known: prior #57/#65. Filed **SCR-24**.                                                                                   |
+| P3-4 | `eltext-range-tostring`, `eltext-exec-movebefore`, `eltext-exec-currentscript-two-parts`, `eltext-script-rendered-innertext`, `elshape-innertext-outertext`, `events-handleevent-not-callable-is-reported` | known: prior #58. Filed **SCR-25** (+ handleEvent: **SCR-29**).                                                           |
+| P3-5 | `incumbency-regression-{stamp,lazystamp}-htmldda-is-not-nullish`                                                                                                                                           | non-default incumbency modes only. Filed **SCR-28**.                                                                      |
+| P3-6 | `referrer-long-document-url`, `referrer-init-new-target-after-conversion`                                                                                                                                  | long-document: REGRESSION, user chose to leave it: **SCR-27**. new-target-after-conversion: TODO with U6.                 |
 
-The P3-2..4 items were judged low-impact/contrived by the prior review and left open. They're fingerprint surfaces (`$scramjet$registerrealm` visible in `onclick.toString()` and MutationObserver `oldValue`) that an anti-bot script could read. TODO: ask the user whether v3 should close them.
+The P3-2..4 items were judged low-impact/contrived by the prior review and left open. They're fingerprint surfaces (`$scramjet$registerrealm` visible in `onclick.toString()` and MutationObserver `oldValue`) that an anti-bot script could read. User (2026-11-21): fix only trivial ones, file the rest. None was trivial; all filed.
 
 ### I6. CI's prebuilt jobs couldn't start (fixed 9090baae)
 
@@ -49,3 +49,63 @@ With I1 fixed, "Run Scramjet Tests" and "Build Frontend" died in cv: `CV_PREBUIL
 ### I7. Formatter drift on main
 
 The pre-commit hook (`./cv format`) formats the whole repo; 7 files on main are unformatted (`packages/scramjet/.github/ISSUE_TEMPLATE/*`, `controller/src/inject.ts`, `demo/src/pages/{BrowserView,Playground}.tsx`, `demo/vite.config.ts`, `utils/src/http-cache-plugin.ts`), so every commit reformats them in the worktree. I revert them each time. A one-off format commit would end it (ask).
+
+### I8. `urlfidelity-empty-query` fails only in CI (SCR-23)
+
+Pre-existing (upstream's old list had it). Listed as an expected failure in both lists.
+
+### I9. Upstream moved during the review
+
+New on MercuryWorkshop/scramjet main: `f6a1ed73` (already in ours as dac63876), `45fb6c68` **version compatibility (#241), not in ours: port in P5**, `2b2adc6e` 2.x version bumps (superseded). Pushed upstream's corrected failing list as `32ffe62c`.
+
+## P2 per-commit review
+
+### U4 integrity / Link header (556a1397, 4e3e8299): subagent review, verified by me
+
+- U4-1 Link-header `imagesrcset` preload bypasses the proxy: **upstream bug, NOT REAL on v3** (header-only repro: up sends `/srcset.png` straight to the site, head doesn't). Guard test `linkheader-imagesrcset-preload-is-proxied`.
+- U4-2 Link-header `modulepreload` without `isModule` → module fetched twice: **PRE-EXISTING, FIXED** dbbf6139 (`linkheader-modulepreload-fetched-once`).
+- U4-3 (fetch-preload integrity kept "to avoid a double fetch" doesn't avoid it): design note, harmless. Not filed.
+- U4-4 SRI not enforced on rewritten bodies: unchanged from upstream; only matters for deliberately wrong digests. Not filed (contrived).
+
+### U6 referer #135 (16659a94): codex (`codex/U6-referer.md`), verified by me
+
+| id   | claim                                                                  | verdict                                                                                                                                                                               |
+| ---- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U6-1 | prefix import map + static & dynamic import → module runs twice        | **PRE-EXISTING** (head and up `runs=2`, bare 1). Repro `review/v3/importmap.ts` (`v3-importmap-prefix-static-and-dynamic`). Site-breaking for registry-style modules → **fix queue**. |
+| U6-2 | CDN module deps under `Referrer-Policy: origin` get the page's Referer | PRE-EXISTING (`referrer-module-import-map-cross-origin` fails on up too)                                                                                                              |
+| U6-3 | Origin after CORS redirect chain should be `null`                      | PRE-EXISTING (`referrer-cors-redirect-*tainted-origin` fail on up)                                                                                                                    |
+| U6-4 | form POST under no-referrer sends real Origin (Chrome: `null`)         | PRE-EXISTING (`referrer-post-navigation-no-referrer-origin-null`)                                                                                                                     |
+| U6-5 | Origin on same-origin fetch/XHR GET                                    | PRE-EXISTING (`referrer-origin-header-by-request-kind`)                                                                                                                               |
+| U6-6 | dynamic import loses script element's referrerpolicy                   | PRE-EXISTING (`referrer-module-no-referrer-dynamic-import`)                                                                                                                           |
+| U6-7 | Request ctor reads init getters before throwing newTarget.prototype    | REGRESSION, contrived (`referrer-init-new-target-after-conversion`)                                                                                                                   |
+
+### U1 interceptors (10ebe8e3, d6c0de3a): codex (`codex/U1-interceptors.md`), verified by me
+
+Repros `runway/src/tests/review/v3/layers.ts`; every one passes on up and fails on head:
+
+- U1-1 **REGRESSION, accepted by the user (2026-11-21):** `RawProxy(instance, key)` changes every instance (prior #2). "It's okay to break it". Not fixed.
+- U1-2 **REGRESSION** a new layer drops a page wrapper installed in between (slot cached forever, render writes over the page's function). `v3-layers-page-wrapper-survives-new-layer`.
+- U1-3 **REGRESSION (API)** `Proxy`/`Trap` no longer accept an array of names (v2 API). No in-repo callers. `v3-layers-proxy-array-names`.
+- U1-4 **REGRESSION** embedder `Proxy` on a static before `hook()` + core's Intercept → static `super` recurses (`URL.createObjectURL` throws). `v3-layers-static-proxy-before-hook`.
+- U1-5..8 are browser.js `inject`/`utils` alwaysLastBubble/history emulator issues (outside the scramjet core diff except utils' copy). TODO: triage after the core fixes.
+- Heritage loader: verified wired for all core variants; only `GlobalScope` + local `WebSocket`/`WebSocketStream` bindings are skipped (safe: read from the target realm at hook time).
+- Prior #4 (parent globals) **verified fixed**: all 10 `rv12-parentglobals-*` pass on head.
+
+→ **PR #148 "layering"**: U1-2..4. User found the first version (own-property instance slots + page-replacement detection) too much code; simplified to: render skips an unchanged site. Design constraint (author's): installs land on the owning object, never a visible shadow. U1-1 fix = receiver-scoped layer in the shared slot; U1-2 fix = new slot over the page's current function when the site no longer holds ours; U1-3 = array overload.
+
+### U9 TURNSTILE #130 (f3c16041): codex (`codex/U9-turnstile-130.md`)
+
+Client-hints edge cases U9-1..4 (one regression: Accept-CH withdrawal) + U9-5 pre-existing TT `new Function`: **filed SCR-30, unverified** (need HTTPS/SW-restart repros; low impact). U9-6 (cold worker awaits UA data): read, negligible (one browser-internal call per worker; rejection caught). codex found nothing in CSP meta / TT sinks / header order beyond these, and notes #130 doesn't actually touch hasFocus.
+
+### U1-4 extra: `rv8p3-proxy-before-hook` (prior #1, embedder-before-hook order) still fails on frozen head. TODO: investigate on the layering branch.
+
+### U10 TURNSTILE #132 (f914b6a4): codex (`codex/U10-turnstile-132.md`)
+
+- U10-1 SW buffers request bodies instead of streaming: **deliberate design** (Content-Length fidelity; a stream made POSTs chunked, which servers reject). Not acted on.
+- U10-2/3 (`$scramjet*` page globals hidden from reflection; page `scramjet-injected` attr stripped) contrived, U10-4 (503 instead of network error when the controller is gone) pre-existing: **filed SCR-31**, left open.
+- Checked fine (codex): doctype/quirks mode handling, HTTP/network error surfacing, frame ids.
+
+### Fixes in flight
+
+- PR #148 `v3/layering`: U1-1..4.
+- PR #149 `v3/importmap`: U6-1.
