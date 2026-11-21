@@ -212,6 +212,7 @@ function createConsistencyTracker(requireBoth: boolean) {
 
 async function discoverTests(): Promise<Test[]> {
 	const omitWpt = process.env.OMIT_WPT === "1";
+	const includeReview = process.env.RUNWAY_REVIEW === "1";
 	const testFiles = glob("**/*.ts", {
 		cwd: path.join(__dirname, "tests"),
 	});
@@ -219,6 +220,11 @@ async function discoverTests(): Promise<Test[]> {
 	const tests: Test[] = [];
 	for await (const file of testFiles) {
 		if (omitWpt && file.startsWith("wpt/")) {
+			continue;
+		}
+		// tests/review/ holds the repro probes from past reviews (sweeps of live
+		// sites, perf and memory probes among them), so it is opt-in
+		if (!includeReview && file.startsWith("review/")) {
 			continue;
 		}
 		const fullPath = path.join(__dirname, "tests", file);
@@ -746,7 +752,7 @@ async function main() {
 	console.log("🚀 Starting Runway test runner\n");
 
 	const args = process.argv.slice(2);
-	let testFilter: string | undefined;
+	const testFilters: string[] = [];
 	let parallelArg: number | undefined;
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i];
@@ -762,16 +768,16 @@ async function main() {
 			parallelArg = Number(arg.split("=")[1]);
 			continue;
 		}
-		if (!testFilter) {
-			testFilter = arg;
-		}
+		// several filters select every test matching any of them
+		testFilters.push(arg);
 	}
 
 	const allTests = await discoverTests();
 
 	// Filter tests if a pattern is provided
-	const tests = testFilter
-		? allTests.filter((t) => t.name.includes(testFilter!))
+	const testFilter = testFilters.length ? testFilters.join('", "') : undefined;
+	const tests = testFilters.length
+		? allTests.filter((t) => testFilters.some((f) => t.name.includes(f)))
 		: allTests;
 	const parallelism = Math.max(
 		1,
@@ -1280,6 +1286,27 @@ async function main() {
 		`\n✅ ${passed} passed | ❌ ${failed} failed | 💥 ${errors} errors\n`
 	);
 	const selectedTestNames = new Set(tests.map((test) => test.name));
+	// RUNWAY_RESULTS_JSON=<path> saves every result, for diffing two builds
+	if (process.env.RUNWAY_RESULTS_JSON) {
+		const side = (r: any) =>
+			r ? { status: r.status, message: r.message } : null;
+		await writeFile(
+			process.env.RUNWAY_RESULTS_JSON,
+			JSON.stringify(
+				results.map((r) => ({
+					name: r.test.name,
+					status: r.result.status,
+					message: r.result.message,
+					scramjet: side((r.result as any).details?.scramjet),
+					bare: side((r.result as any).details?.bare),
+					duration: r.duration,
+				})),
+				null,
+				1
+			) + "\n",
+			"utf-8"
+		);
+	}
 	const actualFailing = results
 		.filter((r) => r.result.status !== "pass")
 		.map((r) => r.test.name)
