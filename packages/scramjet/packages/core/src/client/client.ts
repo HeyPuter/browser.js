@@ -65,6 +65,8 @@ import {
 	String_toLowerCase,
 	_RegExp,
 	Array_includes,
+	Array_isArray,
+	Object_isExtensible,
 } from "@/shared/snapshot";
 import {
 	isConstructorMember,
@@ -205,6 +207,8 @@ type SlotSite = {
 	key: string | symbol;
 	/** the descriptor the engine had there, whose attributes we keep */
 	descriptor: PropertyDescriptor;
+	/** what the last render put there */
+	installed?: PropertyDescriptor;
 };
 
 /**
@@ -1026,8 +1030,13 @@ export class ScramjetClient {
 	 * `Intercept`'s implementation of it, if it has one, whose argument
 	 * conversion has then already run by the time the handler sees `ctx.args`.
 	 */
-	Proxy<T extends string>(name: T, handler: Proxy<T>): void {
-		const target = this.resolvePath(name);
+	Proxy<T extends string>(name: T | readonly T[], handler: Proxy<T>): void {
+		if (Array_isArray(name)) {
+			for (let i = 0; i < name.length; i++) this.Proxy(name[i], handler);
+
+			return;
+		}
+		const target = this.resolvePath(name as T);
 		if (!target) return;
 
 		this.RawProxy(target.owner, target.prop, handler, name);
@@ -1261,6 +1270,10 @@ return { apply, construct };
 
 		for (let i = 0; i < slot.sites.length; i++) {
 			const site = slot.sites[i];
+			// the page put its own over ours since the last render: it stays
+			// outermost, calling through to ours, which these layers now reach
+			// (base, then an embedder's layers, then the page)
+			if (site.installed && this.replacedByPage(slot, site)) continue;
 			const descriptor: PropertyDescriptor = {
 				enumerable: site.descriptor.enumerable,
 				configurable: site.descriptor.configurable,
@@ -1273,7 +1286,84 @@ return { apply, construct };
 				descriptor.set = next.set;
 			}
 			Object_defineProperty(site.owner, site.key, descriptor);
+			site.installed = descriptor;
 		}
+	}
+
+	private replacedByPage(slot: Slot, site: SlotSite): boolean {
+		const current = Object_getOwnPropertyDescriptor(site.owner, site.key);
+		const installed = site.installed!;
+		if (!current) return false;
+		if (
+			current.value === installed.value &&
+			current.get === installed.get &&
+			current.set === installed.set
+		) {
+			return false;
+		}
+		// put back to the native: that's ours to cover again
+		if (
+			current.value === slot.native.value &&
+			current.get === slot.native.get &&
+			current.set === slot.native.set
+		) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * `RawProxy` named an object that inherits the member rather than owning
+	 * it - an embedder wrapping one instance's method, as the v2 API did. The
+	 * global scope is the exception: a worker's members live on
+	 * `WorkerGlobalScope.prototype`, and `Proxy("addEventListener")` means the
+	 * global's own, so that one is patched where it lives (see `slotFor`).
+	 */
+	private isInstanceTarget(target: any, key: string | symbol): boolean {
+		return (
+			target !== this.global && !Object_getOwnPropertyDescriptor(target, key)
+		);
+	}
+
+	/**
+	 * A slot on `target` itself, over the member it inherits: an own property,
+	 * which leaves every other object that inherits the member alone.
+	 */
+	private instanceSlot(
+		target: any,
+		key: string | symbol,
+		member: string
+	): Slot | null {
+		const existing = this.slots.get(target)?.get(key);
+		if (existing) return existing;
+		if (!Object_isExtensible(target)) return null;
+
+		let owner = Object_getPrototypeOf(target);
+		let inherited: PropertyDescriptor | undefined;
+		while (owner && !inherited) {
+			inherited = Object_getOwnPropertyDescriptor(owner, key);
+			owner = Object_getPrototypeOf(owner);
+		}
+		if (!inherited) return null;
+
+		const site: SlotSite = {
+			owner: target,
+			key,
+			descriptor: { ...inherited, configurable: true },
+		};
+		const slot: Slot = {
+			member,
+			sites: [site],
+			native: inherited,
+			tramp: this.trampoline(member),
+			base: null,
+			calls: [],
+			traps: [],
+		};
+		this.registerSite(slot, site);
+
+		return slot;
 	}
 
 	/** What the page sees for a method or constructor slot. */
@@ -1528,16 +1618,20 @@ return { apply, construct };
 	/**
 	 * Wrap the method or constructor `prop` reached from `target`.
 	 *
-	 * `target` only says where the lookup starts: the member is patched on
-	 * whichever object in its prototype chain owns it, so this wraps it for
-	 * every object that inherits it, never for `target` alone.
+	 * On an object that owns the member (a prototype, or the global scope,
+	 * wherever the engine put its members) the patch lands on the owner and
+	 * wraps it for everything that inherits it. On an object that only
+	 * inherits it - one instance, as an embedder wraps one event's method -
+	 * it is an own property of that object, and nothing else changes.
 	 */
 	RawProxy(target: any, prop: string, handler: Proxy<any>, debugname?: string) {
 		if (!target) return;
 		if (!prop) return;
 
 		const member = debugname ?? prop;
-		const slot = this.slotFor(target, prop, member);
+		const slot = this.isInstanceTarget(target, prop)
+			? this.instanceSlot(target, prop, member)
+			: this.slotFor(target, prop, member);
 		if (!slot) return;
 
 		if (typeof slot.native.value !== "function") {
@@ -1552,8 +1646,13 @@ return { apply, construct };
 	}
 
 	/** Wrap an attribute, named from this client's global. See `RawTrap`. */
-	Trap<T extends string>(name: T, descriptor: Trap<T>): void {
-		const target = this.resolvePath(name);
+	Trap<T extends string>(name: T | readonly T[], descriptor: Trap<T>): void {
+		if (Array_isArray(name)) {
+			for (let i = 0; i < name.length; i++) this.Trap(name[i], descriptor);
+
+			return;
+		}
+		const target = this.resolvePath(name as T);
 		if (!target) return;
 
 		this.RawTrap(target.owner, target.prop, descriptor, name);
@@ -1645,11 +1744,20 @@ return { apply, construct };
 		Object_defineProperties(fakePrototype, this.nativeStore.get(classname));
 		Object_setPrototypeOf(handler.prototype, fakePrototype);
 
+		// a static `super.x()` must reach the native, not whatever is installed
+		// on the live constructor now: a layer put on a static before this
+		// (an embedder's, before hook) is the slot's own callable, and calling
+		// that from the slot's base would come straight back in
 		const fakeStatics = {};
-		Object_defineProperties(
-			fakeStatics,
-			Object_getOwnPropertyDescriptors(baseclass)
-		);
+		const statics = Object_getOwnPropertyDescriptors(baseclass);
+		const staticSlots = this.slots.get(baseclass);
+		if (staticSlots) {
+			for (const key of drain(Reflect_ownKeys(statics))) {
+				const slot = staticSlots.get(key);
+				if (slot) statics[key as any] = slot.native;
+			}
+		}
+		Object_defineProperties(fakeStatics, statics);
 		Object_setPrototypeOf(handler, fakeStatics);
 
 		/**
