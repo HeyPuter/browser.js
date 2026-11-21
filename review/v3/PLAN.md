@@ -36,13 +36,13 @@ C. Post-skill: `204b5b0a` v3 version bump · `41a37557` main build fixes onto cv
 
 ## Phases
 
-- [ ] **P0 Infra.** Durable worktrees in `~/.cache/sjreview-v3/{up,head}` (upstream/main and HEAD), built; runway runnable against each (port bases); bare-Chrome harness sanity. Record exact build commands here.
-- [ ] **P1 Prior findings status.** Rerun every bucket-1 (and bucket-2) repro from `review/1-*.md`/`2-*.md` on up vs head. Table in `review/v3/prior-status.md`. Still-open regressions → fix queue.
-- [ ] **P2 Group B per-commit review** (oldest first, but referer/events/frames/TURNSTILE are highest risk). Per commit: read diff myself, codex brief → `review/v3/briefs/<sha>.md`, raw output → `review/v3/codex/<sha>.md`, repros → `runway/src/tests/review/v3/`, verdicts → `review/v3/findings.md`.
-- [ ] **P3 Suite diff.** Full runway suite on up and head (separately, saved logs); every up-pass/head-fail triaged.
-- [ ] **P4 Interactions / broad picture.** Cross-cutting: incumbency × referer × frame names × event rework × hash urls × siteFlags; SW revival × controller; layered interceptors × browser.js inject. Real-site + framework sweeps (see prior README coverage list for the method). Perf (Speedometer) up vs head.
-- [ ] **P5 Package surface for v3.** Public API/exports of core/controller/utils vs upstream (embedder breakage), dist contents, cv build output, versionInfo, CI workflow (`e99d5953`), README/docs.
-- [ ] **P6 Wrap-up.** Known-left regressions list, confidence, what wasn't verified.
+- [x] **P0 Infra.** Durable worktrees in `~/.cache/sjreview-v3/{up,head}` (upstream/main and HEAD), built; runway runnable against each (port bases); bare-Chrome harness sanity. Record exact build commands here.
+- [x] **P1 Prior findings status.** Rerun every bucket-1 (and bucket-2) repro from `review/1-*.md`/`2-*.md` on up vs head. Table in `review/v3/prior-status.md`. Still-open regressions → fix queue.
+- [x] **P2 Group B per-commit review** (oldest first, but referer/events/frames/TURNSTILE are highest risk). Per commit: read diff myself, codex brief → `review/v3/briefs/<sha>.md`, raw output → `review/v3/codex/<sha>.md`, repros → `runway/src/tests/review/v3/`, verdicts → `review/v3/findings.md`.
+- [x] **P3 Suite diff.** Full runway suite on up and head (separately, saved logs); every up-pass/head-fail triaged.
+- [x] **P4 Interactions / broad picture.** Cross-cutting: incumbency × referer × frame names × event rework × hash urls × siteFlags; SW revival × controller; layered interceptors × browser.js inject. Real-site + framework sweeps (see prior README coverage list for the method). Perf (Speedometer) up vs head.
+- [x] **P5 Package surface for v3.** Public API/exports of core/controller/utils vs upstream (embedder breakage), dist contents, cv build output, versionInfo, CI workflow (`e99d5953`), README/docs.
+- [x] **P6 Wrap-up.** Known-left regressions list, confidence, what wasn't verified.
 
 ## Runway timings
 
@@ -90,3 +90,5 @@ C. Post-skill: `204b5b0a` v3 version bump · `41a37557` main build fixes onto cv
 - 2026-11-21 **user:** closed #150 (no repro), dropped the idle-stop guard test; SCR-32 item 0 is synthetic-only (cache deleted by hand).
 - 2026-11-21: P2 complete (U8 → SCR-41). P4: live sweep shows no real-site regression (espn/weather flakes); amazon URL leak pre-existing → SCR-43; interaction review → SCR-42. Main CI green at 5b0a7afa.
 - 2026-11-21: P4 perf: fixed import() map reparse (2d9df252), PR #154 style text growth, rest SCR-44.
+- 2026-11-21: merged #154 (style text growth). User: keep upstream 32ffe62c. CI note: live site-google-* tests can fail on GitHub runners (passed on rerun and locally).
+- 2026-11-21: P6 wrap-up written (WRAPUP.md). Review complete for this pass.
