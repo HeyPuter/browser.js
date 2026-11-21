@@ -126,3 +126,17 @@ Client-hints edge cases U9-1..4 (one regression: Accept-CH withdrawal) + U9-5 pr
 
 - Upstream changes since the fork (45fb6c68 version compat, e99d5953 CI tag prefix) are **not ported here**: ports were wiped from main at the user's request (2026-11-21); there will be a proper upstream sync later.
 - Draft embedder migration notes: `review/v3/v3-migration-notes.md`.
+
+## P4: broad picture
+
+### Live-site sweep (rv9, 53 sites, head vs up, `-p 3`, ~10 min per build; results `~/.cache/sjreview-v3/sweep/results/{head,up}`)
+
+- Worse on head in the first pass: espn, weather. **Both pass on 2 reruns on both builds: live-site noise. No real-site regression found.**
+- Better on head: amazon, netflix, nextjs-docs (render on head, not on up).
+- amazon (head): double-proxied requests aborted by the controller's "same origin" alarm. A proxied URL leaks to the page, likely via computed style (pre-existing: `cssurls-computed-style` fails on both) → **SCR-43**.
+
+### Cross-subsystem review (codex, `codex/P4-interactions.md`)
+
+- Popup → reloaded opener postMessage attributed to the opener (separate SingletonBoxes); `_top` fragment link from an iframe carries `$iframe` → **SCR-42** (unreproduced, rare).
+
+### U8 frame names (f9d3a88d): codex (`codex/U8-framenames.md`) → **SCR-41** (shadow-root form `_parent`, `window.name` in iframe proxy URLs, base target after target removal; unreproduced). No MutationObserver installed.
