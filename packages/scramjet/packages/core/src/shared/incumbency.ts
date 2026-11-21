@@ -96,7 +96,11 @@ export function rawCallSites(frames: number): CallSite[] | null {
 			restore = raiseStackLimit(frames);
 			let stack: unknown;
 			try {
-				stack = new Error().stack;
+				// marked too: the cleaning formatter, if it is the one V8 asks,
+				// then hands back every frame rather than the page's view of them
+				const raw = new Error();
+				raw[RAWFRAMES] = true;
+				stack = raw.stack;
 			} finally {
 				restore();
 			}

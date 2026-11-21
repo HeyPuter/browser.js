@@ -15,11 +15,31 @@ export const enabled = (client: ScramjetClient) =>
 
 export default function (client: ScramjetClient, _self: Self) {
 	// v8 only. all we need to do is clean the scramjet urls from stack traces
+	// a formatter the page installed, which V8 is to call instead - with the
+	// page's frames, not ours
+	let pageFormatter: unknown = undefined;
+
 	const closure = (error: any, frames: any[]) => {
 		// scramjet reading a stack for itself wants the CallSites, not the string
-		// a page gets. this formatter refuses to be replaced, so this marker is
-		// the only way past it - see `shared/incumbency.ts`
+		// a page gets. this marker is the only way past whatever formatter is
+		// installed - see `shared/incumbency.ts`
 		if (error && error[RAWFRAMES]) return frames;
+
+		if (typeof pageFormatter === "function") {
+			const own: any[] = [];
+			for (let i = 0; i < frames.length; i++) {
+				let file: string | null = null;
+				try {
+					file = frames[i].getFileName();
+				} catch {
+					// no file: eval or native code, which the page keeps
+				}
+				if (file && isOwnScript(file, client.config.maskedfiles)) continue;
+				own[own.length] = frames[i];
+			}
+
+			return Reflect_apply(pageFormatter, client.global.Error, [error, own]);
+		}
 
 		// V8 calls this *to produce* `error.stack`, so reading `error.stack` here
 		// is re-entrant - it comes back already formatted by the default
@@ -88,11 +108,15 @@ export default function (client: ScramjetClient, _self: Self) {
 	// TODO: look into making this nonconfigurable?
 	Object_defineProperty(client.global.Error, "prepareStackTrace", {
 		get() {
-			// this is a funny js quirk. the getter is ran every time you type something in console
+			// V8 reads this to format every stack, and cannot be told apart from
+			// the page reading it, so it is always the cleaning formatter - which
+			// hands the page's errors to the page's own formatter when one is
+			// set. A page reading it back gets this one, not its own
 			return closure;
 		},
-		set() {
-			// just ignore it if a site tries setting their own. not much we can really do
+		set(value) {
+			// putting this one back (as `rawCallSites` does) is setting none
+			pageFormatter = value === closure ? undefined : value;
 		},
 		enumerable: false,
 		configurable: true,

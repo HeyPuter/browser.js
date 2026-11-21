@@ -1,6 +1,12 @@
 // import { flagEnabled } from "@/shared";
 import type { URLMeta } from "@rewriters/url";
-import { Error, Math_min, Performance_now } from "@/shared/snapshot";
+import {
+	Array_isArray,
+	Error,
+	Math_min,
+	Performance_now,
+} from "@/shared/snapshot";
+import { RAWFRAMES } from "@/symbols";
 
 const logfuncs = {
 	// eslint-disable-next-line scramjet-core/no-globals
@@ -17,9 +23,7 @@ const logfuncs = {
 
 export default {
 	fmt: function (severity: string, message: string, ...args: any[]) {
-		const old = Error.prepareStackTrace;
-
-		Error.prepareStackTrace = (_, stack) => {
+		const describe = (stack: any[]) => {
 			stack.shift(); // stack();
 			stack.shift(); // fmt();
 			stack.shift();
@@ -37,15 +41,35 @@ export default {
 			return fmt;
 		};
 
-		const fmt = (function stack() {
+		// the CallSites straight from the cleaning formatter (shared/error.ts),
+		// which hands them over for a marked error. Swapping the formatter
+		// instead would go through its setter and lose one the page installed
+		const raw = (function stack() {
 			try {
-				throw new Error();
+				const e = new Error();
+				e[RAWFRAMES] = true;
+				throw e;
 			} catch (e) {
 				return e.stack;
 			}
 		})();
 
-		Error.prepareStackTrace = old;
+		let fmt: string;
+		if (Array_isArray(raw)) {
+			fmt = describe(raw);
+		} else {
+			// that formatter isn't installed (cleanErrors off)
+			const old = Error.prepareStackTrace;
+			Error.prepareStackTrace = (_, stack) => describe(stack);
+			fmt = (function stack() {
+				try {
+					throw new Error();
+				} catch (e) {
+					return e.stack;
+				}
+			})();
+			Error.prepareStackTrace = old;
+		}
 
 		this.print(severity, fmt, message, ...args);
 	},
