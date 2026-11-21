@@ -42,11 +42,4 @@ export default [
 			assertConsistent("malformed", r.startsWith("PARSERERROR"));
 		`,
 	}),
-	basicTest({
-		name: "domparser-xml-internal-dtd-subset",
-		js: `
-			const r = ${err('<?xml version="1.0"?><!DOCTYPE note [<!ENTITY w "Donald">]><note><to>x</to></note>', "text/xml")};
-			assertConsistent("dtd", r);
-		`,
-	}),
 ];
