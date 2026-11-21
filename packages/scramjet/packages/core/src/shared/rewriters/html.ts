@@ -10,7 +10,7 @@ import {
 	parseDocument,
 	render,
 } from "@/shared/htmlparser";
-import { type NullArray, nullArray, SafeSet } from "@/shared/htmlparser/safe";
+import { type NullArray, nullArray } from "@/shared/htmlparser/safe";
 import { URLMeta, frozenBaseUrl, rewriteUrl } from "@rewriters/url";
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { rewriteJs } from "@rewriters/js";
@@ -509,35 +509,6 @@ function adoptBaseElement(href: string, meta: URLMeta) {
 	if (base) meta.base = base;
 }
 
-// elements whose children are HTML again inside svg or math
-const htmlIntegrationPoints = new SafeSet([
-	"foreignObject",
-	"desc",
-	"title",
-	"mi",
-	"mo",
-	"mn",
-	"ms",
-	"mtext",
-	"annotation-xml",
-]);
-
-/**
- * Only an HTML base element in the document's own tree sets the base URL: one
- * in a template's (inert) contents or one in svg/math content sets nothing.
- */
-function isInertBase(node: AnyNode): boolean {
-	let html = false;
-	for (let p = node.parent; p; p = p.parent) {
-		if (p.type !== ElementType.Tag) continue;
-		if (p.name === "template") return true;
-		if (html) continue;
-		if (htmlIntegrationPoints.has(p.name)) html = true;
-		else if (p.name === "svg" || p.name === "math") return true;
-	}
-	return false;
-}
-
 function traverseParsedHtml(
 	node: AnyNode,
 	context: ScramjetContext,
@@ -552,11 +523,7 @@ function traverseParsedHtml(
 	const { attribs } = node;
 	const ruleAttributeNames = getRuleAttributeNames();
 
-	if (
-		node.name === "base" &&
-		attribs.href !== undefined &&
-		!isInertBase(node)
-	) {
+	if (node.name === "base" && attribs.href !== undefined) {
 		adoptBaseElement(attribs.href, meta);
 	}
 

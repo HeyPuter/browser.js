@@ -28,7 +28,7 @@ import {
 } from "@/shared";
 import { iswindow } from "./entry";
 import { SingletonBox } from "./singletonbox";
-import { AttributeLayer, HTML_NAMESPACE } from "./attributes";
+import { AttributeLayer } from "./attributes";
 import { TextLayer } from "./text";
 import { ScramjetConfig } from "@/types";
 import { Tap } from "@/Tap";
@@ -783,24 +783,10 @@ export class ScramjetClient {
 	/**
 	 * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url -
 	 * the first base element with an href, in tree order, that sets
-	 * `document`'s base URL. Only an HTML one: `base` matches svg and math
-	 * elements of that name too, which set nothing.
+	 * `document`'s base URL.
 	 */
 	baseElement(document: Document): Element | null {
-		const nDocument = new this.native.Document(document);
-		const first = nDocument.querySelector("base[href]");
-		if (!first || this.isHtmlElement(first)) return first;
-
-		const all = nDocument.querySelectorAll("base[href]");
-		for (let i = 1; i < all.length; i++) {
-			if (this.isHtmlElement(all[i])) return all[i];
-		}
-
-		return null;
-	}
-
-	private isHtmlElement(element: Element): boolean {
-		return new this.native.Element(element).namespaceURI === HTML_NAMESPACE;
+		return new this.native.Document(document).querySelector("base[href]");
 	}
 
 	/**
