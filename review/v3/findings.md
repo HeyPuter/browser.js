@@ -109,3 +109,20 @@ Client-hints edge cases U9-1..4 (one regression: Accept-CH withdrawal) + U9-5 pr
 
 - PR #148 `v3/layering`: U1-1..4.
 - PR #149 `v3/importmap`: U6-1.
+
+### U2 top/siteFlags/hash (5268e0d1, b23f6355, 57f3f2fa, 3bcc37ba): codex (`codex/U2-top-siteflags-hash.md`)
+
+- U2-1 **REGRESSION, FIXED** d635bdaa: a parsed link to the entry route (`/catalog#reviews`) reloads the page after a pushState round trip. Test `fragment-nav-parsed-link-after-pushstate-round-trip`.
+- U2-2 v2 `siteFlags` (regex, in core config) silently ignored: deliberate API change (57f3f2fa). → **P5 migration notes**.
+- U2-3 = SCR-38 item 4.
+
+### U3 rewriter (fb97bd59, 0bab40f9, e3c4d13f + rewriter diff): codex (`codex/U3-rewriter-asi.md`)
+
+- U3-1 **REGRESSION (stamp mode only), FIXED** 49cc890b: `return(0,f)()` → `return$scramjet$call`. Test `incumbency-return-paren-call-*`.
+- U3-2..6 filed **SCR-40** (eval/import with trivia pre-existing; stamp-mode optional chain semantics; quadratic span search; dump CLI).
+- codex: both ASI fixes look complete for statement lists, arrows, directives, hashbang, HTML comments.
+
+### P5 so far
+
+- Upstream changes since the fork (45fb6c68 version compat, e99d5953 CI tag prefix) are **not ported here**: ports were wiped from main at the user's request (2026-11-21); there will be a proper upstream sync later.
+- Draft embedder migration notes: `review/v3/v3-migration-notes.md`.
