@@ -326,6 +326,7 @@
 		"integrity-fetch",
 		"integrity-mutation-observer",
 		"integrity-xpath",
+		"javascript-url-frame-code-src",
 		"location-ancestororigins",
 		"location-own-property-names",
 		"longtail-api-performance-navigation-tojson-name",

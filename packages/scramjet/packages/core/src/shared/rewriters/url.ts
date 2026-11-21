@@ -243,7 +243,12 @@ export function rewriteUrl(
 				url.slice("javascript:".length),
 				"(javascript: url)",
 				context,
-				meta
+				meta,
+				false,
+				undefined,
+				"",
+				// it runs in the frame it navigates, which has no client yet
+				true
 			)
 		);
 	} else if (String_startsWith(url, "blob:")) {

@@ -42,7 +42,8 @@ function rewriteJsWasm(
 	meta: URLMeta,
 	isModule: boolean,
 	inlineSourcemap: boolean,
-	handlerPrelude = ""
+	handlerPrelude = "",
+	standalone = false
 ): RewriterResult {
 	const [rewriter, ret] = getRewriter(context, meta);
 
@@ -52,7 +53,7 @@ function rewriteJsWasm(
 	}
 	// the one flag that is not a boolean, and the rewriter wants the mode this
 	// engine can actually do rather than the one that was configured
-	flagsobj["incumbency"] = incumbencyMode(context);
+	flagsobj["incumbency"] = standalone ? "none" : incumbencyMode(context);
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
 	flagsobj["scriptId"] = genScriptId();
 	// the module's imports are the document's or worker's requests: its own
@@ -129,7 +130,13 @@ export function rewriteJs(
 	 */
 	client?: ScramjetClient,
 	/** see {@link eventHandlerPrelude} */
-	handlerPrelude = ""
+	handlerPrelude = "",
+	/**
+	 * Code that runs where no client may be installed yet - a `javascript:`
+	 * URL, which runs in its target's realm - so it gets no prelude calling
+	 * into one: neither the sourcemap's nor the incumbency registration
+	 */
+	standalone = false
 ): string | Uint8Array {
 	try {
 		const res = rewriteJsWasm(
@@ -138,8 +145,9 @@ export function rewriteJs(
 			context,
 			meta,
 			isModule,
-			!client,
-			handlerPrelude
+			!client && !standalone,
+			handlerPrelude,
+			standalone
 		);
 
 		if (client && flagEnabled("sourcemaps", context)) {
