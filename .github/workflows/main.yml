@@ -98,7 +98,7 @@ jobs:
         working-directory: packages/scramjet/packages/core
 
       - name: Run package validation tests
-        run: ./cv validate
+        run: ./cv validate --no-install
 
   tests:
     name: Run Scramjet Tests
