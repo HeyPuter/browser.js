@@ -108,6 +108,7 @@ export const Object_keys = globalThis.Object.keys;
 export const Object_values = globalThis.Object.values;
 export const Object_entries = globalThis.Object.entries;
 export const Object_hasOwn = globalThis.Object.hasOwn;
+export const Object_isExtensible = globalThis.Object.isExtensible;
 export const Object_getOwnPropertyNames = globalThis.Object.getOwnPropertyNames;
 export const Object_getOwnPropertyDescriptor =
 	globalThis.Object.getOwnPropertyDescriptor;
