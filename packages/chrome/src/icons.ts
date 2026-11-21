@@ -45,6 +45,8 @@ import ionDesktop from "@ktibow/iconset-ion/desktop-outline";
 import ionCloud from "@ktibow/iconset-ion/cloud-outline";
 import ionPinOutline from "@ktibow/iconset-ion/pin-outline";
 import ionBug from "@ktibow/iconset-ion/bug-outline";
+import ionChevronBack from "@ktibow/iconset-ion/chevron-back";
+import ionChevronForward from "@ktibow/iconset-ion/chevron-forward";
 
 // Material Symbols
 import msBack from "@ktibow/iconset-material-symbols/arrow-back-rounded";
@@ -86,6 +88,8 @@ import msDesktop from "@ktibow/iconset-material-symbols/desktop-windows-outline-
 import msCloud from "@ktibow/iconset-material-symbols/cloud-outline";
 import msKeep from "@ktibow/iconset-material-symbols/keep-outline-rounded";
 import msBug from "@ktibow/iconset-material-symbols/bug-report-outline-rounded";
+import msPanelClose from "@ktibow/iconset-material-symbols/left-panel-close-rounded";
+import msPanelOpen from "@ktibow/iconset-material-symbols/left-panel-open-rounded";
 
 const set = createState<{ current: IconSet }>({ current: "ionicons" });
 export function setIconSet(next: IconSet) {
@@ -167,6 +171,10 @@ export const iconCloud = icon(ionCloud, msCloud);
 export const iconPin = icon(ionPinOutline, msKeep);
 
 export const iconBug = icon(ionBug, msBug);
+
+// Drawn for a left-hand sidebar; mirrored in CSS when the sidebar is on the right.
+export const iconSidebarCollapse = icon(ionChevronBack, msPanelClose);
+export const iconSidebarExpand = icon(ionChevronForward, msPanelOpen);
 
 // Aliases used elsewhere in the codebase. These deliberately share identity
 // with the icon they alias.

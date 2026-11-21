@@ -13,6 +13,8 @@ import {
 	iconSettings,
 	iconError,
 	iconBug,
+	iconSidebarCollapse,
+	iconSidebarExpand,
 } from "../../icons";
 import { createMenu, createMenuCustom } from "@components/Menu";
 import { OmnibarButton } from "@components/Omnibar/OmnibarButton";
@@ -22,7 +24,13 @@ import { Icon } from "@components/Icon";
 import { defaultFaviconUrl } from "../../assets/favicon";
 
 import type { HistoryState } from "../../Tab/History";
-import { isPuter, puterBranding, tabsService, downloadsService } from "../..";
+import {
+	isPuter,
+	puterBranding,
+	tabsService,
+	downloadsService,
+	settingsService,
+} from "../..";
 import { DownloadsPopup } from "@components/DownloadsPopup";
 import { CircularProgress } from "@components/Omnibar/CircularProgress";
 import { ReportBrokenSiteModal } from "@components/ReportBrokenSiteModal";
@@ -45,6 +53,8 @@ export function Omnibar(
 	this: FC<{
 		tab: Tab;
 		layout?: "horizontal" | "vertical" | "compact";
+		// Show the collapse/expand button for the hybrid layout's tab sidebar.
+		sidebarToggle?: boolean;
 	}>
 ) {
 	const selectContent = createDelegate<void>();
@@ -124,6 +134,22 @@ export function Omnibar(
 			downloadsButton
 		);
 	});
+
+	const collapsed = use(settingsService.settings.sidebarCollapsed);
+	const sidebarToggle = this.sidebarToggle ? (
+		<div class="sidebar-toggle">
+			<OmnibarButton
+				tooltip={collapsed.map((c) => (c ? "Expand tabs" : "Collapse tabs"))}
+				click={() => {
+					settingsService.settings.sidebarCollapsed =
+						!settingsService.settings.sidebarCollapsed;
+				}}
+				icon={collapsed.map((c) =>
+					c ? iconSidebarExpand : iconSidebarCollapse
+				)}
+			></OmnibarButton>
+		</div>
+	) : null;
 
 	const navigationControls = (
 		<>
@@ -337,6 +363,7 @@ export function Omnibar(
 
 	return (
 		<div class="horizontal">
+			{sidebarToggle}
 			{navigationControls}
 			<Spacer></Spacer>
 			<Omnibox
@@ -378,6 +405,16 @@ Omnibar.style = css`
 		gap: var(--space-lg);
 		width: 100%;
 		position: relative;
+	}
+
+	.sidebar-toggle {
+		display: flex;
+	}
+
+	/* The icons point at a left-hand sidebar. The button is symmetric, so
+	   mirroring the whole thing only flips the icon. */
+	:global(.sidebar-right) :scope .sidebar-toggle {
+		transform: scaleX(-1);
 	}
 
 	.top-row,
