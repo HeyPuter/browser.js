@@ -1,8 +1,21 @@
 import { ScramjetClient } from "@client/index";
 import { Tap } from "@/Tap";
 import { Arguments, Returns } from "@client/webidl";
-import { _URL } from "@/shared/snapshot";
-import { canHaveItsURLRewritten, rewriteHistoryUrl } from "@rewriters/url";
+import { _Map, _URL, _WeakMap } from "@/shared/snapshot";
+import {
+	canHaveItsURLRewritten,
+	rewriteHistoryUrl,
+	splitFragment,
+} from "@rewriters/url";
+
+/**
+ * The proxy URL each site URL has had in a document's history, per client.
+ * A link written on the entry URL (`/catalog#reviews`, parsed while there)
+ * is built on the entry's proxy URL; pushing away and back has to land on
+ * that same proxy URL, or following the link is no longer a fragment
+ * navigation and the document reloads.
+ */
+const historyUrls = new _WeakMap<ScramjetClient, _Map<string, string>>();
 
 export default function (client: ScramjetClient, _self: Self) {
 	const stateUrlRejected = (
@@ -58,11 +71,28 @@ export default function (client: ScramjetClient, _self: Self) {
 			throw stateUrlRejected(method, parsed.href, documentUrl);
 		}
 
-		return rewriteHistoryUrl(
+		let urls = historyUrls.get(relevantclient);
+		if (!urls) {
+			urls = new _Map<string, string>();
+			const raw = relevantclient.meta.rawUrl;
+			if (raw !== undefined) {
+				urls.set(splitFragment(documentUrl.href)[0], splitFragment(raw)[0]);
+			}
+			historyUrls.set(relevantclient, urls);
+		}
+
+		const [site, fragment] = splitFragment(parsed.href);
+		const known = urls.get(site);
+		if (known !== undefined) return known + (fragment ?? "");
+
+		const rewritten = rewriteHistoryUrl(
 			parsed,
 			relevantclient.context,
 			relevantclient.meta
 		);
+		urls.set(site, splitFragment(rewritten)[0]);
+
+		return rewritten;
 	};
 
 	const dispatchNavigate = (history: History) => {
