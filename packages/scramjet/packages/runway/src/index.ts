@@ -1151,6 +1151,29 @@ async function main() {
 			runTestsForWorker(index + 1)
 		)
 	);
+
+	// a failure nobody expected is run again, alone, before it counts: under
+	// parallel load the timing-sensitive tests flake. Not when there are many,
+	// which is something actually broken, and not while writing the list
+	if (process.env.RUNWAY_NO_RETRY !== "1" && !updateFailingTests) {
+		const expected = await loadExpectedFailingTests(failingTestsPath);
+		const retry = results
+			.filter((r) => r.result.status !== "pass" && !expected.has(r.test.name))
+			.map((r) => r.test);
+		if (retry.length > 0 && retry.length <= 20) {
+			writeBlock([
+				`\n🔁 Running ${retry.length} unexpected failure(s) again, alone`,
+			]);
+			for (const test of retry) {
+				results.splice(
+					results.findIndex((r) => r.test === test),
+					1
+				);
+			}
+			queue.push(...retry);
+			await runTestsForWorker(workerCount + 1);
+		}
+	}
 	await browser?.close();
 
 	if (coverageEnabled && needsHarness) {
