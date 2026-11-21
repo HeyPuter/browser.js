@@ -38,9 +38,18 @@ export default function (client: ScramjetClient, self: Self) {
 		const owner = client.box.inlineStyleOwners.get(declaration);
 		if (!owner) return;
 
+		// only when it changes: an attribute write queues a MutationRecord
+		// even with the same value, and an observer that writes the style it
+		// was told about would then hear about it again, forever. A write the
+		// engine left the attribute alone for gives the page no record
 		const current = attrs.raw.get(owner, "style");
-		if (current === null) attrs.raw.remove(owner, STYLE_MIRROR);
-		else attrs.raw.set(owner, STYLE_MIRROR, unrewrite(current));
+		const mirror = attrs.raw.get(owner, STYLE_MIRROR);
+		if (current === null) {
+			if (mirror !== null) attrs.raw.remove(owner, STYLE_MIRROR);
+			return;
+		}
+		const next = unrewrite(current);
+		if (mirror !== next) attrs.raw.set(owner, STYLE_MIRROR, next);
 	};
 
 	// https://drafts.csswg.org/cssom/#the-cssstyledeclaration-interface
