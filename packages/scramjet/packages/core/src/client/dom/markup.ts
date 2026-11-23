@@ -528,6 +528,12 @@ export default function (client: ScramjetClient, _self: Self) {
 			const mime = String(type);
 			const isHtml = isHtmlMimeType(mime);
 
+			// HTML only: an XML document's DTD can spell a name out with
+			// character references, which the scan would not see
+			if (isHtml && !fragmentNeedsRewrite(html, client.context)) {
+				return super.parseFromString(html, type);
+			}
+
 			// malformed XML is the browser's to report: the rewriter's parse
 			// would repair it on the way through, and the page would never see
 			// its `<parsererror>`

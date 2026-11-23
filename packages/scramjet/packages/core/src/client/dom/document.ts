@@ -1,4 +1,8 @@
-import { IncrementalHtmlRewriter, rewriteHtml } from "@rewriters/html";
+import {
+	IncrementalHtmlRewriter,
+	fragmentNeedsRewrite,
+	rewriteHtml,
+} from "@rewriters/html";
 import { rewriteBlob } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
 import {
@@ -128,12 +132,15 @@ export default function (client: ScramjetClient, self: Self) {
 		@Arguments("(TrustedHTML or DOMString)", "optional SetHTMLUnsafeOptions")
 		@Returns("Document")
 		static parseHTMLUnsafe(html: string, options?: object): Document {
-			const rewritten = rewriteHtml(String(html), client.context, client.meta, {
-				loadScripts: false,
-				inline: true,
-				source: client.url.href,
-				apisource: "Document.parseHTMLUnsafe",
-			});
+			const source = String(html);
+			const rewritten = !fragmentNeedsRewrite(source, client.context)
+				? source
+				: rewriteHtml(source, client.context, client.meta, {
+						loadScripts: false,
+						inline: true,
+						source: client.url.href,
+						apisource: "Document.parseHTMLUnsafe",
+					});
 
 			// forwarded rather than dropped: the declaration named one argument
 			// and the body passed one, so a page handing over a sanitizer got
