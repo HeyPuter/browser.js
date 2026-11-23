@@ -491,11 +491,27 @@ export class ScramjetClient {
 		}
 	);
 	private nativeClasses = new _Map<string, any>();
+	private fakePrototypes = new _Map<object, object>();
+
+	/**
+	 * An object answering a native table's members as the prototype would,
+	 * chained like the table. Shared by every handler of an interface, and by
+	 * every interface below it.
+	 */
+	private fakePrototype(table: Record<string, PropertyDescriptor>): object {
+		let fake = this.fakePrototypes.get(table);
+		if (fake) return fake;
+		const parent = Object_getPrototypeOf(table);
+		fake = parent ? Object_create(this.fakePrototype(parent)) : {};
+		Object_defineProperties(fake, table);
+		this.fakePrototypes.set(table, fake!);
+		return fake!;
+	}
 	nativeStore: Map<string, Record<string, PropertyDescriptor>> = new _Map();
 
 	/**
-	 * Both tables below are null-prototype, and not for tidiness. Each walk
-	 * ends at `Object.prototype`, whose descriptor map carries an enumerable
+	 * The tables below chain to a null prototype, and not for tidiness. Each
+	 * chain ends at `Object.prototype`, whose descriptor map carries an enumerable
 	 * `__proto__` entry, and `Object_assign` copies with [[Set]] - so on an
 	 * ordinary object that last step ran `Object.prototype.__proto__`'s
 	 * *setter* and reparented the table to the descriptor object instead of
@@ -507,29 +523,30 @@ export class ScramjetClient {
 	 * there is no setter to find and the key is defined outright.
 	 */
 	saveNatives() {
+		// one table per prototype, holding its own descriptors and inheriting
+		// its parent's, so a prototype shared by many interfaces (Node,
+		// Element, HTMLElement, ...) is read once rather than once per
+		// interface below it
+		const tables = new _Map<object, Record<string, PropertyDescriptor>>();
+		const tableFor = (proto: any): Record<string, PropertyDescriptor> => {
+			let table = tables.get(proto);
+			if (table) return table;
+			const prototype = Object_getPrototypeOf(proto);
+			table = Object_create(prototype ? tableFor(prototype) : null);
+			Object_assign(table, Object_getOwnPropertyDescriptors(proto));
+			tables.set(proto, table!);
+			return table!;
+		};
+
 		for (const key of drain(Object_getOwnPropertyNames(this.global))) {
 			const value = this.global[key];
 			if (typeof value === "function" && "prototype" in value) {
-				const natives = Object_create(null);
-				const walk = (proto: any) => {
-					const prototype = Object_getPrototypeOf(proto);
-					if (prototype) walk(prototype);
-					Object_assign(natives, Object_getOwnPropertyDescriptors(proto));
-				};
-				walk(value.prototype);
-				this.nativeStore.set(key, natives);
+				this.nativeStore.set(key, tableFor(value.prototype));
 			}
 		}
 
 		// handle both globals bound to the scope's prototype, and globals bound to the scope itself (e.g. window)
-		const globals = Object_create(null);
-		const walkGlobal = (object: any) => {
-			const prototype = Object_getPrototypeOf(object);
-			if (prototype) walkGlobal(prototype);
-			Object_assign(globals, Object_getOwnPropertyDescriptors(object));
-		};
-		walkGlobal(this.global);
-		this.nativeStore.set("window", globals);
+		this.nativeStore.set("window", tableFor(this.global));
 	}
 
 	constructor(
@@ -1654,25 +1671,37 @@ return { apply, construct };
 		// failure rather than a runtime one.
 
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
-		const fakePrototype = {};
-		Object_defineProperties(fakePrototype, this.nativeStore.get(classname));
-		Object_setPrototypeOf(handler.prototype, fakePrototype);
+		Object_setPrototypeOf(
+			handler.prototype,
+			this.fakePrototype(this.nativeStore.get(classname)!)
+		);
 
 		// a static `super.x()` must reach the native, not whatever is installed
 		// on the live constructor now: a layer put on a static before this
 		// (an embedder's, before hook) is the slot's own callable, and calling
 		// that from the slot's base would come straight back in
-		const fakeStatics = {};
-		const statics = Object_getOwnPropertyDescriptors(baseclass);
-		const staticSlots = this.slots.get(baseclass);
-		if (staticSlots) {
-			for (const key of drain(Reflect_ownKeys(statics))) {
-				const slot = staticSlots.get(key);
-				if (slot) statics[key as any] = slot.native;
+		if (isglobal) {
+			// the global's statics are its own members, which its native table
+			// already holds as they were before anything was installed - and
+			// copying a thousand of them for each declaration is most of what
+			// setting up a realm costs
+			Object_setPrototypeOf(
+				handler,
+				this.fakePrototype(this.nativeStore.get("window")!)
+			);
+		} else {
+			const fakeStatics = {};
+			const statics = Object_getOwnPropertyDescriptors(baseclass);
+			const staticSlots = this.slots.get(baseclass);
+			if (staticSlots) {
+				for (const key of drain(Reflect_ownKeys(statics))) {
+					const slot = staticSlots.get(key);
+					if (slot) statics[key as any] = slot.native;
+				}
 			}
+			Object_defineProperties(fakeStatics, statics);
+			Object_setPrototypeOf(handler, fakeStatics);
 		}
-		Object_defineProperties(fakeStatics, statics);
-		Object_setPrototypeOf(handler, fakeStatics);
 
 		/**
 		 * One half of `Intercept`'s implementation of a member, as the
