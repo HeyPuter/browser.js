@@ -43,6 +43,8 @@ import {
 	String_fromCharCode,
 	Reflect_ownKeys,
 	Reflect_apply,
+	Reflect_get,
+	Reflect_set,
 	Reflect_construct,
 	Object_getOwnPropertyDescriptor,
 	Object_defineProperty,
@@ -362,6 +364,91 @@ function findBox(global: Window, seen: Window[]): SingletonBox | null {
  */
 export const GlobalScope = class {} as unknown as typeof Window;
 
+/** what a `client.native` view wraps */
+const VIEW_TARGET = Symbol("native view target");
+
+/**
+ * The class behind `client.native[name]`: `new View(object).member` reads,
+ * writes or calls `name`'s native member on `object`.
+ *
+ * A view is a plain object, and its members live on one prototype per class,
+ * each defined the first time anything asks for it - by the proxy at the
+ * bottom of the chain, which is only ever reached for a member not defined
+ * yet, and throws for one the interface does not have. A method is handed
+ * out bound to the view's object, so it can be taken off and called later.
+ */
+function nativeView(
+	prototype: string,
+	descriptors: Record<string | symbol, PropertyDescriptor>
+) {
+	const members = Object_create(null);
+	const define = (key: string | symbol): boolean => {
+		const desc = descriptors[key as string];
+		if (!desc) return false;
+		const fn = desc.value;
+		const get = desc.get;
+		const set = desc.set;
+		Object_defineProperty(members, key, {
+			get:
+				typeof fn === "function"
+					? function (this: any) {
+							const object = this[VIEW_TARGET];
+							// constructible as well: `new global.EvalError(...)` builds
+							// the native one
+							return function (...args: any[]) {
+								return new.target
+									? Reflect_construct(fn, args)
+									: Reflect_apply(fn, object, args);
+							};
+						}
+					: get
+						? function (this: any) {
+								return Reflect_apply(get, this[VIEW_TARGET], []);
+							}
+						: () => undefined,
+			set: set
+				? function (this: any, value: any) {
+						Reflect_apply(set, this[VIEW_TARGET], [value]);
+					}
+				: () => {
+						throw new Error(
+							`No native setter ${String(key)} found for ${prototype}`
+						);
+					},
+		});
+		return true;
+	};
+	Object_setPrototypeOf(
+		members,
+		new Proxy(Object_create(null), {
+			get(_target, key, receiver) {
+				if (!define(key)) {
+					throw new Error(
+						`No native method|getter ${String(key)} found for ${prototype}`
+					);
+				}
+				return Reflect_get(members, key, receiver);
+			},
+			set(_target, key, value, receiver) {
+				if (!define(key)) {
+					throw new Error(
+						`No native setter ${String(key)} found for ${prototype}`
+					);
+				}
+				return Reflect_set(members, key, value, receiver);
+			},
+		})
+	);
+	// a writable slot for the target, so the assignment below makes an own
+	// property on the view without reaching the proxy
+	Object_defineProperty(members, VIEW_TARGET, { value: null, writable: true });
+	const View = function (this: any, object: any) {
+		this[VIEW_TARGET] = object;
+	} as unknown as new (object: any) => any;
+	View.prototype = members;
+	return View;
+}
+
 /**
  * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#matches-about:blank -
  * a fragment is allowed on either, and a query on about:blank but not on
@@ -446,45 +533,7 @@ export class ScramjetClient {
 				if (!descriptors) {
 					throw new Error(`No native descriptors found for ${prototype}`);
 				}
-				const nativeClass = class {
-					constructor(object: any) {
-						return new Proxy(
-							{},
-							{
-								get(_target, method: string) {
-									const desc = descriptors[method];
-									if (!desc) {
-										throw new Error(
-											`No native method|getter ${method.toString()} found for ${prototype}`
-										);
-									}
-									if (typeof desc.value === "function") {
-										const fn = desc.value;
-
-										return new Proxy(fn, {
-											apply: (_t, _thisArg, args) =>
-												Reflect_apply(fn, object, args),
-										});
-									} else if (desc.get) {
-										// not `desc.get.call`: that looks `call` up on
-										// Function.prototype, which the page can replace
-										return Reflect_apply(desc.get, object, []);
-									}
-								},
-								set(_target, method: string, value: any) {
-									const desc = descriptors[method];
-									if (!desc || !desc.set) {
-										throw new Error(
-											`No native setter ${method.toString()} found for ${prototype}`
-										);
-									}
-									Reflect_apply(desc.set, object, [value]);
-									return true;
-								},
-							}
-						);
-					}
-				};
+				const nativeClass = nativeView(prototype, descriptors);
 				this.nativeClasses.set(prototype, nativeClass);
 				return nativeClass;
 			},
