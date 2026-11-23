@@ -116,8 +116,14 @@ export class Store {
 
 // the cleartext transport sends https://host/path to http://127.0.0.1:port/path
 // with the logical Host header
-export function serveStore(store: Store, port: number) {
-	const server = http.createServer((req, res) => {
+export function serveStore(
+	store: Store,
+	port: number,
+	// a first byte `latency` ms after the request, then the body at `kbps`
+	net: { latency: number; kbps: number } | null = null
+) {
+	const server = http.createServer(async (req, res) => {
+		if (net?.latency) await new Promise((r) => setTimeout(r, net.latency));
 		const url = "https://" + req.headers.host + req.url;
 		const hit = store.lookup(req.method!, url);
 		if (!hit) {
@@ -131,7 +137,18 @@ export function serveStore(store: Store, port: number) {
 			} catch {}
 		}
 		res.statusCode = hit.status;
-		res.end(req.method === "HEAD" ? undefined : hit.body);
+		if (req.method === "HEAD") return res.end();
+		if (!net?.kbps) return res.end(hit.body);
+		// 16KB at a time, paced to the bandwidth
+		const CHUNK = 16384;
+		const perChunk = (CHUNK * 8) / net.kbps;
+		res.flushHeaders();
+		for (let at = 0; at < hit.body.length; at += CHUNK) {
+			res.write(hit.body.subarray(at, at + CHUNK));
+			if (at + CHUNK < hit.body.length)
+				await new Promise((r) => setTimeout(r, perChunk));
+		}
+		res.end();
 	});
 	return new Promise<http.Server>((r) =>
 		server.listen(port, "127.0.0.1", () => r(server))

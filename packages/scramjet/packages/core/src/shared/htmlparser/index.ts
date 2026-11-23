@@ -9,7 +9,7 @@ import { Parser, type ParserOptions } from "./Parser";
 
 export * from "./dom";
 export { Parser, type Handler, type ParserOptions } from "./Parser";
-export { render } from "./serializer";
+export { render, renderStartTag } from "./serializer";
 
 /**
  * Parse a complete document (or fragment) into a DOM.

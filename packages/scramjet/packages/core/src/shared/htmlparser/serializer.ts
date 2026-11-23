@@ -409,6 +409,16 @@ const foreignModeIntegrationPoints = new SafeSet([
 
 const foreignElements = new SafeSet(["svg", "math"]);
 
+/**
+ * `<name attrs>` alone, as the HTML serializer would write it: for a start tag
+ * spliced back into markup the browser parses itself, which fixes up foreign
+ * names and implies the rest.
+ */
+export function renderStartTag(element: Element, selfClosing = false) {
+	const attribs = formatAttributes(element.attribs, false);
+	return `<${element.name}${attribs ? " " + attribs : ""}${selfClosing ? "/>" : ">"}`;
+}
+
 function renderTag(element: Element, xmlMode: XmlMode) {
 	// Handle SVG / MathML in HTML
 	if (xmlMode === "foreign") {
