@@ -9,6 +9,8 @@ import {
 	Parser,
 	parseDocument,
 	render,
+	renderStartTag,
+	Text,
 } from "@/shared/htmlparser";
 import { type NullArray, nullArray } from "@/shared/htmlparser/safe";
 import { URLMeta, frozenBaseUrl, rewriteUrl } from "@rewriters/url";
@@ -219,6 +221,225 @@ export class IncrementalHtmlRewriter {
 	}
 }
 
+/** Elements whose text the rewrite changes, and so has to see whole. */
+const REWRITTEN_TEXT = ["script", "style"];
+
+/**
+ * A document rewritten as it arrives, so the browser can parse, fetch and
+ * paint the start of a page while the rest is still on the wire.
+ *
+ * The output is the document's own source, byte for byte, with three kinds of
+ * change spliced in: a start tag the rewrite changed the attributes of is
+ * written out again; a script or style is held until it closes and its text
+ * replaced; and the inject scripts go in after `<head>`, or ahead of whatever
+ * comes first instead of it. Everything else - text, comments, the doctype,
+ * whitespace, tags the parser only implied - is left for the browser to
+ * parse as the page wrote it.
+ *
+ * Each element goes through the same {@link traverseParsedHtml} a whole
+ * document's do, one at a time, so a `<base>` is adopted where it appears and
+ * applies to what follows, as it does in the browser.
+ *
+ * Not for a context with HTML rewriter hooks, which are handed the whole
+ * parsed document: see {@link htmlRewriterHooked}.
+ */
+export class StreamingHtmlRewriter {
+	private readonly parser: Parser;
+	/** the source from `base` on that has not been written out yet */
+	private source = "";
+	private base = 0;
+	/** how far the source has been accounted for */
+	private cursor = 0;
+	/** how far the parser's events reach */
+	private covered = 0;
+	private out = "";
+	private injected = false;
+	private held: { element: Element; start: number; end: number } | null = null;
+
+	constructor(
+		private readonly context: ScramjetContext,
+		private readonly meta: URLMeta,
+		private readonly htmlcontext: HtmlContext
+	) {
+		this.parser = new Parser(this, {
+			scriptingEnabled: htmlcontext.scriptingEnabled,
+		});
+	}
+
+	write(chunk: string): string {
+		this.source += chunk;
+		this.parser.write(chunk);
+
+		return this.flush();
+	}
+
+	end(): string {
+		this.parser.end();
+		this.covered = this.base + this.source.length;
+		if (!this.injected) this.copyTo(this.covered);
+		this.inject();
+
+		return this.flush();
+	}
+
+	private slice(from: number, to: number) {
+		return String_slice(this.source, from - this.base, to - this.base);
+	}
+
+	/** write out the source up to `to` unchanged */
+	private copyTo(to: number) {
+		if (to > this.cursor) {
+			this.out += this.slice(this.cursor, to);
+			this.cursor = to;
+		}
+	}
+
+	private flush(): string {
+		if (!this.held) this.copyTo(this.covered);
+		// drop what has been written out
+		this.source = String_slice(this.source, this.cursor - this.base);
+		this.base = this.cursor;
+		const out = this.out;
+		this.out = "";
+
+		return out;
+	}
+
+	private inject() {
+		if (this.injected) return;
+		this.injected = true;
+		if (!this.htmlcontext.loadScripts) return;
+		const script = (src: string) =>
+			new Element("script", { src, "scramjet-injected": "true" });
+		const scripts = this.context.interface.getInjectScripts(
+			this.meta,
+			// nothing reads the root; there is none yet to give
+			null as unknown as Document,
+			this.htmlcontext,
+			script
+		);
+		for (let i = 0; i < scripts.length; i++) this.out += render(scripts[i]);
+	}
+
+	// parser events
+
+	onopentag(name: string, attribs: Record<string, string>, implied: boolean) {
+		// an implied tag has no source; the browser implies it too
+		if (implied) return;
+		// a script or style in SVG is a container: one with an element in it
+		// keeps its text as it was, and its start tag is rewritten now
+		if (this.held) this.release();
+		const start = this.parser.startIndex;
+		const end = this.parser.endIndex + 1;
+
+		if (!this.injected && name !== "html") {
+			// the scripts go first in the head, or ahead of anything that
+			// would open one - never ahead of the doctype, which would make
+			// the document quirky
+			if (name === "head") {
+				this.copyTo(end);
+				this.inject();
+				this.covered = end;
+				return;
+			}
+			this.copyTo(start);
+			this.inject();
+		}
+
+		const element = new Element(name, attribs);
+		if (Array_indexOf(REWRITTEN_TEXT, name) !== -1) {
+			this.copyTo(start);
+			this.held = { element, start, end };
+			return;
+		}
+
+		const before = attributeList(element);
+		traverseParsedHtml(element, this.context, this.meta);
+		if (attributeList(element) !== before) {
+			this.copyTo(start);
+			this.out += renderStartTag(element, this.slice(end - 2, end) === "/>");
+			this.cursor = end;
+		}
+		this.covered = end;
+	}
+
+	onclosetag(name: string, implied: boolean) {
+		const held = this.held;
+		if (held && held.element.name === name) {
+			this.held = null;
+			// the end tag, or what implied it, starts where the text stopped
+			const textEnd = this.parser.startIndex;
+			const text = this.slice(held.end, textEnd);
+			const element = new Element(
+				name,
+				held.element.attribs,
+				text ? [new Text(text)] : []
+			);
+			traverseParsedHtml(element, this.context, this.meta);
+			const child = element.children[0];
+			this.out +=
+				renderStartTag(element, this.slice(held.end - 2, held.end) === "/>") +
+				(child && "data" in child ? child.data : "");
+			this.cursor = textEnd;
+			if (implied) return;
+		}
+		if (!implied) this.covered = this.parser.endIndex + 1;
+	}
+
+	private release() {
+		const held = this.held!;
+		this.held = null;
+		traverseParsedHtml(held.element, this.context, this.meta);
+		this.out += renderStartTag(
+			held.element,
+			this.slice(held.end - 2, held.end) === "/>"
+		);
+		this.cursor = held.end;
+	}
+
+	ontext(data: string) {
+		if (!this.held && !this.injected && !isParserWhitespace(data)) {
+			this.copyTo(this.parser.startIndex);
+			this.inject();
+		}
+		this.covered = this.parser.endIndex + 1;
+	}
+
+	oncomment() {
+		this.covered = this.parser.endIndex + 1;
+	}
+
+	onprocessinginstruction() {
+		this.covered = this.parser.endIndex + 1;
+	}
+
+	oncdataend() {
+		this.covered = this.parser.endIndex + 1;
+	}
+}
+
+/** an element's attributes, as something to compare */
+function attributeList(element: Element) {
+	const keys = Object_keys(element.attribs);
+	let list = "";
+	for (let i = 0; i < keys.length; i++)
+		list += keys[i] + "\0" + element.attribs[keys[i]] + "\0";
+
+	return list;
+}
+
+/**
+ * Whether HTML rewriter hooks are tapped. They are handed the parsed
+ * document and the markup it came from, so a context with any gets the
+ * whole-document rewrite.
+ */
+export function htmlRewriterHooked(context: ScramjetContext): boolean {
+	const hooks = context.hooks?.rewriter.html as any;
+	const tapped = (hook: any) => hook?.tap.callbacks[hook.key]?.length > 0;
+
+	return !!hooks && (tapped(hooks.pre) || tapped(hooks.post));
+}
+
 /** ASCII whitespace, which the parser skips ahead of the doctype. */
 function isParserWhitespace(data: string): boolean {
 	for (let i = 0; i < data.length; i++) {
@@ -412,9 +633,7 @@ export function fragmentNeedsRewrite(
 	html: string,
 	context: ScramjetContext
 ): boolean {
-	const hooks = context.hooks?.rewriter.html as any;
-	const tapped = (hook: any) => hook?.tap.callbacks[hook.key]?.length > 0;
-	if (hooks && (tapped(hooks.pre) || tapped(hooks.post))) return true;
+	if (htmlRewriterHooked(context)) return true;
 
 	if (!triggers) {
 		// built on first use, which can be after the page has run, so from

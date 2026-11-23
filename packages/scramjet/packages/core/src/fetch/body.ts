@@ -14,10 +14,15 @@ import {
 	rewriteJs,
 	rewriteWorkers,
 } from "@/shared";
+import {
+	StreamingHtmlRewriter,
+	htmlRewriterHooked,
+} from "@/shared/rewriters/html";
 import { sniffEncoding } from "@/shared/sniffEncoding";
 import { documentReferrer } from "./headers";
 import {
 	TextDecoder_decode,
+	TextEncoder_encode,
 	_TextDecoder,
 	_Uint8Array,
 } from "@/shared/snapshot";
@@ -31,6 +36,23 @@ export async function rewriteBody(
 	switch (parsed.destination) {
 		case "iframe":
 		case "document":
+			if (
+				isHtmlMimeType(response.headers.get("content-type") ?? "") &&
+				response.body &&
+				!htmlRewriterHooked(handler.context)
+			) {
+				return streamHtml(
+					response.body as ReadableStream<Uint8Array>,
+					response.headers.get("content-type"),
+					new StreamingHtmlRewriter(handler.context, parsed.meta, {
+						loadScripts: true,
+						inline: true,
+						source: parsed.url.href,
+						headers: response.rawHeaders,
+						referrer: documentReferrer(parsed),
+					})
+				);
+			}
 			if (isHtmlMimeType(response.headers.get("content-type") ?? "")) {
 				const buf = await response.arrayBuffer();
 				const bytes = new _Uint8Array(buf);
@@ -92,4 +114,80 @@ export async function rewriteBody(
 		default:
 			return response.body;
 	}
+}
+
+/**
+ * How much of a document the encoding is sniffed from: the prescan reads the
+ * first 1024 bytes for a `<meta charset>`.
+ * https://html.spec.whatwg.org/multipage/parsing.html#prescan-a-byte-stream-to-determine-its-encoding
+ */
+const SNIFF_BYTES = 1024;
+
+/** a document's body, rewritten as it arrives */
+function streamHtml(
+	body: ReadableStream<Uint8Array>,
+	contentType: string | null,
+	rewriter: StreamingHtmlRewriter
+): ReadableStream<Uint8Array> {
+	const reader = body.getReader();
+	let decoder: InstanceType<typeof _TextDecoder> | null = null;
+	let head: Uint8Array[] = [];
+	let headLength = 0;
+
+	const decode = (bytes: Uint8Array) => {
+		if (!decoder) {
+			head[head.length] = bytes;
+			headLength += bytes.length;
+			if (headLength < SNIFF_BYTES) return "";
+			return startDecoding();
+		}
+
+		return rewriter.write(decoder.decode(bytes, { stream: true }));
+	};
+	const startDecoding = () => {
+		const all = new _Uint8Array(headLength);
+		let at = 0;
+		for (let i = 0; i < head.length; i++) {
+			all.set(head[i], at);
+			at += head[i].length;
+		}
+		head = [];
+		decoder = new _TextDecoder(sniffEncoding(all, contentType));
+
+		return rewriter.write(decoder.decode(all, { stream: true }));
+	};
+
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				for (;;) {
+					const { done, value } = await reader.read();
+					if (done) {
+						const text =
+							(decoder ? "" : startDecoding()) +
+							rewriter.write(decoder!.decode()) +
+							rewriter.end();
+						if (text) controller.enqueue(TextEncoder_encode(text));
+						controller.close();
+
+						return;
+					}
+					const text = decode(value);
+					if (text) {
+						controller.enqueue(TextEncoder_encode(text));
+
+						return;
+					}
+				}
+			} catch (e) {
+				// a document cut off where the rewrite failed, rather than
+				// the rest of it going out unrewritten
+				controller.error(e);
+				reader.cancel(e).catch(() => {});
+			}
+		},
+		cancel(reason) {
+			return reader.cancel(reason);
+		},
+	});
 }
