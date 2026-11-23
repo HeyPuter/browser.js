@@ -207,17 +207,36 @@ export default function (client: ScramjetClient, self: Self) {
 			// `new Function` are that frame too - the script that evaluated them
 			// is below it
 			const self = rawCallSites(3)?.[2];
-			const hash = self && self.getScriptHash?.();
+			if (!self) return;
 
 			// its hash is the key a later stack walk looks it up by, and nothing
 			// had to be written into the source - or shown to the page - to get
-			// it there
-			if (hash) client.box.scripthashes[hash] = scriptId;
+			// it there. Taking it digests the whole source, which most scripts
+			// never need, so it waits for a lookup (see realmForFrame)
+			const name = scriptName(self);
+			const pending = (client.box.scriptpending[name] ??= []);
+			pending[pending.length] = [self, scriptId];
+			// a site keeps its script alive, so a name that keeps registering
+			// new code (eval in a loop) is hashed rather than held
+			if (pending.length > 64) hashPending(client, name);
 		},
 		enumerable: false,
 		writable: false,
 		configurable: false,
 	});
+}
+
+const scriptName = (site: CallSite) => site.getScriptNameOrSourceURL?.() ?? "";
+
+function hashPending(client: ScramjetClient, name: string) {
+	const box = client.box;
+	const pending = box.scriptpending[name];
+	if (!pending) return;
+	delete box.scriptpending[name];
+	for (let i = 0; i < pending.length; i++) {
+		const hash = pending[i][0].getScriptHash?.();
+		if (hash) box.scripthashes[hash] = pending[i][1];
+	}
 }
 
 /**
@@ -230,7 +249,10 @@ export function realmForFrame(
 ): ScriptRealm | null {
 	try {
 		const hash = frame.getScriptHash?.();
-		const scriptId = hash && client.box.scripthashes[hash];
+		if (!hash) return null;
+		// a script with the frame's hash has the frame's name too
+		hashPending(client, scriptName(frame));
+		const scriptId = client.box.scripthashes[hash];
 		return scriptId ? (client.box.scriptrealms[scriptId] ?? null) : null;
 	} catch {
 		// Not a usable V8 CallSite.

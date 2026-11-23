@@ -2,6 +2,7 @@ import { IncrementalHtmlRewriter } from "@/shared";
 import { ScramjetClient } from "./client";
 import { SourceMaps } from "./shared/sourcemaps";
 import { ScriptRealm } from "./shared/incumbency";
+import type { CallSite } from "@/shared/incumbency";
 import {
 	Object_getOwnPropertyNames,
 	Object_getOwnPropertyDescriptor,
@@ -179,6 +180,13 @@ export class SingletonBox {
 
 	/** `pst` mode's index into {@link scriptrealms}: script source hash -> registration ID */
 	scripthashes: Record<string, string> = {};
+
+	/**
+	 * `pst` registrations not in {@link scripthashes} yet, by script name. A
+	 * script's hash is a digest of its whole source, so it is only taken when
+	 * a lookup meets a frame from a script of the same name.
+	 */
+	scriptpending: Record<string, [CallSite, string][]> = Object_create(null);
 
 	/**
 	 * `stamp` and `lazystamp` mode's incumbent: the realm of the innermost

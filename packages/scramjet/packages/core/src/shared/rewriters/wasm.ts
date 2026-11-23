@@ -21,7 +21,11 @@ export function setWasm(u8: Uint8Array | ArrayBuffer) {
 
 const MAGIC = "\0asm".split("").map((x) => x.charCodeAt(0));
 
+let initialized = false;
 function initWasm() {
+	// the module has to be built before initSync can say it was already set
+	// up, so it is only built once
+	if (initialized) return;
 	if (!wasm_u8)
 		throw new Error("rewriter wasm not found (was setWasm called?)");
 
@@ -34,6 +38,7 @@ function initWasm() {
 	initSync({
 		module: new WebAssembly_Module(wasm_u8 as unknown as BufferSource),
 	});
+	initialized = true;
 }
 
 type RewriterBox = { rewriter: Rewriter; inUse: boolean };
