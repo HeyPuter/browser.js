@@ -2081,8 +2081,19 @@ return { apply, construct };
 		return rewriteUrl(url, this.context, this.meta, options);
 	}
 
+	/** recent {@link unrewriteUrl} answers: a pure function of the URL */
+	private unrewritten = new _Map<string, string>();
+
 	unrewriteUrl(url: string | URL): string {
-		return unrewriteUrl(url, this.context);
+		url = String(url);
+		let site = this.unrewritten.get(url);
+		if (site === undefined) {
+			site = unrewriteUrl(url, this.context);
+			if (this.unrewritten.size >= 256) this.unrewritten.clear();
+			this.unrewritten.set(url, site);
+		}
+
+		return site;
 	}
 
 	/**
