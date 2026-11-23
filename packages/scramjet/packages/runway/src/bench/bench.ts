@@ -1,5 +1,6 @@
 // node src/bench/bench.ts [--sites a,b] [--n 5] [--modes bare,sj] [--cpu 1]
-//   [--profile dir] [--settle 3000] [--json out.json]
+//   [--profile dir] [--settle 3000] [--json out.json] [--base root]
+//   [--latency ms] [--kbps n]
 //
 // loads recorded sites (src/bench/record.ts) bare and through scramjet from the
 // same local replay, and reports paint/load timings and main-thread cost.
@@ -222,7 +223,14 @@ const results: Record<string, Record<string, Sample[]>> = {};
 for (const site of sites) {
 	const store = new Store(path.join(DATA, site));
 	const url = fs.readFileSync(path.join(DATA, site, "url.txt"), "utf8");
-	const server = await serveStore(store, REPLAY_PORT);
+	// --latency ms before each response's first byte, --kbps to pace its body
+	const latency = Number(opt("latency", "0"));
+	const kbps = Number(opt("kbps", "0"));
+	const server = await serveStore(
+		store,
+		REPLAY_PORT,
+		latency || kbps ? { latency, kbps } : null
+	);
 	replays.set(site, store);
 	results[site] = {};
 	for (let i = 0; i < N; i++) {
