@@ -47,6 +47,9 @@ import {
 	String_startsWith,
 	String_substring,
 	String_toLowerCase,
+	String_slice,
+	Object_keys,
+	Object_create,
 	drain,
 } from "@/shared/snapshot";
 
@@ -183,6 +186,36 @@ function hasUppercase(name: string): boolean {
 	return false;
 }
 
+let mirrorable: Record<string, true> | undefined;
+
+/**
+ * Whether an attribute named `qualifiedName` can have a mirror: only one a
+ * rule or an event handler rewrites does, under its own name or - through
+ * `setAttributeNS` - under another prefix. Every other read skips looking
+ * for one.
+ */
+function mayBeMirrored(qualifiedName: string): boolean {
+	if (!mirrorable) {
+		const names: Record<string, true> = Object_create(null);
+		for (let i = 0; i < htmlRules.length; i++) {
+			const keys = Object_keys(htmlRules[i]);
+			for (let j = 0; j < keys.length; j++) {
+				const key = String_toLowerCase(keys[j]);
+				const colon = String_indexOf(key, ":");
+				names[colon === -1 ? key : String_slice(key, colon + 1)] = true;
+			}
+		}
+		for (let i = 0; i < eventAttributes.length; i++)
+			names[eventAttributes[i]] = true;
+		mirrorable = names;
+	}
+	const colon = String_indexOf(qualifiedName, ":");
+	const local =
+		colon === -1 ? qualifiedName : String_slice(qualifiedName, colon + 1);
+
+	return mirrorable[String_toLowerCase(local)] === true;
+}
+
 /** What a rule does to one attribute value; null means "remove the attribute". */
 export type AttributeRewriter = (value: string) => string | null;
 
@@ -264,8 +297,10 @@ export class AttributeLayer {
 	get(element: Element, qualifiedName: string): string | null {
 		if (isInternalAttribute(qualifiedName)) return null;
 
-		const mirror = this.raw.get(element, mirrorAttributeName(qualifiedName));
-		if (mirror !== null) return mirror;
+		if (mayBeMirrored(qualifiedName)) {
+			const mirror = this.raw.get(element, mirrorAttributeName(qualifiedName));
+			if (mirror !== null) return mirror;
+		}
 
 		return this.raw.get(element, qualifiedName);
 	}
@@ -276,7 +311,8 @@ export class AttributeLayer {
 
 		return (
 			this.raw.has(element, qualifiedName) ||
-			this.raw.has(element, mirrorAttributeName(qualifiedName))
+			(mayBeMirrored(qualifiedName) &&
+				this.raw.has(element, mirrorAttributeName(qualifiedName)))
 		);
 	}
 
