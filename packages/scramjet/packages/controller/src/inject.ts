@@ -196,7 +196,16 @@ export function load(init: Init) {
 	if (!("WASM" in self)) {
 		throw new Error("WASM not found in global scope!");
 	}
-	const wasm = Uint8Array.from(atob(self.WASM as string), (c) => c.charCodeAt(0));
+	// every document decodes the whole rewriter, so not a callback per byte
+	const b64 = self.WASM as string;
+	let wasm: Uint8Array;
+	if (typeof (Uint8Array as any).fromBase64 === "function") {
+		wasm = (Uint8Array as any).fromBase64(b64);
+	} else {
+		const bin = atob(b64);
+		wasm = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) wasm[i] = bin.charCodeAt(i);
+	}
 	delete (self as any).WASM;
 	setWasm(wasm);
 

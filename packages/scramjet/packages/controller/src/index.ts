@@ -751,7 +751,11 @@ export class Frame {
 					(()=>{
 						const { ScramjetClient, CookieJar, setWasm } = $scramjet;
 
-						setWasm(Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0)));
+						setWasm(
+							Uint8Array.fromBase64
+								? Uint8Array.fromBase64(self.WASM)
+								: Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0))
+						);
 						delete self.WASM;
 
 						const sjconfig = ${JSON.stringify(this.scramjetConfig)};
