@@ -5,3 +5,4 @@ packages/core/rewriter/wasm/out
 packages/core/rewriter/*.js
 packages/core/README.md
 packages/runway/coverage
+packages/runway/bench-data
