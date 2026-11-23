@@ -47,7 +47,7 @@ export default function (client: ScramjetClient, self: Self) {
 	 */
 	const siteUrl = (url: string): string =>
 		String_startsWith(url, client.context.prefix.href)
-			? unrewriteUrl(url, client.context)
+			? client.unrewriteUrl(url)
 			: url;
 
 	/**
@@ -142,7 +142,7 @@ export default function (client: ScramjetClient, self: Self) {
 			String_startsWith(native, client.context.prefix.href) &&
 			native === new client.native.Document(owner).URL
 		) {
-			const site = unrewriteUrl(native, client.context);
+			const site = client.unrewriteUrl(native);
 			if (isAbsolute(site)) return site;
 		}
 

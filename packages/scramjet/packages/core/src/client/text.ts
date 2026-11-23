@@ -553,7 +553,16 @@ export class TextLayer {
 		// it, and this is the read path of every `textContent` in the document
 		if (parent.childElementCount === 0) return false;
 
-		return !!parent.querySelector("script,style");
+		// an element's collections are cached by the browser, and their lengths
+		// with them until the subtree changes, where a selector walks the whole
+		// subtree on every read that finds nothing. a fragment has none
+		if (what === DOCUMENT_FRAGMENT_NODE)
+			return !!parent.querySelector("script,style");
+
+		return (
+			parent.getElementsByTagName("script").length > 0 ||
+			parent.getElementsByTagName("style").length > 0
+		);
 	}
 
 	/**

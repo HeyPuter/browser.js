@@ -14,12 +14,19 @@ use crate::{
 	 get_obj, get_str, set_obj,
 };
 
-// slightly modified https://github.com/ungap/random-uuid/blob/main/index.js
+// One draw of random bytes per tag, through a getRandomValues taken when the
+// module loads: every rewrite makes a tag, and a page can replace `crypto`,
+// `String.prototype.replace` and `Uint8Array` by the time a client-side
+// rewrite (eval, new Function) asks for one.
 #[wasm_bindgen(inline_js = r#"
+const random = crypto.getRandomValues.bind(crypto);
+const bytes = new Uint8Array(6);
+const HEX = "0123456789abcdef";
 export function scramtag() {
-    return (""+1e10).replace(/[018]/g,
-      c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-    );
+    random(bytes);
+    let tag = "";
+    for (let i = 0; i < 6; i++) tag += HEX[bytes[i] >> 4] + HEX[bytes[i] & 15];
+    return tag;
 }
 "#)]
 extern "C" {
