@@ -33,6 +33,8 @@ import {
 	String_trim,
 	_URL,
 	_WeakSet,
+	_RegExp,
+	RegExp_exec,
 } from "@/shared/snapshot";
 import { flagEnabled } from "..";
 import {
@@ -388,6 +390,51 @@ function rewriteHtmlInner(
 	}
 
 	return render(root, htmlcontext.xmlMode);
+}
+
+let triggers: RegExp | undefined;
+
+/**
+ * Whether a fragment could hold anything {@link rewriteHtml} changes: an
+ * attribute some rule or event handler rewrites, or a script or style.
+ *
+ * Read off the raw markup, not a parse of it. Tag and attribute names cannot be
+ * escaped, so an attribute the browser's parser would find is spelled out in
+ * the source, after whitespace, a `/` or a closing quote, and before
+ * whitespace, `/`, `>`, `=` or the end. Anything that looks like one counts;
+ * finding none means the browser can be handed the page's own string.
+ *
+ * Only for a fragment parsed whole - a `document.write` split mid-tag hides
+ * the name from any one chunk - and only with no HTML rewriter hooks, which
+ * see every rewrite.
+ */
+export function fragmentNeedsRewrite(
+	html: string,
+	context: ScramjetContext
+): boolean {
+	const hooks = context.hooks?.rewriter.html as any;
+	const tapped = (hook: any) => hook?.tap.callbacks[hook.key]?.length > 0;
+	if (hooks && (tapped(hooks.pre) || tapped(hooks.post))) return true;
+
+	if (!triggers) {
+		// built on first use, which can be after the page has run, so from
+		// snapshotted intrinsics only. Attribute names are letters, digits,
+		// `-` and `:`, none of which needs escaping
+		let names = "";
+		const add = (name: string) => {
+			names += (names ? "|" : "") + name;
+		};
+		const rules = getRuleAttributeNames();
+		for (let i = 0; i < rules.length; i++)
+			for (let j = 0; j < rules[i].length; j++) add(rules[i][j]);
+		for (let i = 0; i < eventAttributes.length; i++) add(eventAttributes[i]);
+		triggers = new _RegExp(
+			`(?:^|[\\s/"'])(?:${names})(?=[\\s/>=]|$)|<(?:script|style)(?=[\\s/>]|$)`,
+			"i"
+		);
+	}
+
+	return RegExp_exec(triggers!, html) !== null;
 }
 
 export function rewriteHtml(

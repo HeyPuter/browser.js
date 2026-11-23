@@ -17,7 +17,7 @@ import { ScramjetClient } from "@client/index";
 import { Arguments, Returns, Type } from "@client/webidl";
 import { nodeClient, trustedString } from "@client/trustedtypes";
 import { rewriteHtml, unrewriteHtml } from "@rewriters/html";
-import { ForeignContext } from "@/shared/rewriters/html";
+import { ForeignContext, fragmentNeedsRewrite } from "@/shared/rewriters/html";
 import { isHtmlMimeType } from "@/shared/mime";
 import { mirroredAttributeName } from "@client/attributes";
 import { Array_indexOf, String, String_toLowerCase } from "@/shared/snapshot";
@@ -98,13 +98,18 @@ export default function (client: ScramjetClient, _self: Self) {
 		apisource: string,
 		foreignContext: ForeignContext
 	) =>
-		rewriteHtml(html, client.context, client.meta, {
-			loadScripts: false,
-			inline: true,
-			source: client.url.href,
-			apisource,
-			foreignContext,
-		});
+		// templates rendered into the page mostly carry nothing to rewrite,
+		// and parsing and reserializing them was most of what setting
+		// innerHTML cost
+		!fragmentNeedsRewrite(html, client.context)
+			? html
+			: rewriteHtml(html, client.context, client.meta, {
+					loadScripts: false,
+					inline: true,
+					source: client.url.href,
+					apisource,
+					foreignContext,
+				});
 
 	const serialize = (html: string, foreignContext: ForeignContext) =>
 		unrewriteHtml(html, foreignContext, client.context);
