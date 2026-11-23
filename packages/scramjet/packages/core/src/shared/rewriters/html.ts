@@ -459,11 +459,19 @@ export function rewriteHtml(
  * markup comes back with the rewritten stylesheet still in it, which is a
  * difference the page can see in `innerHTML`. Every client call passes one.
  */
+// everything unrewriteHtml undoes: an attribute scramjet added, or a style
+// element's text
+const UNREWRITE_TRIGGERS = new _RegExp("scramjet-|<style", "i");
+
 export function unrewriteHtml(
 	html: string,
 	foreignContext?: ForeignContext,
 	context?: ScramjetContext
 ) {
+	// none of it there: the serialization is the page's already, and the
+	// browser's own is a closer one than a reparse rendered back out
+	if (RegExp_exec(UNREWRITE_TRIGGERS, html) === null) return html;
+
 	const root = parseDocument(html, {
 		startingForeignContext: foreignContext,
 	});
