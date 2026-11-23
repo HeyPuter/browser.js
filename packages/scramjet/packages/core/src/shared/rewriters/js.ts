@@ -16,6 +16,11 @@ import { registerRewrites } from "@client/shared/sourcemaps";
 // eslint-disable-next-line scramjet-core/no-globals
 Error.stackTraceLimit = 50;
 
+/** the longest source {@link rewriteJs} remembers the rewrite of */
+const CACHE_SOURCE_MAX = 65536;
+/** how much, in characters, a client's cache holds before it starts over */
+const CACHE_TOTAL_MAX = 2 * 1024 * 1024;
+
 /** A private PST registration ID, generated independently for each rewrite. */
 const SCRIPT_ID_BYTES = 16;
 const HEX = "0123456789abcdef";
@@ -131,6 +136,27 @@ export function rewriteJs(
 	/** see {@link eventHandlerPrelude} */
 	handlerPrelude = ""
 ): string | Uint8Array {
+	// a page evaluating the same string again (`Function("return this")`, a
+	// timer's string, a template compiled per render) gets the same rewrite:
+	// it depends on nothing else here. Per client, since the script's
+	// registration and sourcemap are its realm's
+	let key: string | undefined;
+	if (client && typeof js === "string" && js.length <= CACHE_SOURCE_MAX) {
+		key =
+			(isModule ? "m\0" : "s\0") +
+			(url ?? "") +
+			"\0" +
+			handlerPrelude +
+			"\0" +
+			meta.base.href +
+			"\0" +
+			(meta.initiatorOrigin ?? meta.origin.origin) +
+			"\0" +
+			js;
+		const hit = client.rewriteCache.get(key);
+		if (hit !== undefined) return hit;
+	}
+
 	try {
 		const res = rewriteJsWasm(
 			js,
@@ -150,6 +176,16 @@ export function rewriteJs(
 			for (const error of res.errors) {
 				dbg.error("oxc parse error", error);
 			}
+		}
+
+		if (key !== undefined && typeof res.js === "string") {
+			const cache = client!.rewriteCache;
+			client!.rewriteCacheSize += key.length + res.js.length;
+			if (client!.rewriteCacheSize > CACHE_TOTAL_MAX) {
+				cache.clear();
+				client!.rewriteCacheSize = key.length + res.js.length;
+			}
+			cache.set(key, res.js);
 		}
 
 		return res.js;

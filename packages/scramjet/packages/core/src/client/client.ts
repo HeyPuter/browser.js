@@ -863,8 +863,22 @@ export class ScramjetClient {
 		);
 	}
 
+	/** rewrites of the scripts this realm evaluated, by everything they depend on */
+	rewriteCache = new _Map<string, string>();
+	rewriteCacheSize = 0;
+
+	/** the last document URL {@link url} un-rewrote, and what it came to */
+	private urlCache: [string, string] | null = null;
+
 	get url(): _URL {
-		return new _URL(this.unrewriteUrl(this.global.location.href));
+		// read on every location access, storage call and URL rewrite, and the
+		// answer only changes when the document's URL does
+		const raw = this.global.location.href;
+		let cached = this.urlCache;
+		if (!cached || cached[0] !== raw)
+			cached = this.urlCache = [raw, this.unrewriteUrl(raw)];
+
+		return new _URL(cached[1]);
 	}
 
 	set url(url: _URL | string) {
