@@ -33,6 +33,10 @@ export class Store {
 	dir: string;
 	constructor(dir: string) {
 		this.dir = dir;
+		// a directory with static.json ({host, root}) is served from disk
+		const st = path.join(dir, "static.json");
+		if (fs.existsSync(st))
+			this.static = JSON.parse(fs.readFileSync(st, "utf8"));
 		const index = path.join(dir, "index.json");
 		if (fs.existsSync(index)) {
 			for (const e of JSON.parse(fs.readFileSync(index, "utf8"))) this.add(e);
@@ -76,12 +80,28 @@ export class Store {
 	}
 
 	hosts() {
+		if (this.static) return [this.static.host];
 		return [...new Set(this.entries.map((e) => new URL(e.url).hostname))];
 	}
+
+	/** serve files under `root` for https://`host`/... */
+	static: { host: string; root: string } | null = null;
 
 	lookup(method: string, url: string) {
 		const u = new URL(url);
 		u.hash = "";
+		if (this.static && u.host === this.static.host) {
+			let p = path.join(this.static.root, decodeURIComponent(u.pathname));
+			if (!p.startsWith(this.static.root)) return null;
+			if (fs.existsSync(p) && fs.statSync(p).isDirectory())
+				p = path.join(p, "index.html");
+			if (!fs.existsSync(p)) return null;
+			return {
+				status: 200,
+				headers: [["content-type", mimeFor(p)]] as [string, string][],
+				body: fs.readFileSync(p),
+			};
+		}
 		let e = this.byKey.get(method + " " + u.href);
 		if (!e && method === "HEAD") e = this.byKey.get("GET " + u.href);
 		if (!e) e = this.byPath.get(method + " " + u.host + u.pathname);
@@ -116,4 +136,21 @@ export function serveStore(store: Store, port: number) {
 	return new Promise<http.Server>((r) =>
 		server.listen(port, "127.0.0.1", () => r(server))
 	);
+}
+
+const MIME: Record<string, string> = {
+	".html": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".mjs": "text/javascript; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".json": "application/json",
+	".svg": "image/svg+xml",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".woff2": "font/woff2",
+	".woff": "font/woff",
+	".wasm": "application/wasm",
+};
+function mimeFor(p: string) {
+	return MIME[path.extname(p).toLowerCase()] ?? "application/octet-stream";
 }

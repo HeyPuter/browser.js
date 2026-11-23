@@ -442,7 +442,7 @@ export class ScramjetClient {
 				// Each class closes over this client's fixed native descriptor table.
 				const cached = this.nativeClasses.get(prototype);
 				if (cached) return cached;
-				const descriptors = this.nativeStore.get(prototype);
+				const descriptors = this.natives(prototype);
 				if (!descriptors) {
 					throw new Error(`No native descriptors found for ${prototype}`);
 				}
@@ -507,7 +507,14 @@ export class ScramjetClient {
 		this.fakePrototypes.set(table, fake!);
 		return fake!;
 	}
+	/** the tables {@link natives} has put together, by interface name */
 	nativeStore: Map<string, Record<string, PropertyDescriptor>> = new _Map();
+	private nativeProtos = new _Map<string, object>();
+	private nativeSnapshot = new _Map<
+		object,
+		[Record<string, PropertyDescriptor>, object | null]
+	>();
+	private nativeTables = new _Map<object, Record<string, PropertyDescriptor>>();
 
 	/**
 	 * The tables below chain to a null prototype, and not for tidiness. Each
@@ -523,30 +530,59 @@ export class ScramjetClient {
 	 * there is no setter to find and the key is defined outright.
 	 */
 	saveNatives() {
-		// one table per prototype, holding its own descriptors and inheriting
-		// its parent's, so a prototype shared by many interfaces (Node,
-		// Element, HTMLElement, ...) is read once rather than once per
-		// interface below it
-		const tables = new _Map<object, Record<string, PropertyDescriptor>>();
-		const tableFor = (proto: any): Record<string, PropertyDescriptor> => {
-			let table = tables.get(proto);
-			if (table) return table;
-			const prototype = Object_getPrototypeOf(proto);
-			table = Object_create(prototype ? tableFor(prototype) : null);
-			Object_assign(table, Object_getOwnPropertyDescriptors(proto));
-			tables.set(proto, table!);
-			return table!;
+		// what each prototype holds, and what it inherits from, now - before
+		// the page can change either. The tables are put together from this
+		// when something asks for one, which is a hundred-odd interfaces of
+		// the seven hundred a realm has
+		const capture = (proto: any) => {
+			while (proto && !this.nativeSnapshot.has(proto)) {
+				const parent = Object_getPrototypeOf(proto);
+				this.nativeSnapshot.set(proto, [
+					Object_getOwnPropertyDescriptors(proto),
+					parent,
+				]);
+				proto = parent;
+			}
 		};
 
 		for (const key of drain(Object_getOwnPropertyNames(this.global))) {
 			const value = this.global[key];
 			if (typeof value === "function" && "prototype" in value) {
-				this.nativeStore.set(key, tableFor(value.prototype));
+				this.nativeProtos.set(key, value.prototype);
+				capture(value.prototype);
 			}
 		}
 
 		// handle both globals bound to the scope's prototype, and globals bound to the scope itself (e.g. window)
-		this.nativeStore.set("window", tableFor(this.global));
+		this.nativeProtos.set("window", this.global);
+		capture(this.global);
+	}
+
+	/**
+	 * The native descriptors of interface `name` (or "window", the global's),
+	 * own and inherited, as {@link saveNatives} found them.
+	 */
+	natives(name: string): Record<string, PropertyDescriptor> | undefined {
+		let table = this.nativeStore.get(name);
+		if (table) return table;
+		const proto = this.nativeProtos.get(name);
+		if (!proto) return undefined;
+		table = this.nativeTable(proto);
+		this.nativeStore.set(name, table);
+		return table;
+	}
+
+	// one table per prototype, holding its own descriptors and inheriting its
+	// parent's, so a prototype shared by many interfaces (Node, Element,
+	// HTMLElement, ...) is copied once rather than once per interface below it
+	private nativeTable(proto: object): Record<string, PropertyDescriptor> {
+		let table = this.nativeTables.get(proto);
+		if (table) return table;
+		const [descriptors, parent] = this.nativeSnapshot.get(proto)!;
+		table = Object_create(parent ? this.nativeTable(parent) : null);
+		Object_assign(table, descriptors);
+		this.nativeTables.set(proto, table!);
+		return table!;
 	}
 
 	constructor(
@@ -772,7 +808,7 @@ export class ScramjetClient {
 		this.box.trustedEvents.add(event);
 
 		return Reflect_apply(
-			this.nativeStore.get("EventTarget").dispatchEvent.value,
+			this.natives("EventTarget").dispatchEvent.value,
 			target,
 			[event]
 		);
@@ -1673,7 +1709,7 @@ return { apply, construct };
 		// create a fake parent prototype for the handler, so that `super.method()` calls resolve to the native store versions
 		Object_setPrototypeOf(
 			handler.prototype,
-			this.fakePrototype(this.nativeStore.get(classname)!)
+			this.fakePrototype(this.natives(classname)!)
 		);
 
 		// a static `super.x()` must reach the native, not whatever is installed
@@ -1687,7 +1723,7 @@ return { apply, construct };
 			// setting up a realm costs
 			Object_setPrototypeOf(
 				handler,
-				this.fakePrototype(this.nativeStore.get("window")!)
+				this.fakePrototype(this.natives("window")!)
 			);
 		} else {
 			const fakeStatics = {};
@@ -2069,7 +2105,7 @@ return { apply, construct };
 		relevantObject: any,
 		callback: () => Promise<T>
 	): Promise<T> {
-		const RelevantPromise = this.relevantClient(relevantObject).nativeStore.get(
+		const RelevantPromise = this.relevantClient(relevantObject).natives(
 			"window"
 		)!.Promise.value as PromiseConstructor;
 

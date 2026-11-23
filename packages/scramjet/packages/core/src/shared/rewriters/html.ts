@@ -33,6 +33,8 @@ import {
 	String_trim,
 	_URL,
 	_WeakSet,
+	_RegExp,
+	RegExp_exec,
 } from "@/shared/snapshot";
 import { flagEnabled } from "..";
 import {
@@ -390,6 +392,51 @@ function rewriteHtmlInner(
 	return render(root, htmlcontext.xmlMode);
 }
 
+let triggers: RegExp | undefined;
+
+/**
+ * Whether a fragment could hold anything {@link rewriteHtml} changes: an
+ * attribute some rule or event handler rewrites, or a script or style.
+ *
+ * Read off the raw markup, not a parse of it. Tag and attribute names cannot be
+ * escaped, so an attribute the browser's parser would find is spelled out in
+ * the source, after whitespace, a `/` or a closing quote, and before
+ * whitespace, `/`, `>`, `=` or the end. Anything that looks like one counts;
+ * finding none means the browser can be handed the page's own string.
+ *
+ * Only for a fragment parsed whole - a `document.write` split mid-tag hides
+ * the name from any one chunk - and only with no HTML rewriter hooks, which
+ * see every rewrite.
+ */
+export function fragmentNeedsRewrite(
+	html: string,
+	context: ScramjetContext
+): boolean {
+	const hooks = context.hooks?.rewriter.html as any;
+	const tapped = (hook: any) => hook?.tap.callbacks[hook.key]?.length > 0;
+	if (hooks && (tapped(hooks.pre) || tapped(hooks.post))) return true;
+
+	if (!triggers) {
+		// built on first use, which can be after the page has run, so from
+		// snapshotted intrinsics only. Attribute names are letters, digits,
+		// `-` and `:`, none of which needs escaping
+		let names = "";
+		const add = (name: string) => {
+			names += (names ? "|" : "") + name;
+		};
+		const rules = getRuleAttributeNames();
+		for (let i = 0; i < rules.length; i++)
+			for (let j = 0; j < rules[i].length; j++) add(rules[i][j]);
+		for (let i = 0; i < eventAttributes.length; i++) add(eventAttributes[i]);
+		triggers = new _RegExp(
+			`(?:^|[\\s/"'])(?:${names})(?=[\\s/>=]|$)|<(?:script|style)(?=[\\s/>]|$)`,
+			"i"
+		);
+	}
+
+	return RegExp_exec(triggers!, html) !== null;
+}
+
 export function rewriteHtml(
 	html: string,
 	context: ScramjetContext,
@@ -412,11 +459,19 @@ export function rewriteHtml(
  * markup comes back with the rewritten stylesheet still in it, which is a
  * difference the page can see in `innerHTML`. Every client call passes one.
  */
+// everything unrewriteHtml undoes: an attribute scramjet added, or a style
+// element's text
+const UNREWRITE_TRIGGERS = new _RegExp("scramjet-|<style", "i");
+
 export function unrewriteHtml(
 	html: string,
 	foreignContext?: ForeignContext,
 	context?: ScramjetContext
 ) {
+	// none of it there: the serialization is the page's already, and the
+	// browser's own is a closer one than a reparse rendered back out
+	if (RegExp_exec(UNREWRITE_TRIGGERS, html) === null) return html;
+
 	const root = parseDocument(html, {
 		startingForeignContext: foreignContext,
 	});

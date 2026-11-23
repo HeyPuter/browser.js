@@ -4,6 +4,7 @@ import {
 	Error,
 	TextDecoder_decode,
 	Reflect_apply,
+	Array_isArray,
 } from "@/shared/snapshot";
 import { base64ToBytes } from "@/shared/util";
 import { ProxyCtx, ScramjetClient } from "@client/index";
@@ -27,7 +28,11 @@ type Rewrite = {
 	  }
 );
 
-export type SourceMaps = Record<string, Rewrite[]>;
+/**
+ * By scramtag: a script's rewrites, or its map as it arrived until something
+ * needs them - most scripts never have a function stringified.
+ */
+export type SourceMaps = Record<string, Rewrite[] | string | Uint8Array>;
 
 function getEnd(rewrite: Rewrite): number {
 	if (rewrite.type === RewriteType.Insert) {
@@ -43,6 +48,10 @@ export function registerRewrites(
 	buf: string | Uint8Array,
 	tag: string
 ) {
+	client.box.sourcemaps[tag] = buf;
+}
+
+function decodeRewrites(buf: string | Uint8Array): Rewrite[] {
 	// a script rewritten in the service worker carries its map inline as base64,
 	// because it can only reach us as source text. one rewritten in this realm
 	// hands the buffer over directly
@@ -86,7 +95,7 @@ export function registerRewrites(
 		}
 	}
 
-	client.box.sourcemaps[tag] = rewrites;
+	return rewrites;
 }
 
 const SCRAMTAG = "/*scramtag ";
@@ -136,7 +145,11 @@ function doUnrewrite(
 
 	const fnStart = tagStart - tagOffset;
 	const fnEnd = fnStart + stringified.length;
-	const rewrites = client.box.sourcemaps[tag];
+	const stored = client.box.sourcemaps[tag];
+	let rewrites: Rewrite[] | undefined;
+	if (Array_isArray(stored)) rewrites = stored;
+	else if (stored !== undefined)
+		rewrites = client.box.sourcemaps[tag] = decodeRewrites(stored);
 
 	if (!rewrites) {
 		dbg.warn("failed to get rewrites for tag", tag);

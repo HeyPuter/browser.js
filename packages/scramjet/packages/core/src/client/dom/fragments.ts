@@ -1,4 +1,4 @@
-import { rewriteHtml } from "@rewriters/html";
+import { fragmentNeedsRewrite, rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
 import { ForeignContext } from "@/shared/rewriters/html";
 import {
@@ -380,6 +380,8 @@ export default function (client: ScramjetClient, _self: Self) {
 		@Arguments("(TrustedHTML or DOMString)")
 		createContextualFragment(string: string | TrustedHTML): DocumentFragment {
 			const html = String(string);
+			if (!fragmentNeedsRewrite(html, client.context))
+				return super.createContextualFragment(html);
 			const rewritten = rewriteHtml(html, client.context, client.meta, {
 				loadScripts: false,
 				inline: true,

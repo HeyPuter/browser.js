@@ -107,7 +107,7 @@ export class EventHandlerSlot {
 		if (returnValue === false) {
 			const real = this.client.box.standIns.get(event) ?? event;
 			Reflect_apply(
-				this.client.nativeStore.get("Event").preventDefault.value,
+				this.client.natives("Event").preventDefault.value,
 				real,
 				[]
 			);
@@ -123,7 +123,7 @@ export class EventHandlerSlot {
 		const methods = this.client.listenerMethods;
 		if (methods) return methods;
 
-		const natives = this.client.nativeStore.get("EventTarget");
+		const natives = this.client.natives("EventTarget");
 
 		return {
 			add: natives.addEventListener.value,
