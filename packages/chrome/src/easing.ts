@@ -13,6 +13,18 @@ export type EasingToken =
 	/** Tab close. Same `BoundsAnimator` path as `--ease-tab-move`. */
 	| "--ease-tab-close"
 	/**
+	 * Hybrid sidebar expanding from its collapsed, favicon-only width (toggle
+	 * or hover peek). A bounds animation, so the smooth tweak gives it the
+	 * same `gfx::Tween::EASE_OUT` as the tab slots; bouncy pairs it with
+	 * `--ease-tab-open`.
+	 */
+	| "--ease-sidebar-expand"
+	/**
+	 * Hybrid sidebar collapsing to its favicon-only width. Pairs with
+	 * `--ease-tab-close`: never overshoots, as that would clip the favicons.
+	 */
+	| "--ease-sidebar-collapse"
+	/**
 	 * Hover card fade. `views::WidgetFadeAnimator` defaults to
 	 * `gfx::Tween::FAST_OUT_SLOW_IN`
 	 * (`ui/views/animation/widget_fade_animator.h:145`).

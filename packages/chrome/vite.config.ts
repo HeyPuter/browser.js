@@ -35,6 +35,7 @@ export default defineConfig({
 			tabLayout: "horizontal",
 			verticalTabJustify: "left",
 			sidebarWidth: null,
+			sidebarCollapsed: false,
 			uiProfile: "default",
 			themeId: "dark",
 			followSystemTheme: false,

@@ -157,6 +157,11 @@ export function App(
 						setSidebarWidth={(width: number) => {
 							settingsService.settings.sidebarWidth = Math.round(width);
 						}}
+						collapsible={layout === "hybrid"}
+						collapsed={use(settingsService.settings.sidebarCollapsed)}
+						setCollapsed={(collapsed: boolean) => {
+							settingsService.settings.sidebarCollapsed = collapsed;
+						}}
 						addTab={() => {
 							tabsService.newTab(
 								new URL(`${INTERNAL_URL_PROTOCOL}//newtab`),
@@ -211,6 +216,7 @@ export function App(
 							<Omnibar
 								tab={use(tabsService.activetab)}
 								layout={layout === "compact" ? "compact" : "horizontal"}
+								sidebarToggle={layout === "hybrid"}
 							/>
 							{use(
 								tabsService.activetab.url,

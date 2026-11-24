@@ -38,6 +38,10 @@ export function Sidebar(
 			setSidebarWidth: (width: number) => void;
 			topContent?: any;
 			bottomContent?: any;
+			// Collapsing to a favicon-only strip (hybrid layout only).
+			collapsible?: boolean;
+			collapsed?: boolean;
+			setCollapsed?: (collapsed: boolean) => void;
 		},
 		{
 			visualtabs: VisualTab[];
@@ -47,15 +51,24 @@ export function Sidebar(
 			afterEl: HTMLElement;
 			currentlydragging: string | null;
 			currentlyHovered: Tab | null;
+			// The strip takes the collapsed width in the page layout. Follows the
+			// `collapsed` prop, except that it can't start collapsed before mount.
+			layoutCollapsed: boolean;
+			// Collapsed strip drawn at full width over the page (hover or
+			// keyboard focus).
+			peeking: boolean;
 		}
 	>
 ) {
 	this.currentlydragging = null;
 	this.currentlyHovered = this.tabs[0] ?? null;
 	this.visualtabs = [];
+	this.layoutCollapsed = !!this.collapsible && !!this.collapsed;
+	this.peeking = false;
 
 	const [lock, unlock] = requestUnfocusFrames();
-	const SIDEBAR_MIN_WIDTH = this.layout === "vertical" ? 190 : 48;
+	const SIDEBAR_MIN_WIDTH =
+		this.layout === "vertical" ? 190 : this.collapsible ? 150 : 48;
 	const SIDEBAR_MAX_WIDTH = 520;
 
 	const TAB_TRANSITION = () => `225ms ${easing("--ease-tab-move")}`;
@@ -80,16 +93,6 @@ export function Sidebar(
 		return (
 			this.container.offsetHeight - padding - border - top - bottom - after
 		);
-	};
-
-	const getRootWidth = () => {
-		const style = getComputedStyle(this.container);
-		const padding =
-			parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-		const border =
-			parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-
-		return this.container.offsetWidth - padding - border;
 	};
 
 	const getAbsoluteStart = () => {
@@ -156,9 +159,7 @@ export function Sidebar(
 
 	const layoutTabs = (transition: boolean) => {
 		const height = getTabHeight();
-		const width = getRootWidth();
 		const tabPadding = getTabPadding();
-		console.log(height, width, tabPadding);
 
 		if (this.currentlydragging !== null) reorderTabs();
 
@@ -174,7 +175,9 @@ export function Sidebar(
 				continue;
 			}
 
-			tab.root.style.width = width + "px";
+			// Sized in CSS rather than measured, so tabs track the strip's width
+			// through the collapse animation without a relayout per frame.
+			tab.root.style.width = "calc(100% - 2 * var(--space-md))";
 			tab.root.style.height = height + "px";
 
 			const tabPos = tab.dragpos != -1 ? tab.dragpos : currpos;
@@ -281,6 +284,98 @@ export function Sidebar(
 		window.addEventListener("mouseup", mouseUpHandler);
 	};
 
+	// --- Collapsed (favicon-only) strip ------------------------------------
+	//
+	// Mirrors Chromium's collapsed vertical tab strip: only favicons are shown,
+	// and hovering the strip for a moment expands it to full width over the
+	// page (without reflowing it) until the pointer leaves. Clicking a favicon
+	// activates its tab straight away, with no need to wait for the expansion.
+	//
+	// Collapsing and expanding (the omnibar toggle) animate the strip's width
+	// in the page layout, so the page resizes in step with it. Both are plain
+	// CSS transitions, so reversing mid-animation carries on from wherever the
+	// strip is.
+
+	const PEEK_DELAY = 250;
+	// Below this width, dragging the resizer snaps the sidebar collapsed.
+	const COLLAPSE_SNAP_WIDTH = 100;
+	let peekTimer: number | undefined;
+	let resizing = false;
+
+	let mounted = false;
+
+	const isCollapsed = () => this.layoutCollapsed;
+
+	// Applies a layout change with transitions off, in the same frame. The
+	// microtask lets dreamland apply the class changes, and reading the width
+	// flushes the style so turning transitions back on doesn't animate it.
+	const commitInstantly = async (apply: () => void) => {
+		this.container.classList.add("instant");
+		apply();
+		await Promise.resolve();
+		void this.container.offsetWidth;
+		this.container.classList.remove("instant");
+	};
+
+	const setCollapsedLayout = (collapsed: boolean) => {
+		clearTimeout(peekTimer);
+		const apply = () => {
+			this.layoutCollapsed = collapsed;
+			this.peeking = false;
+		};
+		// Snapping via the resizer follows the pointer, and the state restored
+		// on mount shouldn't animate in.
+		if (!mounted || resizing) commitInstantly(apply);
+		else apply();
+	};
+
+	const startPeek = () => {
+		if (!isCollapsed() || resizing || this.peeking) return;
+		clearTimeout(peekTimer);
+		peekTimer = window.setTimeout(() => {
+			if (isCollapsed() && !resizing) this.peeking = true;
+		}, PEEK_DELAY);
+	};
+
+	const endPeek = (e: MouseEvent) => {
+		clearTimeout(peekTimer);
+		if (!this.peeking) return;
+		// Leaving mid-drag (a tab, a pinned tile): keep the strip expanded so
+		// the drag's layout doesn't shift under it, and collapse on release.
+		if (e.buttons & 1) {
+			window.addEventListener(
+				"mouseup",
+				() => {
+					if (!this.container.matches(":hover")) this.peeking = false;
+				},
+				{ once: true }
+			);
+			return;
+		}
+		this.peeking = false;
+	};
+
+	// Keyboard focus moving into the collapsed strip expands it right away, and
+	// it collapses again once focus leaves (unless the pointer is still over
+	// it). Pointer clicks don't count, so they don't keep the strip expanded.
+	const focusPeek = (e: FocusEvent) => {
+		if (!isCollapsed() || resizing) return;
+		if (!(e.target as Element).matches(":focus-visible")) return;
+		clearTimeout(peekTimer);
+		this.peeking = true;
+	};
+
+	const focusUnpeek = (e: FocusEvent) => {
+		if (this.container.contains(e.relatedTarget as Node | null)) return;
+		if (this.container.matches(":hover")) return;
+		this.peeking = false;
+	};
+
+	use(this.collapsed).listen((collapsed) => {
+		if (!this.collapsible) return;
+		setCollapsedLayout(!!collapsed);
+	});
+
 	const clampSidebarWidth = (width: number) => {
 		const viewportMax = Math.max(SIDEBAR_MIN_WIDTH, window.innerWidth - 140);
 		return Math.min(
@@ -294,21 +389,30 @@ export function Sidebar(
 
 		lock();
 		document.body.style.cursor = "ew-resize";
+		resizing = true;
+		this.container.classList.add("resizing");
+		clearTimeout(peekTimer);
+		this.peeking = false;
 
 		const mouseMoveHandler = (moveEvent: MouseEvent) => {
-			const { left } = this.container.getBoundingClientRect();
-			if (this.justify === "right") {
-				this.setSidebarWidth(
-					clampSidebarWidth(
-						left + this.container.offsetWidth - moveEvent.clientX
-					)
-				);
-			} else {
-				this.setSidebarWidth(clampSidebarWidth(moveEvent.clientX - left));
+			const { left, right } = this.container.getBoundingClientRect();
+			const width =
+				this.justify === "right"
+					? right - moveEvent.clientX
+					: moveEvent.clientX - left;
+			if (this.collapsible) {
+				// Like Chromium, dragging the edge far enough in collapses the
+				// strip, and dragging a collapsed strip back out expands it.
+				const collapse = width < COLLAPSE_SNAP_WIDTH;
+				if (collapse !== !!this.collapsed) this.setCollapsed?.(collapse);
+				if (collapse) return;
 			}
+			this.setSidebarWidth(clampSidebarWidth(width));
 		};
 
 		const mouseUpHandler = () => {
+			resizing = false;
+			this.container.classList.remove("resizing");
 			unlock();
 			document.body.style.cursor = "";
 			window.removeEventListener("mousemove", mouseMoveHandler);
@@ -429,6 +533,12 @@ export function Sidebar(
 	});
 
 	this.cx.mount = () => {
+		// A hybrid sidebar saved narrower than the expanded minimum was being
+		// used as a favicon strip already; carry that over as collapsed.
+		if (this.collapsible && this.sidebarWidth < SIDEBAR_MIN_WIDTH) {
+			this.setCollapsed?.(true);
+		}
+		mounted = true;
 		if (
 			this.sidebarWidth < SIDEBAR_MIN_WIDTH ||
 			this.sidebarWidth > SIDEBAR_MAX_WIDTH
@@ -442,14 +552,26 @@ export function Sidebar(
 		}
 
 		requestAnimationFrame(() => layoutTabs(false));
-		let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
-			if (!this.root.isConnected) {
-				resizeObserver?.disconnect();
-				resizeObserver = null;
-				return;
+		// Tab widths follow the strip in CSS, so only height changes need a
+		// relayout. Skipping width-only changes keeps the collapse animation
+		// from re-running the layout on every frame.
+		const heights = new WeakMap<Element, number>();
+		let resizeObserver: ResizeObserver | null = new ResizeObserver(
+			(entries) => {
+				if (!this.root.isConnected) {
+					resizeObserver?.disconnect();
+					resizeObserver = null;
+					return;
+				}
+				let heightChanged = false;
+				for (const entry of entries) {
+					const height = entry.contentRect.height;
+					if (heights.get(entry.target) !== height) heightChanged = true;
+					heights.set(entry.target, height);
+				}
+				if (heightChanged) layoutTabs(false);
 			}
-			layoutTabs(false);
-		});
+		);
 		resizeObserver.observe(this.container);
 		resizeObserver.observe(this.topEl);
 		resizeObserver.observe(this.bottomEl);
@@ -470,9 +592,18 @@ export function Sidebar(
 				() => this.visualtabs,
 				(tab) => this.destroyTab(tab)
 			)}
+			class:collapsed={use(this.layoutCollapsed)}
+			class:peeking={use(this.peeking)}
+			class:collapsible={!!this.collapsible}
+			class:favicon-only={use(this.layoutCollapsed, this.peeking).map(
+				([collapsed, peeking]) => collapsed && !peeking
+			)}
+			on:mouseenter={startPeek}
+			on:mouseleave={endPeek}
+			on:focusin={focusPeek}
+			on:focusout={focusUnpeek}
 			style={use(this.sidebarWidth).map(
-				(width) =>
-					`--sidebar-width: ${width}px; min-width: ${width}px; flex: 0 0 ${width}px;`
+				(width) => `--sidebar-width: ${width}px;`
 			)}
 		>
 			<div class="extra top" this={use(this.topEl)}>
@@ -512,6 +643,52 @@ Sidebar.style = css`
 		z-index: 2;
 		border-right: 1px solid var(--text-15);
 		width: var(--sidebar-width);
+		min-width: var(--sidebar-width);
+		flex: 0 0 var(--sidebar-width);
+
+		/* Favicon + the tab's inline padding, the strip's padding, and the
+		   1px border. */
+		--sidebar-collapsed-width: calc(16px + 4 * var(--space-md) + 1px);
+	}
+
+	/* A transition takes its curve from the state it's heading to, so
+	   expanding (to here or to .peeking) and collapsing (to .collapsed) each
+	   get their own. */
+	:scope.collapsible {
+		transition-property: width, min-width, flex-basis, margin, box-shadow;
+		transition-duration: 150ms;
+		transition-timing-function: var(--ease-sidebar-expand);
+	}
+
+	:scope.collapsed {
+		width: var(--sidebar-collapsed-width);
+		min-width: var(--sidebar-collapsed-width);
+		flex-basis: var(--sidebar-collapsed-width);
+		transition-timing-function: var(--ease-sidebar-collapse);
+	}
+
+	:scope.instant,
+	:scope.resizing {
+		transition: none;
+	}
+
+	/* Expanded over the page: the negative margin gives back everything past
+	   the collapsed width, so the page content doesn't reflow underneath. */
+	:scope.collapsed.peeking {
+		width: var(--sidebar-width);
+		min-width: var(--sidebar-width);
+		flex-basis: var(--sidebar-width);
+		margin-right: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
+		transition-timing-function: var(--ease-sidebar-expand);
+	}
+
+	:scope.collapsed.peeking {
+		box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+	}
+
+	:global(.sidebar-right *) > :scope.collapsed.peeking {
+		margin-right: 0;
+		margin-left: calc(var(--sidebar-collapsed-width) - var(--sidebar-width));
 	}
 
 	:global(.sidebar-right *) > :scope {
@@ -838,5 +1015,9 @@ VerticalPinList.style = css`
 
 	:scope.empty {
 		display: none;
+	}
+
+	:global(.favicon-only) :scope {
+		grid-template-columns: 1fr;
 	}
 `;
