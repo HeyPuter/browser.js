@@ -103,6 +103,9 @@ async function metrics(page: Page, cdp: any) {
 		task: m.TaskDuration * 1000,
 		layout: m.LayoutDuration * 1000,
 		style: m.RecalcStyleDuration * 1000,
+		heapMB: m.JSHeapUsedSize / 1048576,
+		nodes: m.Nodes,
+		listeners: m.JSEventListeners,
 	};
 }
 
@@ -144,7 +147,7 @@ async function runOnce(
 			frame = page.mainFrame();
 		} else {
 			await page.goto(
-				`http://localhost:${mode === "base" ? BASE_PORT : PORT}/`
+				`http://localhost:${mode === "base" ? BASE_PORT : PORT}/${args.includes("--cache") ? "?cache" : ""}`
 			);
 			await page.waitForFunction(
 				() => typeof (window as any).__runwayNavigate === "function",
@@ -177,6 +180,11 @@ async function runOnce(
 			task: after.task - before.task,
 			layout: after.layout - before.layout,
 			style: after.style - before.style,
+			// totals for the renderer, after the load: the proxy's own state
+			// (controller, transport) counts against it, as it does for a user
+			heapMB: after.heapMB,
+			nodes: after.nodes,
+			listeners: after.listeners,
 		};
 	} finally {
 		await context.close();
@@ -213,6 +221,9 @@ const KEYS = [
 	"layout",
 	"style",
 	"resources",
+	"heapMB",
+	"nodes",
+	"listeners",
 ];
 
 const replays = new Map<string, Store>();

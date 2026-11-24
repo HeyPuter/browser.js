@@ -33,6 +33,16 @@ export async function startHarness() {
 
 	app.use("/controller", express.static(controllerDist));
 
+	// for `/?cache`: the utils bundle, whose HttpCachePlugin the demo runs
+	app.use(
+		"/utils",
+		express.static(
+			distRoot
+				? path.join(distRoot, "packages/utils/dist")
+				: path.join(packageRoot, "../utils/dist")
+		)
+	);
+
 	app.use(
 		"/libcurl",
 		express.static(
