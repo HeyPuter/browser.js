@@ -66,32 +66,38 @@ async function scriptMs(context: BrowserContext, page: any) {
 	};
 }
 
+// --restart: the second load is in a new browser session on the same profile
+const RESTART = args.includes("--restart");
+
 async function run(mode: string, store: Store, url: string): Promise<Sample> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sj-warm-"));
-	const context = await chromium.launchPersistentContext(dir, {
-		headless: true,
-		ignoreHTTPSErrors: true,
-		args:
-			mode === "bare"
-				? [
-						`--host-resolver-rules=MAP * 127.0.0.1:${HTTPS_PORT}, EXCLUDE localhost`,
-						"--ignore-certificate-errors",
-					]
-				: [],
-	});
-	try {
+	const launch = () =>
+		chromium.launchPersistentContext(dir, {
+			headless: true,
+			ignoreHTTPSErrors: true,
+			args:
+				mode === "bare"
+					? [
+							`--host-resolver-rules=MAP * 127.0.0.1:${HTTPS_PORT}, EXCLUDE localhost`,
+							"--ignore-certificate-errors",
+						]
+					: [],
+		});
+
+	// one session: the page, and a visit to the site that returns its timings
+	const open = async (context: BrowserContext) => {
 		const page = context.pages()[0] ?? (await context.newPage());
 		const script = await scriptMs(context, page);
 		if (mode === "bare") {
-			await page.goto(url, { waitUntil: "load", timeout: 60000 });
-			await page.waitForTimeout(3000);
-			await page.goto("about:blank");
-			const s0 = await script();
-			await page.goto(url, { waitUntil: "load", timeout: 60000 });
-			await page.waitForTimeout(3000);
-			return {
-				...(await timings(page.mainFrame())),
-				script: (await script()) - s0,
+			return async () => {
+				await page.goto("about:blank");
+				const s0 = await script();
+				await page.goto(url, { waitUntil: "load", timeout: 60000 });
+				await page.waitForTimeout(3000);
+				return {
+					...(await timings(page.mainFrame())),
+					script: (await script()) - s0,
+				};
 			};
 		}
 		const port = mode.startsWith("base") ? BASE_PORT : PORT;
@@ -105,7 +111,13 @@ async function run(mode: string, store: Store, url: string): Promise<Sample> {
 			httpPort: 4590,
 		});
 		const frame = (await (await page.$("#testframe"))!.contentFrame())!;
-		const visit = async () => {
+		return async () => {
+			await page.evaluate(() => {
+				(document.getElementById("testframe") as HTMLIFrameElement).src =
+					"about:blank";
+			});
+			await page.waitForTimeout(500);
+			const s0 = await script();
 			const navigated = page.waitForEvent("framenavigated", {
 				predicate: (f) => f === frame && f.url().includes("/~/sj/"),
 				timeout: 60000,
@@ -114,16 +126,20 @@ async function run(mode: string, store: Store, url: string): Promise<Sample> {
 			await navigated;
 			await frame.waitForLoadState("load", { timeout: 60000 });
 			await page.waitForTimeout(3000);
+			return { ...(await timings(frame)), script: (await script()) - s0 };
 		};
+	};
+
+	let context = await launch();
+	try {
+		let visit = await open(context);
 		await visit();
-		await page.evaluate(() => {
-			(document.getElementById("testframe") as HTMLIFrameElement).src =
-				"about:blank";
-		});
-		await page.waitForTimeout(500);
-		const s0 = await script();
-		await visit();
-		return { ...(await timings(frame)), script: (await script()) - s0 };
+		if (RESTART) {
+			await context.close();
+			context = await launch();
+			visit = await open(context);
+		}
+		return await visit();
 	} finally {
 		await context.close();
 		fs.rmSync(dir, { recursive: true, force: true });
