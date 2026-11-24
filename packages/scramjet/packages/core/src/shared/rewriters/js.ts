@@ -250,3 +250,17 @@ function indexOfAscii(bytes: Uint8Array, needle: string): number {
 
 	return -1;
 }
+
+/**
+ * Every occurrence of `from` in `bytes` made `to`, in place. The two are the
+ * same length: the sourcemap's offsets are into the output, and anything
+ * else would move them.
+ */
+export function replaceAsciiAll(bytes: Uint8Array, from: string, to: string) {
+	if (from === to || from.length !== to.length) return;
+	for (let at = indexOfAscii(bytes, from); at !== -1;) {
+		for (let i = 0; i < to.length; i++) bytes[at + i] = to.charCodeAt(i);
+		const next = indexOfAscii(bytes.subarray(at + to.length), from);
+		at = next === -1 ? -1 : at + to.length + next;
+	}
+}

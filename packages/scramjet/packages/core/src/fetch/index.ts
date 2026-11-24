@@ -132,6 +132,19 @@ export class ScramjetFetchHandler extends EventTarget {
 	 */
 	public scriptRewrites = new Map<string, { js: Uint8Array; idAt: number }>();
 	public scriptRewritesSize = 0;
+	/** where rewrites outlive the page, once opened (`body.ts`) */
+	public rewritesCache: Promise<Cache | null> | undefined;
+	private fingerprint: string | undefined;
+
+	/** the configuration a script's rewrite depends on, as a key */
+	rewriteFingerprint(): string {
+		this.fingerprint ??= JSON.stringify([
+			this.context.config.flags,
+			this.context.config.globals,
+		]);
+
+		return this.fingerprint;
+	}
 
 	public fetchDataUrl: (dataUrl: string) => Promise<Response>;
 	public fetchBlobUrl: (blobUrl: string) => Promise<Response>;
