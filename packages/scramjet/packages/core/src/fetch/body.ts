@@ -18,6 +18,11 @@ import {
 	StreamingHtmlRewriter,
 	htmlRewriterHooked,
 } from "@/shared/rewriters/html";
+import {
+	giveNewScriptId,
+	replaceAsciiAll,
+	rewriteScriptForReuse,
+} from "@/shared/rewriters/js";
 import { sniffEncoding } from "@/shared/sniffEncoding";
 import { documentReferrer } from "./headers";
 import {
@@ -81,13 +86,16 @@ export async function rewriteBody(
 					return response.body;
 				}
 
-				let rewritten = rewriteJs(
-					new _Uint8Array(await response.arrayBuffer()),
-					response.url,
-					handler.context,
-					parsed.meta,
-					parsed.isModule
-				);
+				const source = new _Uint8Array(await response.arrayBuffer());
+				let rewritten =
+					(await reusedRewrite(handler, source, response.url, parsed)) ??
+					rewriteJs(
+						source,
+						response.url,
+						handler.context,
+						parsed.meta,
+						parsed.isModule
+					);
 
 				if (flagEnabled("debugSourceURL", handler.context)) {
 					if (typeof rewritten !== "string") {
@@ -212,4 +220,161 @@ function streamHtml(
 			return reader.cancel(reason);
 		},
 	});
+}
+
+/** how much rewritten script a handler keeps, in bytes, before starting over */
+const SCRIPT_REWRITES_MAX = 64 * 1024 * 1024;
+
+declare const COMMITHASH: string;
+declare const BUILDDATE: string;
+
+/**
+ * Where rewrites outlive the page: Cache Storage, under a name that changes
+ * with every build, so a new rewriter never answers with an old one's output.
+ */
+const REWRITES_CACHE = "$scramjet$rewrites:";
+const REWRITES_CACHE_NAME = REWRITES_CACHE + COMMITHASH + ":" + BUILDDATE;
+/** entries kept in it; past this the oldest go */
+const REWRITES_CACHE_ENTRIES = 4000;
+
+async function openRewritesCache(): Promise<Cache | null> {
+	if (typeof caches === "undefined") return null;
+	try {
+		// another build's entries are no use to this one
+		for (const name of await caches.keys())
+			if (name.startsWith(REWRITES_CACHE) && name !== REWRITES_CACHE_NAME)
+				caches.delete(name);
+		const cache = await caches.open(REWRITES_CACHE_NAME);
+		// keys come back oldest first; past the limit, the oldest quarter goes
+		cache.keys().then((keys) => {
+			if (keys.length <= REWRITES_CACHE_ENTRIES) return;
+			const drop = keys.length - (REWRITES_CACHE_ENTRIES * 3) / 4;
+			for (let i = 0; i < drop; i++) cache.delete(keys[i]);
+		});
+		return cache;
+	} catch {
+		return null;
+	}
+}
+
+const hex = (bytes: Uint8Array) => {
+	let out = "";
+	for (let i = 0; i < bytes.length; i++)
+		out += bytes[i].toString(16).padStart(2, "0");
+	return out;
+};
+
+/**
+ * A script's rewrite, from an earlier one of the same bytes when there is one:
+ * this handler's, or one kept in Cache Storage from another session. Each
+ * copy handed out gets a PST registration ID of its own - two realms running
+ * one script would otherwise register as one - and a stored one gets this
+ * frame's prefix in place of the frame it was made for.
+ *
+ * Undefined when there is no digest to key on (no `crypto.subtle` outside a
+ * secure context) or the script does not rewrite cleanly, which then goes
+ * the ordinary way.
+ */
+async function reusedRewrite(
+	handler: ScramjetFetchHandler,
+	source: Uint8Array,
+	url: string,
+	parsed: ScramjetFetchParsed
+): Promise<Uint8Array | undefined> {
+	const subtle = globalThis.crypto?.subtle;
+	if (!subtle) return undefined;
+
+	const digest = new _Uint8Array(
+		await subtle.digest("SHA-256", source as BufferSource)
+	);
+	// everything the output depends on but the frame's prefix, which is
+	// swapped in on the way out
+	const key =
+		(parsed.isModule ? "m" : "s") +
+		hex(digest) +
+		"\0" +
+		url +
+		"\0" +
+		parsed.meta.base.href +
+		"\0" +
+		(parsed.meta.initiatorOrigin ?? parsed.meta.origin.origin) +
+		"\0" +
+		handler.rewriteFingerprint();
+	const prefix = handler.context.prefix.pathname;
+
+	const entry = handler.scriptRewrites.get(key);
+	if (entry) {
+		const copy = entry.js.slice();
+		if (entry.idAt !== -1) giveNewScriptId(copy, entry.idAt);
+		return copy;
+	}
+
+	const remember = (js: Uint8Array, idAt: number) => {
+		handler.scriptRewritesSize += js.length;
+		if (handler.scriptRewritesSize > SCRIPT_REWRITES_MAX) {
+			handler.scriptRewrites.clear();
+			handler.scriptRewritesSize = js.length;
+		}
+		handler.scriptRewrites.set(key, { js, idAt });
+	};
+
+	handler.rewritesCache ??= openRewritesCache();
+	const cache = await handler.rewritesCache;
+	const storedAt =
+		cache &&
+		new URL(
+			"/$scramjet$rewrites/" +
+				hex(
+					new _Uint8Array(
+						await subtle.digest("SHA-256", TextEncoder_encode(key))
+					)
+				),
+			location.href
+		).href;
+
+	if (cache && storedAt) {
+		try {
+			const stored = await cache.match(storedAt);
+			const storedPrefix = stored?.headers.get("x-scramjet-prefix");
+			if (stored && storedPrefix && storedPrefix.length === prefix.length) {
+				const js = new _Uint8Array(await stored.arrayBuffer());
+				const idAt = Number(stored.headers.get("x-scramjet-id-at"));
+				replaceAsciiAll(js, storedPrefix, prefix);
+				remember(js, idAt);
+				const copy = js.slice();
+				if (idAt !== -1) giveNewScriptId(copy, idAt);
+				return copy;
+			}
+		} catch {
+			// a cache that cannot be read is a miss
+		}
+	}
+
+	const fresh = rewriteScriptForReuse(
+		source,
+		url,
+		handler.context,
+		parsed.meta,
+		parsed.isModule
+	);
+	if (!fresh) return undefined;
+	remember(fresh.js, fresh.idAt);
+	if (cache && storedAt) {
+		// not awaited: the page does not wait on the copy for later
+		cache
+			.put(
+				storedAt,
+				new Response(fresh.js.slice(), {
+					headers: {
+						"content-type": "text/javascript",
+						"x-scramjet-prefix": prefix,
+						"x-scramjet-id-at": String(fresh.idAt),
+					},
+				})
+			)
+			.catch(() => {});
+	}
+
+	// the first copy is the one just made, and its ID is already its own
+	return fresh.js.slice();
 }
