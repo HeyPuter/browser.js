@@ -43,9 +43,7 @@
 // `rewriteBody` runs, without going through `rewriteBody` again. That can
 // come later.
 
-import {
-  BareResponse
-} from "@mercuryworkshop/proxy-transports";
+import { BareResponse } from "@mercuryworkshop/proxy-transports";
 import {
 	type ScramjetFetchRequest,
 	type ScramjetHeaders,
@@ -232,52 +230,32 @@ function strippedHeadersFromStored(stored: Response): Headers {
 }
 
 /**
- * Turn an upstream BareResponse into a BareResponse that:
- *   - has the same headers/status/statusText
- *   - has its body replaced with a buffered ArrayBuffer (so the pipeline can
- *     read it again after we've consumed the original stream for the cache)
- * Returns the buffered bytes too so the caller can hand them off elsewhere.
- */
-async function rebuildBareResponseWithBuffer(
-	bare: BareResponse
-): Promise<{ replacement: BareResponse; bodyBuffer: ArrayBuffer | null }> {
-	const status = bare.status;
-	const isNullBody = NULL_BODY_STATUSES.has(status);
-
-	const headers = nativeHeadersFromRaw(bare.rawHeaders);
-
-	if (isNullBody) {
-		return {
-			replacement: BareResponse.fromNativeResponse(
-				new Response(null, {
-					status,
-					statusText: bare.statusText,
-					headers,
-				})
-			),
-			bodyBuffer: null,
-		};
-	}
-
-	const buf = await bare.arrayBuffer();
-	return {
-		replacement: BareResponse.fromNativeResponse(
-			new Response(buf, {
-				status,
-				statusText: bare.statusText,
-				headers,
-			})
-		),
-		bodyBuffer: buf,
-	};
-}
-
-/**
  * Build a `Response` to put in the Cache API. Tags it with our internal
  * STORED_AT_HEADER so freshness can be computed on later lookups.
  */
+/** The response, with its body split in two: one for the page, one to store. */
+function teeBareResponse(bare: BareResponse): {
+	replacement: BareResponse;
+	bodyForCache: ReadableStream<Uint8Array> | null;
+} {
+	const status = bare.status;
+	const headers = nativeHeadersFromRaw(bare.rawHeaders);
+	let forPage: ReadableStream<Uint8Array> | null = null;
+	let forCache: ReadableStream<Uint8Array> | null = null;
+	if (!NULL_BODY_STATUSES.has(status) && bare.body) {
+		[forPage, forCache] = bare.body.tee();
+	}
+
+	return {
+		replacement: BareResponse.fromNativeResponse(
+			new Response(forPage, { status, statusText: bare.statusText, headers })
+		),
+		bodyForCache: forCache,
+	};
+}
+
 function buildStorableResponse(
-	body: ArrayBuffer | null,
+	body: ReadableStream<Uint8Array> | ArrayBuffer | null,
 	status: number,
 	statusText: string,
 	rawHeaders: ReadonlyArray<readonly [string, string]>
@@ -398,7 +376,10 @@ export class HttpCachePlugin extends ManagedPlugin {
 			}
 
 			const isNullBody = NULL_BODY_STATUSES.has(stored.status);
-			const earlyBody = isNullBody ? null : await stored.arrayBuffer();
+			// the stored body as a stream, not read out first: a document is
+			// rewritten as it arrives, and a hit is no reason to make it wait
+			// for its last byte
+			const earlyBody = isNullBody ? null : stored.body;
 
 			const earlyResponse = BareResponse.fromNativeResponse(
 				new Response(earlyBody, {
@@ -430,32 +411,33 @@ export class HttpCachePlugin extends ManagedPlugin {
 			if (!responseIsStorable(props.response.status, headers, req.method))
 				return;
 
-			// Drain the stream once and rebuild the BareResponse around the
-			// buffered copy so the rest of doHandleFetch can still read it.
-			const { replacement, bodyBuffer } = await rebuildBareResponseWithBuffer(
-				props.response
-			);
-			props.response = replacement;
-
 			const cacheKey = buildCacheKeyRequest(
 				ctx.parsed.url.href,
 				req.initialHeaders
 			);
+
+			// One copy of the body goes on to the page as it arrives, the
+			// other into the cache. Draining it first held the page's copy
+			// back until the whole body had downloaded, which for a document
+			// is its first byte arriving after its last.
+			const { replacement, bodyForCache } = teeBareResponse(props.response);
+			props.response = replacement;
 			const toStore = buildStorableResponse(
-				bodyBuffer,
+				bodyForCache,
 				props.response.status,
 				props.response.statusText,
 				props.response.rawHeaders
 			);
 
-			try {
-				const cache = await this.openCache();
-				await cache.put(cacheKey, toStore);
-			} catch (err) {
-				// Cache.put can fail on opaque or oddly-headered responses;
-				// don't let a cache write failure break the actual fetch.
-				console.warn("[scramjet-http-cache] cache.put failed:", err);
-			}
+			// not awaited, for the same reason: the entry is complete once the
+			// body is, and the response does not wait for that
+			this.openCache()
+				.then((cache) => cache.put(cacheKey, toStore))
+				.catch((err) => {
+					// Cache.put can fail on opaque or oddly-headered responses;
+					// don't let a cache write failure break the actual fetch.
+					console.warn("[scramjet-http-cache] cache.put failed:", err);
+				});
 		});
 	}
 
