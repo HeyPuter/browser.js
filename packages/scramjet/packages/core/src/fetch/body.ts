@@ -123,6 +123,9 @@ export async function rewriteBody(
  */
 const SNIFF_BYTES = 1024;
 
+/** the most of a document {@link streamHtml} rewrites in one go */
+const REWRITE_SLICE = 65536;
+
 /** a document's body, rewritten as it arrives */
 function streamHtml(
 	body: ReadableStream<Uint8Array>,
@@ -157,11 +160,30 @@ function streamHtml(
 		return rewriter.write(decoder.decode(all, { stream: true }));
 	};
 
+	// what is left of a chunk too big to rewrite at once
+	let rest: Uint8Array | null = null;
+
 	return new ReadableStream<Uint8Array>({
 		async pull(controller) {
 			try {
 				for (;;) {
-					const { done, value } = await reader.read();
+					let done = false;
+					let value: Uint8Array | undefined;
+					if (rest) {
+						value = rest;
+						rest = null;
+					} else {
+						({ done, value } = await reader.read());
+					}
+					// A body that arrives all at once - from a cache - is still
+					// rewritten a slice per pull. The page is parsed on the
+					// thread that rewrites it, and one rewrite of a whole
+					// document holds its parser, and its first paint, until
+					// the last byte is done.
+					if (value && value.length > REWRITE_SLICE) {
+						rest = value.subarray(REWRITE_SLICE);
+						value = value.subarray(0, REWRITE_SLICE);
+					}
 					if (done) {
 						const text =
 							(decoder ? "" : startDecoding()) +
@@ -172,7 +194,7 @@ function streamHtml(
 
 						return;
 					}
-					const text = decode(value);
+					const text = decode(value!);
 					if (text) {
 						controller.enqueue(TextEncoder_encode(text));
 
