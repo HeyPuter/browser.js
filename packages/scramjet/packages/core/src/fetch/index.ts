@@ -125,6 +125,14 @@ export class ScramjetFetchHandler extends EventTarget {
 		fetch: TapInstance<FetchHooks>;
 	};
 
+	/**
+	 * Scripts this handler has rewritten, by a digest of their bytes and
+	 * everything else the rewrite depends on - a page loaded again fetches
+	 * the same bytes, and need not rewrite them again. See `body.ts`.
+	 */
+	public scriptRewrites = new Map<string, { js: Uint8Array; idAt: number }>();
+	public scriptRewritesSize = 0;
+
 	public fetchDataUrl: (dataUrl: string) => Promise<Response>;
 	public fetchBlobUrl: (blobUrl: string) => Promise<Response>;
 	public sendSetCookie: (

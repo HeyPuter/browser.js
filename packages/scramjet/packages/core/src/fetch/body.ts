@@ -18,6 +18,7 @@ import {
 	StreamingHtmlRewriter,
 	htmlRewriterHooked,
 } from "@/shared/rewriters/html";
+import { giveNewScriptId, rewriteScriptForReuse } from "@/shared/rewriters/js";
 import { sniffEncoding } from "@/shared/sniffEncoding";
 import { documentReferrer } from "./headers";
 import {
@@ -81,13 +82,16 @@ export async function rewriteBody(
 					return response.body;
 				}
 
-				let rewritten = rewriteJs(
-					new _Uint8Array(await response.arrayBuffer()),
-					response.url,
-					handler.context,
-					parsed.meta,
-					parsed.isModule
-				);
+				const source = new _Uint8Array(await response.arrayBuffer());
+				let rewritten =
+					(await reusedRewrite(handler, source, response.url, parsed)) ??
+					rewriteJs(
+						source,
+						response.url,
+						handler.context,
+						parsed.meta,
+						parsed.isModule
+					);
 
 				if (flagEnabled("debugSourceURL", handler.context)) {
 					if (typeof rewritten !== "string") {
@@ -212,4 +216,65 @@ function streamHtml(
 			return reader.cancel(reason);
 		},
 	});
+}
+
+/** how much rewritten script a handler keeps, in bytes, before starting over */
+const SCRIPT_REWRITES_MAX = 64 * 1024 * 1024;
+
+/**
+ * A script's rewrite, from the handler's earlier one of the same bytes when
+ * there is one. Each copy handed out gets a PST registration ID of its own:
+ * two realms running one script would otherwise register as one.
+ *
+ * Undefined when there is no digest to key on (no `crypto.subtle` outside a
+ * secure context) or the script does not rewrite cleanly, which then goes
+ * the ordinary way.
+ */
+async function reusedRewrite(
+	handler: ScramjetFetchHandler,
+	source: Uint8Array,
+	url: string,
+	parsed: ScramjetFetchParsed
+): Promise<Uint8Array | undefined> {
+	const subtle = globalThis.crypto?.subtle;
+	if (!subtle) return undefined;
+
+	const digest = new _Uint8Array(
+		await subtle.digest("SHA-256", source as BufferSource)
+	);
+	let key = parsed.isModule ? "m" : "s";
+	for (let i = 0; i < digest.length; i++)
+		key += digest[i].toString(16).padStart(2, "0");
+	key +=
+		"\0" +
+		url +
+		"\0" +
+		parsed.meta.base.href +
+		"\0" +
+		(parsed.meta.initiatorOrigin ?? parsed.meta.origin.origin);
+
+	let entry = handler.scriptRewrites.get(key);
+	if (!entry) {
+		const fresh = rewriteScriptForReuse(
+			source,
+			url,
+			handler.context,
+			parsed.meta,
+			parsed.isModule
+		);
+		if (!fresh) return undefined;
+		handler.scriptRewritesSize += fresh.js.length;
+		if (handler.scriptRewritesSize > SCRIPT_REWRITES_MAX) {
+			handler.scriptRewrites.clear();
+			handler.scriptRewritesSize = fresh.js.length;
+		}
+		handler.scriptRewrites.set(key, fresh);
+		// the first copy is the one just made, and its ID is already its own
+		return fresh.js.slice();
+	}
+
+	const copy = entry.js.slice();
+	if (entry.idAt !== -1) giveNewScriptId(copy, entry.idAt);
+
+	return copy;
 }

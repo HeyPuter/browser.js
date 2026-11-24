@@ -39,6 +39,8 @@ type RewriterResult = {
 	map: Uint8Array | null;
 	tag: string;
 	errors: string[];
+	/** the PST registration ID the rewrite carries */
+	scriptId: string;
 };
 function rewriteJsWasm(
 	input: string | Uint8Array,
@@ -59,7 +61,8 @@ function rewriteJsWasm(
 	// engine can actually do rather than the one that was configured
 	flagsobj["incumbency"] = incumbencyMode(context);
 	flagsobj["inlineSourcemap"] = inlineSourcemap;
-	flagsobj["scriptId"] = genScriptId();
+	const scriptId = genScriptId();
+	flagsobj["scriptId"] = scriptId;
 	// the module's imports are the document's or worker's requests: its own
 	// origin, not that of a <base> it may have, nor of the module itself
 	flagsobj["initiatorOrigin"] = meta.initiatorOrigin ?? meta.origin.origin;
@@ -104,6 +107,7 @@ function rewriteJsWasm(
 			tag: scramtag,
 			map,
 			errors,
+			scriptId,
 		};
 	} finally {
 		ret();
@@ -202,4 +206,47 @@ export function rewriteJs(
 			throw err;
 		}
 	}
+}
+
+/**
+ * A script's rewrite as the fetch handler keeps it, to hand out again for the
+ * same bytes: the output, and where in it the PST registration ID is (-1
+ * when the mode puts none there), so each copy can be given its own. Null
+ * when the script does not rewrite, which goes the uncached way and its
+ * error handling.
+ */
+export function rewriteScriptForReuse(
+	js: Uint8Array,
+	url: string,
+	context: ScramjetContext,
+	meta: URLMeta,
+	isModule: boolean
+): { js: Uint8Array; idAt: number } | null {
+	let res: RewriterResult;
+	try {
+		res = rewriteJsWasm(js, url, context, meta, isModule, true);
+	} catch {
+		return null;
+	}
+	if (typeof res.js === "string" || res.errors.length) return null;
+
+	return { js: res.js, idAt: indexOfAscii(res.js, res.scriptId) };
+}
+
+/** A fresh PST registration ID, written over the one at `at`. */
+export function giveNewScriptId(js: Uint8Array, at: number) {
+	const id = genScriptId();
+	for (let i = 0; i < id.length; i++) js[at + i] = id.charCodeAt(i);
+}
+
+function indexOfAscii(bytes: Uint8Array, needle: string): number {
+	const first = needle.charCodeAt(0);
+	outer: for (let i = 0; i <= bytes.length - needle.length; i++) {
+		if (bytes[i] !== first) continue;
+		for (let j = 1; j < needle.length; j++)
+			if (bytes[i + j] !== needle.charCodeAt(j)) continue outer;
+		return i;
+	}
+
+	return -1;
 }
