@@ -28,6 +28,18 @@ const HTTPS_PORT = 4593;
 
 process.env.RUNWAY_PORT_BASE ??= "4580";
 const { startHarness, PORT } = await import("../harness/scramjet/index.ts");
+// --base <root>: modes "base" and "basec" (with the plugin) run that build
+const baseRoot = opt("base", "");
+let BASE_PORT = 0;
+if (baseRoot) {
+	const saved = { ...process.env };
+	process.env.RUNWAY_PORT_BASE = String(PORT + 4);
+	process.env.RUNWAY_SCRAMJET_ROOT = baseRoot;
+	const base = await import("../harness/scramjet/index.ts?base");
+	BASE_PORT = base.PORT;
+	await base.startHarness();
+	process.env = saved;
+}
 await startHarness();
 
 type Sample = Record<string, number>;
@@ -82,9 +94,9 @@ async function run(mode: string, store: Store, url: string): Promise<Sample> {
 				script: (await script()) - s0,
 			};
 		}
-		await page.goto(
-			`http://localhost:${PORT}/${mode === "sjc" ? "?cache" : ""}`
-		);
+		const port = mode.startsWith("base") ? BASE_PORT : PORT;
+		const plugin = mode === "sjc" || mode === "basec";
+		await page.goto(`http://localhost:${port}/${plugin ? "?cache" : ""}`);
 		await page.waitForFunction(() => (window as any).__runwayNavigate, null, {
 			timeout: 30000,
 		});
