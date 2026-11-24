@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import http from "node:http";
+import https from "node:https";
 
 export type Entry = {
 	method: string;
@@ -116,15 +117,57 @@ export class Store {
 
 // the cleartext transport sends https://host/path to http://127.0.0.1:port/path
 // with the logical Host header
+/** the same, over TLS, for a bare browser pointed here by its resolver */
+export function serveStoreHttps(
+	store: Store,
+	port: number,
+	tls: { key: Buffer; cert: Buffer }
+) {
+	const server = https.createServer(tls, storeHandler(store, null));
+	return new Promise<https.Server>((r) =>
+		server.listen(port, "127.0.0.1", () => r(server))
+	);
+}
+
 export function serveStore(
 	store: Store,
 	port: number,
 	// a first byte `latency` ms after the request, then the body at `kbps`
 	net: { latency: number; kbps: number } | null = null
 ) {
-	const server = http.createServer(async (req, res) => {
+	const server = http.createServer(storeHandler(store, net));
+	return new Promise<http.Server>((r) =>
+		server.listen(port, "127.0.0.1", () => r(server))
+	);
+}
+
+function storeHandler(
+	store: Store,
+	net: { latency: number; kbps: number } | null
+): http.RequestListener {
+	return async (req, res) => {
 		if (net?.latency) await new Promise((r) => setTimeout(r, net.latency));
-		const url = "https://" + req.headers.host + req.url;
+		// the bench's fetch transport cannot set Host, and says it here
+		const bench = req.headers["x-bench-host"];
+		if (bench) {
+			res.setHeader("access-control-allow-origin", "*");
+			res.setHeader("access-control-expose-headers", "*");
+			if (req.method === "OPTIONS") {
+				res.setHeader("access-control-allow-headers", "*");
+				res.setHeader("access-control-allow-methods", "*");
+				return res.end();
+			}
+		}
+		if (
+			req.method === "OPTIONS" &&
+			req.headers["access-control-request-method"]
+		) {
+			res.setHeader("access-control-allow-origin", "*");
+			res.setHeader("access-control-allow-headers", "*");
+			res.setHeader("access-control-allow-methods", "*");
+			return res.end();
+		}
+		const url = "https://" + (bench ?? req.headers.host) + req.url;
 		const hit = store.lookup(req.method!, url);
 		if (!hit) {
 			res.writeHead(404, { "content-type": "text/plain" });
@@ -149,10 +192,7 @@ export function serveStore(
 				await new Promise((r) => setTimeout(r, perChunk));
 		}
 		res.end();
-	});
-	return new Promise<http.Server>((r) =>
-		server.listen(port, "127.0.0.1", () => r(server))
-	);
+	};
 }
 
 const MIME: Record<string, string> = {

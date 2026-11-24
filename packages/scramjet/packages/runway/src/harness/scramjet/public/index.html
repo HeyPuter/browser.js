@@ -6,6 +6,7 @@
 		<script src="/controller/controller.api.js"></script>
 		<script src="/libcurl/index.js"></script>
 		<script src="/runway-cleartext-https-transport.js"></script>
+		<script src="/runway-fetch-transport.js"></script>
 	</head>
 	<body>
 		<h1>Scramjet Test Harness</h1>
@@ -65,7 +66,9 @@
 				const innerTransport = new LibcurlClient({
 					wisp: `ws://localhost:${Number(location.port) + 1}/`,
 				});
-				const transport = new RunwayCleartextHttpsTransport(innerTransport);
+				const transport = new URLSearchParams(location.search).has("fetch")
+					? new RunwayFetchTransport()
+					: new RunwayCleartextHttpsTransport(innerTransport);
 
 				const sw = navigator.serviceWorker.controller ?? registration.active;
 				if (!sw) {
@@ -80,7 +83,19 @@
 
 				await controller.ready;
 
-				scramjetFrame = controller.createFrame(testframe);
+				// `/?cache`: the frame runs HttpCachePlugin, as the demo's does
+				let plugins = [];
+				if (new URLSearchParams(location.search).has("cache")) {
+					await new Promise((resolve, reject) => {
+						const s = document.createElement("script");
+						s.src = "/utils/scramjet-utils.js";
+						s.onload = resolve;
+						s.onerror = reject;
+						document.head.appendChild(s);
+					});
+					plugins = [new $scramjetUtils.HttpCachePlugin()];
+				}
+				scramjetFrame = controller.createFrame(testframe, { plugins });
 				window.__runwayScramjetFrame = scramjetFrame;
 
 				statusEl.textContent = "Ready - waiting for test...";
